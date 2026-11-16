@@ -1,11 +1,11 @@
 /**
  * Fixed-window counters on Redis, for rate limits and the login lockout.
  */
-import type { RedisStoreOptions } from './options';
-import { DECREMENT, INCREMENT } from './scripts';
 import type { Clock, CounterStore, CounterWindow } from '@noctcore/auth';
 import { systemClock } from '@noctcore/auth';
 import type { Redis } from 'ioredis';
+import type { RedisStoreOptions } from './options';
+import { DECREMENT, INCREMENT } from './scripts';
 
 /** The `CounterStore` on Redis: one INCR per hit, the TTL armed atomically by the first. */
 export class RedisCounterStore implements CounterStore {

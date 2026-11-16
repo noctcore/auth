@@ -12,10 +12,10 @@
  * session and its user's index together, so Redis Cluster is not supported;
  * a single primary, with replicas or Sentinel, is.
  */
+import type { Redis } from 'ioredis';
 import { RedisCounterStore } from './counter-store';
 import type { RedisSessionStoreOptions } from './options';
 import { RedisSessionStore } from './session-store';
-import type { Redis } from 'ioredis';
 
 export { RedisCounterStore } from './counter-store';
 export type { RedisSessionStoreOptions, RedisStoreOptions } from './options';
