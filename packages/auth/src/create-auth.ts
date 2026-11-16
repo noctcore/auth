@@ -14,7 +14,8 @@ import { cryptoRandom } from './crypto/random';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
 import { changePassword, reauthenticate } from './flows/password-change';
-import * as reset from './flows/password-reset';
+import { resetPassword, verifyPasswordResetCode } from './flows/password-reset';
+import { processPasswordReset, requestPasswordReset } from './flows/password-reset-request';
 import { register, type RegisterInput } from './flows/register';
 import { resolveSettings } from './flows/resolve-settings';
 import {
@@ -156,15 +157,15 @@ export function createAuth<
       meta: RequestMeta;
     }) => verification.verifyEmailLink(core, input),
     requestPasswordReset: (input: { email: string; captchaToken?: string; meta: RequestMeta }) =>
-      reset.requestPasswordReset(core, settings, input),
+      requestPasswordReset(core, settings, input),
     verifyPasswordResetCode: (input: { email: string; code: string; meta: RequestMeta }) =>
-      reset.verifyPasswordResetCode(core, settings, input),
+      verifyPasswordResetCode(core, settings, input),
     resetPassword: (input: {
       token: string;
       password: string;
       secondFactor?: string;
       meta: RequestMeta;
-    }) => reset.resetPassword(core, settings, input),
+    }) => resetPassword(core, settings, input),
     changePassword: (input: {
       session: StoredSession<A>;
       currentPassword: string;
@@ -183,8 +184,7 @@ export function createAuth<
     },
     /** Entry points for your queue workers. */
     jobs: {
-      processPasswordReset: (job: PasswordResetJob) =>
-        reset.processPasswordReset(core, settings, job),
+      processPasswordReset: (job: PasswordResetJob) => processPasswordReset(core, settings, job),
     },
     /** For plugins and advanced integrations: the same steps the core flows use. */
     context: core as PluginContext<U, A>,
