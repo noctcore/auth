@@ -70,8 +70,9 @@
 }
 
 /* ---------- Hero: the brand art, played once ---------- */
+/* The traveler is not part of the brand art: it only exists while the sequence plays. */
 .nc-h-traveler {
-  opacity: 0;
+  display: none;
 }
 
 /* Not the gates: they carry a transform attribute that a transform-origin would shift. */
@@ -195,6 +196,7 @@
 
   /* Then the real login walks through, and each checkpoint names itself as it passes. */
   .nc-h-traveler {
+    display: inline;
     animation: nc-travel 2.2s linear 2.8s both;
   }
 
