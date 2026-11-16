@@ -17,7 +17,8 @@ import type { Mailer } from '../ports/mail';
 import type { AuthUser, UserStore } from '../ports/stores';
 import type { RandomSource } from '../crypto/random';
 import type { AttributeSchema, SessionManager } from '../session/session-manager';
-import type { RateLimitRule, Throttle } from '../throttle/throttle';
+import type { RateLimitRule } from '../throttle/rules';
+import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
 export interface CoreDependencies<U extends AuthUser, A> {

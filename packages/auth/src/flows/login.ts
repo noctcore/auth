@@ -27,7 +27,7 @@ import { fail, ok, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { normalizePassword } from '../password/policy';
 import type { IssuedSession } from '../core/plugin-context';
-import { accountKey } from '../throttle/throttle';
+import { accountKey } from '../throttle/counter-keys';
 import { NO_SUCH_USER_ID, type AuthUser } from '../ports/stores';
 import { publicUser } from './settings';
 import { describeError } from '../shared/describe-error';
