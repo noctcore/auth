@@ -3,7 +3,9 @@
  * Prisma for users and tokens, Redis for sessions and rate limits, Argon2id,
  * the session cookie, and CSRF protection (Origin allowlist, Sec-Fetch-Site
  * when the browser sends it, and a signed double-submit token bound to the
- * session).
+ * session, or before sign-in to a random per-browser pre-session id), and
+ * the trusted-device cookie, set with every new session, that lets the
+ * owner's correct password through an account lock.
  *
  * Routes:
  *   GET  /api/csrf          issue a CSRF token (cookie + body)
@@ -14,6 +16,7 @@
  *   GET  /api/sessions                                signed in
  *   POST /api/logout
  */
+import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
   clientIp,
@@ -43,8 +46,10 @@ export interface AppOptions {
   readonly mailer: Mailer;
   /** The app's own origin, e.g. https://app.example. */
   readonly origin: string;
-  /** At least 32 bytes. */
+  /** At least 32 bytes: code HMACs and trusted-device tokens. */
   readonly secret: string;
+  /** At least 32 bytes, and different from `secret`: signs CSRF tokens only. */
+  readonly csrfSecret: string;
   /** False only for plain-HTTP local development and tests. */
   readonly secureCookies: boolean;
   /** Key prefix in Redis, so several apps can share one. */
@@ -61,7 +66,9 @@ const STATUS: Record<string, number> = {
 };
 
 export function createApp(options: AppOptions) {
+  if (options.secret === options.csrfSecret) throw new Error('Use separate secrets for auth and CSRF');
   const secret = new TextEncoder().encode(options.secret);
+  const csrfSecret = new TextEncoder().encode(options.csrfSecret);
   const { users, tokens } = prismaStores({ delegate: options.prisma.user, tokenDelegate: options.prisma.authToken });
   const { sessions, counters } = redisStores(options.redis, { prefix: options.redisPrefix ?? 'example:' });
 
@@ -74,9 +81,26 @@ export function createApp(options: AppOptions) {
     mailer: options.mailer,
   });
   const csrfCookieName = options.secureCookies ? '__Host-csrf' : 'csrf';
+  const preSessionCookieName = options.secureCookies ? '__Host-presession' : 'presession';
+  const PRE_SESSION = /^[0-9a-f]{32}$/u;
 
-  function csrfCookie(binding: string): { spec: CookieSpec; token: string } {
-    const token = createCsrfToken(secret, binding);
+  /** A random id per logged-out browser, so a CSRF token minted in one browser fails in every other. */
+  function newPreSession(): { id: string; spec: CookieSpec } {
+    const id = randomBytes(16).toString('hex');
+    return {
+      id,
+      spec: { name: preSessionCookieName, value: id, attributes: { httpOnly: true, secure: options.secureCookies, sameSite: 'lax', path: '/' } },
+    };
+  }
+
+  /** Signed in: bound to the session. Signed out: bound to the browser's pre-session id. */
+  function binding(session: StoredSession<unknown> | null, preSession: string | null): string | null {
+    if (session) return `session:${session.id}`;
+    return preSession ? `pre:${preSession}` : null;
+  }
+
+  function csrfCookie(bound: string): { spec: CookieSpec; token: string } {
+    const token = createCsrfToken(csrfSecret, bound);
     return {
       token,
       spec: {
@@ -100,20 +124,26 @@ export function createApp(options: AppOptions) {
     const sessionToken = cookies.get(auth.cookieName) ?? null;
     const validated = sessionToken ? await auth.validateRequest({ token: sessionToken, meta }) : null;
     const session = validated?.ok ? validated.value : null;
+    const cookiePreSession = cookies.get(preSessionCookieName);
+    const preSession = cookiePreSession && PRE_SESSION.test(cookiePreSession) ? cookiePreSession : null;
 
     // CSRF, for every unsafe method: the Origin must be ours, Sec-Fetch-Site
     // must say same-origin whenever the browser sends it, and the
-    // double-submit token must match the cookie and be bound to this session.
+    // double-submit token must match the cookie and be bound to this session
+    // (or, signed out, to this browser's pre-session id).
     if (method !== 'GET' && method !== 'HEAD') {
       const secFetchSite = req.headers['sec-fetch-site'];
       const originOk = verifyRequestOrigin({ method, origin: req.headers.origin, allowedOrigins: [options.origin] });
       const siteOk = secFetchSite === undefined || verifyFetchSite({ method, secFetchSite: String(secFetchSite) });
-      const tokenOk = verifyCsrfToken({
-        cookieToken: cookies.get(csrfCookieName),
-        headerToken: header(req, 'x-csrf-token'),
-        binding: session?.id ?? 'anonymous',
-        secrets: [secret],
-      });
+      const bound = binding(session, preSession);
+      const tokenOk =
+        bound !== null &&
+        verifyCsrfToken({
+          cookieToken: cookies.get(csrfCookieName),
+          headerToken: header(req, 'x-csrf-token'),
+          binding: bound,
+          secrets: [csrfSecret],
+        });
       if (!originOk || !siteOk || !tokenOk) return send(res, 403, { error: { code: 'forbidden' } });
     }
 
@@ -122,8 +152,9 @@ export function createApp(options: AppOptions) {
 
     switch (route) {
       case 'GET /api/csrf': {
-        const csrf = csrfCookie(session?.id ?? 'anonymous');
-        return send(res, 200, { csrfToken: csrf.token }, [csrf.spec]);
+        const fresh = session || preSession ? null : newPreSession();
+        const csrf = csrfCookie(binding(session, preSession ?? fresh?.id ?? null) ?? '');
+        return send(res, 200, { csrfToken: csrf.token }, fresh ? [fresh.spec, csrf.spec] : [csrf.spec]);
       }
       case 'POST /api/register': {
         const result = await auth.register({ email: str(body.email), password: str(body.password), meta });
@@ -131,17 +162,25 @@ export function createApp(options: AppOptions) {
         return send(res, 202, { status: 'check-your-email' });
       }
       case 'POST /api/login': {
-        const result = await auth.login({ email: str(body.email), password: str(body.password), rememberMe: body.rememberMe === true, meta });
+        const result = await auth.login({
+          email: str(body.email),
+          password: str(body.password),
+          rememberMe: body.rememberMe === true,
+          deviceToken: auth.readDeviceToken(req.headers.cookie),
+          meta,
+        });
         if (!result.ok) return failure(res, result);
-        if (result.value.kind === 'challenge') return send(res, 200, { challenge: result.value.challenge, methods: result.value.methods });
-        return signedIn(res, result.value.session.cookie, result.value.session.session);
+        if (result.value.kind === 'challenge') {
+          return send(res, 200, { challenge: result.value.challenge, methods: result.value.methods });
+        }
+        return signedIn(res, result.value.session.cookie, result.value.session.session, {}, [result.value.session.deviceCookie]);
       }
       case 'POST /api/verify-email': {
         if (!session) return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
         const result = await auth.verifyEmailCode({ session, code: str(body.code), meta });
         if (!result.ok) return failure(res, result);
         if (!result.value.session) return send(res, 200, { verified: true });
-        return signedIn(res, result.value.session.cookie, result.value.session.session, { verified: true });
+        return signedIn(res, result.value.session.cookie, result.value.session.session, { verified: true }, [result.value.session.deviceCookie]);
       }
       case 'GET /api/me': {
         if (!session) return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
@@ -155,8 +194,10 @@ export function createApp(options: AppOptions) {
       }
       case 'POST /api/logout': {
         const { cookie } = await auth.logout({ token: sessionToken, meta });
-        const csrf = csrfCookie('anonymous');
-        return send(res, 200, { csrfToken: csrf.token }, [cookie, csrf.spec]);
+        // Signed out again: a fresh pre-session id, and a token bound to it.
+        const fresh = newPreSession();
+        const csrf = csrfCookie(binding(null, fresh.id) ?? '');
+        return send(res, 200, { csrfToken: csrf.token }, [cookie, fresh.spec, csrf.spec]);
       }
       default:
         return send(res, 404, { error: { code: 'not_found' } });
@@ -164,9 +205,9 @@ export function createApp(options: AppOptions) {
   }
 
   /** A new session means a new CSRF binding: hand out both. */
-  function signedIn(res: ServerResponse, cookie: CookieSpec, session: StoredSession<unknown>, extra: object = {}) {
-    const csrf = csrfCookie(session.id);
-    return send(res, 200, { ...extra, csrfToken: csrf.token }, [cookie, csrf.spec]);
+  function signedIn(res: ServerResponse, cookie: CookieSpec, session: StoredSession<unknown>, extra: object = {}, more: CookieSpec[] = []) {
+    const csrf = csrfCookie(binding(session, null) ?? '');
+    return send(res, 200, { ...extra, csrfToken: csrf.token }, [cookie, csrf.spec, ...more]);
   }
 
   const server: Server = createServer((req, res) => {

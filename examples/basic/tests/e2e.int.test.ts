@@ -62,7 +62,7 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
   const password = 'correct horse battery staple';
 
   beforeAll(async () => {
-    const { server } = createApp({ prisma, redis, mailer, origin, secret: 'e2e-secret-that-is-at-least-32-bytes!', secureCookies: false, redisPrefix: prefix });
+    const { server } = createApp({ prisma, redis, mailer, origin, secret: 'e2e-secret-that-is-at-least-32-bytes!', csrfSecret: 'e2e-csrf-secret-at-least-32-bytes-long', secureCookies: false, redisPrefix: prefix });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     close = () => new Promise((resolve) => server.close(() => resolve()));
@@ -134,9 +134,33 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
     await victim.request('POST', '/api/login', { email, password });
     const anonymousToken = new Browser(base, origin, '203.0.113.14');
     await anonymousToken.request('GET', '/api/csrf');
-    // The attacker plants its own (anonymous) token pair in the victim's browser.
+    // The attacker plants its own signed-out token pair in the victim's browser.
     victim.cookies.set('csrf', anonymousToken.cookies.get('csrf') ?? '');
     victim.csrf = anonymousToken.csrf;
     expect((await victim.request('POST', '/api/logout')).status).toBe(403);
+  });
+
+  it('binds signed-out CSRF tokens to a random per-browser pre-session id', async () => {
+    const victim = new Browser(base, origin, '203.0.113.15');
+    await victim.request('GET', '/api/csrf');
+    expect(victim.cookies.get('presession')).toMatch(/^[0-9a-f]{32}$/u);
+    const attacker = new Browser(base, origin, '203.0.113.16');
+    await attacker.request('GET', '/api/csrf');
+    // A token pair minted in another browser is useless in this one, even before sign-in.
+    victim.cookies.set('csrf', attacker.cookies.get('csrf') ?? '');
+    victim.csrf = attacker.csrf;
+    expect((await victim.request('POST', '/api/login', { email, password })).status).toBe(403);
+    // No pre-session cookie at all: refused too.
+    const bare = new Browser(base, origin, '203.0.113.17');
+    bare.cookies.set('csrf', attacker.cookies.get('csrf') ?? '');
+    bare.csrf = attacker.csrf;
+    expect((await bare.request('POST', '/api/login', { email, password })).status).toBe(403);
+  });
+
+  it('sets a trusted-device cookie on sign-in', async () => {
+    const browser = new Browser(base, origin, '203.0.113.18');
+    await browser.request('GET', '/api/csrf');
+    expect((await browser.request('POST', '/api/login', { email, password })).status).toBe(200);
+    expect(browser.cookies.get('device')).toMatch(/^[0-9a-f]{32}\.\d+\.\d+\.[0-9a-f]{64}$/u);
   });
 });

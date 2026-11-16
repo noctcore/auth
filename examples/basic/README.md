@@ -6,7 +6,7 @@ A small JSON API on `@noctcore/auth`: register, sign in, verify the address with
 bun run services:up                      # Redis and PostgreSQL from docker-compose.yml (repo root)
 cd examples/basic
 bun run generate && bunx prisma db push  # creates the tables in the "example" schema
-AUTH_SECRET=$(openssl rand -hex 32) bun start
+AUTH_SECRET=$(openssl rand -hex 32) CSRF_SECRET=$(openssl rand -hex 32) bun start
 ```
 
 Mail is printed to stdout. `bun run test:integration` runs the end-to-end test against the same services.
