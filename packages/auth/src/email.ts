@@ -24,6 +24,13 @@ function asciiLower(value: string): string {
  * addresses normalise to one account. Internationalised domains must arrive in
  * their ASCII (punycode) form. Deliberately permissive beyond that: the
  * verification mail is the real check.
+ *
+ * This is stricter than NFC plus Unicode lowercasing, and it changes existing
+ * data: an app adopting the package with stored addresses that contain any
+ * non-ASCII character (an accented local part, a Unicode domain) must find
+ * them first (for example `WHERE email ~ '[^ -~]'` in PostgreSQL). Those users
+ * can no longer sign in or reset by that address; convert IDN domains to
+ * punycode, and move the rest to an ASCII address through support.
  */
 export function normalizeEmail(input: unknown): NormalizedEmail | null {
   if (typeof input !== 'string') return null;
