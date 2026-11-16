@@ -1,0 +1,71 @@
+# Path based labels for pull requests, applied by .github/workflows/labeler.yml.
+# Names match the repo labels (gh label list); the labeler never creates one.
+
+'pkg: auth':
+  - changed-files:
+      - any-glob-to-any-file: ['packages/auth/**']
+
+'pkg: auth-redis':
+  - changed-files:
+      - any-glob-to-any-file: ['packages/auth-redis/**']
+
+'pkg: auth-prisma':
+  - changed-files:
+      - any-glob-to-any-file: ['packages/auth-prisma/**']
+
+'area: core':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'packages/auth/src/shared/**'
+          - 'packages/auth/src/crypto/**'
+          - 'packages/auth/src/http/**'
+          - 'packages/auth/src/password/**'
+
+'area: sessions':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'packages/auth/src/session/**'
+          - 'packages/auth/src/core/session-*.ts'
+          - 'packages/auth/src/flows/session-*.ts'
+          - 'packages/auth-redis/src/session-store.ts'
+
+'area: flows':
+  - changed-files:
+      - any-glob-to-any-file: ['packages/auth/src/flows/**']
+
+'area: stores':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'packages/auth/src/ports/stores.ts'
+          - 'packages/auth-redis/src/**'
+          - 'packages/auth-prisma/src/**'
+          - 'packages/auth-prisma/prisma/**'
+
+'area: testing':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'packages/auth/src/testing/**'
+          - 'packages/*/tests/**'
+          - 'packages/*/vitest*.config.ts'
+
+'area: example':
+  - changed-files:
+      - any-glob-to-any-file: ['examples/**']
+
+'area: docs':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'site/**'
+          # Not **/*.md: every changeset in .changeset/ is Markdown too.
+          - '*.md'
+          - 'packages/*/README.md'
+          - 'examples/*/README.md'
+          - '.github/workflows/docs.yml'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'scripts/**'
+          - 'eslint.config.js'
+          - 'docker-compose.yml'
