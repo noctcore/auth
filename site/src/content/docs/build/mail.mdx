@@ -1,0 +1,67 @@
+---
+title: Mail into your templates and queue
+description: Turning the package's typed mail events into your own messages, sending them from a queue, and running password reset jobs on your own worker.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import configTs from '../../../../snippets/build/mail/config.ts?raw';
+import mailerTs from '../../../../snippets/build/mail/mailer.ts?raw';
+import queueTs from '../../../../snippets/build/mail/queue.ts?raw';
+import templatesTs from '../../../../snippets/build/mail/templates.ts?raw';
+
+The package never renders or sends mail. Each flow that needs one emits a typed `AuthMailEvent` to your `Mailer`, and your code turns it into a message in your own templates and language.
+
+## Why `send` must enqueue
+
+The flows do the same work for a known and an unknown address up to the mail step, so an attacker cannot tell from the response time whether an account exists. A `send` that talked to SMTP inline would add that round trip for known addresses only and give the answer back. So `Mailer.send` should store a job and return; a worker sends it.
+
+A `send` that throws does not fail the flow: the error goes to the configured `logger` as `Mailer failed`, with the event type and user id. Make sure your queue is up, and give `createAuth` a logger.
+
+## The events
+
+| `type` | Sent when | Fields beyond `to`, `userId` and `dedupeKey` |
+| --- | --- | --- |
+| `verify-email` | a new account registers, or a signed-in user asks for another | `code` (code mode) or `url` (link mode), `expiresAt` |
+| `password-reset` | a reset is requested for a known address, link mode | `url`, `expiresAt` |
+| `password-reset-code` | the same, code mode | `code`, `expiresAt` |
+| `password-changed` | a password was changed or reset | `at` |
+| `account-exists` | someone registered with an address that already has an account | none |
+| `lockout` | failed sign-ins locked the account | `until` |
+
+`account-exists` is the other half of the uniform registration answer: the caller sees "check your email" either way, and only the owner of the address learns the account exists. `lockout` tells the owner someone is guessing their password.
+
+`dedupeKey` is a server-minted nonce, unique per event and safe to use as a job id, so a retried enqueue stores one job.
+
+## A queue interface
+
+The samples use the two calls every job queue has in some form. Map them onto BullMQ, pg-boss, Graphile Worker, SQS or whatever you run.
+
+<Code code={queueTs} lang="ts" title="src/mail/queue.ts" />
+
+## One template per event
+
+A `switch` over `event.type` with a `never` check in the `default` branch: if a release adds an event type, your build fails until it has a template, instead of the mail silently going missing.
+
+<Code code={templatesTs} lang="ts" title="src/mail/templates.ts" />
+
+Codes and links are credentials. Keep them out of logs and analytics, and if your queue stores job data in plain text, give its storage the same care as your session store.
+
+## The mailer
+
+<Code code={mailerTs} lang="ts" title="src/mail/mailer.ts" />
+
+Your worker takes each `OutgoingMail` off the queue and hands it to your mail provider, retrying on failure as your queue allows.
+
+## Password reset jobs
+
+A reset request answers the same for every address and does none of the per-account work on the response path. It builds a `PasswordResetJob` (`email`, `ip` and a `dedupeKey`); the lookup, the per-account mail limit and the mail happen when that job runs, in `auth.jobs.processPasswordReset(job)`.
+
+Without `passwordReset.enqueue` the job runs detached in the same process. That keeps the response time independent of the address but loses the job if the process dies. With `enqueue`, the job goes on your queue and your worker runs it:
+
+<Code code={configTs} lang="ts" title="src/mail/config.ts" />
+
+Spread `mailConfig(queues)` into your `createAuth` config, and register `handlePasswordResetJob` as the handler of the reset queue.
+
+- The job's `dedupeKey` is the same for every request for one address within a minute, so a burst of requests stores one job and sends one mail.
+- `processPasswordReset` writes `password.reset_request_ignored` to the audit trail when it sends nothing (unknown address, a hook refused, the per-account limit of 3 mails an hour), so the reason is recorded even though the client was answered long before.
+- The job carries the address in plain text. Treat the reset queue's storage like the mail queue's.

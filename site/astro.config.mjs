@@ -111,7 +111,13 @@ export default defineConfig({
             { label: 'CSRF', link: '/learn/csrf/' },
           ],
         },
-        { label: 'Build', items: [{ label: 'Guides', link: '/build/' }] },
+        {
+          label: 'Build',
+          items: [
+            { label: 'Guides', link: '/build/' },
+            { label: 'Mail into your templates and queue', link: '/build/mail/' },
+          ],
+        },
         {
           label: 'Reference',
           items: [
