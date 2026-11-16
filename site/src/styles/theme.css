@@ -100,10 +100,10 @@ h1#_top {
 }
 
 /* Inline code */
+/* Inline code: a tint only. The generated API pages put every type in its own span, and borders turned them into a row of boxes. */
 .sl-markdown-content :not(pre) > code:not(:where(.not-content *)) {
-  border: 1px solid var(--nc-line-soft);
   border-radius: var(--nc-radius);
-  padding: 0.05em 0.25em;
+  padding: 0.08em 0.3em;
   font-size: 0.875em;
 }
 
