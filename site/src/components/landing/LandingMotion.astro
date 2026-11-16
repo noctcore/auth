@@ -49,18 +49,23 @@
     const stop = () => window.clearInterval(timer);
     const cycle = () => {
       stop();
-      show((active + 1) % steps.length);
       timer = window.setInterval(() => show((active + 1) % steps.length), 2600);
     };
 
+    // The script owns the highlight from here; the static default in LoginSample.astro steps aside.
+    sample.classList.add('is-live');
+    show(0);
+
     steps.forEach((step, i) => {
-      step.addEventListener('mouseenter', () => {
-        stop();
-        show(i);
-      });
+      for (const type of ['mouseenter', 'focus']) {
+        step.addEventListener(type, () => {
+          stop();
+          show(i);
+        });
+      }
     });
 
-    if (reduced) return;
+    if (reduced || !root.classList.contains('nc-motion')) return;
     new IntersectionObserver(
       ([entry]) => {
         if (entry?.isIntersecting) cycle();

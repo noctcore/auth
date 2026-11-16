@@ -279,7 +279,12 @@
   }
 }
 
-/* ---------- Code sample: steps light their lines ---------- */
+/*
+ * ---------- Code sample: steps light their lines ----------
+ * Static default (reduced motion or no JavaScript): step 01 and its lines are
+ * lit by the build-time rules in LoginSample.astro. The script adds .is-live
+ * and then drives the highlight itself.
+ */
 .nc-sample .ec-line {
   position: relative;
   isolation: isolate;
@@ -302,21 +307,28 @@
   cursor: default;
 }
 
-.nc-steps li > span {
-  transition: color 0.3s var(--nc-ease-out);
+.nc-steps li:focus-visible {
+  outline: 2px solid var(--nc-accent);
+  outline-offset: 2px;
 }
 
-.nc-steps li.is-active > span {
+.nc-steps li.is-active > span,
+.nc-sample:not(.is-live) .nc-steps li:first-child > span {
   color: var(--nc-text-strong);
 }
 
-.nc-steps li::before {
+.nc-motion .nc-steps li > span {
+  transition: color 0.3s var(--nc-ease-out);
+}
+
+.nc-motion .nc-steps li::before {
   transition:
     color 0.3s var(--nc-ease-out),
     opacity 0.3s var(--nc-ease-out);
 }
 
-.nc-steps li.is-active::before {
+.nc-steps li.is-active::before,
+.nc-sample:not(.is-live) .nc-steps li:first-child::before {
   color: var(--nc-text-strong);
 }
 
