@@ -1,0 +1,24 @@
+---
+title: '@noctcore/auth'
+description: A small, readable auth library where every module is tied to the attack it stops.
+---
+
+`@noctcore/auth` is a Lucia-style auth library: small readable modules, each tied to the attack it stops, so you can read what your login does and why.
+
+:::caution[Pre-release]
+Nothing is published to npm yet and most pages below are planned. Pages marked **Planned** say what they will hold, not what exists.
+:::
+
+## What it is
+
+- **Framework-free core.** `@noctcore/auth` is pure TypeScript. Storage, mail, audit and captcha come in as interfaces you implement or pick an adapter for.
+- **Results, not HTTP errors.** Flows return results instead of throwing HTTP errors, so your app decides the status code and the copy.
+- **Adapters.** `@noctcore/auth-redis` and `@noctcore/auth-prisma` provide stores.
+- **Plugins add flows, never endpoints.** The app keeps its own routes.
+
+## Where to go
+
+- [Learn](/auth/learn/): why each rule exists, written as what goes wrong, the attack, and the rule.
+- [Build](/auth/build/): guides for wiring it into a server (planned).
+- [Reference](/auth/reference/): generated API docs and every config key (planned).
+- [Security](/auth/security/): the defaults chosen and how to report a problem.

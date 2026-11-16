@@ -8,10 +8,13 @@
   },
   "workspaces": [
     "packages/*",
-    "examples/*"
+    "examples/*",
+    "site"
   ],
   "scripts": {
     "build": "bun run --filter './packages/*' build",
+    "docs:dev": "bun run --filter '@noctcore/auth-docs' dev",
+    "docs:build": "bun run --filter '@noctcore/auth-docs' docs:build",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
     "test:integration": "bun run --filter '*' test:integration",

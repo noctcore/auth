@@ -1,0 +1,22 @@
+{
+  "name": "@noctcore/auth-docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "docs:build": "ASTRO_TELEMETRY_DISABLED=1 astro build && bun scripts/check-build.ts",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro sync && tsc --noEmit",
+    "test": "bun test scripts --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.8",
+    "astro": "^7.4.5",
+    "satteri": "^0.11.6"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^5.9.3"
+  }
+}
