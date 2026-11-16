@@ -172,6 +172,13 @@ export default tseslint.config(
     },
   },
   {
+    // Prisma generates a different delegate type per model, so the adapter
+    // accepts any delegate with the methods it calls: these shapes are `any`
+    // on purpose, and every row read through them is typed where it lands.
+    files: ['packages/auth-prisma/src/delegates.ts'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' },
+  },
+  {
     // Integration suites talk to a real server, Redis and Postgres by design:
     // the example's e2e client calls the app it started on a local port and
     // asserts on every status, error bodies included.
