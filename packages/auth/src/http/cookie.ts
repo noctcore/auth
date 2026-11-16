@@ -11,7 +11,7 @@
  * - A session that was not "remembered" gets a browser-session cookie (no
  *   Max-Age), so closing the browser ends it on the client side too.
  *
- * Guide: Learn, "Cookies and desktop shells".
+ * Guide: Learn, "Sessions and expiry".
  */
 import { AuthConfigError } from '../shared/errors';
 

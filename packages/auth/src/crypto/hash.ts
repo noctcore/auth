@@ -6,7 +6,7 @@
  * (6 to 9 digits) is different: its whole space can be hashed in milliseconds,
  * so codes are stored as an HMAC under a server secret instead.
  *
- * Guide: Learn, "Why tokens are hashed".
+ * Guide: Learn, "Sessions and expiry".
  */
 import { hmac } from '@oslojs/crypto/hmac';
 import { SHA256, sha256 } from '@oslojs/crypto/sha2';

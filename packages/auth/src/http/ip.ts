@@ -7,8 +7,6 @@
  * from the right. Trusting everything lets any client pick its own IP (and its
  * own rate-limit bucket); trusting nothing behind a proxy puts every client in
  * one bucket, so one attacker blocks logins for everyone.
- *
- * Guide: Learn, "Trust proxy and client IPs".
  */
 import { AuthConfigError } from '../shared/errors';
 

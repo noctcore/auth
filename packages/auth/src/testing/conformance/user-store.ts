@@ -2,7 +2,7 @@
  * UserStore conformance: unique violations returned as null and guarded writes
  * refusing deleted users.
  *
- * Guide: Build, "Writing a store adapter".
+ * Planned guide: Build, "Writing a store adapter".
  */
 import assert from 'node:assert/strict';
 import type { UserStore } from '../../ports/stores';

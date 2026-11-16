@@ -1,7 +1,7 @@
 /**
  * CounterStore conformance: atomic increments and every counter key expiring.
  *
- * Guide: Build, "Writing a store adapter".
+ * Planned guide: Build, "Writing a store adapter".
  */
 import assert from 'node:assert/strict';
 import { systemClock } from '../../ports/clock';

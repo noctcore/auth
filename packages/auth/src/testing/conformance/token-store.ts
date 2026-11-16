@@ -2,7 +2,7 @@
  * TokenStore conformance: single-use consumption under concurrency and an
  * attempt cap that cannot be overrun.
  *
- * Guide: Build, "Writing a store adapter".
+ * Planned guide: Build, "Writing a store adapter".
  */
 import assert from 'node:assert/strict';
 import { systemClock } from '../../ports/clock';

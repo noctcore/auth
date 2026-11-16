@@ -3,8 +3,6 @@
  * `hostname` the token was solved on and the `action` it was solved for, so a
  * token from another site sharing the sitekey, or from another form, is
  * refused. A provider outage or timeout is `unavailable`, never `pass`.
- *
- * Guide: Learn, "Captcha".
  */
 import type { CaptchaVerifier } from '../ports/captcha';
 

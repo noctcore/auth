@@ -8,7 +8,7 @@
  * `unavailable` and the flow accepts the password, logs it and counts it. A
  * breach list being down must not stop anyone from registering.
  *
- * Guide: Learn, "Breached passwords".
+ * Guide: Learn, "Passwords".
  */
 import { sha1 } from '@oslojs/crypto/sha1';
 import { encodeHexUpperCase } from '@oslojs/encoding';

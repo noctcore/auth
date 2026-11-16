@@ -6,8 +6,6 @@
  * changed) is awaited before the flow returns the grant, so a crash cannot
  * leave a grant without its row. A failing sink never fails the flow: the error
  * goes to the Logger. Events carry ids and reasons, never secrets.
- *
- * Guide: Learn, "Audit trails".
  */
 import type { RequestMeta } from '../shared/meta';
 
