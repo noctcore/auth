@@ -23,6 +23,7 @@ Pre-release. Nothing is published to npm yet, and the API will change until 1.0.
 ```sh
 bun install
 bun run build
+bun run format:check && bun run lint && bun run typecheck
 bun run test                 # unit tests on in-memory fakes
 bun run services:up          # Redis and Postgres in Docker
 bun run test:integration     # conformance on the real backends (reads .env.example values)
