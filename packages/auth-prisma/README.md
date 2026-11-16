@@ -16,7 +16,7 @@ const { users, tokens } = prismaStores({
 });
 ```
 
-- The user model needs an id, a unique email (stored normalised: trimmed, NFC, lowercase), a boolean `emailVerified` and a nullable password hash. Soft deletion uses a nullable `deletedAt` unless you set it to `null`.
+- The user model needs an id, a unique email (stored normalised: trimmed, with ASCII letters lowercased; an address with any non-ASCII character is refused, and internationalised domains go in as punycode), a boolean `emailVerified` and a nullable password hash. Soft deletion uses a nullable `deletedAt` unless you set it to `null`.
 - `select`, `toUser` and `createData` let the store return your own user type and fill your required columns on sign-up.
 - A unique violation on sign-up returns `null`; guarded writes are single `updateMany` statements; consuming a token is a delete that returns the row; the attempt cap is enforced in the update's `where`.
 
