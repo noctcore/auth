@@ -52,9 +52,10 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
   it('stores only the hash and keeps token data as JSON', async () => {
     const tokens = new PrismaTokenStore(prisma.authToken);
     const userId = uniqueId('u');
-    await tokens.put({ purpose: 'email-verification', userId, hash: 'f'.repeat(64), expiresAt: Date.now() + 60_000, attempts: 0, data: { email: 'a@example.com' } });
+    const hash = uniqueId('hash');
+    await tokens.put({ purpose: 'email-verification', userId, hash, expiresAt: Date.now() + 60_000, attempts: 0, data: { email: 'a@example.com' } });
     const row = await prisma.authToken.findUnique({ where: { userId_purpose: { userId, purpose: 'email-verification' } } });
-    expect(row?.hash).toBe('f'.repeat(64));
+    expect(row?.hash).toBe(hash);
     expect((await tokens.findByUser('email-verification', userId))?.data).toEqual({ email: 'a@example.com' });
   });
 });
