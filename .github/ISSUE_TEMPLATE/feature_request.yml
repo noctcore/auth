@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest a new flow, option, store adapter or primitive.
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The library stays small on purpose: the app keeps its own routes, flows return results instead of throwing HTTP errors, and plugins add flows (functions), never endpoints. A clear problem statement helps more than a detailed design. A default that could be stricter has its own form, "Security hardening idea".
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched the existing issues.
+          required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Where it belongs
+      options:
+        - '@noctcore/auth (core)'
+        - '@noctcore/auth-redis'
+        - '@noctcore/auth-prisma'
+        - A new adapter or plugin package
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation in your app, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like the library to do?
+      description: The API you have in mind, if any.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Hooks, a plugin, a workaround in your app, or another shape this could take.
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to implement it?
+      description: A pull request is welcome once this issue agrees on the change.
+      options:
+        - 'No, I am only suggesting it'
+        - 'Yes, once we agree on the approach'
+    validations:
+      required: true
