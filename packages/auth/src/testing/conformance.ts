@@ -10,6 +10,10 @@ import assert from 'node:assert/strict';
 
 import type { NormalizedEmail } from '../email';
 import type { CounterStore, SessionStore, StoredSession, StoredToken, TokenStore, UserStore } from '../stores';
+import { systemClock } from '../clock';
+import { silentLogger } from '../logger';
+import { cryptoRandom } from '../random';
+import { SessionManager } from '../session';
 import { sleep, times, uniqueId, type ConformanceCase, type ConformanceContext } from './harness';
 
 function advance(context: ConformanceContext): (ms: number) => Promise<void> {
@@ -36,8 +40,38 @@ function sampleSession(overrides: Partial<StoredSession> = {}): StoredSession {
   };
 }
 
-export function sessionStoreConformance(store: SessionStore, context: ConformanceContext = {}): ConformanceCase[] {
+export interface SessionStoreConformanceOptions extends ConformanceContext {
+  /**
+   * A second instance of the store on its own connection. With it, the
+   * touch-versus-delete race runs across two connections, as it does in
+   * production; without it, both calls share one connection.
+   */
+  readonly secondary?: SessionStore;
+  /** Remaining TTL of the user's epoch in ms, for stores that expire it. Enables the epoch TTL check. */
+  readonly epochTtlMs?: (userId: string) => Promise<number>;
+}
+
+export function sessionStoreConformance(store: SessionStore, context: SessionStoreConformanceOptions = {}): ConformanceCase[] {
+  const cases = sessionCases(store, context);
+  const epochTtlMs = context.epochTtlMs;
+  if (epochTtlMs) {
+    cases.push({
+      name: 'the epoch outlives the longest session it guards',
+      async run() {
+        const longest = 30 * 24 * 3600_000;
+        const session = sampleSession({ expiresAt: Date.now() + longest });
+        await store.bumpEpoch(session.userId);
+        await store.create({ ...session, epoch: 1 }, longest);
+        assert.ok((await epochTtlMs(session.userId)) >= longest, 'epoch TTL shorter than the session TTL');
+      },
+    });
+  }
+  return cases;
+}
+
+function sessionCases(store: SessionStore, context: SessionStoreConformanceOptions): ConformanceCase[] {
   const wait = advance(context);
+  const other = context.secondary ?? store;
   return [
     {
       name: 'stores and returns a session exactly',
@@ -87,11 +121,40 @@ export function sessionStoreConformance(store: SessionStore, context: Conformanc
     {
       name: 'touch racing a delete never leaves the session alive',
       async run() {
-        for (let i = 0; i < 25; i++) {
+        for (let i = 0; i < 40; i++) {
           const session = sampleSession();
           await store.create(session, 60_000);
-          await Promise.all([store.delete(session.userId, [session.id]), store.touch({ ...session, lastActiveAt: session.lastActiveAt + 1 })]);
+          const remove = () => store.delete(session.userId, [session.id]);
+          const touch = () => other.touch({ ...session, lastActiveAt: session.lastActiveAt + 1 });
+          // Alternate which call starts first; on two connections either may land first.
+          await Promise.all(i % 2 === 0 ? [remove(), touch()] : [touch(), remove()]);
           assert.equal(await store.get(session.id), null, `iteration ${i}`);
+          assert.equal(await other.get(session.id), null, `iteration ${i}, second connection`);
+        }
+      },
+    },
+    {
+      name: 'a login racing revoke-all never leaves a live session on an old epoch',
+      async run() {
+        for (let i = 0; i < 25; i++) {
+          const manager = new SessionManager(store, {}, systemClock, cryptoRandom, silentLogger);
+          const otherManager = new SessionManager(other, {}, systemClock, cryptoRandom, silentLogger);
+          const userId = uniqueId('user');
+          const meta = { ip: '203.0.113.7' };
+          // The login reads the epoch first, as the flows do, then mints.
+          const login = async () => {
+            const epoch = await manager.readEpoch(userId);
+            return manager.mint({ userId, attributes: {}, rememberMe: false, persistentCookie: false, authenticatedAt: Date.now(), epoch, meta });
+          };
+          const [minted] = await Promise.all([login(), otherManager.revokeAll(userId)]);
+          const current = await store.getEpoch(userId);
+          for (const session of await store.listByUser(userId)) {
+            assert.equal(session.epoch, current, `iteration ${i}: a session on epoch ${session.epoch} survived epoch ${current}`);
+          }
+          if (minted.ok) {
+            const validated = await manager.validate(minted.token, { touch: false });
+            assert.equal(validated.ok, minted.session.epoch === current, `iteration ${i}`);
+          }
         }
       },
     },
@@ -246,6 +309,18 @@ export function counterStoreConformance(store: CounterStore, context: Conformanc
         const key = uniqueId('counter');
         const counts = (await times(50, () => store.increment(key, 60_000))).map((w) => w.count).sort((a, b) => a - b);
         assert.deepEqual(counts, Array.from({ length: 50 }, (_, i) => i + 1));
+      },
+    },
+    {
+      name: 'set overwrites the count and arms a fresh TTL',
+      async run() {
+        const key = uniqueId('counter');
+        await store.increment(key, 1000);
+        await store.set(key, 7, 60_000);
+        const window = await store.get(key);
+        assert.equal(window?.count, 7);
+        assert.ok((window?.resetAt ?? 0) - Date.now() > 30_000, 'set must replace the old TTL');
+        assert.equal((await store.increment(key, 1000)).count, 8);
       },
     },
     {

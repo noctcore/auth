@@ -7,6 +7,7 @@ export {
   sessionStoreConformance,
   tokenStoreConformance,
   userStoreConformance,
+  type SessionStoreConformanceOptions,
   type UserStoreConformanceOptions,
 } from './conformance';
 export { runConformance, sleep, uniqueId, type ConformanceCase, type ConformanceContext, type TestApi } from './harness';
