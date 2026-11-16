@@ -1,0 +1,39 @@
+---
+/**
+ * "Every module answers an attack", drawn as the brand's passage: the login
+ * runs down one path through the modules, and each attack comes in from the
+ * side and stops at the module that stops it.
+ */
+import { ATTACKS } from './attacks';
+---
+
+<section class="nc-band not-content" aria-labelledby="nc-passage-title">
+  <div class="nc-band__inner">
+    <div class="nc-section__head">
+      <h2 id="nc-passage-title">Every module answers an attack.</h2>
+      <p>
+        A request walks one path through the library. Each attack that comes at it stops at the
+        module built for it. Every row links to the page that argues the rule.
+      </p>
+    </div>
+    <ol class="nc-passage">
+      {
+        ATTACKS.map((row) => (
+          <li class="nc-passage__step">
+            <a href={row.href} class="nc-passage__link">
+              <span class="nc-passage__attack">
+                <span class="nc-passage__label">Attack</span>
+                {row.attack}
+              </span>
+              <span class="nc-passage__node" aria-hidden="true" />
+              <span class="nc-passage__answer">
+                <code class="nc-passage__module">{row.module}</code>
+                {row.answer}
+              </span>
+            </a>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
