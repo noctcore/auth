@@ -15,7 +15,6 @@
  *
  * Guide: Learn, "Email verification" and "Password reset".
  */
-import type { Clock } from '../ports/clock';
 import { hexDigestsEqual, hmacSha256Hex, sha256Hex } from '../crypto/hash';
 import {
   generateNumericCode,
@@ -23,6 +22,7 @@ import {
   isTokenShape,
   type RandomSource,
 } from '../crypto/random';
+import type { Clock } from '../ports/clock';
 import { NO_SUCH_USER_ID, type StoredToken, type TokenStore } from '../ports/stores';
 
 /**

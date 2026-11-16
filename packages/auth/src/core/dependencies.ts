@@ -5,6 +5,7 @@
  */
 import type { Door } from './config';
 import type { HookLists } from './hooks';
+import type { RandomSource } from '../crypto/random';
 import type { SessionCookieConfig } from '../http/cookie';
 import type { BreachChecker } from '../password/breach';
 import type { PasswordHasher } from '../password/hasher';
@@ -15,7 +16,6 @@ import type { Clock } from '../ports/clock';
 import type { Logger, Metrics } from '../ports/logger';
 import type { Mailer } from '../ports/mail';
 import type { AuthUser, UserStore } from '../ports/stores';
-import type { RandomSource } from '../crypto/random';
 import type { SessionManager } from '../session/session-manager';
 import type { AttributeSchema } from '../session/session-types';
 import type { RateLimitRule } from '../throttle/rules';

@@ -5,8 +5,8 @@
  * Guide: Build, "Writing a store adapter".
  */
 import assert from 'node:assert/strict';
-import type { NormalizedEmail } from '../../shared/email';
 import type { UserStore } from '../../ports/stores';
+import type { NormalizedEmail } from '../../shared/email';
 import { times, uniqueId, type ConformanceCase } from '../harness';
 
 export interface UserStoreConformanceOptions {

@@ -4,8 +4,8 @@
  * Guide: Build, "Writing a store adapter".
  */
 import assert from 'node:assert/strict';
-import type { CounterStore } from '../../ports/stores';
 import { systemClock } from '../../ports/clock';
+import type { CounterStore } from '../../ports/stores';
 import {
   advance,
   times,

@@ -72,10 +72,11 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   }
 
   async emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void> {
-    this.metrics.count(
-      'auth_event',
-      event.reason ? { type: event.type, reason: event.reason } : { type: event.type },
-    );
+    const tags: Record<string, string> = event.reason
+      ? { type: event.type, reason: event.reason }
+      : { type: event.type };
+
+    this.metrics.count('auth_event', tags);
 
     if (!this.#deps.audit) return;
 
@@ -170,7 +171,9 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       }
     }
 
-    return ok(await this.hasher.hash(normalized));
+    const hash = await this.hasher.hash(normalized);
+
+    return ok(hash);
   }
 
   async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {

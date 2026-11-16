@@ -16,9 +16,8 @@
  * Guide: Learn, "Password hashing".
  */
 import { hash, verify } from '@node-rs/argon2';
-
-import { AuthConfigError } from '../shared/errors';
 import type { PasswordHasher } from './hasher';
+import { AuthConfigError } from '../shared/errors';
 
 export interface Argon2idOptions {
   /** KiB of memory. Default 19456 (19 MiB). */

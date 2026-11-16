@@ -88,7 +88,9 @@ export async function processPasswordReset<U extends AuthUser, A>(
     }
   }
 
-  if (await core.rateLimit('password-reset-mail', user.id, meta)) {
+  const mailLimited = await core.rateLimit('password-reset-mail', user.id, meta);
+
+  if (mailLimited) {
     await ignored(core, user.id, 'mail_limit', meta);
 
     return;

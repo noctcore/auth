@@ -23,7 +23,9 @@ export async function verifyPasswordHash(
   if (!passwordHash || tooLong) {
     // Pay the same verify cost as a real account, and discard the result,
     // so even a preimage of the dummy hash can never authenticate.
-    await hasher.verify(await dummyHashFor(hasher), normalized);
+    const dummyHash = await dummyHashFor(hasher);
+
+    await hasher.verify(dummyHash, normalized);
 
     return false;
   }

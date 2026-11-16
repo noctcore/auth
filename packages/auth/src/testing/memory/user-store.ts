@@ -3,8 +3,8 @@
  * adapters. For unit tests and prototypes only.
  */
 import { systemClock, type Clock } from '../../ports/clock';
-import type { NormalizedEmail } from '../../shared/email';
 import type { AuthUser, UserStore, WithPasswordHash } from '../../ports/stores';
+import type { NormalizedEmail } from '../../shared/email';
 
 interface UserRecord {
   id: string;

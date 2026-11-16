@@ -8,9 +8,9 @@
  * Plugins add flows (functions), never HTTP endpoints. The app's router calls
  * `auth.<pluginId>.<flow>(...)`.
  */
+import type { AuthUser, StoredSession } from '../ports/stores';
 import type { AuthErrorCode } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
-import type { AuthUser, StoredSession } from '../ports/stores';
 
 /** A hook's refusal. The `code` reaches the client; the `reason` only the audit row. */
 export interface Refusal {

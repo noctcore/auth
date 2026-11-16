@@ -4,8 +4,8 @@
  * last credential proof is recent enough.
  */
 import type { FlowSettings } from './settings';
-import { firstRefusal } from '../core/hooks';
 import type { AuthCore } from '../core/auth-core';
+import { firstRefusal } from '../core/hooks';
 import type { Clock } from '../ports/clock';
 import type { AuthUser, StoredSession } from '../ports/stores';
 import { fail, ok, type AuthResult } from '../shared/errors';
