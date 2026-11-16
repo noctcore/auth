@@ -11,12 +11,20 @@ import type { PluginContext } from './core/plugin-context';
 import { checkPlugins, namespacePluginFlows, type PluginFlows } from './core/plugins';
 import { deriveKey, toSecret } from './crypto/keys';
 import { cryptoRandom } from './crypto/random';
-import * as account from './flows/account';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
+import { changePassword, reauthenticate } from './flows/password-change';
 import * as reset from './flows/password-reset';
 import { register, type RegisterInput } from './flows/register';
 import { resolveSettings } from './flows/resolve-settings';
+import {
+  listSessions,
+  logout,
+  revokeAllSessions,
+  revokeOtherSessions,
+  revokeSession,
+} from './flows/session-management';
+import { requireFreshAuth, validateRequest } from './flows/session-validation';
 import { deviceCookieName, parseCookieHeader, sessionCookieName } from './http/cookie';
 import { DEFAULT_PASSWORD_POLICY } from './password/policy';
 import { systemClock } from './ports/clock';
@@ -129,17 +137,15 @@ export function createAuth<
       parseCookieHeader(cookieHeader).get(deviceCookieName(cookie)) ?? null,
     register: (input: RegisterInput) => register(core, settings, input),
     login: (input: LoginInput) => login(core, input),
-    logout: (input: { token: string | null | undefined; meta: RequestMeta }) =>
-      account.logout(core, input),
+    logout: (input: { token: string | null | undefined; meta: RequestMeta }) => logout(core, input),
     validateRequest: (input: {
       token: string | null | undefined;
       meta?: RequestMeta;
       touch?: boolean;
-    }) => account.validateRequest(core, input),
-    requireFreshAuth: (session: StoredSession<A>) =>
-      account.requireFreshAuth(core, settings, session),
+    }) => validateRequest(core, input),
+    requireFreshAuth: (session: StoredSession<A>) => requireFreshAuth(core, settings, session),
     reauthenticate: (input: { session: StoredSession<A>; password: string; meta: RequestMeta }) =>
-      account.reauthenticate(core, input),
+      reauthenticate(core, input),
     requestEmailVerification: (input: { session: StoredSession<A>; meta: RequestMeta }) =>
       verification.requestEmailVerification(core, settings, input),
     verifyEmailCode: (input: { session: StoredSession<A>; code: string; meta: RequestMeta }) =>
@@ -165,15 +171,15 @@ export function createAuth<
       newPassword: string;
       secondFactor?: string;
       meta: RequestMeta;
-    }) => account.changePassword(core, input),
+    }) => changePassword(core, input),
     sessions: {
-      list: (session: StoredSession<A>) => account.listSessions(core, session),
+      list: (session: StoredSession<A>) => listSessions(core, session),
       revoke: (input: { session: StoredSession<A>; id: string; meta: RequestMeta }) =>
-        account.revokeSession(core, settings, input),
+        revokeSession(core, settings, input),
       revokeOthers: (input: { session: StoredSession<A>; meta: RequestMeta }) =>
-        account.revokeOtherSessions(core, settings, input),
+        revokeOtherSessions(core, settings, input),
       revokeAll: (input: { session: StoredSession<A>; meta: RequestMeta }) =>
-        account.revokeAllSessions(core, input),
+        revokeAllSessions(core, input),
     },
     /** Entry points for your queue workers. */
     jobs: {
