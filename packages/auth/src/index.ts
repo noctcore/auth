@@ -72,6 +72,7 @@ export type {
   UserStore,
   WithPasswordHash,
 } from './stores';
+export { NO_SUCH_USER_ID } from './stores';
 export type { AuthMailEvent, Mailer } from './mail';
 export type { AuditSink, AuthEvent, AuthEventType } from './audit';
 export {

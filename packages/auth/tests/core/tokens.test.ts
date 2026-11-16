@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { sha256Hex } from '../../src/hash';
 import { cryptoRandom } from '../../src/random';
 import { manualClock, MemoryTokenStore, type ManualClock } from '../../src/testing';
+import { NO_SUCH_USER_ID } from '../../src/stores';
 import { OneTimeTokens } from '../../src/tokens';
 
 const secret = new TextEncoder().encode('server-secret-server-secret-0000');
@@ -95,5 +96,16 @@ describe('codes', () => {
   it('cannot be used without a server secret', async () => {
     const noSecret = new OneTimeTokens(store, clock, cryptoRandom, undefined);
     await expect(noSecret.issueCode('reset-code', 'u1', 60_000, 6)).rejects.toThrow(/secret/u);
+  });
+
+  it('makes the same store lookup for an unknown user as for a known one', async () => {
+    const lookups: string[] = [];
+    const spy = Object.assign(Object.create(store) as MemoryTokenStore, {
+      findByUser: (purpose: string, userId: string) => (lookups.push(userId), store.findByUser(purpose, userId)),
+    });
+    const spied = new OneTimeTokens(spy, clock, cryptoRandom, secret);
+    await spied.redeemCode('reset', null, '12345678', 5);
+    await spied.redeemCode('reset', 'user-1', '12345678', 5);
+    expect(lookups).toEqual([NO_SUCH_USER_ID, 'user-1']);
   });
 });

@@ -18,7 +18,7 @@
 import type { Clock } from './clock';
 import { hexDigestsEqual, hmacSha256Hex, sha256Hex } from './hash';
 import { generateNumericCode, generateToken, isTokenShape, type RandomSource } from './random';
-import type { StoredToken, TokenStore } from './stores';
+import { NO_SUCH_USER_ID, type StoredToken, type TokenStore } from './stores';
 
 /**
  * What a redemption found. Only `valid` carries `userId`; refusals that still
@@ -100,12 +100,13 @@ export class OneTimeTokens {
    * comparison; the code is deleted when it expires, is exhausted, or wins.
    */
   async redeemCode(purpose: string, userId: string | null, code: unknown, maxAttempts: number): Promise<TokenRedemption> {
-    // Unknown users still pay for an HMAC, so the work does not depend on whether the account exists.
+    // An unknown user pays for the same HMAC and the same store lookup (under
+    // an id no user can have), so neither the work nor the round trips depend
+    // on whether the account exists.
     const candidate = typeof code === 'string' && CODE_PATTERN.test(code) ? code : '000000';
-    const expected = this.codeHash(purpose, userId ?? 'unknown', candidate);
+    const expected = this.codeHash(purpose, userId ?? NO_SUCH_USER_ID, candidate);
+    const found = await this.store.findByUser(purpose, userId ?? NO_SUCH_USER_ID);
     if (userId === null || typeof code !== 'string' || !CODE_PATTERN.test(code)) return { status: 'unknown' };
-
-    const found = await this.store.findByUser(purpose, userId);
     if (!found) return { status: 'unknown' };
     if (found.expiresAt <= this.clock.now()) {
       await this.store.deleteByUser(userId, [purpose]);

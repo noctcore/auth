@@ -8,6 +8,12 @@
  */
 import type { NormalizedEmail } from './email';
 
+/**
+ * A user id no store issues (it starts with U+2205, outside any id alphabet).
+ * Flows look it up for unknown accounts so they make the same store calls.
+ */
+export const NO_SUCH_USER_ID = '\u2205no-such-user';
+
 export interface AuthUser {
   readonly id: string;
   readonly email: string;
