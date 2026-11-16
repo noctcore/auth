@@ -1,0 +1,67 @@
+# Keeps the pinned GitHub Actions SHAs (and their `# vX.Y.Z` comments) and the
+# Bun lockfile current. A 7-day cooldown means a freshly published release, the
+# usual window for a compromised version, is never proposed the day it lands.
+#
+# Groups only batch minor and patch updates, except for families that must
+# move in lockstep. A major version arrives as its own pull request, because
+# each one usually needs its own migration and must be judged alone.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: [minor, patch]
+    labels: [ci]
+    assignees: [Shironex]
+    commit-message:
+      prefix: ci
+      include: scope
+
+  # One Bun workspace: the packages, the example app and the docs site share
+  # the root bun.lock.
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # Dependabot puts a dependency in the first group that matches it, so the
+    # lockstep families come first.
+    groups:
+      # prisma and @prisma/* share an engine and must stay on one version.
+      prisma:
+        patterns: ['prisma', '@prisma/*']
+      # The typescript-eslint packages share types and move together.
+      typescript-eslint:
+        patterns: ['@typescript-eslint/*', 'typescript-eslint']
+      noctcore-eslint-plugins:
+        patterns: ['@noctcore/eslint-plugin-*']
+        update-types: [minor, patch]
+      docs-site:
+        patterns: ['astro', '@astrojs/*']
+        update-types: [minor, patch]
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      dependencies:
+        dependency-type: production
+        update-types: [minor, patch]
+    ignore:
+      # The workspace's own packages are linked locally, never pulled from npm.
+      - dependency-name: '@noctcore/auth'
+      - dependency-name: '@noctcore/auth-*'
+      # @types/node follows the oldest Node we support (engines: >=22), not the
+      # newest Node release.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+    labels: [ci]
+    assignees: [Shironex]
+    commit-message:
+      prefix: chore
+      include: scope
