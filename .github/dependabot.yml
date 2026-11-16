@@ -17,7 +17,7 @@ updates:
       actions:
         patterns: ['*']
         update-types: [minor, patch]
-    labels: [ci]
+    labels: [dependencies]
     assignees: [Shironex]
     commit-message:
       prefix: ci
@@ -59,8 +59,8 @@ updates:
       # @types/node follows the oldest Node we support (engines: >=22), not the
       # newest Node release.
       - dependency-name: '@types/node'
-        update-types: [version-update:semver-major]
-    labels: [ci]
+        update-types: ['version-update:semver-major']
+    labels: [dependencies]
     assignees: [Shironex]
     commit-message:
       prefix: chore
