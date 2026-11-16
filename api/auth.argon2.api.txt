@@ -8,10 +8,16 @@ argon2id
 ## declarations
 argon2id [function]: (options?: Argon2idOptions) => PasswordHasher
 Argon2idOptions [interface]
-    memoryCost?: number | undefined
-    parallelism?: number | undefined
-    secret?: Uint8Array<ArrayBufferLike> | undefined
-    timeCost?: number | undefined
-    unsafeAllowWeakParameters?: boolean | undefined
+    readonly memoryCost?: number
+    readonly parallelism?: number
+    readonly secret?: Uint8Array
+    readonly timeCost?: number
+    readonly unsafeAllowWeakParameters?: boolean
 DEFAULT_ARGON2ID [const]: { readonly memoryCost: 19456; readonly timeCost: 3; readonly parallelism: 1; }
 OWASP_ARGON2ID [const]: { readonly memoryCost: 19456; readonly timeCost: 2; readonly parallelism: 1; }
+
+## types reached through the exports (not exported by name)
+PasswordHasher [interface]
+    hash(password: string): Promise<string>
+    needsRehash(hash: string): boolean
+    verify(hash: string, password: string): Promise<boolean>

@@ -23,39 +23,41 @@ redisStores
 ## declarations
 RedisCounterStore [class]
     (new) (redis: Redis, options?: RedisStoreOptions): RedisCounterStore
-    clock: any
-    decrement: (key: string) => Promise<void>
-    get: (key: string) => Promise<CounterWindow | null>
-    increment: (key: string, windowMs: number) => Promise<CounterWindow>
-    key: any
-    prefix: any
-    redis: any
-    reset: (key: string) => Promise<void>
-    set: (key: string, count: number, windowMs: number) => Promise<void>
+    decrement(key: string): Promise<void>
+    get(key: string): Promise<CounterWindow | null>
+    increment(key: string, windowMs: number): Promise<CounterWindow>
+    private key
+    private readonly clock
+    private readonly prefix
+    private readonly redis
+    reset(key: string): Promise<void>
+    set(key: string, count: number, windowMs: number): Promise<void>
 RedisSessionStore [class]
     (new) (redis: Redis, options?: RedisSessionStoreOptions): RedisSessionStore
-    bumpEpoch: (userId: string) => Promise<number>
-    clock: any
-    create: (session: StoredSession, ttlMs: number) => Promise<void>
-    delete: (userId: string, ids: readonly string[]) => Promise<void>
-    epochKey: any
-    epochTtlMs: any
-    epochTtlRemaining: (userId: string) => Promise<number>
-    get: (id: string) => Promise<StoredSession | null>
-    getEpoch: (userId: string) => Promise<number>
-    listByUser: (userId: string) => Promise<StoredSession[]>
-    maxSessionTtlMs: number
-    prefix: any
-    redis: any
-    sessionKey: any
-    touch: (session: StoredSession) => Promise<boolean>
-    userKey: any
+    bumpEpoch(userId: string): Promise<number>
+    create(session: StoredSession, ttlMs: number): Promise<void>
+    delete(userId: string, ids: readonly string[]): Promise<void>
+    epochTtlRemaining(userId: string): Promise<number>
+    get(id: string): Promise<StoredSession | null>
+    getEpoch(userId: string): Promise<number>
+    listByUser(userId: string): Promise<StoredSession[]>
+    private epochKey
+    private readonly clock
+    private readonly epochTtlMs
+    private readonly prefix
+    private readonly redis
+    private sessionKey
+    private userKey
+    readonly maxSessionTtlMs: number
+    touch(session: StoredSession): Promise<boolean>
 RedisSessionStoreOptions [interface]
-    clock?: any
-    epochTtl?: any
-    maxSessionTtl?: any
-    prefix?: string | undefined
+    readonly clock?: Clock
+    readonly epochTtl?: Duration
+    readonly maxSessionTtl?: Duration
+    readonly prefix?: string
 RedisStoreOptions [interface]
-    clock?: any
-    prefix?: string | undefined
+    readonly clock?: Clock
+    readonly prefix?: string
 redisStores [function]: (redis: Redis, options?: RedisSessionStoreOptions) => { sessions: RedisSessionStore; counters: RedisCounterStore; }
+
+## types reached through the exports (not exported by name)

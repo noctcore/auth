@@ -20,96 +20,178 @@ userStoreConformance
 
 ## declarations
 ConformanceCase [interface]
-    name: string
-    run: () => Promise<void>
+    readonly name: string
+    run(): Promise<void>
 ConformanceContext [interface]
-    advanceTime?: ((ms: number) => Promise<void>) | undefined
+    readonly advanceTime?: (ms: number) => Promise<void>
 counterStoreConformance [function]: (store: CounterStore, context?: ConformanceContext) => ConformanceCase[]
 manualClock [function]: (start?: number) => ManualClock
 ManualClock [interface]
-    advance: (ms: number) => void
-    now: () => number
-    set: (ms: number) => void
+    advance(ms: number): void
+    now(): number
+    set(ms: number): void
 MemoryCounterStore [class]
     (new) (clock?: Clock): MemoryCounterStore
-    clock: any
-    counters: any
-    decrement: (key: string) => Promise<void>
-    get: (key: string) => Promise<CounterWindow | null>
-    increment: (key: string, windowMs: number) => Promise<CounterWindow>
-    live: any
-    reset: (key: string) => Promise<void>
-    set: (key: string, count: number, windowMs: number) => Promise<void>
+    decrement(key: string): Promise<void>
+    get(key: string): Promise<CounterWindow | null>
+    increment(key: string, windowMs: number): Promise<CounterWindow>
+    private live
+    private readonly clock
+    private readonly counters
+    reset(key: string): Promise<void>
+    set(key: string, count: number, windowMs: number): Promise<void>
 MemorySessionStore [class]
     (new) (clock?: Clock): MemorySessionStore
-    bumpEpoch: (userId: string) => Promise<number>
-    byUser: any
-    clock: any
-    create: (session: StoredSession, ttlMs: number) => Promise<void>
-    delete: (userId: string, ids: readonly string[]) => Promise<void>
-    epochs: any
-    get: (id: string) => Promise<StoredSession | null>
-    getEpoch: (userId: string) => Promise<number>
-    listByUser: (userId: string) => Promise<StoredSession[]>
-    read: any
-    sessions: any
-    touch: (session: StoredSession) => Promise<boolean>
+    bumpEpoch(userId: string): Promise<number>
+    create(session: StoredSession, ttlMs: number): Promise<void>
+    delete(userId: string, ids: readonly string[]): Promise<void>
+    get(id: string): Promise<StoredSession | null>
+    getEpoch(userId: string): Promise<number>
+    listByUser(userId: string): Promise<StoredSession[]>
+    private read
+    private readonly byUser
+    private readonly clock
+    private readonly epochs
+    private readonly sessions
+    touch(session: StoredSession): Promise<boolean>
 memoryStores [function]: (clock?: Clock) => MemoryStores
 MemoryStores [interface]
-    counters: MemoryCounterStore
-    sessions: MemorySessionStore
-    tokens: MemoryTokenStore
-    users: MemoryUserStore
+    readonly counters: MemoryCounterStore
+    readonly sessions: MemorySessionStore
+    readonly tokens: MemoryTokenStore
+    readonly users: MemoryUserStore
 MemoryTokenStore [class]
     (new) (): MemoryTokenStore
-    consume: (purpose: string, hash: string) => Promise<StoredToken | null>
-    deleteByUser: (userId: string, purposes?: readonly string[]) => Promise<void>
-    find: (purpose: string, hash: string) => Promise<StoredToken | null>
-    findByUser: (purpose: string, userId: string) => Promise<StoredToken | null>
-    incrementAttempts: (purpose: string, userId: string, max: number) => Promise<number | null>
-    key: any
-    put: (token: StoredToken) => Promise<void>
-    removeByUser: any
-    tokens: any
+    consume(purpose: string, hash: string): Promise<StoredToken | null>
+    deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
+    find(purpose: string, hash: string): Promise<StoredToken | null>
+    findByUser(purpose: string, userId: string): Promise<StoredToken | null>
+    incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    private key
+    private readonly tokens
+    private removeByUser
+    put(token: StoredToken): Promise<void>
 MemoryUserStore [class]
     (new) (clock?: Clock): MemoryUserStore
-    byId: any
-    clearPassword: (id: string) => Promise<void>
-    clock: any
-    create: (input: { email: NormalizedEmail; passwordHash: string; }) => Promise<AuthUser | null>
-    findById: (id: string) => Promise<AuthUser | null>
-    findCredentialByEmail: (email: NormalizedEmail) => Promise<WithPasswordHash<AuthUser> | null>
-    findCredentialById: (id: string) => Promise<WithPasswordHash<AuthUser> | null>
-    live: any
-    markEmailVerified: (id: string, email: NormalizedEmail) => Promise<boolean>
-    sequence: any
-    setEmail: (id: string, email: NormalizedEmail) => Promise<void>
-    setPasswordHash: (id: string, passwordHash: string, options?: { readonly expected?: string | null; }) => Promise<boolean>
-    softDelete: (id: string) => Promise<void>
-    view: any
+    clearPassword(id: string): Promise<void>
+    create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<AuthUser | null>
+    findById(id: string): Promise<AuthUser | null>
+    findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<AuthUser> | null>
+    findCredentialById(id: string): Promise<WithPasswordHash<AuthUser> | null>
+    markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>
+    private live
+    private readonly byId
+    private readonly clock
+    private sequence
+    private view
+    setEmail(id: string, email: NormalizedEmail): Promise<void>
+    setPasswordHash(id: string, passwordHash: string, options?: { readonly expected?: string | null; }): Promise<boolean>
+    softDelete(id: string): Promise<void>
 plainHasher [function]: (version?: number) => PasswordHasher
 recordingAudit [function]: () => RecordingAudit
 RecordingAudit [interface]
-    emit: (event: AuthEvent, meta: RequestMeta | undefined) => Promise<void>
-    events: Array<AuthEvent & { meta?: RequestMeta | undefined; }>
-    types: () => string[]
+    emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
+    readonly events: Array<AuthEvent & { meta?: RequestMeta | undefined; }>
+    types(): string[]
 recordingMailer [function]: () => RecordingMailer
 RecordingMailer [interface]
-    last: <T extends AuthMailEvent["type"]>(type: T) => Extract<AuthMailEvent, { type: T; }> | undefined
-    send: (event: AuthMailEvent) => Promise<void>
-    sent: Array<AuthMailEvent>
+    last<T extends AuthMailEvent['type']>(type: T): Extract<AuthMailEvent, { type: T; }> | undefined
+    readonly sent: AuthMailEvent[]
+    send(event: AuthMailEvent): Promise<void>
 runConformance [function]: (title: string, cases: readonly ConformanceCase[], api: TestApi, timeout?: number) => void
 sessionStoreConformance [function]: (store: SessionStore, context?: SessionStoreConformanceOptions) => ConformanceCase[]
 SessionStoreConformanceOptions [interface]
-    advanceTime?: ((ms: number) => Promise<void>) | undefined
-    epochTtlMs?: ((userId: string) => Promise<number>) | undefined
-    secondary?: SessionStore | undefined
+    readonly advanceTime?: (ms: number) => Promise<void>
+    readonly epochTtlMs?: (userId: string) => Promise<number>
+    readonly secondary?: SessionStore
 sleep [const]: (ms: number) => Promise<void>
 TestApi [interface]
-    describe: (name: string, body: () => void) => void
-    it: (name: string, body: () => Promise<void>, timeout?: number) => void
+    describe(name: string, body: () => void): void
+    it(name: string, body: () => Promise<void>, timeout?: number): void
 tokenStoreConformance [function]: (store: TokenStore) => ConformanceCase[]
 uniqueId [function]: (prefix: string) => string
 userStoreConformance [function]: (store: UserStore, options?: UserStoreConformanceOptions) => ConformanceCase[]
 UserStoreConformanceOptions [interface]
-    softDelete?: ((id: string) => Promise<void>) | undefined
+    readonly softDelete?: (id: string) => Promise<void>
+
+## types reached through the exports (not exported by name)
+AuditSink [interface]
+    emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
+AuthEvent [interface]
+    readonly data?: Readonly<Record<string, string | number | boolean>>
+    readonly reason?: string
+    readonly type: AuthEventType
+    readonly userId?: string
+AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' | 'rate_limit.exceeded'
+AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; }
+AuthUser [interface]
+    readonly email: string
+    readonly emailVerified: boolean
+    readonly id: string
+Clock [interface]
+    now(): number
+CounterStore [interface]
+    decrement(key: string): Promise<void>
+    get(key: string): Promise<CounterWindow | null>
+    increment(key: string, windowMs: number): Promise<CounterWindow>
+    reset(key: string): Promise<void>
+    set(key: string, count: number, windowMs: number): Promise<void>
+CounterWindow [interface]
+    readonly count: number
+    readonly resetAt: number
+Mailer [interface]
+    send(event: AuthMailEvent): Promise<void>
+NormalizedEmail [type] = string & { readonly __normalizedEmail: true; }
+PasswordHasher [interface]
+    hash(password: string): Promise<string>
+    needsRehash(hash: string): boolean
+    verify(hash: string, password: string): Promise<boolean>
+RequestMeta [interface]
+    readonly ip: string
+    readonly origin?: string | undefined
+    readonly userAgent?: string | undefined
+SessionStore [interface]
+    bumpEpoch(userId: string): Promise<number>
+    create(session: StoredSession, ttlMs: number): Promise<void>
+    delete(userId: string, ids: readonly string[]): Promise<void>
+    get(id: string): Promise<StoredSession | null>
+    getEpoch(userId: string): Promise<number>
+    listByUser(userId: string): Promise<StoredSession[]>
+    readonly maxSessionTtlMs?: number
+    touch(session: StoredSession): Promise<boolean>
+StoredSession [interface]<A = unknown>
+    readonly attributes: A
+    readonly authenticatedAt: number
+    readonly createdAt: number
+    readonly epoch: number
+    readonly expiresAt: number
+    readonly id: string
+    readonly idleTimeoutMs: number
+    readonly ip: string
+    readonly lastActiveAt: number
+    readonly persistentCookie: boolean
+    readonly rememberMe: boolean
+    readonly userAgent: string
+    readonly userId: string
+StoredToken [interface]
+    readonly attempts: number
+    readonly data: Readonly<Record<string, string>>
+    readonly expiresAt: number
+    readonly hash: string
+    readonly purpose: string
+    readonly userId: string
+TokenStore [interface]
+    consume(purpose: string, hash: string): Promise<StoredToken | null>
+    deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
+    find(purpose: string, hash: string): Promise<StoredToken | null>
+    findByUser(purpose: string, userId: string): Promise<StoredToken | null>
+    incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    put(token: StoredToken): Promise<void>
+UserStore [interface]<U extends AuthUser = AuthUser>
+    create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<U | null>
+    findById(id: string): Promise<U | null>
+    findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
+    findCredentialById(id: string): Promise<WithPasswordHash<U> | null>
+    markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>
+    setPasswordHash(id: string, passwordHash: string, options?: { readonly expected?: string | null; }): Promise<boolean>
+WithPasswordHash [type]<U> = U & { readonly passwordHash: string | null; }

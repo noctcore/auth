@@ -89,51 +89,51 @@ verifyRequestOrigin
 ## declarations
 accountKey [function]: (normalizedEmail: string) => string
 AttributeSchema [interface]<A>
-    parse: (value: unknown) => A
+    parse(value: unknown): A
 AuditSink [interface]
-    emit: (event: AuthEvent, meta: RequestMeta | undefined) => Promise<void>
+    emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
 Auth [type]<U extends AuthUser, A, P extends readonly AuthPlugin[] = []> = ReturnType<typeof createAuth<U, A, P>>
 AuthConfig [interface]<U extends AuthUser, A, P extends readonly AuthPlugin[]>
-    audit?: AuditSink | undefined
-    captcha?: CaptchaVerifier | undefined
-    clock?: Clock | undefined
-    emailVerification?: { readonly kind?: "code" | "link"; readonly ttl?: Duration; readonly digits?: number; readonly maxAttempts?: number; } | undefined
-    hooks?: HookInput<U, A> | undefined
-    logger?: Logger | undefined
-    mailer: Mailer
-    metrics?: Metrics | undefined
-    password: { readonly hasher: PasswordHasher; readonly policy?: Partial<PasswordPolicy>; readonly breachCheck?: BreachChecker | false; }
-    passwordReset?: { readonly kind?: "link" | "code"; readonly ttl?: Duration; readonly digits?: number; readonly maxAttempts?: number; readonly ticketTtl?: Duration; readonly enqueue?: (job: PasswordResetJob) => Promise<void>; readonly markEmailVerified?: boolean; } | undefined
-    plugins?: P | undefined
-    random?: RandomSource | undefined
-    registration?: { readonly revealExisting?: boolean; readonly autoLogin?: boolean; } | undefined
-    secret: string | Uint8Array<ArrayBufferLike>
-    session?: (SessionOptions<A> & { readonly cookie?: SessionCookieConfig; readonly freshAuthAge?: Duration; }) | undefined
-    stores: { readonly users: UserStore<U>; readonly sessions: SessionStore; readonly tokens: TokenStore; readonly counters: CounterStore; }
-    throttle?: { readonly lockout?: LockoutOptions; readonly doors?: Partial<Record<Door, RateLimitRule>>; } | undefined
-    urls?: { readonly verifyEmail?: (token: string) => string; readonly resetPassword?: (token: string) => string; } | undefined
+    readonly audit?: AuditSink
+    readonly captcha?: CaptchaVerifier
+    readonly clock?: Clock
+    readonly emailVerification?: { /** Default `code`: 8 digits, the auth guide's preference, bound to the address it was sent to. */ readonly kind?: 'code' | 'link'; /** Default 15 min for codes, 24 h for links. */ readonly ttl?: Duration; readonly digits?: number; readonly maxAttempts?: number; }
+    readonly hooks?: HookInput<U, A>
+    readonly logger?: Logger
+    readonly mailer: Mailer
+    readonly metrics?: Metrics
+    readonly password: { readonly hasher: PasswordHasher; /** Default 12 to 256 characters. */ readonly policy?: Partial<PasswordPolicy>; /** `pwnedPasswords()` recommended. False disables the check. Fails open either way. */ readonly breachCheck?: BreachChecker | false; }
+    readonly passwordReset?: { /** Default `link`. `code` sends digits that are exchanged for a short ticket. */ readonly kind?: 'link' | 'code'; /** Default 1 h for links, 15 min for codes. */ readonly ttl?: Duration; readonly digits?: number; readonly maxAttempts?: number; /** Lifetime of the ticket a verified code becomes. Default 10 min. */ readonly ticketTtl?: Duration; /** * Put the request on your queue; your worker calls `auth.jobs.processPasswordReset(job)`. * Without it the job runs detached in-process, which keeps the response * time independent of the address but is lost if the process dies. */ readonly enqueue?: (job: PasswordResetJob) => Promise<void>; /** A completed reset proves the mailbox, so it marks the address verified. Default true. */ readonly markEmailVerified?: boolean; }
+    readonly plugins?: P
+    readonly random?: RandomSource
+    readonly registration?: { /** * Answer `email_in_use` for a taken address instead of the uniform answer * plus an "account exists" mail. Default false (enumeration safe). */ readonly revealExisting?: boolean; /** Issue a session on registration. Only allowed with `revealExisting`, or the session would reveal the account is new. */ readonly autoLogin?: boolean; }
+    readonly secret: Uint8Array | string
+    readonly session?: SessionOptions<A> & { readonly cookie?: SessionCookieConfig; /** How recent a credential proof must be for sensitive actions. Default 10 min. */ readonly freshAuthAge?: Duration; }
+    readonly stores: { readonly users: UserStore<U>; readonly sessions: SessionStore; readonly tokens: TokenStore; readonly counters: CounterStore; }
+    readonly throttle?: { readonly lockout?: LockoutOptions; readonly doors?: Partial<Record<Door, RateLimitRule>>; }
+    readonly urls?: { /** Required for link verification. Put the token in the path or fragment and set `Referrer-Policy: no-referrer`. */ readonly verifyEmail?: (token: string) => string; /** Required for link resets. */ readonly resetPassword?: (token: string) => string; }
 AuthConfigError [class]
     (new) (message?: string): AuthConfigError
     (new) (message?: string, options?: ErrorOptions): AuthConfigError
     cause?: unknown
     message: string
-    name: "AuthConfigError"
-    stack?: string | undefined
-    static captureStackTrace: (targetObject: object, constructorOpt?: Function) => void
-    static prepareStackTrace: (err: Error, stackTraces: NodeJS.CallSite[]) => any
+    readonly name = "AuthConfigError"
+    stack?: string
+    static captureStackTrace(targetObject: object, constructorOpt?: Function): void
+    static prepareStackTrace(err: Error, stackTraces: NodeJS.CallSite[]): any
     static stackTraceLimit: number
 AuthErrorCode [type] = 'invalid_credentials' /** Unknown, expired, used or exhausted token or code. */ | 'invalid_token' | 'invalid_email' /** Shorter than the policy's minimum. */ | 'weak_password' | 'password_too_long' | 'breached_password' /** The signed-in account has no password to check (for example a social-only account). */ | 'password_not_set' /** Only when the app opted into `registration.revealExisting`. */ | 'email_in_use' | 'captcha_failed' /** The captcha provider could not answer: an outage, not the user's mistake. */ | 'captcha_unavailable' | 'rate_limited' | 'session_expired' | 'fresh_auth_required' | 'second_factor_required' | 'invalid_second_factor' /** A hook refused for a reason that is safe to name only generically. */ | 'forbidden'
 AuthEvent [interface]
-    data?: Readonly<Record<string, string | number | boolean>> | undefined
-    reason?: string | undefined
-    type: f
-    userId?: string | undefined
+    readonly data?: Readonly<Record<string, string | number | boolean>>
+    readonly reason?: string
+    readonly type: AuthEventType
+    readonly userId?: string
 AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' | 'rate_limit.exceeded'
 AuthFailure [interface]
-    code: AuthErrorCode
-    ok: false
-    reason: string
-    retryAfterSeconds?: number | undefined
+    readonly code: AuthErrorCode
+    readonly ok: false
+    readonly reason: string
+    readonly retryAfterSeconds?: number
 AuthHooks [interface]<U extends AuthUser, A>
     afterRegister: (context: { user: U; meta: RequestMeta; }) => MaybePromise<void>
     beforePasswordChange: (context: { user: U; session: StoredSession<A>; secondFactor: string | undefined; meta: RequestMeta; }) => MaybePromise<HookResult>
@@ -146,47 +146,47 @@ AuthHooks [interface]<U extends AuthUser, A>
     sessionAttributes: (context: { user: U; via: IssueVia; inherited: A | undefined; }) => MaybePromise<Partial<A>>
 AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; }
 AuthPlugin [interface]<Id extends string = string, F extends object = object>
-    flows?: ((context: PluginContext<any, any>) => F) | undefined
-    hooks?: HookInput<any, any> | undefined
-    id: Id
-    requires?: ReadonlyArray<"captcha"> | undefined
+    readonly flows?: (context: PluginContext<any, any>) => F
+    readonly hooks?: HookInput<any, any>
+    readonly id: Id
+    readonly requires?: ReadonlyArray<'captcha'>
 AuthResult [type]<T> = AuthSuccess<T> | AuthFailure
 AuthSuccess [interface]<T>
-    ok: true
-    value: T
+    readonly ok: true
+    readonly value: T
 AuthUser [interface]
-    email: string
-    emailVerified: boolean
-    id: string
+    readonly email: string
+    readonly emailVerified: boolean
+    readonly id: string
 BreachChecker [type] = (password: string) => Promise<BreachVerdict>
 BreachVerdict [type] = 'clean' | 'breached' | 'unavailable'
 CaptchaDoor [type] = 'login' | 'register' | 'password-reset' | 'email-verification'
 CaptchaVerdict [type] = 'pass' | 'reject' | 'unavailable'
 CaptchaVerifier [interface]
-    verify: (token: string | undefined, context: { ip?: string; door: CaptchaDoor; }) => Promise<CaptchaVerdict>
+    verify(token: string | undefined, context: { ip?: string; door: CaptchaDoor; }): Promise<CaptchaVerdict>
 checkPasswordPolicy [function]: (password: string, policy?: PasswordPolicy) => PasswordPolicyVerdict
 clientIp [function]: (input: { remoteAddress: string | undefined; forwardedFor?: string | readonly string[] | null | undefined; trustedHops: number; }) => string | undefined
 Clock [interface]
-    now: () => number
+    now(): number
 CookieAttributes [interface]
-    httpOnly: boolean
-    maxAge?: number | undefined
-    path: string
-    sameSite: SameSite
-    secure: boolean
+    readonly httpOnly: boolean
+    readonly maxAge?: number
+    readonly path: string
+    readonly sameSite: SameSite
+    readonly secure: boolean
 CookieSpec [interface]
-    attributes: CookieAttributes
-    name: string
-    value: string
+    readonly attributes: CookieAttributes
+    readonly name: string
+    readonly value: string
 CounterStore [interface]
-    decrement: (key: string) => Promise<void>
-    get: (key: string) => Promise<g | null>
-    increment: (key: string, windowMs: number) => Promise<g>
-    reset: (key: string) => Promise<void>
-    set: (key: string, count: number, windowMs: number) => Promise<void>
+    decrement(key: string): Promise<void>
+    get(key: string): Promise<CounterWindow | null>
+    increment(key: string, windowMs: number): Promise<CounterWindow>
+    reset(key: string): Promise<void>
+    set(key: string, count: number, windowMs: number): Promise<void>
 CounterWindow [interface]
-    count: number
-    resetAt: number
+    readonly count: number
+    readonly resetAt: number
 createAuth [function]: <U extends AuthUser, A = Record<string, never>, const P extends readonly AuthPlugin[] = []>(config: AuthConfig<U, A, P>) => { cookieName: string; readSessionToken: (cookieHeader: string | null | undefined) => string | null; deviceCookieName: string; readDeviceToken: (cookieHeader: string | null | undefined) => string | null; register: (input: RegisterInput) => Promise<AuthResult<RegisterOutcome<A>>>; login: (input: LoginInput) => Promise<AuthResult<LoginOutcome<A>>>; logout: (input: { token: string | null | undefined; meta: RequestMeta; }) => Promise<{ cookie: CookieSpec; }>; validateRequest: (input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }) => Promise<AuthResult<StoredSession<A>>>; requireFreshAuth: (session: StoredSession<A>) => AuthResult<void>; reauthenticate: (input: { session: StoredSession<A>; password: string; meta: RequestMeta; }) => Promise<AuthResult<IssuedSession<A>>>; requestEmailVerification: (input: { session: StoredSession<A>; meta: RequestMeta; }) => Promise<AuthResult<{ sent: boolean; }>>; verifyEmailCode: (input: { session: StoredSession<A>; code: string; meta: RequestMeta; }) => Promise<AuthResult<VerifiedEmail<A>>>; verifyEmailLink: (input: { token: string; session: StoredSession<A> | null; meta: RequestMeta; }) => Promise<AuthResult<VerifiedEmail<A>>>; requestPasswordReset: (input: { email: string; captchaToken?: string; meta: RequestMeta; }) => Promise<AuthResult<void>>; verifyPasswordResetCode: (input: { email: string; code: string; meta: RequestMeta; }) => Promise<AuthResult<{ ticket: string; expiresAt: number; }>>; resetPassword: (input: { token: string; password: string; secondFactor?: string; meta: RequestMeta; }) => Promise<AuthResult<void>>; changePassword: (input: { session: StoredSession<A>; currentPassword: string; newPassword: string; secondFactor?: string; meta: RequestMeta; }) => Promise<AuthResult<IssuedSession<A>>>; sessions: { list: (session: StoredSession<A>) => Promise<SessionSummary[]>; revoke: (input: { session: StoredSession<A>; id: string; meta: RequestMeta; }) => Promise<AuthResult<{ revoked: boolean; }>>; revokeOthers: (input: { session: StoredSession<A>; meta: RequestMeta; }) => Promise<AuthResult<IssuedSession<A>>>; revokeAll: (input: { session: StoredSession<A>; meta: RequestMeta; }) => Promise<{ cookie: CookieSpec; }>; }; jobs: { processPasswordReset: (job: PasswordResetJob) => Promise<void>; }; context: PluginContext<U, A>; } & PluginFlows<P>
 createBlankSessionCookie [function]: (config: SessionCookieConfig, origin?: string) => CookieSpec
 createCsrfToken [function]: (secret: Uint8Array, binding: string, random?: RandomSource) => string
@@ -204,61 +204,61 @@ generateNumericCode [function]: (digits: number, random?: RandomSource) => strin
 generateToken [function]: (random?: RandomSource) => string
 hexDigestsEqual [function]: (a: string, b: string) => boolean
 Hit [interface]
-    allowed: boolean
-    count: number
-    firstRefusal: boolean
-    retryAfterSeconds: number
+    readonly allowed: boolean
+    readonly count: number
+    readonly firstRefusal: boolean
+    readonly retryAfterSeconds: number
 hmacSha256Hex [function]: (key: Uint8Array, message: string) => string
 HookInput [type]<U extends AuthUser, A> = { readonly [K in keyof AuthHooks<U, A>]?: AuthHooks<U, A>[K] | ReadonlyArray<AuthHooks<U, A>[K]>; }
 HookResult [type] = void | undefined | Refusal
 IssuedSession [interface]<A>
-    cookie: CookieSpec
-    deviceCookie: CookieSpec
-    session: StoredSession<A>
-    token: string
+    readonly cookie: CookieSpec
+    readonly deviceCookie: CookieSpec
+    readonly session: StoredSession<A>
+    readonly token: string
 IssueOptions [interface]<A>
-    authenticatedAt?: number | undefined
-    epoch?: number | undefined
-    inherit?: StoredSession<A> | undefined
-    meta: RequestMeta
-    persistentCookie?: boolean | undefined
-    rememberMe?: boolean | undefined
-    via: IssueVia
+    readonly authenticatedAt?: number
+    readonly epoch?: number
+    readonly inherit?: StoredSession<A>
+    readonly meta: RequestMeta
+    readonly persistentCookie?: boolean
+    readonly rememberMe?: boolean
+    readonly via: IssueVia
 IssueVia [type] = 'password' | 'register' | 'second-factor' | 'password-change' | 'email-verified' | 'revoke-others' | 'reauthenticate' | (string & {})
 isTokenShape [function]: (value: unknown) => value is string
 LockoutOptions [interface]
-    baseLock?: Duration | undefined
-    deviceMaxAge?: Duration | undefined
-    maxLock?: Duration | undefined
-    perAccount?: RateLimitRule | undefined
-    perAccountIp?: RateLimitRule | undefined
-    perDevice?: RateLimitRule | undefined
-    quietPeriod?: Duration | undefined
+    readonly baseLock?: Duration
+    readonly deviceMaxAge?: Duration
+    readonly maxLock?: Duration
+    readonly perAccount?: RateLimitRule
+    readonly perAccountIp?: RateLimitRule
+    readonly perDevice?: RateLimitRule
+    readonly quietPeriod?: Duration
 Logger [interface]
-    error: (message: string, context?: Record<string, unknown>) => void
-    warn: (message: string, context?: Record<string, unknown>) => void
+    error(message: string, context?: Record<string, unknown>): void
+    warn(message: string, context?: Record<string, unknown>): void
 LoginGate [type] = { readonly allowed: true; readonly viaDevice?: true; } | { readonly allowed: false; readonly reason: 'locked' | 'account_ip_budget' | 'device_budget'; readonly newLock?: { until: number; }; }
 LoginInput [interface]
-    captchaToken?: string | undefined
-    deviceToken?: string | null | undefined
-    email: string
-    meta: RequestMeta
-    password: string
-    rememberMe?: boolean | undefined
+    readonly captchaToken?: string
+    readonly deviceToken?: string | null
+    readonly email: string
+    readonly meta: RequestMeta
+    readonly password: string
+    readonly rememberMe?: boolean
 LoginOutcome [type]<A> = { readonly kind: 'session'; readonly session: IssuedSession<A>; } | { readonly kind: 'challenge'; readonly challenge: string; readonly methods: readonly string[]; }
 Mailer [interface]
-    send: (event: AuthMailEvent) => Promise<void>
+    send(event: AuthMailEvent): Promise<void>
 maskIp [function]: (ip: string) => string
 Metrics [interface]
-    count: (name: string, labels?: Readonly<Record<string, string>>) => void
+    count(name: string, labels?: Readonly<Record<string, string>>): void
 MintInput [interface]<A>
-    attributes: A
-    authenticatedAt: number
-    epoch?: number | undefined
-    meta: RequestMeta
-    persistentCookie: boolean
-    rememberMe: boolean
-    userId: string
+    readonly attributes: A
+    readonly authenticatedAt: number
+    readonly epoch?: number
+    readonly meta: RequestMeta
+    readonly persistentCookie: boolean
+    readonly rememberMe: boolean
+    readonly userId: string
 MintResult [type]<A> = { readonly ok: true; readonly token: string; readonly session: StoredSession<A>; readonly evicted: readonly string[]; } | { readonly ok: false; readonly reason: 'epoch_fence'; }
 NO_SUCH_USER_ID [const]: "∅no-such-user"
 noopMetrics [const]: Metrics
@@ -268,210 +268,226 @@ normalizePassword [function]: (password: string) => string
 ok [function]: { <T>(value: T): AuthSuccess<T>; (): AuthSuccess<void>; }
 OneTimeTokens [class]
     (new) (store: TokenStore, clock: Clock, random: RandomSource, secret: Uint8Array | undefined): OneTimeTokens
-    classify: any
-    clock: any
-    codeHash: any
-    issueCode: (purpose: string, userId: string, ttlMs: number, digits: number, data?: Record<string, string>) => Promise<{ code: string; expiresAt: number; }>
-    issueLink: (purpose: string, userId: string, ttlMs: number, data?: Record<string, string>) => Promise<{ token: string; expiresAt: number; }>
-    peekLink: (purpose: string, token: unknown) => Promise<TokenRedemption>
-    random: any
-    redeemCode: (purpose: string, userId: string | null, code: unknown, maxAttempts: number) => Promise<TokenRedemption>
-    redeemLink: (purpose: string, token: unknown) => Promise<TokenRedemption>
-    revokeAll: (userId: string, purposes: readonly string[]) => Promise<void>
-    secret: any
-    store: any
+    issueCode(purpose: string, userId: string, ttlMs: number, digits: number, data?: Record<string, string>): Promise<{ code: string; expiresAt: number; }>
+    issueLink(purpose: string, userId: string, ttlMs: number, data?: Record<string, string>): Promise<{ token: string; expiresAt: number; }>
+    peekLink(purpose: string, token: unknown): Promise<TokenRedemption>
+    private classify
+    private codeHash
+    private readonly clock
+    private readonly random
+    private readonly secret
+    private readonly store
+    redeemCode(purpose: string, userId: string | null, code: unknown, maxAttempts: number): Promise<TokenRedemption>
+    redeemLink(purpose: string, token: unknown): Promise<TokenRedemption>
+    revokeAll(userId: string, purposes: readonly string[]): Promise<void>
 parseCookieHeader [function]: (header: string | null | undefined) => Map<string, string>
 parseTrustProxy [function]: (raw: string | undefined) => number | string | false
 PasswordHasher [interface]
-    hash: (password: string) => Promise<string>
-    needsRehash: (hash: string) => boolean
-    verify: (hash: string, password: string) => Promise<boolean>
+    hash(password: string): Promise<string>
+    needsRehash(hash: string): boolean
+    verify(hash: string, password: string): Promise<boolean>
 PasswordPolicy [interface]
-    maxLength: number
-    minLength: number
+    readonly maxLength: number
+    readonly minLength: number
 PasswordPolicyVerdict [type] = 'ok' | 'too_short' | 'too_long'
 PasswordResetJob [interface]
-    dedupeKey: string
-    email: string
-    ip: string
+    readonly dedupeKey: string
+    readonly email: string
+    readonly ip: string
 PluginContext [interface]<U extends AuthUser, A>
-    checkCaptcha: (door: CaptchaDoor, token: string | undefined, meta: RequestMeta) => Promise<AuthFailure | null>
-    clock: Clock
-    emit: (event: AuthEvent, meta: RequestMeta | undefined) => Promise<void>
-    hashNewPassword: (password: string, meta: RequestMeta | undefined) => Promise<AuthResult<string>>
-    hasher: PasswordHasher
-    hooks: HookLists<U, A>
-    issueSession: (user: U, options: IssueOptions<A>) => Promise<AuthResult<IssuedSession<A>>>
-    logger: Logger
-    mail: (event: DistributiveOmit<AuthMailEvent, "dedupeKey">) => Promise<void>
-    metrics: Metrics
-    notifyRevoked: (userId: string, sessionIds: readonly string[], reason: RevocationReason) => Promise<void>
-    policy: PasswordPolicy
-    random: RandomSource
-    rateLimit: (door: Door, key: string, meta: RequestMeta | undefined) => Promise<AuthFailure | null>
-    revokeAllSessions: (userId: string, reason: RevocationReason) => Promise<void>
-    sessions: SessionAccess<A>
-    throttle: Throttle
-    tokens: OneTimeTokens
-    users: UserStore<U>
-    verifyPassword: (passwordHash: string | null | undefined, password: string) => Promise<boolean>
+    checkCaptcha(door: CaptchaDoor, token: string | undefined, meta: RequestMeta): Promise<AuthFailure | null>
+    emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
+    hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>
+    issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>
+    mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): Promise<void>
+    notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason): Promise<void>
+    rateLimit(door: Door, key: string, meta: RequestMeta | undefined): Promise<AuthFailure | null>
+    readonly clock: Clock
+    readonly hasher: PasswordHasher
+    readonly hooks: HookLists<U, A>
+    readonly logger: Logger
+    readonly metrics: Metrics
+    readonly policy: PasswordPolicy
+    readonly random: RandomSource
+    readonly sessions: SessionAccess<A>
+    readonly throttle: Throttle
+    readonly tokens: OneTimeTokens
+    readonly users: UserStore<U>
+    revokeAllSessions(userId: string, reason: RevocationReason): Promise<void>
+    verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>
 PluginFlows [type]<P extends readonly AuthPlugin[]> = UnionToIntersection<P[number] extends infer Plugin ? Plugin extends AuthPlugin<infer Id, infer F> ? { readonly [K in Id]: F; } : never : never>
 pwnedPasswords [function]: (options?: PwnedPasswordsOptions) => BreachChecker
 PwnedPasswordsOptions [interface]
-    baseUrl?: string | undefined
-    fetch?: { (input: RequestInfo | URL, init?: RequestInit): Promise<Response>; (input: string | URL | Request, init?: RequestInit): Promise<Response>; } | undefined
-    timeoutMs?: number | undefined
-    userAgent?: string | undefined
+    readonly baseUrl?: string
+    readonly fetch?: typeof fetch
+    readonly timeoutMs?: number
+    readonly userAgent?: string
 randomBytes [function]: (length: number, random?: RandomSource) => Uint8Array
 RandomSource [type] = (bytes: Uint8Array) => void
 RateLimitRule [interface]
-    limit: number
-    window: Duration
+    readonly limit: number
+    readonly window: Duration
 Refusal [interface]
-    code: AuthErrorCode
-    reason: string
-    refuse: true
+    readonly code: AuthErrorCode
+    readonly reason: string
+    readonly refuse: true
 refuse [function]: (reason: string, code?: AuthErrorCode) => Refusal
 RegisterInput [interface]
-    captchaToken?: string | undefined
-    email: string
-    meta: RequestMeta
-    password: string
+    readonly captchaToken?: string
+    readonly email: string
+    readonly meta: RequestMeta
+    readonly password: string
 RegisterOutcome [interface]<A>
-    session: IssuedSession<A> | null
+    readonly session: IssuedSession<A> | null
 RequestMeta [interface]
-    ip: string
-    origin?: string | undefined
-    userAgent?: string | undefined
+    readonly ip: string
+    readonly origin?: string | undefined
+    readonly userAgent?: string | undefined
 RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'evicted' | (string & {})
 SameSite [type] = 'lax' | 'strict' | 'none'
 secretsEqual [function]: (a: string, b: string) => boolean
 serializeCookie [function]: (spec: CookieSpec) => string
 SessionCookieConfig [interface]
-    name?: string | undefined
-    sameSite?: SameSite | ((origin: string | undefined) => SameSite) | undefined
-    secure?: boolean | undefined
+    readonly name?: string
+    readonly sameSite?: SameSite | ((origin: string | undefined) => SameSite)
+    readonly secure?: boolean
 sessionCookieName [function]: (config?: SessionCookieConfig) => string
 SessionManager [class]<A>
     (new) <A>(store: SessionStore, options: SessionOptions<A>, clock: Clock, random: RandomSource, logger: Logger): SessionManager<A>
-    absoluteTtlMs: number
-    clock: any
-    evictOverCap: any
-    idleTimeoutMs: any
-    listActive: (userId: string) => Promise<StoredSession<A>[]>
-    logger: any
-    maxPerUser: number | null
-    mint: (input: MintInput<A>) => Promise<MintResult<A>>
-    options: any
-    parse: any
-    random: any
-    readEpoch: (userId: string) => Promise<number>
-    refusalFor: any
-    rememberMeTtlMs: number
-    revoke: (userId: string, ids: readonly string[]) => Promise<string[]>
-    revokeAll: (userId: string) => Promise<string[]>
-    revokeToken: (token: unknown) => Promise<StoredSession | null>
-    store: any
-    touchIntervalMs: number
-    validate: (token: unknown, options?: { touch?: boolean; }) => Promise<ValidateResult<A>>
+    listActive(userId: string): Promise<StoredSession<A>[]>
+    mint(input: MintInput<A>): Promise<MintResult<A>>
+    private evictOverCap
+    private idleTimeoutMs
+    private parse
+    private readonly clock
+    private readonly logger
+    private readonly options
+    private readonly random
+    private readonly store
+    private refusalFor
+    readEpoch(userId: string): Promise<number>
+    readonly absoluteTtlMs: number
+    readonly maxPerUser: number | null
+    readonly rememberMeTtlMs: number
+    readonly touchIntervalMs: number
+    revoke(userId: string, ids: readonly string[]): Promise<string[]>
+    revokeAll(userId: string): Promise<string[]>
+    revokeToken(token: unknown): Promise<StoredSession | null>
+    validate(token: unknown, options?: { touch?: boolean; }): Promise<ValidateResult<A>>
 SessionOptions [interface]<A>
-    absoluteTtl?: Duration | undefined
-    attributes?: AttributeSchema<A> | undefined
-    idleTimeout?: Duration | ((context: { rememberMe: boolean; attributes: A; }) => Duration) | undefined
-    maxPerUser?: number | null | undefined
-    rememberMeTtl?: Duration | undefined
-    touchInterval?: Duration | undefined
+    readonly absoluteTtl?: Duration
+    readonly attributes?: AttributeSchema<A>
+    readonly idleTimeout?: Duration | ((context: { rememberMe: boolean; attributes: A; }) => Duration)
+    readonly maxPerUser?: number | null
+    readonly rememberMeTtl?: Duration
+    readonly touchInterval?: Duration
 SessionRefusal [type] = 'malformed' | 'unknown' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked'
 SessionStore [interface]
-    bumpEpoch: (userId: string) => Promise<number>
-    create: (session: StoredSession, ttlMs: number) => Promise<void>
-    delete: (userId: string, ids: readonly string[]) => Promise<void>
-    get: (id: string) => Promise<StoredSession | null>
-    getEpoch: (userId: string) => Promise<number>
-    listByUser: (userId: string) => Promise<StoredSession[]>
-    maxSessionTtlMs?: number | undefined
-    touch: (session: StoredSession) => Promise<boolean>
+    bumpEpoch(userId: string): Promise<number>
+    create(session: StoredSession, ttlMs: number): Promise<void>
+    delete(userId: string, ids: readonly string[]): Promise<void>
+    get(id: string): Promise<StoredSession | null>
+    getEpoch(userId: string): Promise<number>
+    listByUser(userId: string): Promise<StoredSession[]>
+    readonly maxSessionTtlMs?: number
+    touch(session: StoredSession): Promise<boolean>
 SessionSummary [interface]
-    createdAt: number
-    current: boolean
-    expiresAt: number
-    id: string
-    ip: string
-    lastActiveAt: number
-    userAgent: string
+    readonly createdAt: number
+    readonly current: boolean
+    readonly expiresAt: number
+    readonly id: string
+    readonly ip: string
+    readonly lastActiveAt: number
+    readonly userAgent: string
 sha256Hex [function]: (value: string) => string
 silentLogger [const]: Logger
 StoredSession [interface]<A = unknown>
-    attributes: A
-    authenticatedAt: number
-    createdAt: number
-    epoch: number
-    expiresAt: number
-    id: string
-    idleTimeoutMs: number
-    ip: string
-    lastActiveAt: number
-    persistentCookie: boolean
-    rememberMe: boolean
-    userAgent: string
-    userId: string
+    readonly attributes: A
+    readonly authenticatedAt: number
+    readonly createdAt: number
+    readonly epoch: number
+    readonly expiresAt: number
+    readonly id: string
+    readonly idleTimeoutMs: number
+    readonly ip: string
+    readonly lastActiveAt: number
+    readonly persistentCookie: boolean
+    readonly rememberMe: boolean
+    readonly userAgent: string
+    readonly userId: string
 StoredToken [interface]
-    attempts: number
-    data: Readonly<Record<string, string>>
-    expiresAt: number
-    hash: string
-    purpose: string
-    userId: string
+    readonly attempts: number
+    readonly data: Readonly<Record<string, string>>
+    readonly expiresAt: number
+    readonly hash: string
+    readonly purpose: string
+    readonly userId: string
 systemClock [const]: Clock
 Throttle [class]
     (new) (counters: CounterStore, clock: Clock, lockout?: LockoutOptions): Throttle
-    baseLockMs: any
-    clearAccount: (account: string) => Promise<void>
-    clock: any
-    counters: any
-    deviceFailed: (account: string) => Promise<{ newLock?: { until: number; }; }>
-    deviceMaxAgeMs: number
-    gateLogin: (account: string, ip: string, deviceId?: string | null) => Promise<LoginGate>
-    hit: (scope: string, rule: RateLimitRule) => Promise<Hit>
-    lock: any
-    loginSucceeded: (account: string, ip: string, deviceId?: string | null) => Promise<void>
-    maxLockMs: any
-    perAccount: any
-    perAccountIp: any
-    perDevice: any
-    quietPeriodMs: any
-    recordFailure: (account: string) => Promise<{ newLock?: { until: number; }; }>
+    clearAccount(account: string): Promise<void>
+    deviceFailed(account: string): Promise<{ newLock?: { until: number; }; }>
+    gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate>
+    hit(scope: string, rule: RateLimitRule): Promise<Hit>
+    loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void>
+    private lock
+    private readonly baseLockMs
+    private readonly clock
+    private readonly counters
+    private readonly maxLockMs
+    private readonly perAccount
+    private readonly perAccountIp
+    private readonly perDevice
+    private readonly quietPeriodMs
+    readonly deviceMaxAgeMs: number
+    recordFailure(account: string): Promise<{ newLock?: { until: number; }; }>
 TOKEN_BYTES [const]: 32
 TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; readonly data: Readonly<Record<string, string>>; } | { readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch'; readonly namedUserId: string; } | { readonly status: 'unknown'; }
 TokenStore [interface]
-    consume: (purpose: string, hash: string) => Promise<i | null>
-    deleteByUser: (userId: string, purposes?: readonly string[]) => Promise<void>
-    find: (purpose: string, hash: string) => Promise<i | null>
-    findByUser: (purpose: string, userId: string) => Promise<i | null>
-    incrementAttempts: (purpose: string, userId: string, max: number) => Promise<number | null>
-    put: (token: i) => Promise<void>
+    consume(purpose: string, hash: string): Promise<StoredToken | null>
+    deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
+    find(purpose: string, hash: string): Promise<StoredToken | null>
+    findByUser(purpose: string, userId: string): Promise<StoredToken | null>
+    incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    put(token: StoredToken): Promise<void>
 toMilliseconds [function]: (duration: Duration) => number
 toPublicError [function]: (failure: AuthFailure) => { code: AuthErrorCode; retryAfterSeconds?: number; }
 toSeconds [function]: (duration: Duration) => number
 turnstile [function]: (options: TurnstileOptions) => CaptchaVerifier
 TurnstileOptions [interface]
-    checkAction?: boolean | undefined
-    expectedHostnames?: ReadonlyArray<string> | undefined
-    fetch?: { (input: RequestInfo | URL, init?: RequestInit): Promise<Response>; (input: string | URL | Request, init?: RequestInit): Promise<Response>; } | undefined
-    secret: string
-    timeoutMs?: number | undefined
+    readonly checkAction?: boolean
+    readonly expectedHostnames?: readonly string[]
+    readonly fetch?: typeof fetch
+    readonly secret: string
+    readonly timeoutMs?: number
 UserStore [interface]<U extends AuthUser = AuthUser>
-    create: (input: { email: h; passwordHash: string; }) => Promise<U | null>
-    findById: (id: string) => Promise<U | null>
-    findCredentialByEmail: (email: h) => Promise<W<U> | null>
-    findCredentialById: (id: string) => Promise<W<U> | null>
-    markEmailVerified: (id: string, email: h) => Promise<boolean>
-    setPasswordHash: (id: string, passwordHash: string, options?: { readonly expected?: string | null; }) => Promise<boolean>
+    create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<U | null>
+    findById(id: string): Promise<U | null>
+    findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
+    findCredentialById(id: string): Promise<WithPasswordHash<U> | null>
+    markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>
+    setPasswordHash(id: string, passwordHash: string, options?: { readonly expected?: string | null; }): Promise<boolean>
 ValidateResult [type]<A> = { readonly ok: true; readonly session: StoredSession<A>; } | { readonly ok: false; readonly reason: SessionRefusal; }
 VerifiedEmail [interface]<A>
-    session: IssuedSession<A> | null
+    readonly session: IssuedSession<A> | null
 verifyCsrfToken [function]: (input: { cookieToken: string | null | undefined; headerToken: string | null | undefined; binding: string; secrets: readonly Uint8Array[]; }) => boolean
 verifyDeviceToken [function]: (key: Uint8Array, token: unknown, check: DeviceCheck) => string | null
 verifyFetchSite [function]: (input: { method: string; secFetchSite: string | null | undefined; allowSameSite?: boolean; }) => boolean
 verifyRequestOrigin [function]: (input: { method: string; origin: string | null | undefined; allowedOrigins: readonly string[]; }) => boolean
 WithPasswordHash [type]<U> = U & { readonly passwordHash: string | null; }
+
+## types reached through the exports (not exported by name)
+DeviceCheck [interface]
+    readonly epoch: number
+    readonly maxAgeMs: number
+    readonly now: number
+    readonly userId: string
+DeviceClaims [interface]
+    readonly epoch: number
+    readonly issuedAt: number
+    readonly userId: string
+DistributiveOmit [type]<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+HookLists [type]<U extends AuthUser, A> = { readonly [K in keyof AuthHooks<U, A>]: ReadonlyArray<AuthHooks<U, A>[K]>; }
+MaybePromise [type]<T> = T | Promise<T>
+SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
+UnionToIntersection [type]<T> = (T extends unknown ? (value: T) => void : never) extends (value: infer I) => void ? I : never

@@ -83,6 +83,21 @@ function typeParams(checker: ts.TypeChecker, symbol: ts.Symbol): string {
 
 function members(checker: ts.TypeChecker, type: ts.Type, at: ts.Node): string[] {
   const lines = checker.getPropertiesOfType(type).map((prop) => {
+    // The member as declared (modifiers included), so a type is printed by the
+    // name the author wrote: the checker would print the short alias a
+    // declaration chunk exports it under, which changes from build to build.
+    const declaration = prop.declarations?.[0];
+
+    if (
+      declaration &&
+      (ts.isPropertySignature(declaration) ||
+        ts.isMethodSignature(declaration) ||
+        ts.isPropertyDeclaration(declaration) ||
+        ts.isMethodDeclaration(declaration))
+    ) {
+      return `    ${declaration.getText().replace(/\s+/gu, ' ').replace(/;$/u, '')}`;
+    }
+
     const optional = prop.flags & ts.SymbolFlags.Optional ? '?' : '';
     const propType = checker.typeToString(checker.getTypeOfSymbolAtLocation(prop, at), at, FLAGS);
 
@@ -147,6 +162,65 @@ const COMPILER_OPTIONS: ts.CompilerOptions = {
   typeRoots: [join(ROOT, 'packages/auth/node_modules/@types')],
 };
 
+/**
+ * Named types an export reaches without exporting them (a parameter object, an
+ * option bag): every type reference in the declarations, followed until no new
+ * one turns up. Only the package's own declarations count, not the standard
+ * library or a dependency.
+ */
+function reachedTypes(checker: ts.TypeChecker, roots: readonly ts.Symbol[]): ts.Symbol[] {
+  const seen = new Set<ts.Symbol>(roots);
+  const found: ts.Symbol[] = [];
+  const queue = [...roots];
+
+  const visit = (node: ts.Node): void => {
+    const name = ts.isTypeReferenceNode(node)
+      ? node.typeName
+      : ts.isExpressionWithTypeArguments(node)
+        ? node.expression
+        : ts.isTypeQueryNode(node)
+          ? node.exprName
+          : undefined;
+
+    const referenced = name ? checker.getSymbolAtLocation(name) : undefined;
+
+    if (referenced) {
+      const target =
+        referenced.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(referenced) : referenced;
+
+      const named =
+        (target.flags &
+          (ts.SymbolFlags.Interface |
+            ts.SymbolFlags.TypeAlias |
+            ts.SymbolFlags.Class |
+            ts.SymbolFlags.Enum)) !==
+        0;
+
+      const own =
+        named && target.declarations?.some((d) => d.getSourceFile().fileName.includes('/dist/'));
+
+      if (own && !seen.has(target)) {
+        seen.add(target);
+        found.push(target);
+        queue.push(target);
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  while (queue.length > 0) {
+    const next = queue.shift();
+
+    const symbol =
+      next && next.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(next) : next;
+
+    for (const declaration of symbol?.declarations ?? []) visit(declaration);
+  }
+
+  return found;
+}
+
 function declarationReport(path: string): string[] {
   const program = ts.createProgram([path], COMPILER_OPTIONS);
   const checker = program.getTypeChecker();
@@ -157,13 +231,25 @@ function declarationReport(path: string): string[] {
   const moduleSymbol = checker.getSymbolAtLocation(file);
   const exports = moduleSymbol ? checker.getExportsOfModule(moduleSymbol) : [];
 
-  return (
-    exports
+  const exportedTargets = exports.map((s) =>
+    s.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(s) : s,
+  );
+
+  const reached = reachedTypes(checker, exportedTargets);
+
+  const print = (symbols: readonly ts.Symbol[]): string[] =>
+    symbols
       .map((s) => describe(checker, s, file).join('\n'))
       .sort((a, b) => a.localeCompare(b, 'en'))
       // Declaration chunks are named after a content hash; their names are not API.
-      .map((s) => s.replace(/import\("[^"]*"\)\./gu, ''))
-  );
+      .map((s) => s.replace(/import\("[^"]*"\)\./gu, ''));
+
+  return [
+    ...print(exports),
+    '',
+    '## types reached through the exports (not exported by name)',
+    ...print(reached),
+  ];
 }
 
 async function runtimeNames(base: string): Promise<{ esm: string[]; cjs: string[] }> {
