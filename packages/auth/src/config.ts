@@ -34,7 +34,9 @@ export type Door =
   /** Per user. */
   | 'password-change'
   /** Per user: re-entering the password for a sensitive action. */
-  | 'reauthenticate';
+  | 'reauthenticate'
+  /** Per address: reset-code guesses for one email, known or not, from all IPs. */
+  | 'password-reset-code-address';
 
 export const DEFAULT_DOOR_LIMITS: Readonly<Record<Door, RateLimitRule>> = {
   login: { limit: 10, window: '1m' },
@@ -47,6 +49,7 @@ export const DEFAULT_DOOR_LIMITS: Readonly<Record<Door, RateLimitRule>> = {
   'email-verification-request': { limit: 3, window: '1h' },
   'password-change': { limit: 5, window: '5m' },
   reauthenticate: { limit: 5, window: '5m' },
+  'password-reset-code-address': { limit: 5, window: '15m' },
 };
 
 export interface PasswordResetJob {
@@ -65,7 +68,7 @@ export interface AuthPlugin<Id extends string = string, F extends object = objec
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly flows?: (context: PluginContext<any, any>) => F;
   /** Config the plugin cannot work without, checked by `createAuth`. */
-  readonly requires?: ReadonlyArray<'secret' | 'captcha'>;
+  readonly requires?: ReadonlyArray<'captcha'>;
 }
 
 export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin[]> {
@@ -88,10 +91,11 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
     readonly freshAuthAge?: Duration;
   };
   /**
-   * Server secret (at least 32 bytes) for code HMACs. Required when any token
-   * is a code. Rotating it invalidates outstanding codes only.
+   * Server secret, at least 32 bytes. Separate keys are derived from it for
+   * code HMACs and trusted-device tokens. Rotating it invalidates outstanding
+   * codes and device cookies, never sessions. Keep it apart from your CSRF secret.
    */
-  readonly secret?: Uint8Array | string;
+  readonly secret: Uint8Array | string;
   readonly registration?: {
     /**
      * Answer `email_in_use` for a taken address instead of the uniform answer

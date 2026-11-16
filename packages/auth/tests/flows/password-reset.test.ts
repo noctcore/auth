@@ -184,6 +184,21 @@ describe('password reset by code', () => {
     expect((await t.auth.verifyPasswordResetCode({ email: EMAIL, code, meta: meta() })).ok).toBe(false);
   });
 
+  it('counts guesses per address across IPs even with no code outstanding', async () => {
+    const t = queued({ passwordReset: { kind: 'code' } });
+    await t.signedInUser(EMAIL);
+    // Sampling before any code exists, from five networks.
+    for (let i = 0; i < 5; i++) await t.auth.verifyPasswordResetCode({ email: EMAIL, code: '12345678', meta: meta(`192.0.2.${i}`) });
+    const code = await codeFor(t);
+    const blocked = await t.auth.verifyPasswordResetCode({ email: EMAIL, code, meta: meta('198.51.100.1') });
+    expect(!blocked.ok && blocked.code).toBe('rate_limited');
+    const ghost = await t.auth.verifyPasswordResetCode({ email: 'ghost@example.com', code, meta: meta('198.51.100.2') });
+    expect(!ghost.ok && ghost.code).toBe('invalid_token');
+    t.clock.advance(15 * 60_000);
+    const fresh = await codeFor(t);
+    expect((await t.auth.verifyPasswordResetCode({ email: EMAIL, code: fresh, meta: meta('198.51.100.1') })).ok).toBe(true);
+  });
+
   it('refuses a raw code where a ticket is expected', async () => {
     const t = queued({ passwordReset: { kind: 'code' } });
     await t.signedInUser(EMAIL);

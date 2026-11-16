@@ -44,9 +44,15 @@ export interface IssueOptions<A> {
   readonly authenticatedAt?: number;
 }
 
+/** Session reads and revocations. Deliberately without `mint`: sessions are only created by `issueSession`. */
+export type SessionAccess<A> = Pick<
+  SessionManager<A>,
+  'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'
+>;
+
 export interface PluginContext<U extends AuthUser, A> {
   readonly users: UserStore<U>;
-  readonly sessions: SessionManager<A>;
+  readonly sessions: SessionAccess<A>;
   readonly tokens: OneTimeTokens;
   readonly throttle: Throttle;
   readonly hasher: PasswordHasher;

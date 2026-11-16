@@ -34,6 +34,8 @@ export type AuthEventType =
   | 'password.changed'
   | 'password.change_failed'
   | 'password.rehashed'
+  /** The breached-password check could not answer; the password was accepted unchecked. */
+  | 'password.breach_check_unavailable'
   | 'account.locked'
   | 'rate_limit.exceeded';
 

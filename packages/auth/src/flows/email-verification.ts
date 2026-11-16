@@ -81,15 +81,25 @@ export async function verifyEmailCode<U extends AuthUser, A>(
   return finish(core, redemption, input.session, input.meta);
 }
 
-/** Verifies a link. Anyone holding the link may use it; the re-issue only happens for the account's own session. */
+/**
+ * Verifies a link. The click must come from a signed-in session of the same
+ * account; otherwise the link is left unspent so the user can sign in and open
+ * it again. That keeps the pre-hijacking defence: a squatter's session can
+ * never be the one that completes verification.
+ */
 export async function verifyEmailLink<U extends AuthUser, A>(
   core: AuthCore<U, A>,
-  input: { token: string; session?: StoredSession<A> | null; meta: RequestMeta },
+  input: { token: string; session: StoredSession<A> | null; meta: RequestMeta },
 ): Promise<AuthResult<VerifiedEmail<A>>> {
   const limited = await core.rateLimit('email-verification', input.meta.ip, input.meta);
   if (limited) return limited;
+  const peek = await core.tokens.peekLink(PURPOSE.emailVerification, input.token);
+  if (peek.status === 'valid' && input.session?.userId !== peek.userId) {
+    await core.emit({ type: 'email.verification_failed', userId: peek.userId, reason: 'session_required' }, input.meta);
+    return fail('session_expired', 'verification_session_required');
+  }
   const redemption = await core.tokens.redeemLink(PURPOSE.emailVerification, input.token);
-  return finish(core, redemption, input.session ?? null, input.meta);
+  return finish(core, redemption, input.session, input.meta);
 }
 
 async function finish<U extends AuthUser, A>(

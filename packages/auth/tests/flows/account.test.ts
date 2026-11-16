@@ -148,6 +148,14 @@ describe('session management', () => {
     expect(await t.sessionOf(t.phone.token)).not.toBeNull();
   });
 
+  it('needs fresh authentication to sign out every other device', async () => {
+    const t = await twoDevices();
+    t.clock.advance(11 * 60_000);
+    const stale = await t.auth.sessions.revokeOthers({ session: t.laptop.session, meta: meta() });
+    expect(!stale.ok && stale.code).toBe('fresh_auth_required');
+    expect(await t.sessionOf(t.phone.token)).not.toBeNull();
+  });
+
   it('signs out every other device and keeps this one', async () => {
     const t = await twoDevices();
     const result = await t.auth.sessions.revokeOthers({ session: t.laptop.session, meta: meta() });

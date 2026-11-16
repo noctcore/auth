@@ -2,10 +2,10 @@
  * Flows for a signed-in user: validating requests, fresh authentication,
  * changing the password and managing sessions.
  *
- * Granular session management is a high-privilege action (the auth guide's
- * advice): revoking one OTHER session needs a fresh credential proof, so a
- * stolen session cannot keep signing the owner out. Signing out of the
- * current device and of every other device needs no proof.
+ * Session management is a high-privilege action (the auth guide's advice):
+ * revoking another device's session, or every other session, needs a fresh
+ * credential proof, so a stolen session cannot keep signing the owner out.
+ * Signing out of the current device, or everywhere including it, needs none.
  */
 import type { Clock } from '../clock';
 import { createBlankSessionCookie, type CookieSpec } from '../cookie';
@@ -150,11 +150,16 @@ export async function revokeSession<U extends AuthUser, A>(
   return ok({ revoked: ids.length > 0 });
 }
 
-/** Signs out every other device: revokes all sessions and re-issues the caller's. */
+/** Signs out every other device (needs fresh authentication): revokes all sessions and re-issues the caller's. */
 export async function revokeOtherSessions<U extends AuthUser, A>(
   core: AuthCore<U, A>,
+  settings: FlowSettings,
   input: { session: StoredSession<A>; meta: RequestMeta },
 ): Promise<AuthResult<IssuedSession<A>>> {
+  // High privilege, like revoking one device: a stolen session must not be
+  // able to sign the owner out everywhere.
+  const fresh = requireFreshAuth(core, settings, input.session);
+  if (!fresh.ok) return fresh;
   const user = await core.users.findById(input.session.userId);
   if (!user) return fail('session_expired', 'user_missing');
   await core.revokeAllSessions(user.id, 'revoke-others');

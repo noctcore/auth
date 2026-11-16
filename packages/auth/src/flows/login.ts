@@ -13,7 +13,12 @@
  * 2. the revocation epoch is read BEFORE the password hash, so a password
  *    change that lands during the login invalidates the session it mints;
  * 3. a second-factor plugin can turn the login into a challenge, carrying the
- *    epoch along, and finish it through `issueSession` later.
+ *    epoch along, and finish it through `issueSession` later;
+ * 4. a locked account still pays for the password verify, and the lock notice
+ *    (audit row and owner mail) runs off the response path.
+ *
+ * A successful login returns a trusted-device cookie. Presenting it on a later
+ * login lets the owner through an account lock (see throttle.ts).
  */
 import type { AuthCore } from '../core';
 import { normalizeEmail } from '../email';
@@ -22,7 +27,8 @@ import type { RequestMeta } from '../meta';
 import { normalizePassword } from '../password/policy';
 import type { IssuedSession } from '../plugin-context';
 import { accountKey } from '../throttle';
-import type { AuthUser } from '../stores';
+import { NO_SUCH_USER_ID, type AuthUser } from '../stores';
+import type { CookieSpec } from '../cookie';
 import { publicUser } from './settings';
 
 export interface LoginInput {
@@ -30,14 +36,19 @@ export interface LoginInput {
   readonly password: string;
   readonly rememberMe?: boolean;
   readonly captchaToken?: string;
+  /** The value of the trusted-device cookie, if the request carried one (`auth.readDeviceToken`). */
+  readonly deviceToken?: string | null;
   readonly meta: RequestMeta;
 }
 
 export type LoginOutcome<A> =
-  | { readonly kind: 'session'; readonly session: IssuedSession<A> }
-  | { readonly kind: 'challenge'; readonly challenge: string; readonly methods: readonly string[] };
-
-const NO_USER = '\u0000no-user';
+  | { readonly kind: 'session'; readonly session: IssuedSession<A>; readonly deviceCookie: CookieSpec }
+  | {
+      readonly kind: 'challenge';
+      readonly challenge: string;
+      readonly methods: readonly string[];
+      readonly deviceCookie: CookieSpec;
+    };
 
 export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: LoginInput): Promise<AuthResult<LoginOutcome<A>>> {
   const { meta } = input;
@@ -57,29 +68,38 @@ export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: 
   }
 
   const account = accountKey(email);
-  const gate = await core.throttle.gateLogin(account, meta.ip);
+  const deviceId = core.verifyDevice(account, input.deviceToken);
+  const gate = await core.throttle.gateLogin(account, meta.ip, deviceId);
+
+  // From here on, known and unknown addresses, locked or not, make the same
+  // store calls and pay for the same password verify.
   const found = await core.users.findCredentialByEmail(email);
+  const epoch = await core.sessions.readEpoch(found?.id ?? NO_SUCH_USER_ID);
+  const credential = await core.users.findCredentialById(found?.id ?? NO_SUCH_USER_ID);
+  const verified = await core.verifyPassword(credential?.passwordHash, input.password);
+
   if (!gate.allowed) {
-    if (gate.newLock && found) {
-      await core.emit({ type: 'account.locked', userId: found.id, data: { until: gate.newLock.until } }, meta);
-      await core.mail({ type: 'lockout', to: found.email, userId: found.id, until: new Date(gate.newLock.until) });
+    const newLock = gate.newLock;
+    if (newLock && credential) {
+      // Off the response path: a known account must not answer slower than an unknown one.
+      core.background('lockout notice', async () => {
+        await core.emit({ type: 'account.locked', userId: credential.id, data: { until: newLock.until } }, meta);
+        await core.mail({ type: 'lockout', to: credential.email, userId: credential.id, until: new Date(newLock.until) });
+      });
     }
-    await core.emit({ type: 'login.failure', ...(found ? { userId: found.id } : {}), reason: gate.reason }, meta);
+    await core.emit({ type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason: gate.reason }, meta);
     return fail('invalid_credentials', gate.reason);
   }
-
-  const epoch = await core.sessions.readEpoch(found?.id ?? NO_USER);
-  const credential = found ? await core.users.findCredentialById(found.id) : null;
-  const verified = await core.verifyPassword(credential?.passwordHash, input.password);
   if (!credential || !verified) {
     const reason = !credential ? 'unknown_user' : credential.passwordHash ? 'wrong_password' : 'password_not_set';
     await core.emit({ type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason }, meta);
     return fail('invalid_credentials', reason);
   }
 
-  await core.throttle.loginSucceeded(account, meta.ip);
+  await core.throttle.loginSucceeded(account, meta.ip, deviceId);
+  const deviceCookie = core.createDeviceCookie(account, meta.origin);
   if (credential.passwordHash && core.hasher.needsRehash(credential.passwordHash)) {
-    await rehash(core, credential.id, input.password, meta);
+    await rehash(core, credential.id, credential.passwordHash, input.password, meta);
   }
 
   const user = publicUser(credential);
@@ -87,21 +107,31 @@ export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: 
     const challenge = await hook({ user, rememberMe, epoch, meta });
     if (challenge) {
       await core.emit({ type: 'login.challenge', userId: user.id, data: { methods: challenge.methods.join(',') } }, meta);
-      return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods });
+      return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods, deviceCookie });
     }
   }
 
   const issued = await core.issueSession(user, { via: 'password', meta, rememberMe, epoch });
   if (!issued.ok) return issued;
   await core.emit({ type: 'login.success', userId: user.id }, meta);
-  return ok({ kind: 'session', session: issued.value });
+  return ok({ kind: 'session', session: issued.value, deviceCookie });
 }
 
 /** Upgrades a hash made with older parameters. A failure only costs the upgrade, never the login. */
-async function rehash<U extends AuthUser, A>(core: AuthCore<U, A>, userId: string, password: string, meta: RequestMeta) {
+async function rehash<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  userId: string,
+  previous: string,
+  password: string,
+  meta: RequestMeta,
+) {
   try {
     const hash = await core.hasher.hash(normalizePassword(password));
-    if (await core.users.setPasswordHash(userId, hash)) await core.emit({ type: 'password.rehashed', userId }, meta);
+    // Compare-and-set: a password change or reset that landed while this hash
+    // was computed must win, or the old password would come back.
+    if (await core.users.setPasswordHash(userId, hash, { expected: previous })) {
+      await core.emit({ type: 'password.rehashed', userId }, meta);
+    }
   } catch (error) {
     core.logger.warn('Password rehash failed', { userId, error: error instanceof Error ? error.message : String(error) });
   }

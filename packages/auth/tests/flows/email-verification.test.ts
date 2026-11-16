@@ -71,15 +71,24 @@ describe('email verification by code (default)', () => {
 });
 
 describe('email verification by link', () => {
-  it('verifies with the link and re-issues only the same account\'s session', async () => {
+  it('verifies only from a signed-in session of the same account, and leaves the link unspent otherwise', async () => {
     const env = setup({ emailVerification: { kind: 'link' } });
-    const { session } = await env.signedInUser();
-    const url = env.mailer.last('verify-email')?.url ?? '';
-    const token = url.split('#')[1] ?? '';
-    const result = await env.auth.verifyEmailLink({ token, session: null, meta: meta() });
-    expect(result).toEqual({ ok: true, value: { session: null } });
+    const { token: cookie, session } = await env.signedInUser();
+    const eve = await env.signedInUser('eve@example.com', '198.51.100.9');
+    const url = env.mailer.sent.filter((m) => m.type === 'verify-email' && m.to === 'ada@example.com').at(-1);
+    const token = (url?.type === 'verify-email' ? url.url ?? '' : '').split('#')[1] ?? '';
+
+    const anonymous = await env.auth.verifyEmailLink({ token, session: null, meta: meta() });
+    expect(!anonymous.ok && anonymous.reason).toBe('verification_session_required');
+    const wrongAccount = await env.auth.verifyEmailLink({ token, session: eve.session, meta: meta() });
+    expect(!wrongAccount.ok && wrongAccount.reason).toBe('verification_session_required');
+    expect((await env.stores.users.findById(session.userId))?.emailVerified).toBe(false);
+
+    const result = await env.auth.verifyEmailLink({ token, session, meta: meta() });
+    if (!result.ok || !result.value.session) throw new Error('expected a re-issued session');
     expect((await env.stores.users.findById(session.userId))?.emailVerified).toBe(true);
-    const replay = await env.auth.verifyEmailLink({ token, meta: meta() });
+    expect(await env.sessionOf(cookie)).toBeNull();
+    const replay = await env.auth.verifyEmailLink({ token, session: result.value.session.session, meta: meta() });
     expect(!replay.ok && replay.code).toBe('invalid_token');
   });
 });

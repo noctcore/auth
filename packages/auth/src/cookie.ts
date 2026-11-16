@@ -74,6 +74,16 @@ export function createBlankSessionCookie(config: SessionCookieConfig, origin?: s
   return { name: sessionCookieName(config), value: '', attributes: attributes(config, origin, 0) };
 }
 
+/** Name of the trusted-device cookie: `__Host-device` when secure. */
+export function deviceCookieName(config: SessionCookieConfig = {}): string {
+  return (config.secure ?? true) ? '__Host-device' : 'device';
+}
+
+/** The trusted-device cookie: HttpOnly, long-lived, same attributes as the session cookie otherwise. */
+export function deviceCookie(config: SessionCookieConfig, token: string, maxAge: number, origin?: string): CookieSpec {
+  return { name: deviceCookieName(config), value: token, attributes: attributes(config, origin, maxAge) };
+}
+
 /** `Set-Cookie` header value, for servers without a cookie helper of their own. */
 export function serializeCookie(spec: CookieSpec): string {
   const parts = [`${spec.name}=${encodeURIComponent(spec.value)}`, `Path=${spec.attributes.path}`];

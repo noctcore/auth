@@ -7,7 +7,8 @@
 import { systemClock } from './clock';
 import type { AuthConfig, AuthPlugin, PasswordResetJob } from './config';
 import { AuthCore } from './core';
-import { parseCookieHeader, sessionCookieName } from './cookie';
+import { deviceCookieName, parseCookieHeader, sessionCookieName } from './cookie';
+import { hmacSha256Hex } from './hash';
 import { toMilliseconds } from './duration';
 import { AuthConfigError } from './errors';
 import { mergeHooks } from './hooks';
@@ -29,6 +30,10 @@ import type { RequestMeta } from './meta';
 
 const MIN_SECRET_BYTES = 32;
 
+function deriveKey(secret: Uint8Array, purpose: string): Uint8Array {
+  return new TextEncoder().encode(hmacSha256Hex(secret, `noctcore-auth:${purpose}`));
+}
+
 type UnionToIntersection<T> = (T extends unknown ? (value: T) => void : never) extends (value: infer I) => void ? I : never;
 
 /** `{ [plugin id]: plugin flows }` for the configured plugins. */
@@ -40,8 +45,8 @@ export type PluginFlows<P extends readonly AuthPlugin[]> = UnionToIntersection<
     : never
 >;
 
-function toSecret(secret: Uint8Array | string | undefined): Uint8Array | undefined {
-  if (secret === undefined) return undefined;
+function toSecret(secret: Uint8Array | string | undefined): Uint8Array {
+  if (secret === undefined) throw new AuthConfigError('secret is required (32 bytes or more)');
   const bytes = typeof secret === 'string' ? new TextEncoder().encode(secret) : secret;
   if (bytes.byteLength < MIN_SECRET_BYTES) throw new AuthConfigError(`secret must be at least ${MIN_SECRET_BYTES} bytes`);
   return bytes;
@@ -97,13 +102,13 @@ export function createAuth<U extends AuthUser, A = Record<string, never>, const 
   const settings = resolveSettings(config);
   const secret = toSecret(config.secret);
   const plugins = (config.plugins ?? []) as readonly AuthPlugin[];
-  const usesCodes = settings.verification.kind === 'code' || settings.reset.kind === 'code';
-  if (usesCodes && !secret) throw new AuthConfigError('secret is required when email verification or password reset uses codes');
+  // One secret, a separate key per use: a code HMAC can never double as a device token.
+  const codeKey = deriveKey(secret, 'codes');
+  const deviceKey = deriveKey(secret, 'device');
   const seen = new Set<string>();
   for (const plugin of plugins) {
     if (seen.has(plugin.id)) throw new AuthConfigError(`Duplicate plugin id: ${plugin.id}`);
     seen.add(plugin.id);
-    if (plugin.requires?.includes('secret') && !secret) throw new AuthConfigError(`Plugin ${plugin.id} requires a secret`);
     if (plugin.requires?.includes('captcha') && !config.captcha) throw new AuthConfigError(`Plugin ${plugin.id} requires a captcha`);
   }
 
@@ -118,7 +123,7 @@ export function createAuth<U extends AuthUser, A = Record<string, never>, const 
   const core = new AuthCore<U, A>({
     users: config.stores.users,
     sessions: new SessionManager<A>(config.stores.sessions, config.session ?? {}, clock, random, logger),
-    tokens: new OneTimeTokens(config.stores.tokens, clock, random, secret),
+    tokens: new OneTimeTokens(config.stores.tokens, clock, random, codeKey),
     throttle: new Throttle(config.stores.counters, clock, config.throttle?.lockout),
     hasher: config.password.hasher,
     policy,
@@ -130,6 +135,7 @@ export function createAuth<U extends AuthUser, A = Record<string, never>, const 
     doors: config.throttle?.doors ?? {},
     cookie,
     attributeSchema: config.session?.attributes,
+    deviceKey,
     clock,
     random,
     logger,
@@ -141,6 +147,10 @@ export function createAuth<U extends AuthUser, A = Record<string, never>, const 
     cookieName: sessionCookieName(cookie),
     /** Reads the session token out of a `Cookie` header. */
     readSessionToken: (cookieHeader: string | null | undefined) => parseCookieHeader(cookieHeader).get(sessionCookieName(cookie)) ?? null,
+    /** The name of the trusted-device cookie. */
+    deviceCookieName: deviceCookieName(cookie),
+    /** Reads the trusted-device token out of a `Cookie` header, for `login({ deviceToken })`. */
+    readDeviceToken: (cookieHeader: string | null | undefined) => parseCookieHeader(cookieHeader).get(deviceCookieName(cookie)) ?? null,
     register: (input: RegisterInput) => register(core, settings, input),
     login: (input: LoginInput) => login(core, input),
     logout: (input: { token: string | null | undefined; meta: RequestMeta }) => account.logout(core, input),
@@ -152,7 +162,7 @@ export function createAuth<U extends AuthUser, A = Record<string, never>, const 
       verification.requestEmailVerification(core, settings, input),
     verifyEmailCode: (input: { session: StoredSession<A>; code: string; meta: RequestMeta }) =>
       verification.verifyEmailCode(core, settings, input),
-    verifyEmailLink: (input: { token: string; session?: StoredSession<A> | null; meta: RequestMeta }) =>
+    verifyEmailLink: (input: { token: string; session: StoredSession<A> | null; meta: RequestMeta }) =>
       verification.verifyEmailLink(core, input),
     requestPasswordReset: (input: { email: string; captchaToken?: string; meta: RequestMeta }) =>
       reset.requestPasswordReset(core, settings, input),
@@ -170,7 +180,7 @@ export function createAuth<U extends AuthUser, A = Record<string, never>, const 
     sessions: {
       list: (session: StoredSession<A>) => account.listSessions(core, session),
       revoke: (input: { session: StoredSession<A>; id: string; meta: RequestMeta }) => account.revokeSession(core, settings, input),
-      revokeOthers: (input: { session: StoredSession<A>; meta: RequestMeta }) => account.revokeOtherSessions(core, input),
+      revokeOthers: (input: { session: StoredSession<A>; meta: RequestMeta }) => account.revokeOtherSessions(core, settings, input),
       revokeAll: (input: { session: StoredSession<A>; meta: RequestMeta }) => account.revokeAllSessions(core, input),
     },
     /** Entry points for your queue workers. */

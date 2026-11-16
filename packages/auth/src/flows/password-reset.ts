@@ -97,7 +97,11 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
   const limited = await core.rateLimit('password-reset-code', meta.ip, meta);
   if (limited) return limited;
   const email = normalizeEmail(input.email);
-  const user = email ? await core.users.findCredentialByEmail(email) : null;
+  // Guesses are also counted per address, whether or not it has an account or
+  // a code outstanding, so spreading guesses over many IPs does not help.
+  const perAddress = await core.rateLimit('password-reset-code-address', accountKey(email ?? input.email), meta);
+  if (perAddress) return perAddress;
+  const user = await core.users.findCredentialByEmail(email ?? ('' as NormalizedEmail));
   const redemption = await core.tokens.redeemCode(PURPOSE.passwordReset, user?.id ?? null, input.code, settings.reset.maxAttempts);
   if (redemption.status !== 'valid') {
     await core.emit(
