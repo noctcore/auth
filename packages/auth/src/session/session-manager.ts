@@ -110,7 +110,9 @@ export class SessionManager<A> {
     // captured has already walked (or is walking) the user's sessions and
     // cannot see this one. Re-reading the epoch turns that survivor into a
     // refused login instead of a session that merely dies at its first use.
-    if ((await this.store.getEpoch(input.userId)) !== epoch) {
+    const epochNow = await this.store.getEpoch(input.userId);
+
+    if (epochNow !== epoch) {
       await this.store.delete(input.userId, [session.id]);
 
       this.logger.warn('Session mint lost the epoch fence; a revocation landed mid-login', {
@@ -153,7 +155,9 @@ export class SessionManager<A> {
     if ((options.touch ?? true) && now - session.lastActiveAt >= this.touchIntervalMs) {
       const touched = { ...session, lastActiveAt: now };
 
-      if (!(await this.store.touch(touched))) return { ok: false, reason: 'revoked' };
+      const stillStored = await this.store.touch(touched);
+
+      if (!stillStored) return { ok: false, reason: 'revoked' };
 
       return { ok: true, session: touched };
     }
@@ -164,9 +168,12 @@ export class SessionManager<A> {
   private async refusalFor(stored: StoredSession, now: number): Promise<SessionRefusal | null> {
     if (stored.expiresAt <= now) return 'expired';
     if (now >= stored.lastActiveAt + stored.idleTimeoutMs) return 'idle';
+
     // Strict inequality both ways: a session ahead of the counter (a lost or
     // restored counter) is as untrustworthy as one behind it.
-    if (stored.epoch !== (await this.store.getEpoch(stored.userId))) return 'epoch';
+    const epoch = await this.store.getEpoch(stored.userId);
+
+    if (stored.epoch !== epoch) return 'epoch';
 
     return null;
   }
@@ -233,7 +240,8 @@ export class SessionManager<A> {
 
   /** Deletes the named sessions if they belong to the user. Returns the ids that did. */
   async revoke(userId: string, ids: readonly string[]): Promise<string[]> {
-    const owned = new Set((await this.store.listByUser(userId)).map((s) => s.id));
+    const sessions = await this.store.listByUser(userId);
+    const owned = new Set(sessions.map((s) => s.id));
     const mine = ids.filter((id) => owned.has(id));
 
     if (mine.length > 0) await this.store.delete(userId, mine);
@@ -262,9 +270,8 @@ export class SessionManager<A> {
 
     // A session stamped with the new epoch is a login that started after the
     // revocation; it is legitimate and stays.
-    const ids = (await this.store.listByUser(userId))
-      .filter((s) => s.epoch < epoch)
-      .map((s) => s.id);
+    const sessions = await this.store.listByUser(userId);
+    const ids = sessions.filter((s) => s.epoch < epoch).map((s) => s.id);
 
     if (ids.length > 0) await this.store.delete(userId, ids);
 

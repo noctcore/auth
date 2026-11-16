@@ -92,8 +92,9 @@ export async function changePassword<U extends AuthUser, A>(
     return hashed;
   }
 
-  if (!(await core.users.setPasswordHash(user.id, hashed.value)))
-    return fail('session_expired', 'user_missing');
+  const written = await core.users.setPasswordHash(user.id, hashed.value);
+
+  if (!written) return fail('session_expired', 'user_missing');
 
   // Stricter than the auth guide's "offer it": every session ends, the
   // current one is re-issued, and the change is mailed to the owner.
@@ -127,7 +128,9 @@ async function proveCurrentPassword<U extends AuthUser, A>(
   if (!credential) return fail('session_expired', 'user_missing');
   if (!credential.passwordHash) return fail('password_not_set', 'password_not_set');
 
-  if (!(await core.verifyPassword(credential.passwordHash, password))) {
+  const correct = await core.verifyPassword(credential.passwordHash, password);
+
+  if (!correct) {
     const { newLock } = await core.throttle.recordFailure(accountKey(credential.email));
 
     if (newLock) await sendLockNotice(core, credential, newLock.until, meta);

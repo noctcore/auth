@@ -2,21 +2,21 @@
  * Everything an app can change, with the default and the reason for it.
  * Where published guidance disagrees on a default, the stricter value wins.
  */
-import type { AuditSink } from '../ports/audit';
-import type { CaptchaVerifier } from '../ports/captcha';
-import type { Clock } from '../ports/clock';
-import type { SessionCookieConfig } from '../http/cookie';
-import type { Duration } from '../shared/duration';
 import type { HookInput } from './hooks';
-import type { Logger, Metrics } from '../ports/logger';
-import type { Mailer } from '../ports/mail';
+import type { PluginContext } from './plugin-context';
+import type { RandomSource } from '../crypto/random';
+import type { SessionCookieConfig } from '../http/cookie';
 import type { BreachChecker } from '../password/breach';
 import type { PasswordHasher } from '../password/hasher';
 import type { PasswordPolicy } from '../password/policy';
-import type { PluginContext } from './plugin-context';
-import type { RandomSource } from '../crypto/random';
-import type { SessionOptions } from '../session/session-types';
+import type { AuditSink } from '../ports/audit';
+import type { CaptchaVerifier } from '../ports/captcha';
+import type { Clock } from '../ports/clock';
+import type { Logger, Metrics } from '../ports/logger';
+import type { Mailer } from '../ports/mail';
 import type { AuthUser, CounterStore, SessionStore, TokenStore, UserStore } from '../ports/stores';
+import type { SessionOptions } from '../session/session-types';
+import type { Duration } from '../shared/duration';
 import type { LockoutOptions, RateLimitRule } from '../throttle/rules';
 
 /** Doors with their own rate limit. Keyed by client IP unless noted. */

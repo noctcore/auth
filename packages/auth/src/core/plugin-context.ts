@@ -5,21 +5,21 @@
  * session is minted by `issueSession`, the one seam, so no plugin can mint a
  * session that skips the hooks, the epoch fence or the attribute schema.
  */
+import type { Door } from './config';
+import type { HookLists, IssueVia, RevocationReason } from './hooks';
+import type { RandomSource } from '../crypto/random';
+import type { CookieSpec } from '../http/cookie';
+import type { PasswordHasher } from '../password/hasher';
+import type { PasswordPolicy } from '../password/policy';
 import type { AuthEvent } from '../ports/audit';
 import type { CaptchaDoor } from '../ports/captcha';
 import type { Clock } from '../ports/clock';
-import type { CookieSpec } from '../http/cookie';
-import type { Door } from './config';
-import type { AuthFailure, AuthResult } from '../shared/errors';
-import type { HookLists, IssueVia, RevocationReason } from './hooks';
 import type { Logger, Metrics } from '../ports/logger';
 import type { AuthMailEvent } from '../ports/mail';
-import type { RequestMeta } from '../shared/meta';
-import type { PasswordHasher } from '../password/hasher';
-import type { PasswordPolicy } from '../password/policy';
-import type { RandomSource } from '../crypto/random';
-import type { SessionManager } from '../session/session-manager';
 import type { AuthUser, StoredSession, UserStore } from '../ports/stores';
+import type { SessionManager } from '../session/session-manager';
+import type { AuthFailure, AuthResult } from '../shared/errors';
+import type { RequestMeta } from '../shared/meta';
 import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
 

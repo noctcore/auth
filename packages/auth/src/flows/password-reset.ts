@@ -113,8 +113,10 @@ export async function resetPassword<U extends AuthUser, A>(
 
   if (redeemed.status !== 'valid')
     return failed(core, user.id, `lost_race_${redeemed.status}`, meta);
-  if (!(await core.users.setPasswordHash(user.id, hashed.value)))
-    return failed(core, user.id, 'write_refused', meta);
+
+  const written = await core.users.setPasswordHash(user.id, hashed.value);
+
+  if (!written) return failed(core, user.id, 'write_refused', meta);
 
   await core.revokeAllSessions(user.id, 'password-reset');
   await core.tokens.revokeAll(user.id, RESET_PURPOSES);

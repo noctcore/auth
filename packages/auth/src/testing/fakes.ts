@@ -3,12 +3,12 @@
  * mailer and an audit sink that record what they were given, and a fast
  * hasher. None of these belongs in production.
  */
+import { sha256Hex } from '../crypto/hash';
+import type { PasswordHasher } from '../password/hasher';
 import type { AuditSink, AuthEvent } from '../ports/audit';
 import type { Clock } from '../ports/clock';
-import { sha256Hex } from '../crypto/hash';
 import type { AuthMailEvent, Mailer } from '../ports/mail';
 import type { RequestMeta } from '../shared/meta';
-import type { PasswordHasher } from '../password/hasher';
 
 export interface ManualClock extends Clock {
   advance(ms: number): void;

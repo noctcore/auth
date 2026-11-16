@@ -7,14 +7,14 @@
  * The password is checked and hashed BEFORE the address is looked up, so the
  * expensive step happens on both paths.
  */
+import { sendVerification } from './email-verification';
+import type { FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
+import type { IssuedSession } from '../core/plugin-context';
+import type { AuthUser } from '../ports/stores';
 import { normalizeEmail } from '../shared/email';
 import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
-import type { IssuedSession } from '../core/plugin-context';
-import type { AuthUser } from '../ports/stores';
-import { sendVerification } from './email-verification';
-import type { FlowSettings } from './settings';
 
 export interface RegisterInput {
   readonly email: string;

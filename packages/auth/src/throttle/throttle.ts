@@ -148,8 +148,8 @@ export class Throttle {
   private async lock(account: string): Promise<{ until: number }> {
     // The tier's TTL is renewed on every lock, so it only decays after a full
     // quiet period without one.
-    const previousTier = (await this.counters.get(keys.tier(account)))?.count ?? 0;
-    const tier = previousTier + 1;
+    const previous = await this.counters.get(keys.tier(account));
+    const tier = (previous?.count ?? 0) + 1;
 
     await this.counters.set(keys.tier(account), tier, this.quietPeriodMs);
 

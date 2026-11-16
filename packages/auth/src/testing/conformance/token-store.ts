@@ -5,8 +5,8 @@
  * Guide: Build, "Writing a store adapter".
  */
 import assert from 'node:assert/strict';
-import type { StoredToken, TokenStore } from '../../ports/stores';
 import { systemClock } from '../../ports/clock';
+import type { StoredToken, TokenStore } from '../../ports/stores';
 import { times, uniqueId, type ConformanceCase } from '../harness';
 
 function sampleToken(overrides: Partial<StoredToken> = {}): StoredToken {

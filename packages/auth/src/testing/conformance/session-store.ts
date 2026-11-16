@@ -5,10 +5,10 @@
  * Guide: Build, "Writing a store adapter".
  */
 import assert from 'node:assert/strict';
-import type { SessionStore, StoredSession } from '../../ports/stores';
+import { cryptoRandom } from '../../crypto/random';
 import { systemClock } from '../../ports/clock';
 import { silentLogger } from '../../ports/logger';
-import { cryptoRandom } from '../../crypto/random';
+import type { SessionStore, StoredSession } from '../../ports/stores';
 import { SessionManager } from '../../session/session-manager';
 import {
   advance,
