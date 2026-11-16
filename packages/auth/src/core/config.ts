@@ -17,7 +17,7 @@ import type { PluginContext } from './plugin-context';
 import type { RandomSource } from '../crypto/random';
 import type { SessionOptions } from '../session/session-manager';
 import type { AuthUser, CounterStore, SessionStore, TokenStore, UserStore } from '../ports/stores';
-import type { LockoutOptions, RateLimitRule } from '../throttle/throttle';
+import type { LockoutOptions, RateLimitRule } from '../throttle/rules';
 
 /** Doors with their own rate limit. Keyed by client IP unless noted. */
 export type Door =

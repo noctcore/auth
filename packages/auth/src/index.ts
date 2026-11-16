@@ -96,14 +96,9 @@ export {
   type ValidateResult,
 } from './session/session-manager';
 export { OneTimeTokens, type TokenRedemption } from './tokens/one-time-tokens';
-export {
-  accountKey,
-  Throttle,
-  type Hit,
-  type LockoutOptions,
-  type LoginGate,
-  type RateLimitRule,
-} from './throttle/throttle';
+export { Throttle } from './throttle/throttle';
+export { accountKey } from './throttle/counter-keys';
+export type { Hit, LockoutOptions, LoginGate, RateLimitRule } from './throttle/rules';
 export type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './core/config';
 export { DEFAULT_DOOR_LIMITS } from './core/config';
 export { createAuth, type Auth } from './create-auth';

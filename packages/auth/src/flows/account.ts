@@ -14,7 +14,7 @@ import { fail, ok, type AuthResult } from '../shared/errors';
 import { firstRefusal } from '../core/hooks';
 import type { RequestMeta } from '../shared/meta';
 import type { IssuedSession } from '../core/plugin-context';
-import { accountKey } from '../throttle/throttle';
+import { accountKey } from '../throttle/counter-keys';
 import type { AuthUser, StoredSession } from '../ports/stores';
 import { RESET_PURPOSES, publicUser, type FlowSettings } from './settings';
 

@@ -19,7 +19,7 @@ import { normalizeEmail, type NormalizedEmail } from '../shared/email';
 import { fail, ok, type AuthErrorCode, type AuthFailure, type AuthResult } from '../shared/errors';
 import { sha256Hex } from '../crypto/hash';
 import type { RequestMeta } from '../shared/meta';
-import { accountKey } from '../throttle/throttle';
+import { accountKey } from '../throttle/counter-keys';
 import type { AuthUser } from '../ports/stores';
 import { publicUser, PURPOSE, RESET_PURPOSES, type FlowSettings } from './settings';
 import { describeError } from '../shared/describe-error';
