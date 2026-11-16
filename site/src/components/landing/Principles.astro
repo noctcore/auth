@@ -1,0 +1,35 @@
+---
+/** The design rules, set as a spec sheet rather than a grid of cards. */
+---
+
+<section class="nc-section nc-rules not-content" aria-labelledby="nc-rules-title">
+  <h2 id="nc-rules-title" class="nc-rules__title">What it refuses to do</h2>
+  <dl class="nc-rules__list">
+    <div class="nc-rule nc-rule--lead">
+      <dt><span class="nc-rule__no">No</span> exceptions for a user error</dt>
+      <dd>
+        Flows return results. A refusal carries a public <code>code</code> that never reveals whether an
+        account exists, and an internal <code>reason</code> kept for the audit trail.
+      </dd>
+    </div>
+    <div class="nc-rule">
+      <dt><span class="nc-rule__no">No</span> handlers or middleware</dt>
+      <dd>The package never sees a request object. Your framework stays in charge of HTTP.</dd>
+    </div>
+    <div class="nc-rule">
+      <dt><span class="nc-rule__no">No</span> database of its own</dt>
+      <dd>
+        Stores are interfaces. Redis and Prisma ship today; any store that passes the conformance
+        suite in <code>@noctcore/auth/testing</code> works.
+      </dd>
+    </div>
+    <div class="nc-rule">
+      <dt><span class="nc-rule__no">No</span> endpoints from plugins</dt>
+      <dd>Plugins add hooks and flows under their own namespace, never a route.</dd>
+    </div>
+    <div class="nc-rule">
+      <dt><span class="nc-rule__no">No</span> mail on the response path</dt>
+      <dd>Lock notices and reset mails run off the response path, or on your own queue.</dd>
+    </div>
+  </dl>
+</section>

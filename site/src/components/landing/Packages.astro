@@ -1,0 +1,35 @@
+---
+/** The three packages and where to go next. */
+const PACKAGES = [
+  {
+    name: '@noctcore/auth',
+    what: 'The core: sessions, passwords, tokens, throttling, CSRF and every flow. Pure TypeScript, no I/O of its own.',
+  },
+  { name: '@noctcore/auth-redis', what: 'Session and counter stores on ioredis.' },
+  { name: '@noctcore/auth-prisma', what: 'User and one-time token stores on Prisma, with the schema to merge.' },
+];
+---
+
+<section class="nc-section nc-packages not-content" aria-labelledby="nc-packages-title">
+  <h2 id="nc-packages-title">Three packages</h2>
+  <ul class="nc-packages__list">
+    {
+      PACKAGES.map((pkg) => (
+        <li>
+          <code>{pkg.name}</code>
+          <span>{pkg.what}</span>
+        </li>
+      ))
+    }
+  </ul>
+  <div class="nc-next">
+    <a class="nc-next__link" href="/auth/start/getting-started/">
+      <span class="nc-next__label">Start</span>
+      <span class="nc-next__title">Install it and sign in a user</span>
+    </a>
+    <a class="nc-next__link" href="/auth/learn/">
+      <span class="nc-next__label">Learn</span>
+      <span class="nc-next__title">Read why each rule exists</span>
+    </a>
+  </div>
+</section>

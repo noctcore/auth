@@ -1,0 +1,51 @@
+---
+/** The login route in full: the library returns a result, the app picks the response. */
+import { Code } from '@astrojs/starlight/components';
+
+const code = `import { createAuth, toPublicError } from '@noctcore/auth';
+import { argon2id } from '@noctcore/auth/argon2';
+import { prismaStores } from '@noctcore/auth-prisma';
+import { redisStores } from '@noctcore/auth-redis';
+
+const { users, tokens } = prismaStores({
+  delegate: prisma.user,
+  tokenDelegate: prisma.authToken,
+});
+const { sessions, counters } = redisStores(redis);
+
+export const auth = createAuth({
+  stores: { users, tokens, sessions, counters },
+  password: { hasher: argon2id() },
+  secret: process.env.AUTH_SECRET!,
+  mailer,
+});
+
+// In your own route handler:
+const result = await auth.login({ email, password, meta });
+
+if (!result.ok) {
+  // A wrong password, an unknown address and a locked account
+  // all answer invalid_credentials, after the same work.
+  return reply(statusFor(result.code), toPublicError(result));
+}`;
+---
+
+<section class="nc-section nc-sample not-content" aria-labelledby="nc-sample-title">
+  <div class="nc-sample__text">
+    <h2 id="nc-sample-title">Your route, your status code.</h2>
+    <p>
+      <code>createAuth</code> wires the stores into the flows and checks the config once at startup. It
+      hands back functions, not handlers.
+    </p>
+    <ol class="nc-steps">
+      <li><span>Your router reads the request and calls a flow.</span></li>
+      <li>
+        <span>The flow returns <code>{'{ ok: true, value }'}</code> or a refusal with a public code.</span>
+      </li>
+      <li><span>You choose the status, the cookie and the copy.</span></li>
+    </ol>
+  </div>
+  <div class="nc-sample__code">
+    <Code code={code} lang="ts" title="src/auth.ts" />
+  </div>
+</section>

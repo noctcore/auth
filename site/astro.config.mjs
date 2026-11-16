@@ -15,7 +15,8 @@ export default defineConfig({
         light: './src/assets/brand/mark-light.svg',
         dark: './src/assets/brand/mark-dark.svg',
       },
-      customCss: ['./src/styles/tokens.css', './src/styles/theme.css'],
+      customCss: ['./src/styles/tokens.css', './src/styles/theme.css', './src/styles/landing.css'],
+      components: { Hero: './src/components/Hero.astro' },
       expressiveCode: {
         themes: ['github-dark-default', 'github-light'],
         styleOverrides: {
