@@ -47,3 +47,8 @@ export function uniqueId(prefix: string): string {
 export function times<T>(count: number, fn: (index: number) => Promise<T>): Promise<T[]> {
   return Promise.all(Array.from({ length: count }, (_, i) => fn(i)));
 }
+
+/** Moves time forward: the context's fake clock when it has one, otherwise real sleeping. */
+export function advance(context: ConformanceContext): (ms: number) => Promise<void> {
+  return context.advanceTime ?? sleep;
+}
