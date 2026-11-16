@@ -1,5 +1,13 @@
 # Contributing
 
+## Before you start
+
+- Open an issue with one of the forms first for anything larger than a small fix, so we agree on
+  the shape before you write code. A stricter default or a missing check goes in the "Security
+  hardening idea" form.
+- A vulnerability never goes in a public issue: see [SECURITY.md](SECURITY.md).
+- Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Layout
 
 ```
