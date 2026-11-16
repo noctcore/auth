@@ -20,6 +20,8 @@
     "test:integration": "bun run --filter '*' test:integration",
     "lint": "eslint .",
     "check:package": "bun scripts/check-package-shape.ts",
+    "check:api": "bun scripts/api-snapshot.ts --check",
+    "api:update": "bun scripts/api-snapshot.ts",
     "changeset": "changeset",
     "version-packages": "changeset version && bun install --lockfile-only",
     "release:dry-run": "bun scripts/release-dry-run.ts",

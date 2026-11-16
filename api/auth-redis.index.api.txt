@@ -1,0 +1,61 @@
+# @noctcore/auth-redis (root)
+
+## package.json exports
+{
+  ".": {
+    "import": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "require": {
+      "types": "./dist/index.d.cts",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "./package.json": "./package.json"
+}
+
+## runtime exports
+RedisCounterStore
+RedisSessionStore
+redisStores
+
+## declarations
+RedisCounterStore [class]
+    (new) (redis: Redis, options?: RedisStoreOptions): RedisCounterStore
+    clock: any
+    decrement: (key: string) => Promise<void>
+    get: (key: string) => Promise<CounterWindow | null>
+    increment: (key: string, windowMs: number) => Promise<CounterWindow>
+    key: any
+    prefix: any
+    redis: any
+    reset: (key: string) => Promise<void>
+    set: (key: string, count: number, windowMs: number) => Promise<void>
+RedisSessionStore [class]
+    (new) (redis: Redis, options?: RedisSessionStoreOptions): RedisSessionStore
+    bumpEpoch: (userId: string) => Promise<number>
+    clock: any
+    create: (session: StoredSession, ttlMs: number) => Promise<void>
+    delete: (userId: string, ids: readonly string[]) => Promise<void>
+    epochKey: any
+    epochTtlMs: any
+    epochTtlRemaining: (userId: string) => Promise<number>
+    get: (id: string) => Promise<StoredSession | null>
+    getEpoch: (userId: string) => Promise<number>
+    listByUser: (userId: string) => Promise<StoredSession[]>
+    maxSessionTtlMs: number
+    prefix: any
+    redis: any
+    sessionKey: any
+    touch: (session: StoredSession) => Promise<boolean>
+    userKey: any
+RedisSessionStoreOptions [interface]
+    clock?: any
+    epochTtl?: any
+    maxSessionTtl?: any
+    prefix?: string | undefined
+RedisStoreOptions [interface]
+    clock?: any
+    prefix?: string | undefined
+redisStores [function]: (redis: Redis, options?: RedisSessionStoreOptions) => { sessions: RedisSessionStore; counters: RedisCounterStore; }

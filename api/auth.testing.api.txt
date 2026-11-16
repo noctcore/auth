@@ -1,0 +1,115 @@
+# @noctcore/auth /testing
+
+## runtime exports
+MemoryCounterStore
+MemorySessionStore
+MemoryTokenStore
+MemoryUserStore
+counterStoreConformance
+manualClock
+memoryStores
+plainHasher
+recordingAudit
+recordingMailer
+runConformance
+sessionStoreConformance
+sleep
+tokenStoreConformance
+uniqueId
+userStoreConformance
+
+## declarations
+ConformanceCase [interface]
+    name: string
+    run: () => Promise<void>
+ConformanceContext [interface]
+    advanceTime?: ((ms: number) => Promise<void>) | undefined
+counterStoreConformance [function]: (store: CounterStore, context?: ConformanceContext) => ConformanceCase[]
+manualClock [function]: (start?: number) => ManualClock
+ManualClock [interface]
+    advance: (ms: number) => void
+    now: () => number
+    set: (ms: number) => void
+MemoryCounterStore [class]
+    (new) (clock?: Clock): MemoryCounterStore
+    clock: any
+    counters: any
+    decrement: (key: string) => Promise<void>
+    get: (key: string) => Promise<CounterWindow | null>
+    increment: (key: string, windowMs: number) => Promise<CounterWindow>
+    live: any
+    reset: (key: string) => Promise<void>
+    set: (key: string, count: number, windowMs: number) => Promise<void>
+MemorySessionStore [class]
+    (new) (clock?: Clock): MemorySessionStore
+    bumpEpoch: (userId: string) => Promise<number>
+    byUser: any
+    clock: any
+    create: (session: StoredSession, ttlMs: number) => Promise<void>
+    delete: (userId: string, ids: readonly string[]) => Promise<void>
+    epochs: any
+    get: (id: string) => Promise<StoredSession | null>
+    getEpoch: (userId: string) => Promise<number>
+    listByUser: (userId: string) => Promise<StoredSession[]>
+    read: any
+    sessions: any
+    touch: (session: StoredSession) => Promise<boolean>
+memoryStores [function]: (clock?: Clock) => MemoryStores
+MemoryStores [interface]
+    counters: MemoryCounterStore
+    sessions: MemorySessionStore
+    tokens: MemoryTokenStore
+    users: MemoryUserStore
+MemoryTokenStore [class]
+    (new) (): MemoryTokenStore
+    consume: (purpose: string, hash: string) => Promise<StoredToken | null>
+    deleteByUser: (userId: string, purposes?: readonly string[]) => Promise<void>
+    find: (purpose: string, hash: string) => Promise<StoredToken | null>
+    findByUser: (purpose: string, userId: string) => Promise<StoredToken | null>
+    incrementAttempts: (purpose: string, userId: string, max: number) => Promise<number | null>
+    key: any
+    put: (token: StoredToken) => Promise<void>
+    removeByUser: any
+    tokens: any
+MemoryUserStore [class]
+    (new) (clock?: Clock): MemoryUserStore
+    byId: any
+    clearPassword: (id: string) => Promise<void>
+    clock: any
+    create: (input: { email: NormalizedEmail; passwordHash: string; }) => Promise<AuthUser | null>
+    findById: (id: string) => Promise<AuthUser | null>
+    findCredentialByEmail: (email: NormalizedEmail) => Promise<WithPasswordHash<AuthUser> | null>
+    findCredentialById: (id: string) => Promise<WithPasswordHash<AuthUser> | null>
+    live: any
+    markEmailVerified: (id: string, email: NormalizedEmail) => Promise<boolean>
+    sequence: any
+    setEmail: (id: string, email: NormalizedEmail) => Promise<void>
+    setPasswordHash: (id: string, passwordHash: string, options?: { readonly expected?: string | null; }) => Promise<boolean>
+    softDelete: (id: string) => Promise<void>
+    view: any
+plainHasher [function]: (version?: number) => PasswordHasher
+recordingAudit [function]: () => RecordingAudit
+RecordingAudit [interface]
+    emit: (event: AuthEvent, meta: RequestMeta | undefined) => Promise<void>
+    events: Array<AuthEvent & { meta?: RequestMeta | undefined; }>
+    types: () => string[]
+recordingMailer [function]: () => RecordingMailer
+RecordingMailer [interface]
+    last: <T extends AuthMailEvent["type"]>(type: T) => Extract<AuthMailEvent, { type: T; }> | undefined
+    send: (event: AuthMailEvent) => Promise<void>
+    sent: Array<AuthMailEvent>
+runConformance [function]: (title: string, cases: readonly ConformanceCase[], api: TestApi, timeout?: number) => void
+sessionStoreConformance [function]: (store: SessionStore, context?: SessionStoreConformanceOptions) => ConformanceCase[]
+SessionStoreConformanceOptions [interface]
+    advanceTime?: ((ms: number) => Promise<void>) | undefined
+    epochTtlMs?: ((userId: string) => Promise<number>) | undefined
+    secondary?: SessionStore | undefined
+sleep [const]: (ms: number) => Promise<void>
+TestApi [interface]
+    describe: (name: string, body: () => void) => void
+    it: (name: string, body: () => Promise<void>, timeout?: number) => void
+tokenStoreConformance [function]: (store: TokenStore) => ConformanceCase[]
+uniqueId [function]: (prefix: string) => string
+userStoreConformance [function]: (store: UserStore, options?: UserStoreConformanceOptions) => ConformanceCase[]
+UserStoreConformanceOptions [interface]
+    softDelete?: ((id: string) => Promise<void>) | undefined
