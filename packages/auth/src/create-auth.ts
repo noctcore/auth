@@ -24,6 +24,7 @@ import { login, type LoginInput } from './flows/login';
 import * as reset from './flows/password-reset';
 import { register, type RegisterInput } from './flows/register';
 import type { FlowSettings } from './flows/settings';
+import type { PluginContext } from './plugin-context';
 import type { RequestMeta } from './meta';
 
 const MIN_SECRET_BYTES = 32;
@@ -177,7 +178,7 @@ export function createAuth<U extends AuthUser, A = Record<string, never>, const 
       processPasswordReset: (job: PasswordResetJob) => reset.processPasswordReset(core, settings, job),
     },
     /** For plugins and advanced integrations: the same steps the core flows use. */
-    context: core,
+    context: core as PluginContext<U, A>,
   };
 
   const namespaced: Record<string, object> = {};
