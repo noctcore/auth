@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.DS_Store
+*.log
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+# Prisma clients generated for tests and the example app
+**/generated/
+# Astro
+site/.astro/

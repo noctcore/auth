@@ -1,0 +1,35 @@
+{
+  "name": "@noctcore/auth-repo",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run --filter './packages/*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun run --filter '*' test",
+    "test:integration": "bun run --filter '*' test:integration",
+    "lint": "eslint .",
+    "check:package": "bun scripts/check-package-shape.ts",
+    "changeset": "changeset",
+    "version-packages": "changeset version && bun install --lockfile-only",
+    "release:dry-run": "bun scripts/release-dry-run.ts",
+    "services:up": "docker compose up -d --wait",
+    "services:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
+    "@eslint/js": "^10.0.0",
+    "eslint": "^10.14.0",
+    "publint": "0.3.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

@@ -1,0 +1,102 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request makes the older run worthless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: build · lint · typecheck · package shape
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      # A frozen install passes even when bun.lock records stale workspace
+      # versions (changeset version does not touch the lockfile), so compare a
+      # refreshed lockfile with the committed one.
+      - name: bun.lock matches the manifests
+        run: bun install --lockfile-only && git diff --exit-code -- bun.lock
+      # Adapters resolve @noctcore/auth through its emitted dist/*.d.ts, so the
+      # build runs before typecheck.
+      - run: bun run build
+      - run: bun run lint
+      - run: bun run typecheck
+      # Packs every published package and checks the tarball with publint and
+      # @arethetypeswrong/cli, so a manifest that hands one runtime the other's
+      # declarations fails here instead of in a consumer's editor.
+      - run: bun run check:package
+
+  # Unit tests against the in-memory fakes. The Windows leg is there because
+  # the owner develops on both systems and the Argon2 hasher is a native module.
+  test:
+    name: test${{ matrix.os == 'windows-latest' && ' · windows' || '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run test
+
+  # The conformance suite and the example app's e2e test against real Redis and
+  # Postgres. AUTH_REQUIRE_SERVICES makes a missing backend a failure: a suite
+  # that silently skipped would be green while proving nothing.
+  integration:
+    name: integration · redis + postgres
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 2s --health-retries 20
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: auth
+          POSTGRES_PASSWORD: auth
+          POSTGRES_DB: auth
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U auth -d auth" --health-interval 2s --health-timeout 2s --health-retries 20
+    env:
+      REDIS_URL: redis://localhost:6379
+      DATABASE_URL: postgresql://auth:auth@localhost:5432/auth
+      AUTH_REQUIRE_SERVICES: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run test:integration

@@ -1,0 +1,25 @@
+# Real backends for the conformance suite and the example app's e2e test.
+# Ports are offset from the defaults so a local Redis or Postgres keeps running.
+#   docker compose up -d --wait
+#   REDIS_URL=redis://localhost:6390 DATABASE_URL=postgresql://auth:auth@localhost:5440/auth bun run test:integration
+services:
+  redis:
+    image: redis:7.4-alpine
+    ports: ['6390:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: auth
+      POSTGRES_DB: auth
+    ports: ['5440:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U auth -d auth']
+      interval: 2s
+      timeout: 2s
+      retries: 20

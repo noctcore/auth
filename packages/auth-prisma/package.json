@@ -1,0 +1,66 @@
+{
+  "name": "@noctcore/auth-prisma",
+  "version": "0.0.0",
+  "description": "Prisma user and one-time token stores for @noctcore/auth.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "noctcore",
+    "auth",
+    "prisma",
+    "postgres"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noctcore/auth.git",
+    "directory": "packages/auth-prisma"
+  },
+  "homepage": "https://noctcore.github.io/auth/",
+  "bugs": "https://github.com/noctcore/auth/issues",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@noctcore/auth": "0.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsup": "^9.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  },
+  "peerDependencies": {
+    "@prisma/client": ">=7.0.0 <8"
+  }
+}
