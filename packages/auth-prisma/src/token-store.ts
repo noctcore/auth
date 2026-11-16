@@ -3,9 +3,9 @@
  * is a delete that returns the row, so only one caller ever gets a token, and
  * the attempt cap is an update whose `where` carries the cap.
  */
+import type { StoredToken, TokenStore } from '@noctcore/auth';
 import type { PrismaAuthTokenDelegate } from './delegates';
 import { P2002, P2025, prismaCode } from './prisma-errors';
-import type { StoredToken, TokenStore } from '@noctcore/auth';
 
 interface TokenRow {
   purpose: string;

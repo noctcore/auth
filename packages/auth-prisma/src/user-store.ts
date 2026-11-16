@@ -2,9 +2,9 @@
  * The `UserStore` on a Prisma model. Guarded writes put the guard in the
  * `where` of one `updateMany`, so a compare-and-set is a single statement.
  */
+import type { AuthUser, NormalizedEmail, UserStore, WithPasswordHash } from '@noctcore/auth';
 import type { PrismaUserDelegate } from './delegates';
 import { P2002, prismaCode } from './prisma-errors';
-import type { AuthUser, NormalizedEmail, UserStore, WithPasswordHash } from '@noctcore/auth';
 
 /** Column names on your user model. */
 export interface UserFields {
