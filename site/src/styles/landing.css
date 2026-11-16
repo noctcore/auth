@@ -6,9 +6,8 @@
 /* ---------- Hero ---------- */
 .nc-hero {
   display: grid;
-  gap: 2.5rem;
-  align-items: center;
-  padding-block: clamp(2rem, 1rem + 5vw, 5.5rem) clamp(2.5rem, 1rem + 5vw, 5rem);
+  column-gap: 4rem;
+  padding-top: clamp(2rem, 1rem + 4vw, 4.5rem);
 }
 
 .nc-eyebrow {
@@ -21,12 +20,12 @@
 
 .nc-hero h1 {
   margin: 0;
-  max-width: 13ch;
+  max-width: 12ch;
   font-family: var(--nc-font-display);
-  font-size: clamp(2.6rem, 1.4rem + 4.4vw, 4.9rem);
+  font-size: clamp(2.6rem, 1.4rem + 4.4vw, 5.1rem);
   font-weight: 760;
-  line-height: 1.02;
-  letter-spacing: -0.04em;
+  line-height: 1;
+  letter-spacing: -0.042em;
   color: var(--nc-text-strong);
   text-wrap: balance;
 }
@@ -34,7 +33,7 @@
 .nc-hero__tagline {
   margin: 1.5rem 0 0;
   max-width: 36ch;
-  font-size: clamp(1.125rem, 1rem + 0.5vw, 1.3125rem);
+  font-size: clamp(1.125rem, 1rem + 0.45vw, 1.3rem);
   line-height: 1.55;
   color: var(--nc-text-soft);
   text-wrap: pretty;
@@ -44,15 +43,15 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
-  margin-top: 2.25rem;
+  margin-top: 2rem;
 }
 
 .nc-install {
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  margin: 1.75rem 0 0;
-  padding: 0.6rem 0.95rem;
+  margin: 1.5rem 0 0;
+  padding: 0.55rem 0.9rem;
   border: 1px solid var(--nc-line);
   border-radius: var(--nc-radius);
   font-family: var(--nc-font-mono);
@@ -78,25 +77,34 @@
 
 .nc-hero__art {
   display: none;
-  justify-self: center;
-  width: min(100%, 26rem);
+  margin: clamp(1.5rem, 4vw, 3rem) 0 0;
 }
 
-.nc-hero__art :is(svg, img) {
-  display: block;
+/* No display here: Starlight's light:sl-hidden and dark:sl-hidden pick the image per theme. */
+.nc-hero__art img {
   width: 100%;
   height: auto;
 }
 
-@media (min-width: 50rem) {
+/* The art's labels need room to read: show it from tablet width up. */
+@media (min-width: 40rem) {
+  .nc-hero__art {
+    display: block;
+  }
+}
+
+@media (min-width: 56rem) {
   .nc-hero {
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-    gap: 3rem;
+    align-items: end;
+  }
+
+  .nc-hero__tagline {
+    margin-top: 0;
   }
 
   .nc-hero__art {
-    display: block;
-    justify-self: end;
+    grid-column: 1 / -1;
   }
 }
 

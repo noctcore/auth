@@ -1,14 +1,28 @@
 ---
 /**
- * Placeholder hero art, kept until the brand art lands. Replace the contents
- * of this component; the slot around it (Hero.astro) stays.
+ * The brand hero art (assets/brand in the repo): a login path through the
+ * modules, with the attacks that stop at each one. One file per theme; both
+ * share the page background, so the art sits on the page without a frame.
  */
+import heroDark from '../../assets/brand/hero-dark.svg';
+import heroLight from '../../assets/brand/hero-light.svg';
+
+const alt =
+  'A login path through three modules: reserve attempt, verify password and the epoch fence. Brute force, enumeration and a stolen session each stop at one of them.';
 ---
 
-<svg class="nc-art" viewBox="0 0 400 400" aria-hidden="true">
-  <rect x="40" y="40" width="320" height="320" rx="36" fill="var(--nc-band)"></rect>
-  <g transform="translate(72 72) scale(4)" fill="var(--nc-band-path)">
-    <path d="M12 12h28v8H20v20h-8zM52 52H24v-8h20V24h8z"></path>
-    <path d="M28 28h8v8h-8z"></path>
-  </g>
-</svg>
+<img
+  class="light:sl-hidden"
+  src={heroDark.src}
+  width={heroDark.width}
+  height={heroDark.height}
+  alt={alt}
+  fetchpriority="high"
+/>
+<img
+  class="dark:sl-hidden"
+  src={heroLight.src}
+  width={heroLight.width}
+  height={heroLight.height}
+  alt={alt}
+/>

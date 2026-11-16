@@ -12,8 +12,9 @@ export default defineConfig({
     starlight({
       title: '@noctcore/auth',
       logo: {
-        light: './src/assets/brand/mark-light.svg',
-        dark: './src/assets/brand/mark-dark.svg',
+        light: './src/assets/brand/logo-light.svg',
+        dark: './src/assets/brand/logo-dark.svg',
+        replacesTitle: true,
       },
       customCss: ['./src/styles/tokens.css', './src/styles/theme.css', './src/styles/landing.css'],
       components: { Hero: './src/components/Hero.astro' },
