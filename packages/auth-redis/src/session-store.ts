@@ -3,11 +3,11 @@
  * a per-user sorted set of session ids, and a per-user revocation epoch that
  * outlives every session.
  */
-import type { RedisSessionStoreOptions } from './options';
-import { BUMP, CREATE } from './scripts';
 import type { Clock, SessionStore, StoredSession } from '@noctcore/auth';
 import { AuthConfigError, systemClock, toMilliseconds } from '@noctcore/auth';
 import type { Redis } from 'ioredis';
+import type { RedisSessionStoreOptions } from './options';
+import { BUMP, CREATE } from './scripts';
 
 /** The `SessionStore` on Redis. */
 export class RedisSessionStore implements SessionStore {
