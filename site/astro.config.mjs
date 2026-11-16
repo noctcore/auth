@@ -123,6 +123,7 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'Reference', link: '/reference/' },
+            { label: 'Configuration', link: '/reference/configuration/' },
             authApiGroup,
             redisApiGroup,
             prismaApiGroup,
