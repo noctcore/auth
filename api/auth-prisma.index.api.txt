@@ -22,49 +22,51 @@ prismaStores
 
 ## declarations
 PrismaAuthTokenDelegate [interface]
-    delete: (args: any) => PromiseLike<any>
-    deleteMany: (args: any) => PromiseLike<{ count: number; }>
-    findUnique: (args: any) => PromiseLike<any>
-    update: (args: any) => PromiseLike<any>
-    upsert: (args: any) => PromiseLike<any>
+    delete(args: any): PromiseLike<any>
+    deleteMany(args: any): PromiseLike<{ count: number; }>
+    findUnique(args: any): PromiseLike<any>
+    update(args: any): PromiseLike<any>
+    upsert(args: any): PromiseLike<any>
 prismaStores [function]: <U extends AuthUser = AuthUser>(options: PrismaUserStoreOptions<U> & { readonly tokenDelegate: PrismaAuthTokenDelegate; }) => { users: PrismaUserStore<U>; tokens: PrismaTokenStore; }
 PrismaTokenStore [class]
     (new) (delegate: PrismaAuthTokenDelegate): PrismaTokenStore
-    consume: (purpose: string, hash: string) => Promise<StoredToken | null>
-    delegate: any
-    deleteByUser: (userId: string, purposes?: readonly string[]) => Promise<void>
-    find: (purpose: string, hash: string) => Promise<StoredToken | null>
-    findByUser: (purpose: string, userId: string) => Promise<StoredToken | null>
-    incrementAttempts: (purpose: string, userId: string, max: number) => Promise<number | null>
-    put: (token: StoredToken) => Promise<void>
+    consume(purpose: string, hash: string): Promise<StoredToken | null>
+    deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
+    find(purpose: string, hash: string): Promise<StoredToken | null>
+    findByUser(purpose: string, userId: string): Promise<StoredToken | null>
+    incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    private readonly delegate
+    put(token: StoredToken): Promise<void>
 PrismaUserDelegate [interface]
-    create: (args: any) => PromiseLike<any>
-    findFirst: (args: any) => PromiseLike<any>
-    updateMany: (args: any) => PromiseLike<{ count: number; }>
+    create(args: any): PromiseLike<any>
+    findFirst(args: any): PromiseLike<any>
+    updateMany(args: any): PromiseLike<{ count: number; }>
 PrismaUserStore [class]<U extends AuthUser = AuthUser>
     (new) <U extends AuthUser = AuthUser>(options: PrismaUserStoreOptions<U>): PrismaUserStore<U>
-    create: (input: { email: NormalizedEmail; passwordHash: string; }) => Promise<U | null>
-    f: any
-    findById: (id: string) => Promise<U | null>
-    findCredentialByEmail: (email: NormalizedEmail) => Promise<WithPasswordHash<U> | null>
-    findCredentialById: (id: string) => Promise<WithPasswordHash<U> | null>
-    live: any
-    markEmailVerified: (id: string, email: NormalizedEmail) => Promise<boolean>
-    options: any
-    selectUser: any
-    selectWithHash: any
-    setPasswordHash: (id: string, passwordHash: string, options?: { readonly expected?: string | null; }) => Promise<boolean>
-    toUser: any
-    withHash: any
+    create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<U | null>
+    findById(id: string): Promise<U | null>
+    findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
+    findCredentialById(id: string): Promise<WithPasswordHash<U> | null>
+    markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>
+    private live
+    private readonly f
+    private readonly options
+    private readonly selectUser
+    private readonly selectWithHash
+    private toUser
+    private withHash
+    setPasswordHash(id: string, passwordHash: string, options?: { readonly expected?: string | null; }): Promise<boolean>
 PrismaUserStoreOptions [interface]<U extends AuthUser>
-    createData?: ((input: { email: NormalizedEmail; }) => Record<string, unknown>) | undefined
-    delegate: PrismaUserDelegate
-    fields?: UserFields | undefined
-    select?: Readonly<Record<string, true>> | undefined
-    toUser?: ((row: Record<string, unknown>) => U) | undefined
+    readonly createData?: (input: { email: NormalizedEmail; }) => Record<string, unknown>
+    readonly delegate: PrismaUserDelegate
+    readonly fields?: UserFields
+    readonly select?: Readonly<Record<string, true>>
+    readonly toUser?: (row: Record<string, unknown>) => U
 UserFields [interface]
-    deletedAt?: string | null | undefined
-    email?: string | undefined
-    emailVerified?: string | undefined
-    id?: string | undefined
-    passwordHash?: string | undefined
+    readonly deletedAt?: string | null
+    readonly email?: string
+    readonly emailVerified?: string
+    readonly id?: string
+    readonly passwordHash?: string
+
+## types reached through the exports (not exported by name)
