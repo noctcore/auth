@@ -16,7 +16,8 @@ describe('buildHeroSvg', () => {
   });
 
   test('tags every part the animation moves', () => {
-    const count = (name: string) => svg.match(new RegExp(`class="(?:[^"]* )?${name}(?=[ "])`, 'g'))?.length ?? 0;
+    const count = (name: string) =>
+      svg.match(new RegExp(`class="(?:[^"]* )?${name}(?=[ "])`, 'g'))?.length ?? 0;
 
     expect(count('nc-h-route')).toBe(1);
     expect(count('nc-h-gate')).toBe(3);
@@ -34,8 +35,8 @@ describe('buildHeroSvg', () => {
   test('refuses art whose parts it can no longer find', () => {
     const noRoute = dark.replaceAll('M76 501L950 161', 'M76 500L950 160');
 
-    expect(() => buildHeroSvg(noRoute, light.replaceAll('M76 501L950 161', 'M76 500L950 160'))).toThrow(
-      /route/,
-    );
+    expect(() =>
+      buildHeroSvg(noRoute, light.replaceAll('M76 501L950 161', 'M76 500L950 160')),
+    ).toThrow(/route/);
   });
 });

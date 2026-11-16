@@ -81,7 +81,9 @@
   transform-origin: center;
 }
 
-.nc-motion .nc-hero-svg:not(.is-playing) :is(
+.nc-motion
+  .nc-hero-svg:not(.is-playing)
+  :is(
     .nc-h-arrow,
     .nc-h-gate,
     .nc-h-stop,

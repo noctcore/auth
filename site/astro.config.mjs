@@ -40,7 +40,10 @@ export default defineConfig({
         dark: './src/assets/brand/logo-dark.svg',
         replacesTitle: true,
       },
-      customCss: ['./src/styles/tokens.css', './src/styles/theme.css', './src/styles/landing.css',
+      customCss: [
+        './src/styles/tokens.css',
+        './src/styles/theme.css',
+        './src/styles/landing.css',
         './src/styles/motion.css',
       ],
       components: { Hero: './src/components/Hero.astro' },
