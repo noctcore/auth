@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@noctcore/auth": ["../../packages/auth/src/index.ts"],
+      "@noctcore/auth/argon2": ["../../packages/auth/src/password/argon2.ts"],
+      "@noctcore/auth/testing": ["../../packages/auth/src/testing/index.ts"]
+    }
+  },
+  "include": [
+    "entries",
+    "../../packages/auth/src",
+    "../../packages/auth-redis/src",
+    "../../packages/auth-prisma/src"
+  ]
+}
