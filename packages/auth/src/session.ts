@@ -1,0 +1,252 @@
+/**
+ * Sessions: opaque tokens, idle and absolute expiry, and revocation that cannot
+ * be raced.
+ *
+ * - The cookie holds 32 random bytes; the store key is their SHA-256, so a
+ *   leaked store holds nothing a client could present.
+ * - Absolute expiry is the store TTL (plus `expiresAt` as a backstop). Idle
+ *   expiry is per session, decided at mint: a session unused for longer than
+ *   its idle timeout is refused and reaped.
+ * - `lastActiveAt` is rewritten at most once per `touchInterval`, with an
+ *   update-only-if-exists write that keeps the TTL, so a session revoked
+ *   between the read and the write is never resurrected.
+ * - Revoke-all bumps the user's EPOCH first and only then deletes the sessions
+ *   it finds. Every session carries the epoch captured before its credential
+ *   was read, and validation refuses a mismatch, so a login that read the old
+ *   password hash while a password change was committing cannot produce a live
+ *   session even though the cleanup walk never saw it. The mint re-reads the
+ *   epoch and rolls back on a mismatch.
+ *
+ * Guide: Learn, "Sessions and expiry" and "Revocation races and the epoch fence".
+ */
+import type { Clock } from './clock';
+import { toMilliseconds, type Duration } from './duration';
+import { AuthConfigError } from './errors';
+import { sha256Hex } from './hash';
+import type { Logger } from './logger';
+import type { RequestMeta } from './meta';
+import { generateToken, isTokenShape, type RandomSource } from './random';
+import type { SessionStore, StoredSession } from './stores';
+
+/** Anything with a zod-style `parse`: validates attributes read back from the store. */
+export interface AttributeSchema<A> {
+  parse(value: unknown): A;
+}
+
+export interface SessionOptions<A> {
+  /** Lifetime of a session without "remember me". Default 24 h. */
+  readonly absoluteTtl?: Duration;
+  /** Lifetime with "remember me". Default 30 d. */
+  readonly rememberMeTtl?: Duration;
+  /** Idle limit, fixed or per session. Default 30 min, or 7 d with "remember me". */
+  readonly idleTimeout?: Duration | ((context: { rememberMe: boolean; attributes: A }) => Duration);
+  /** Minimum time between two `lastActiveAt` writes. Default 60 s. */
+  readonly touchInterval?: Duration;
+  /** Oldest sessions beyond this are evicted on mint. Default 10; null for no cap. */
+  readonly maxPerUser?: number | null;
+  /** Validates the attributes on every read. Required when attributes are declared. */
+  readonly attributes?: AttributeSchema<A>;
+}
+
+export type SessionRefusal = 'malformed' | 'unknown' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked';
+
+export interface MintInput<A> {
+  readonly userId: string;
+  readonly attributes: A;
+  readonly rememberMe: boolean;
+  readonly persistentCookie: boolean;
+  readonly authenticatedAt: number;
+  /** The epoch read before the credential. Omit only when nothing was read that a revocation could race. */
+  readonly epoch?: number;
+  readonly meta: RequestMeta;
+}
+
+export type MintResult<A> =
+  | { readonly ok: true; readonly token: string; readonly session: StoredSession<A>; readonly evicted: readonly string[] }
+  | { readonly ok: false; readonly reason: 'epoch_fence' };
+
+export type ValidateResult<A> =
+  | { readonly ok: true; readonly session: StoredSession<A> }
+  | { readonly ok: false; readonly reason: SessionRefusal };
+
+export class SessionManager<A> {
+  readonly absoluteTtlMs: number;
+  readonly rememberMeTtlMs: number;
+  readonly touchIntervalMs: number;
+  readonly maxPerUser: number | null;
+
+  constructor(
+    private readonly store: SessionStore,
+    private readonly options: SessionOptions<A>,
+    private readonly clock: Clock,
+    private readonly random: RandomSource,
+    private readonly logger: Logger,
+  ) {
+    this.absoluteTtlMs = toMilliseconds(options.absoluteTtl ?? '24h');
+    this.rememberMeTtlMs = toMilliseconds(options.rememberMeTtl ?? '30d');
+    this.touchIntervalMs = toMilliseconds(options.touchInterval ?? '60s');
+    this.maxPerUser = options.maxPerUser === undefined ? 10 : options.maxPerUser;
+    if (this.maxPerUser !== null && (!Number.isInteger(this.maxPerUser) || this.maxPerUser < 1)) {
+      throw new AuthConfigError('session.maxPerUser must be a positive integer or null');
+    }
+    if (typeof options.idleTimeout !== 'function') {
+      const idle = toMilliseconds(options.idleTimeout ?? '30m');
+      if (this.touchIntervalMs >= idle) {
+        throw new AuthConfigError('session.touchInterval must be shorter than the idle timeout');
+      }
+    }
+  }
+
+  private idleTimeoutMs(rememberMe: boolean, attributes: A): number {
+    const configured = this.options.idleTimeout;
+    if (typeof configured === 'function') return toMilliseconds(configured({ rememberMe, attributes }));
+    if (configured !== undefined) return toMilliseconds(configured);
+    return toMilliseconds(rememberMe ? '7d' : '30m');
+  }
+
+  readEpoch(userId: string): Promise<number> {
+    return this.store.getEpoch(userId);
+  }
+
+  async mint(input: MintInput<A>): Promise<MintResult<A>> {
+    const token = generateToken(this.random);
+    const now = this.clock.now();
+    const ttlMs = input.rememberMe ? this.rememberMeTtlMs : this.absoluteTtlMs;
+    const epoch = input.epoch ?? (await this.store.getEpoch(input.userId));
+    const session: StoredSession<A> = {
+      id: sha256Hex(token),
+      userId: input.userId,
+      createdAt: now,
+      authenticatedAt: input.authenticatedAt,
+      lastActiveAt: now,
+      expiresAt: now + ttlMs,
+      idleTimeoutMs: this.idleTimeoutMs(input.rememberMe, input.attributes),
+      epoch,
+      rememberMe: input.rememberMe,
+      persistentCookie: input.persistentCookie,
+      ip: input.meta.ip,
+      userAgent: input.meta.userAgent ?? '',
+      attributes: input.attributes,
+    };
+    await this.store.create(session, ttlMs);
+
+    // Second half of the fence: a revocation that landed after the epoch was
+    // captured has already walked (or is walking) the user's sessions and
+    // cannot see this one. Re-reading the epoch turns that survivor into a
+    // refused login instead of a session that merely dies at its first use.
+    if ((await this.store.getEpoch(input.userId)) !== epoch) {
+      await this.store.delete(input.userId, [session.id]);
+      this.logger.warn('Session mint lost the epoch fence; a revocation landed mid-login', { userId: input.userId });
+      return { ok: false, reason: 'epoch_fence' };
+    }
+
+    const evicted = await this.evictOverCap(input.userId);
+    return { ok: true, token, session, evicted };
+  }
+
+  /** Validates a cookie token. `touch: false` for traffic the client makes on its own (polls, socket handshakes). */
+  async validate(token: unknown, options: { touch?: boolean } = {}): Promise<ValidateResult<A>> {
+    if (!isTokenShape(token)) return { ok: false, reason: 'malformed' };
+    const stored = await this.store.get(sha256Hex(token));
+    if (!stored) return { ok: false, reason: 'unknown' };
+    const now = this.clock.now();
+    const refusal = await this.refusalFor(stored, now);
+    if (refusal) {
+      await this.store.delete(stored.userId, [stored.id]);
+      return { ok: false, reason: refusal };
+    }
+    const session = this.parse(stored);
+    if (!session) {
+      await this.store.delete(stored.userId, [stored.id]);
+      return { ok: false, reason: 'corrupt' };
+    }
+    if ((options.touch ?? true) && now - session.lastActiveAt >= this.touchIntervalMs) {
+      const touched = { ...session, lastActiveAt: now };
+      if (!(await this.store.touch(touched))) return { ok: false, reason: 'revoked' };
+      return { ok: true, session: touched };
+    }
+    return { ok: true, session };
+  }
+
+  private async refusalFor(stored: StoredSession, now: number): Promise<SessionRefusal | null> {
+    if (stored.expiresAt <= now) return 'expired';
+    if (now >= stored.lastActiveAt + stored.idleTimeoutMs) return 'idle';
+    // Strict inequality both ways: a session ahead of the counter (a lost or
+    // restored counter) is as untrustworthy as one behind it.
+    if (stored.epoch !== (await this.store.getEpoch(stored.userId))) return 'epoch';
+    return null;
+  }
+
+  private parse(stored: StoredSession): StoredSession<A> | null {
+    if (!this.options.attributes) return stored as StoredSession<A>;
+    try {
+      return { ...stored, attributes: this.options.attributes.parse(stored.attributes) };
+    } catch {
+      // Attribute content stays unlogged: it can carry identity claims.
+      this.logger.warn('Session attributes failed validation; treating the session as invalid', { userId: stored.userId });
+      return null;
+    }
+  }
+
+  /** The user's live sessions: unexpired, not idle, on the current epoch, valid attributes. Reaps the rest. */
+  async listActive(userId: string): Promise<StoredSession<A>[]> {
+    const sessions = await this.store.listByUser(userId);
+    const epoch = await this.store.getEpoch(userId);
+    const now = this.clock.now();
+    const active: StoredSession<A>[] = [];
+    const stale: string[] = [];
+    for (const stored of sessions) {
+      const live = stored.expiresAt > now && now < stored.lastActiveAt + stored.idleTimeoutMs && stored.epoch === epoch;
+      const parsed = live ? this.parse(stored) : null;
+      if (parsed) active.push(parsed);
+      else stale.push(stored.id);
+    }
+    if (stale.length > 0) await this.store.delete(userId, stale);
+    return active;
+  }
+
+  /**
+   * Runs AFTER the new session is written, so concurrent logins converge to
+   * the cap instead of all passing a pre-write check. Oldest first; the new
+   * session has the newest createdAt.
+   */
+  private async evictOverCap(userId: string): Promise<string[]> {
+    if (this.maxPerUser === null) return [];
+    const active = await this.listActive(userId);
+    if (active.length <= this.maxPerUser) return [];
+    active.sort((a, b) => a.createdAt - b.createdAt);
+    const evicted = active.slice(0, active.length - this.maxPerUser).map((s) => s.id);
+    await this.store.delete(userId, evicted);
+    return evicted;
+  }
+
+  /** Deletes the named sessions if they belong to the user. Returns the ids that did. */
+  async revoke(userId: string, ids: readonly string[]): Promise<string[]> {
+    const owned = new Set((await this.store.listByUser(userId)).map((s) => s.id));
+    const mine = ids.filter((id) => owned.has(id));
+    if (mine.length > 0) await this.store.delete(userId, mine);
+    return mine;
+  }
+
+  /** Deletes the session a token names (single-device logout; no epoch bump). */
+  async revokeToken(token: unknown): Promise<StoredSession | null> {
+    if (!isTokenShape(token)) return null;
+    const stored = await this.store.get(sha256Hex(token));
+    if (stored) await this.store.delete(stored.userId, [stored.id]);
+    return stored;
+  }
+
+  /**
+   * Revokes every session of the user. The epoch bump IS the revocation; the
+   * walk only reclaims storage. Call it only after the state change that
+   * motivates it (a new password hash) has been written.
+   */
+  async revokeAll(userId: string): Promise<string[]> {
+    const epoch = await this.store.bumpEpoch(userId);
+    // A session stamped with the new epoch is a login that started after the
+    // revocation; it is legitimate and stays.
+    const ids = (await this.store.listByUser(userId)).filter((s) => s.epoch < epoch).map((s) => s.id);
+    if (ids.length > 0) await this.store.delete(userId, ids);
+    return ids;
+  }
+}
