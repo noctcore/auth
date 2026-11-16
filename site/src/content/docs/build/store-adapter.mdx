@@ -1,0 +1,68 @@
+---
+title: Writing a store adapter
+description: What each store interface must guarantee, a small adapter as a worked example, and how to run the conformance suite from @noctcore/auth/testing against yours.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import storeTs from '../../../../snippets/build/adapter/sqlite-counter-store.ts?raw';
+import testTs from '../../../../snippets/build/adapter/sqlite-counter-store.test.ts?raw';
+
+The core never talks to a database. It is handed four stores, and any implementation that passes the conformance suite in `@noctcore/auth/testing` is a valid one. `@noctcore/auth-redis` and `@noctcore/auth-prisma` are adapters like any other: both run the same suite against a real Redis and PostgreSQL in CI.
+
+## What each store must guarantee
+
+The interfaces are in `packages/auth/src/ports/stores.ts`, with the guarantee each method gives in its comment. The ones the flows depend on, and that the suite tests under concurrency:
+
+**`UserStore`** (users and password hashes)
+
+- `create` returns `null` when the email is taken, even under 20 concurrent creates of one address. It never throws on a unique violation.
+- `setPasswordHash` is guarded: it writes nothing and returns `false` for a missing or soft-deleted user. With `expected`, it is a compare-and-set in one statement, so a rehash on login can never overwrite a password changed meanwhile.
+- `markEmailVerified` writes only while the stored email still equals the one given, so a stale code cannot verify a changed address.
+- The `find*` methods return live users only: a soft-deleted user is not found.
+
+**`TokenStore`** (one-time codes and links, as hashes)
+
+- `put` keeps one token per user and purpose, replacing the old one; concurrent puts never throw.
+- `consume` removes and returns the token atomically: of 50 concurrent callers, exactly one gets it.
+- `incrementAttempts` never passes the cap: of N concurrent callers, at most `max` get a number.
+
+**`SessionStore`** (sessions and revocation epochs)
+
+- `touch` replaces a session only if it still exists, keeping its TTL, and never brings back a deleted one, even when racing the delete on another connection.
+- `bumpEpoch` is an atomic increment, and the epoch must outlive every session it guards. A store that can only guard sessions up to some age says so in `maxSessionTtlMs`, and `createAuth` refuses longer sessions.
+- Every record expires with its session: the session at its TTL, its index entry with it.
+
+**`CounterStore`** (rate limits and lockout)
+
+- The first `increment` arms the window; later hits never extend it. Concurrent increments each see a distinct count.
+- Every key has a TTL, always, so no counter outlives its window.
+- `decrement` lowers the count by one, never below 0, keeps the TTL and never creates a missing key.
+
+## A worked example
+
+A `CounterStore` on `node:sqlite`, for a single-process app. Each method is one SQL statement and SQLite runs one statement at a time, which is what makes the increment atomic. On a database shared by several processes the same logic needs a conditional upsert your database runs atomically, as the Redis store does with a script.
+
+<Code code={storeTs} lang="ts" title="src/sqlite-counter-store.ts" />
+
+## Running the conformance suite
+
+Each suite is a function that takes your store and returns a list of named cases that assert with `node:assert`, so they run under any test runner. `runConformance(title, cases, { describe, it })` registers them with yours. This test runs the counter suite with `node --test`:
+
+<Code code={testTs} lang="ts" title="src/sqlite-counter-store.test.ts" />
+
+Under Vitest or Jest, pass the runner's own functions: `runConformance('my store', cases, { describe, it })`. That is how both shipped adapters do it, in `packages/auth-redis/tests/redis.int.test.ts` and `packages/auth-prisma/tests/prisma.int.test.ts`.
+
+| Suite | Options |
+| --- | --- |
+| `userStoreConformance(store, options)` | `softDelete(id)`: soft-deletes a user, if your store supports soft deletion. Without it that case is left out. |
+| `tokenStoreConformance(store)` | none |
+| `sessionStoreConformance(store, options)` | `secondary`: a second instance of your store on its own connection, so the touch-versus-delete race really crosses connections. `epochTtlMs(userId)`: the remaining TTL of a user's epoch, for stores that expire epochs; enables the check that the epoch outlives the longest session. `advanceTime`, as below. |
+| `counterStoreConformance(store, context)` | `advanceTime`, as below. |
+
+The expiry cases move time forward. By default they sleep, which suits a real backend with its own clock. A store built on an injectable `Clock` can pass `advanceTime: (ms) => clock.advance(ms)` with a `manualClock()`, and those cases then run instantly. Start the manual clock at `Date.now()`, because the sample records carry real timestamps.
+
+On a shared backend, every case writes under ids from `uniqueId`, so parallel runs never collide. Give the store a prefix of its own (the Redis tests use `uniqueId('test')`) and remove its keys after the run.
+
+## In-memory stores
+
+`memoryStores()` from `@noctcore/auth/testing` returns all four stores in memory. They pass the same suite and are meant for unit tests and prototypes: nothing survives a restart and nothing is shared between processes. The fakes beside them (`manualClock`, `plainHasher`, `recordingMailer`, `recordingAudit`) let a unit test drive `createAuth` without Redis, a database or Argon2.
