@@ -1,28 +1,14 @@
 ---
 /**
- * The brand hero art (assets/brand in the repo): a login path through the
- * modules, with the attacks that stop at each one. One file per theme; both
- * share the page background, so the art sits on the page without a frame.
+ * The brand hero art, inlined so it can follow the theme and animate. It is
+ * built from the brand files at build time (hero-svg.ts); see motion.css for
+ * the sequence and LandingMotion.astro for what starts it.
  */
-import heroDark from '../../assets/brand/hero-dark.svg';
-import heroLight from '../../assets/brand/hero-light.svg';
+import heroDark from '../../assets/brand/hero-dark.svg?raw';
+import heroLight from '../../assets/brand/hero-light.svg?raw';
+import { buildHeroSvg } from './hero-svg';
 
-const alt =
-  'A login path through three modules: reserve attempt, verify password and the epoch fence. Brute force, enumeration and a stolen session each stop at one of them.';
+const { svg } = buildHeroSvg(heroDark, heroLight);
 ---
 
-<img
-  class="light:sl-hidden"
-  src={heroDark.src}
-  width={heroDark.width}
-  height={heroDark.height}
-  alt={alt}
-  fetchpriority="high"
-/>
-<img
-  class="dark:sl-hidden"
-  src={heroLight.src}
-  width={heroLight.width}
-  height={heroLight.height}
-  alt={alt}
-/>
+<Fragment set:html={svg} />

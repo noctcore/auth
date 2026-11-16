@@ -1,0 +1,72 @@
+---
+/**
+ * Starts the landing page's motion: the hero sequence once it is in view, the
+ * passage rows as each scrolls in, and the code sample's step highlights.
+ * Inline and tiny on purpose: no library, and nothing runs when the reader
+ * asks for reduced motion (the page then shows every final frame at once).
+ */
+---
+
+<script is:inline>
+  (() => {
+    const root = document.documentElement;
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const once = (elements, className, threshold) => {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            entry.target.classList.add(className);
+            observer.unobserve(entry.target);
+          }
+        },
+        { threshold, rootMargin: '0px 0px -8% 0px' },
+      );
+      elements.forEach((element) => observer.observe(element));
+    };
+
+    if (!reduced && root.classList.contains('nc-motion')) {
+      once(document.querySelectorAll('.nc-hero-svg'), 'is-playing', 0.2);
+      once(document.querySelectorAll('.nc-passage__step'), 'is-in', 0.35);
+    }
+
+    // Code sample: each step lights the lines it describes.
+    const sample = document.querySelector('.nc-sample');
+    if (!sample) return;
+    const lines = [...sample.querySelectorAll('.ec-line')];
+    const steps = [...sample.querySelectorAll('.nc-steps li[data-match]')];
+    const groups = steps.map((step) => {
+      const pattern = new RegExp(step.dataset.match);
+      return lines.filter((line) => pattern.test(line.textContent ?? ''));
+    });
+    let active = -1;
+    let timer = 0;
+    const show = (index) => {
+      active = index;
+      steps.forEach((step, i) => step.classList.toggle('is-active', i === index));
+      groups.forEach((group, i) => group.forEach((line) => line.classList.toggle('is-lit', i === index)));
+    };
+    const stop = () => window.clearInterval(timer);
+    const cycle = () => {
+      stop();
+      show((active + 1) % steps.length);
+      timer = window.setInterval(() => show((active + 1) % steps.length), 2600);
+    };
+
+    steps.forEach((step, i) => {
+      step.addEventListener('mouseenter', () => {
+        stop();
+        show(i);
+      });
+    });
+
+    if (reduced) return;
+    new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) cycle();
+        else stop();
+      },
+      { threshold: 0.3 },
+    ).observe(sample);
+  })();
+</script>

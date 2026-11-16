@@ -25,7 +25,12 @@ import { ATTACKS } from './attacks';
                 <span class="nc-passage__label">Attack</span>
                 {row.attack}
               </span>
-              <span class="nc-passage__node" aria-hidden="true" />
+              <span class="nc-passage__node" aria-hidden="true">
+                <span class="nc-passage__wire">
+                  <span class="nc-passage__dash" />
+                </span>
+                <span class="nc-passage__stop" />
+              </span>
               <span class="nc-passage__answer">
                 <code class="nc-passage__module">{row.module}</code>
                 {row.answer}
