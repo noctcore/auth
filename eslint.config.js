@@ -84,9 +84,18 @@ function layerBoundaries() {
       [{ modules: [`**/${folder}`], message: `Only a higher layer may import from ${folder}.` }],
     ]),
   );
+  // The public barrel sits above every layer: a module that imports it (or
+  // the package by name) would depend on everything and form import cycles.
+  bans.barrel = [
+    {
+      modules: ['**/index', '@noctcore/auth'],
+      message: 'Import the module itself, not the public barrel or the package by name.',
+    },
+  ];
+
   const layers = Object.entries(LAYERS).map(([folder, allowed]) => ({
     files: [`packages/auth/src/${folder}/**`],
-    bans: folders.filter((other) => other !== folder && !allowed.includes(other)),
+    bans: [...folders.filter((other) => other !== folder && !allowed.includes(other)), 'barrel'],
   }));
 
   return { bans, layers };
@@ -231,6 +240,23 @@ export default tseslint.config(
     rules: {
       ...architecture.configs.recommended.rules,
       'noctcore-architecture/no-restricted-imports-layered': ['error', layerBoundaries()],
+    },
+  },
+  {
+    // `..` and `../..` name the barrel too. The layered rule matches parent
+    // paths, so it cannot ban these without banning every relative import;
+    // the core rule matches them exactly.
+    files: ['packages/auth/src/*/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['..', '../..', '../../..'].map((name) => ({
+            name,
+            message: 'Import the module itself, not the public barrel.',
+          })),
+        },
+      ],
     },
   },
 );
