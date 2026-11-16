@@ -22,6 +22,7 @@ import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/throttle';
 import type { AuthUser } from '../ports/stores';
 import { publicUser, PURPOSE, RESET_PURPOSES, type FlowSettings } from './settings';
+import { describeError } from '../shared/describe-error';
 
 const DEDUPE_WINDOW_MS = 60_000;
 
@@ -56,7 +57,7 @@ export async function requestPasswordReset<U extends AuthUser, A>(
   } else {
     void processPasswordReset(core, settings, job).catch((error: unknown) => {
       core.logger.error('Detached password reset job failed', {
-        error: error instanceof Error ? error.message : String(error),
+        error: describeError(error),
       });
     });
   }

@@ -30,6 +30,7 @@ import type { IssuedSession } from '../core/plugin-context';
 import { accountKey } from '../throttle/throttle';
 import { NO_SUCH_USER_ID, type AuthUser } from '../ports/stores';
 import { publicUser } from './settings';
+import { describeError } from '../shared/describe-error';
 
 export interface LoginInput {
   readonly email: string;
@@ -194,7 +195,7 @@ async function rehash<U extends AuthUser, A>(
   } catch (error) {
     core.logger.warn('Password rehash failed', {
       userId,
-      error: error instanceof Error ? error.message : String(error),
+      error: describeError(error),
     });
   }
 }
