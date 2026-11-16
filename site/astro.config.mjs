@@ -116,6 +116,7 @@ export default defineConfig({
           items: [
             { label: 'Guides', link: '/build/' },
             { label: 'Mail into your templates and queue', link: '/build/mail/' },
+            { label: 'Writing a store adapter', link: '/build/store-adapter/' },
           ],
         },
         {
