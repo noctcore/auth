@@ -4,125 +4,36 @@
  * id. It returns functions, not HTTP handlers: your router calls them and maps
  * the results onto responses with `toPublicError`.
  */
-import { systemClock } from './ports/clock';
-import type { AuthConfig, AuthPlugin, PasswordResetJob } from './core/config';
 import { AuthCore } from './core/auth-core';
-import { deviceCookieName, parseCookieHeader, sessionCookieName } from './http/cookie';
-import { hmacSha256Hex } from './crypto/hash';
-import { toMilliseconds } from './shared/duration';
-import { AuthConfigError } from './shared/errors';
+import type { AuthConfig, AuthPlugin, PasswordResetJob } from './core/config';
 import { mergeHooks } from './core/hooks';
-import { silentLogger, noopMetrics } from './ports/logger';
-import { DEFAULT_PASSWORD_POLICY } from './password/policy';
+import type { PluginContext } from './core/plugin-context';
+import { checkPlugins, namespacePluginFlows, type PluginFlows } from './core/plugins';
+import { deriveKey, toSecret } from './crypto/keys';
 import { cryptoRandom } from './crypto/random';
-import { SessionManager } from './session/session-manager';
-import type { AuthUser, StoredSession } from './ports/stores';
-import { Throttle } from './throttle/throttle';
-import { OneTimeTokens } from './tokens/one-time-tokens';
 import * as account from './flows/account';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
 import * as reset from './flows/password-reset';
 import { register, type RegisterInput } from './flows/register';
-import type { FlowSettings } from './flows/settings';
-import type { PluginContext } from './core/plugin-context';
+import { resolveSettings } from './flows/resolve-settings';
+import { deviceCookieName, parseCookieHeader, sessionCookieName } from './http/cookie';
+import { DEFAULT_PASSWORD_POLICY } from './password/policy';
+import { systemClock } from './ports/clock';
+import { noopMetrics, silentLogger } from './ports/logger';
+import type { AuthUser, SessionStore, StoredSession } from './ports/stores';
+import { SessionManager } from './session/session-manager';
+import { AuthConfigError } from './shared/errors';
 import type { RequestMeta } from './shared/meta';
+import { Throttle } from './throttle/throttle';
+import { OneTimeTokens } from './tokens/one-time-tokens';
 
-const MIN_SECRET_BYTES = 32;
-
-function deriveKey(secret: Uint8Array, purpose: string): Uint8Array {
-  return new TextEncoder().encode(hmacSha256Hex(secret, `noctcore-auth:${purpose}`));
-}
-
-type UnionToIntersection<T> = (T extends unknown ? (value: T) => void : never) extends (
-  value: infer I,
-) => void
-  ? I
-  : never;
-
-/** `{ [plugin id]: plugin flows }` for the configured plugins. */
-export type PluginFlows<P extends readonly AuthPlugin[]> = UnionToIntersection<
-  P[number] extends infer Plugin
-    ? Plugin extends AuthPlugin<infer Id, infer F>
-      ? { readonly [K in Id]: F }
-      : never
-    : never
->;
-
-function toSecret(secret: Uint8Array | string | undefined): Uint8Array {
-  if (secret === undefined) throw new AuthConfigError('secret is required (32 bytes or more)');
-
-  const bytes = typeof secret === 'string' ? new TextEncoder().encode(secret) : secret;
-
-  if (bytes.byteLength < MIN_SECRET_BYTES)
-    throw new AuthConfigError(`secret must be at least ${MIN_SECRET_BYTES} bytes`);
-
-  return bytes;
-}
-
-function resolveSettings<U extends AuthUser, A, P extends readonly AuthPlugin[]>(
+function assertRequiredConfig<U extends AuthUser, A, P extends readonly AuthPlugin[]>(
   config: AuthConfig<U, A, P>,
-): FlowSettings {
-  const verificationKind = config.emailVerification?.kind ?? 'code';
-  const resetKind = config.passwordReset?.kind ?? 'link';
+): void {
+  const { stores } = config;
 
-  const settings: FlowSettings = {
-    revealExisting: config.registration?.revealExisting ?? false,
-    autoLogin: config.registration?.autoLogin ?? false,
-    verification: {
-      kind: verificationKind,
-      ttlMs: toMilliseconds(
-        config.emailVerification?.ttl ?? (verificationKind === 'code' ? '15m' : '24h'),
-      ),
-      digits: config.emailVerification?.digits ?? 8,
-      maxAttempts: config.emailVerification?.maxAttempts ?? 5,
-    },
-    reset: {
-      kind: resetKind,
-      ttlMs: toMilliseconds(config.passwordReset?.ttl ?? (resetKind === 'code' ? '15m' : '1h')),
-      digits: config.passwordReset?.digits ?? 8,
-      maxAttempts: config.passwordReset?.maxAttempts ?? 5,
-      ticketTtlMs: toMilliseconds(config.passwordReset?.ticketTtl ?? '10m'),
-      markEmailVerified: config.passwordReset?.markEmailVerified ?? true,
-      enqueue: config.passwordReset?.enqueue,
-    },
-    urls: { verifyEmail: config.urls?.verifyEmail, resetPassword: config.urls?.resetPassword },
-    freshAuthAgeMs: toMilliseconds(config.session?.freshAuthAge ?? '10m'),
-  };
-
-  if (settings.autoLogin && !settings.revealExisting) {
-    throw new AuthConfigError(
-      'registration.autoLogin requires registration.revealExisting: a session would reveal that the account is new',
-    );
-  }
-
-  if (verificationKind === 'link' && !settings.urls.verifyEmail)
-    throw new AuthConfigError('urls.verifyEmail is required for link verification');
-  if (resetKind === 'link' && !settings.urls.resetPassword)
-    throw new AuthConfigError('urls.resetPassword is required for link resets');
-
-  for (const [name, digits] of [
-    ['emailVerification.digits', settings.verification.digits],
-    ['passwordReset.digits', settings.reset.digits],
-  ] as const) {
-    if (!Number.isInteger(digits) || digits < 6 || digits > 9)
-      throw new AuthConfigError(`${name} must be 6 to 9`);
-  }
-
-  return settings;
-}
-
-export function createAuth<
-  U extends AuthUser,
-  A = Record<string, never>,
-  const P extends readonly AuthPlugin[] = [],
->(config: AuthConfig<U, A, P>) {
-  if (
-    !config.stores?.users ||
-    !config.stores.sessions ||
-    !config.stores.tokens ||
-    !config.stores.counters
-  ) {
+  if (!stores?.users || !stores.sessions || !stores.tokens || !stores.counters) {
     throw new AuthConfigError(
       'stores.users, stores.sessions, stores.tokens and stores.counters are required',
     );
@@ -130,6 +41,26 @@ export function createAuth<
 
   if (!config.password?.hasher) throw new AuthConfigError('password.hasher is required');
   if (!config.mailer) throw new AuthConfigError('mailer is required');
+}
+
+/** Refuses session lifetimes longer than the store promises to keep its revocation fence. */
+function assertStoreOutlivesSessions<A>(store: SessionStore, sessions: SessionManager<A>): void {
+  const storeLimit = store.maxSessionTtlMs;
+  const longest = Math.max(sessions.absoluteTtlMs, sessions.rememberMeTtlMs);
+
+  if (storeLimit !== undefined && longest > storeLimit) {
+    throw new AuthConfigError(
+      `The session store guards sessions up to ${storeLimit} ms, but sessions may last ${longest} ms: raise the store's maxSessionTtl or lower session.rememberMeTtl`,
+    );
+  }
+}
+
+export function createAuth<
+  U extends AuthUser,
+  A = Record<string, never>,
+  const P extends readonly AuthPlugin[] = [],
+>(config: AuthConfig<U, A, P>) {
+  assertRequiredConfig(config);
 
   const settings = resolveSettings(config);
   const secret = toSecret(config.secret);
@@ -137,16 +68,8 @@ export function createAuth<
   // One secret, a separate key per use: a code HMAC can never double as a device token.
   const codeKey = deriveKey(secret, 'codes');
   const deviceKey = deriveKey(secret, 'device');
-  const seen = new Set<string>();
 
-  for (const plugin of plugins) {
-    if (seen.has(plugin.id)) throw new AuthConfigError(`Duplicate plugin id: ${plugin.id}`);
-
-    seen.add(plugin.id);
-
-    if (plugin.requires?.includes('captcha') && !config.captcha)
-      throw new AuthConfigError(`Plugin ${plugin.id} requires a captcha`);
-  }
+  checkPlugins(plugins, { captcha: Boolean(config.captcha) });
 
   const clock = config.clock ?? systemClock;
   const random = config.random ?? cryptoRandom;
@@ -158,6 +81,7 @@ export function createAuth<
 
   const cookie = config.session?.cookie ?? {};
 
+  // Validates the cookie config now rather than on the first sign-in.
   sessionCookieName(cookie);
 
   const sessions = new SessionManager<A>(
@@ -168,14 +92,7 @@ export function createAuth<
     logger,
   );
 
-  const storeLimit = config.stores.sessions.maxSessionTtlMs;
-  const longest = Math.max(sessions.absoluteTtlMs, sessions.rememberMeTtlMs);
-
-  if (storeLimit !== undefined && longest > storeLimit) {
-    throw new AuthConfigError(
-      `The session store guards sessions up to ${storeLimit} ms, but sessions may last ${longest} ms: raise the store's maxSessionTtl or lower session.rememberMeTtl`,
-    );
-  }
+  assertStoreOutlivesSessions(config.stores.sessions, sessions);
 
   const core = new AuthCore<U, A>({
     users: config.stores.users,
@@ -267,13 +184,7 @@ export function createAuth<
     context: core as PluginContext<U, A>,
   };
 
-  const namespaced: Record<string, object> = {};
-
-  for (const plugin of plugins) {
-    if (plugin.id in flows)
-      throw new AuthConfigError(`Plugin id ${plugin.id} collides with a core flow`);
-    if (plugin.flows) namespaced[plugin.id] = plugin.flows(core);
-  }
+  const namespaced = namespacePluginFlows(plugins, flows, core);
 
   return Object.assign(flows, namespaced) as typeof flows & PluginFlows<P>;
 }
@@ -281,10 +192,3 @@ export function createAuth<
 export type Auth<U extends AuthUser, A, P extends readonly AuthPlugin[] = []> = ReturnType<
   typeof createAuth<U, A, P>
 >;
-
-/** Defines a plugin with its id and flows typed. */
-export function definePlugin<const Id extends string, F extends object>(
-  plugin: AuthPlugin<Id, F>,
-): AuthPlugin<Id, F> {
-  return plugin;
-}

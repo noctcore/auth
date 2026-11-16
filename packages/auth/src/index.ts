@@ -106,7 +106,8 @@ export {
 } from './throttle/throttle';
 export type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './core/config';
 export { DEFAULT_DOOR_LIMITS } from './core/config';
-export { createAuth, definePlugin, type Auth, type PluginFlows } from './create-auth';
+export { createAuth, type Auth } from './create-auth';
+export { definePlugin, type PluginFlows } from './core/plugins';
 export {
   refuse,
   type AuthHooks,
