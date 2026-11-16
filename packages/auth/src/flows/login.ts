@@ -21,16 +21,16 @@
  * minted in `issueSession`, so never before the last factor. Presenting it on a
  * later login lets a correct password through an account lock (see throttle/throttle.ts).
  */
+import { sendLockNotice } from './lock-notice';
+import { rehash } from './rehash';
+import { publicUser } from './settings';
 import type { AuthCore } from '../core/auth-core';
+import type { IssuedSession } from '../core/plugin-context';
+import { NO_SUCH_USER_ID, type AuthUser } from '../ports/stores';
 import { normalizeEmail } from '../shared/email';
 import { fail, ok, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
-import { normalizePassword } from '../password/policy';
-import type { IssuedSession } from '../core/plugin-context';
 import { accountKey } from '../throttle/counter-keys';
-import { NO_SUCH_USER_ID, type AuthUser } from '../ports/stores';
-import { publicUser } from './settings';
-import { describeError } from '../shared/describe-error';
 
 export interface LoginInput {
   readonly email: string;
@@ -45,6 +45,8 @@ export interface LoginInput {
 export type LoginOutcome<A> =
   | { readonly kind: 'session'; readonly session: IssuedSession<A> }
   | { readonly kind: 'challenge'; readonly challenge: string; readonly methods: readonly string[] };
+
+type Credential = { readonly id: string; readonly email: string } | null;
 
 export async function login<U extends AuthUser, A>(
   core: AuthCore<U, A>,
@@ -85,14 +87,7 @@ export async function login<U extends AuthUser, A>(
   if (!gate.allowed) {
     notifyLock(core, credential, gate.newLock, meta);
 
-    await core.emit(
-      {
-        type: 'login.failure',
-        ...(credential ? { userId: credential.id } : {}),
-        reason: gate.reason,
-      },
-      meta,
-    );
+    await emitFailure(core, credential, gate.reason, meta);
 
     return fail('invalid_credentials', gate.reason);
   }
@@ -100,8 +95,11 @@ export async function login<U extends AuthUser, A>(
   if (!credential || !verified) {
     // A device token lets only a correct password through a lock; a wrong one
     // counts against the devices' shared failures and the account-wide budget.
-    if (gate.viaDevice)
-      notifyLock(core, credential, (await core.throttle.deviceFailed(account)).newLock, meta);
+    if (gate.viaDevice) {
+      const { newLock } = await core.throttle.deviceFailed(account);
+
+      notifyLock(core, credential, newLock, meta);
+    }
 
     const reason = !credential
       ? 'unknown_user'
@@ -109,10 +107,7 @@ export async function login<U extends AuthUser, A>(
         ? 'wrong_password'
         : 'password_not_set';
 
-    await core.emit(
-      { type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason },
-      meta,
-    );
+    await emitFailure(core, credential, reason, meta);
 
     return fail('invalid_credentials', reason);
   }
@@ -128,19 +123,14 @@ export async function login<U extends AuthUser, A>(
   for (const hook of core.hooks.loginChallenge) {
     const challenge = await hook({ user, rememberMe, epoch, meta });
 
-    if (challenge) {
-      // No device cookie yet: it comes with the session, after every factor.
-      await core.emit(
-        {
-          type: 'login.challenge',
-          userId: user.id,
-          data: { methods: challenge.methods.join(',') },
-        },
-        meta,
-      );
+    if (!challenge) continue;
 
-      return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods });
-    }
+    // No device cookie yet: it comes with the session, after every factor.
+    const methods = challenge.methods.join(',');
+
+    await core.emit({ type: 'login.challenge', userId: user.id, data: { methods } }, meta);
+
+    return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods });
   }
 
   const issued = await core.issueSession(user, { via: 'password', meta, rememberMe, epoch });
@@ -152,50 +142,27 @@ export async function login<U extends AuthUser, A>(
   return ok({ kind: 'session', session: issued.value });
 }
 
-/** A new lock's audit row and owner mail, off the response path so a known account answers no slower. */
+/** The audit row of a refused login; the user id only when the address belongs to an account. */
+async function emitFailure<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  credential: Credential,
+  reason: string,
+  meta: RequestMeta,
+): Promise<void> {
+  await core.emit(
+    { type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason },
+    meta,
+  );
+}
+
+/** A new lock's notice, off the response path so a known account answers no slower. */
 function notifyLock<U extends AuthUser, A>(
   core: AuthCore<U, A>,
-  credential: { id: string; email: string } | null,
+  credential: Credential,
   newLock: { until: number } | undefined,
   meta: RequestMeta,
 ): void {
   if (!newLock || !credential) return;
 
-  core.background('lockout notice', async () => {
-    await core.emit(
-      { type: 'account.locked', userId: credential.id, data: { until: newLock.until } },
-      meta,
-    );
-
-    await core.mail({
-      type: 'lockout',
-      to: credential.email,
-      userId: credential.id,
-      until: new Date(newLock.until),
-    });
-  });
-}
-
-/** Upgrades a hash made with older parameters. A failure only costs the upgrade, never the login. */
-async function rehash<U extends AuthUser, A>(
-  core: AuthCore<U, A>,
-  userId: string,
-  previous: string,
-  password: string,
-  meta: RequestMeta,
-) {
-  try {
-    const hash = await core.hasher.hash(normalizePassword(password));
-
-    // Compare-and-set: a password change or reset that landed while this hash
-    // was computed must win, or the old password would come back.
-    if (await core.users.setPasswordHash(userId, hash, { expected: previous })) {
-      await core.emit({ type: 'password.rehashed', userId }, meta);
-    }
-  } catch (error) {
-    core.logger.warn('Password rehash failed', {
-      userId,
-      error: describeError(error),
-    });
-  }
+  core.background('lockout notice', () => sendLockNotice(core, credential, newLock.until, meta));
 }

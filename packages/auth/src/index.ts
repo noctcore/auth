@@ -111,4 +111,4 @@ export type { IssuedSession, IssueOptions, PluginContext } from './core/plugin-c
 export type { LoginInput, LoginOutcome } from './flows/login';
 export type { RegisterInput, RegisterOutcome } from './flows/register';
 export type { VerifiedEmail } from './flows/email-verification';
-export type { SessionSummary } from './flows/account';
+export type { SessionSummary } from './flows/session-management';
