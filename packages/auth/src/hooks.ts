@@ -55,11 +55,23 @@ export type RevocationReason =
 
 export interface AuthHooks<U extends AuthUser, A> {
   /** Attributes for a session being issued. On a re-issue `inherited` holds the old session's attributes. */
-  sessionAttributes: (context: { user: U; via: IssueVia; inherited: A | undefined }) => MaybePromise<Partial<A>>;
+  sessionAttributes: (context: {
+    user: U;
+    via: IssueVia;
+    inherited: A | undefined;
+  }) => MaybePromise<Partial<A>>;
   /** Last check before any session is minted, on every path. */
-  beforeSessionCreate: (context: { user: U; via: IssueVia; attributes: A; meta: RequestMeta }) => MaybePromise<HookResult>;
+  beforeSessionCreate: (context: {
+    user: U;
+    via: IssueVia;
+    attributes: A;
+    meta: RequestMeta;
+  }) => MaybePromise<HookResult>;
   /** Runs on every validated request; a refusal revokes the session. Keep it cheap. */
-  onSessionValidate: (context: { session: StoredSession<A>; meta: RequestMeta | undefined }) => MaybePromise<HookResult>;
+  onSessionValidate: (context: {
+    session: StoredSession<A>;
+    meta: RequestMeta | undefined;
+  }) => MaybePromise<HookResult>;
   /**
    * After a correct password, before a session: return a challenge to finish
    * the login with a second factor instead. The first hook that returns one wins.
@@ -73,7 +85,11 @@ export interface AuthHooks<U extends AuthUser, A> {
   /** Whether a reset may be sent to this account. A refusal is silent (the request answers the same). */
   beforePasswordResetRequest: (context: { user: U }) => MaybePromise<HookResult>;
   /** Before a reset is applied: a second-factor plugin demands its code here. */
-  beforePasswordReset: (context: { user: U; secondFactor: string | undefined; meta: RequestMeta }) => MaybePromise<HookResult>;
+  beforePasswordReset: (context: {
+    user: U;
+    secondFactor: string | undefined;
+    meta: RequestMeta;
+  }) => MaybePromise<HookResult>;
   /** Before a password change is applied, after the current password was checked. */
   beforePasswordChange: (context: {
     user: U;
@@ -84,7 +100,11 @@ export interface AuthHooks<U extends AuthUser, A> {
   /** After a new account is created, before its verification mail. */
   afterRegister: (context: { user: U; meta: RequestMeta }) => MaybePromise<void>;
   /** Sessions ended: close their sockets, drop caches. Errors are logged, never thrown into the flow. */
-  onSessionsRevoked: (context: { userId: string; sessionIds: readonly string[]; reason: RevocationReason }) => MaybePromise<void>;
+  onSessionsRevoked: (context: {
+    userId: string;
+    sessionIds: readonly string[];
+    reason: RevocationReason;
+  }) => MaybePromise<void>;
 }
 
 export type HookName = keyof AuthHooks<AuthUser, unknown>;
@@ -111,7 +131,9 @@ const HOOK_NAMES: readonly HookName[] = [
 ];
 
 /** Merges hook inputs in order (plugins first, then the app). */
-export function mergeHooks<U extends AuthUser, A>(inputs: ReadonlyArray<HookInput<U, A> | undefined>): HookLists<U, A> {
+export function mergeHooks<U extends AuthUser, A>(
+  inputs: ReadonlyArray<HookInput<U, A> | undefined>,
+): HookLists<U, A> {
   const lists: Record<string, unknown[]> = {};
   for (const name of HOOK_NAMES) lists[name] = [];
   for (const input of inputs) {

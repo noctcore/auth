@@ -40,7 +40,12 @@ export {
   type PasswordPolicyVerdict,
 } from './password/policy';
 export { dummyHashFor, type PasswordHasher } from './password/hasher';
-export { pwnedPasswords, type BreachChecker, type BreachVerdict, type PwnedPasswordsOptions } from './password/breach';
+export {
+  pwnedPasswords,
+  type BreachChecker,
+  type BreachVerdict,
+  type PwnedPasswordsOptions,
+} from './password/breach';
 export {
   createBlankSessionCookie,
   createSessionCookie,
@@ -86,11 +91,26 @@ export {
   type ValidateResult,
 } from './session';
 export { OneTimeTokens, type TokenRedemption } from './tokens';
-export { accountKey, Throttle, type Hit, type LockoutOptions, type LoginGate, type RateLimitRule } from './throttle';
+export {
+  accountKey,
+  Throttle,
+  type Hit,
+  type LockoutOptions,
+  type LoginGate,
+  type RateLimitRule,
+} from './throttle';
 export type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './config';
 export { DEFAULT_DOOR_LIMITS } from './config';
 export { createAuth, definePlugin, type Auth, type PluginFlows } from './create-auth';
-export { refuse, type AuthHooks, type HookInput, type HookResult, type IssueVia, type Refusal, type RevocationReason } from './hooks';
+export {
+  refuse,
+  type AuthHooks,
+  type HookInput,
+  type HookResult,
+  type IssueVia,
+  type Refusal,
+  type RevocationReason,
+} from './hooks';
 export type { IssuedSession, IssueOptions, PluginContext } from './plugin-context';
 export type { LoginInput, LoginOutcome } from './flows/login';
 export type { RegisterInput, RegisterOutcome } from './flows/register';

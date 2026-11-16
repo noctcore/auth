@@ -48,11 +48,22 @@ export async function register<U extends AuthUser, A>(
   if (!user) {
     const existing = await core.users.findCredentialByEmail(email);
     if (settings.revealExisting) {
-      await core.emit({ type: 'register.refused', ...(existing ? { userId: existing.id } : {}), reason: 'email_in_use' }, meta);
+      await core.emit(
+        {
+          type: 'register.refused',
+          ...(existing ? { userId: existing.id } : {}),
+          reason: 'email_in_use',
+        },
+        meta,
+      );
       return fail('email_in_use', 'email_in_use');
     }
-    if (existing) await core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
-    await core.emit({ type: 'register.existing', ...(existing ? { userId: existing.id } : {}) }, meta);
+    if (existing)
+      await core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
+    await core.emit(
+      { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },
+      meta,
+    );
     return ok({ session: null });
   }
 

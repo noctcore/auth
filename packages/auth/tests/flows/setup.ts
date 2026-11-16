@@ -1,6 +1,12 @@
 import { createAuth, type AuthConfig, type AuthPlugin, type RequestMeta } from '../../src';
 import type { AuthUser, StoredSession } from '../../src/stores';
-import { manualClock, memoryStores, plainHasher, recordingAudit, recordingMailer } from '../../src/testing';
+import {
+  manualClock,
+  memoryStores,
+  plainHasher,
+  recordingAudit,
+  recordingMailer,
+} from '../../src/testing';
 
 export const SECRET = 'test-secret-that-is-at-least-32-bytes-long';
 export const PASSWORD = 'correct horse battery';
@@ -10,7 +16,9 @@ export function meta(ip = '203.0.113.7'): RequestMeta {
   return { ip, userAgent: 'vitest', origin: 'https://app.example' };
 }
 
-type Overrides = Partial<Omit<AuthConfig<AuthUser, Record<string, never>, readonly AuthPlugin[]>, 'stores' | 'mailer'>>;
+type Overrides = Partial<
+  Omit<AuthConfig<AuthUser, Record<string, never>, readonly AuthPlugin[]>, 'stores' | 'mailer'>
+>;
 
 export function setup(overrides: Overrides = {}) {
   const clock = manualClock(Date.UTC(2026, 0, 1));
@@ -21,7 +29,10 @@ export function setup(overrides: Overrides = {}) {
     stores,
     password: { hasher: plainHasher(), breachCheck: false },
     secret: SECRET,
-    urls: { resetPassword: (token) => `https://app.example/reset#${token}`, verifyEmail: (token) => `https://app.example/verify#${token}` },
+    urls: {
+      resetPassword: (token) => `https://app.example/reset#${token}`,
+      verifyEmail: (token) => `https://app.example/verify#${token}`,
+    },
     mailer,
     audit,
     clock,
@@ -34,7 +45,10 @@ export function setup(overrides: Overrides = {}) {
     if (!registered.ok) throw new Error(`register failed: ${registered.reason}`);
     const login = await auth.login({ email, password: PASSWORD, meta: meta(ip) });
     if (!login.ok || login.value.kind !== 'session') throw new Error('login failed');
-    return { token: login.value.session.token, session: login.value.session.session as StoredSession<Record<string, never>> };
+    return {
+      token: login.value.session.token,
+      session: login.value.session.session as StoredSession<Record<string, never>>,
+    };
   }
 
   async function sessionOf(token: string) {

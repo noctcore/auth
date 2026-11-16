@@ -34,14 +34,38 @@ export async function sendVerification<U extends AuthUser, A>(
       settings.verification.digits,
       data,
     );
-    await core.mail({ type: 'verify-email', to: user.email, userId: user.id, code, expiresAt: new Date(expiresAt) });
+    await core.mail({
+      type: 'verify-email',
+      to: user.email,
+      userId: user.id,
+      code,
+      expiresAt: new Date(expiresAt),
+    });
   } else {
     const url = settings.urls.verifyEmail;
     if (!url) throw new Error('urls.verifyEmail is required for link verification');
-    const { token, expiresAt } = await core.tokens.issueLink(PURPOSE.emailVerification, user.id, settings.verification.ttlMs, data);
-    await core.mail({ type: 'verify-email', to: user.email, userId: user.id, url: url(token), expiresAt: new Date(expiresAt) });
+    const { token, expiresAt } = await core.tokens.issueLink(
+      PURPOSE.emailVerification,
+      user.id,
+      settings.verification.ttlMs,
+      data,
+    );
+    await core.mail({
+      type: 'verify-email',
+      to: user.email,
+      userId: user.id,
+      url: url(token),
+      expiresAt: new Date(expiresAt),
+    });
   }
-  await core.emit({ type: 'email.verification_sent', userId: user.id, data: { kind: settings.verification.kind } }, meta);
+  await core.emit(
+    {
+      type: 'email.verification_sent',
+      userId: user.id,
+      data: { kind: settings.verification.kind },
+    },
+    meta,
+  );
 }
 
 /** A signed-in user asks for a new verification mail. Already verified: nothing is sent. */
@@ -50,7 +74,11 @@ export async function requestEmailVerification<U extends AuthUser, A>(
   settings: FlowSettings,
   input: { session: StoredSession<A>; meta: RequestMeta },
 ): Promise<AuthResult<{ sent: boolean }>> {
-  const limited = await core.rateLimit('email-verification-request', input.session.userId, input.meta);
+  const limited = await core.rateLimit(
+    'email-verification-request',
+    input.session.userId,
+    input.meta,
+  );
   if (limited) return limited;
   const user = await core.users.findById(input.session.userId);
   if (!user) return fail('session_expired', 'user_missing');
@@ -95,7 +123,10 @@ export async function verifyEmailLink<U extends AuthUser, A>(
   if (limited) return limited;
   const peek = await core.tokens.peekLink(PURPOSE.emailVerification, input.token);
   if (peek.status === 'valid' && input.session?.userId !== peek.userId) {
-    await core.emit({ type: 'email.verification_failed', userId: peek.userId, reason: 'session_required' }, input.meta);
+    await core.emit(
+      { type: 'email.verification_failed', userId: peek.userId, reason: 'session_required' },
+      input.meta,
+    );
     return fail('session_expired', 'verification_session_required');
   }
   const redemption = await core.tokens.redeemLink(PURPOSE.emailVerification, input.token);
@@ -123,7 +154,10 @@ async function finish<U extends AuthUser, A>(
   const sentTo = normalizeEmail(redemption.data.email);
   // The address changed since the mail was sent: the proof is for an old address.
   if (!user || !sentTo || user.email !== sentTo) {
-    await core.emit({ type: 'email.verification_failed', userId: redemption.userId, reason: 'address_changed' }, meta);
+    await core.emit(
+      { type: 'email.verification_failed', userId: redemption.userId, reason: 'address_changed' },
+      meta,
+    );
     return fail('invalid_token', 'verification_address_changed');
   }
   if (!(await core.users.markEmailVerified(user.id, sentTo as NormalizedEmail))) {
@@ -133,11 +167,14 @@ async function finish<U extends AuthUser, A>(
   await core.emit({ type: 'email.verified', userId: user.id }, meta);
 
   if (!current || current.userId !== user.id) return ok({ session: null });
-  const issued = await core.issueSession({ ...user, emailVerified: true }, {
-    via: 'email-verified',
-    meta,
-    inherit: current,
-    authenticatedAt: current.authenticatedAt,
-  });
+  const issued = await core.issueSession(
+    { ...user, emailVerified: true },
+    {
+      via: 'email-verified',
+      meta,
+      inherit: current,
+      authenticatedAt: current.authenticatedAt,
+    },
+  );
   return issued.ok ? ok({ session: issued.value }) : issued;
 }

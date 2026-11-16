@@ -35,7 +35,11 @@ export interface UserStore<U extends AuthUser = AuthUser> {
    * only if the stored hash still equals `expected` (null for no password), in
    * one statement, so a rehash can never overwrite a password changed meanwhile.
    */
-  setPasswordHash(id: string, passwordHash: string, options?: { readonly expected?: string | null }): Promise<boolean>;
+  setPasswordHash(
+    id: string,
+    passwordHash: string,
+    options?: { readonly expected?: string | null },
+  ): Promise<boolean>;
   /** Guarded on the stored email still equalling `email`, so a stale link cannot verify a changed address. */
   markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>;
 }

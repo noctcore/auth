@@ -11,10 +11,18 @@ describe('normalizeEmail', () => {
     expect(normalizeEmail('josé@example.com')).toBe(normalizeEmail('josé@example.com'));
   });
 
-  it.each(['', 'no-at', '@example.com', 'a@b', 'a@b.', 'a@@b.com', 'a b@c.com', 'a\u0000@b.com', `${'a'.repeat(65)}@b.com`, 7])(
-    'refuses %j',
-    (value) => {
-      expect(normalizeEmail(value)).toBeNull();
-    },
-  );
+  it.each([
+    '',
+    'no-at',
+    '@example.com',
+    'a@b',
+    'a@b.',
+    'a@@b.com',
+    'a b@c.com',
+    'a\u0000@b.com',
+    `${'a'.repeat(65)}@b.com`,
+    7,
+  ])('refuses %j', (value) => {
+    expect(normalizeEmail(value)).toBeNull();
+  });
 });

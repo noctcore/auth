@@ -6,8 +6,11 @@ import { createPrisma } from './db';
 
 const secret = process.env.AUTH_SECRET;
 const csrfSecret = process.env.CSRF_SECRET;
-if (!secret || !csrfSecret) throw new Error('Set AUTH_SECRET and CSRF_SECRET (two different values, 32 bytes or more each)');
-const prisma = createPrisma(process.env.DATABASE_URL ?? 'postgresql://auth:auth@localhost:5440/auth');
+if (!secret || !csrfSecret)
+  throw new Error('Set AUTH_SECRET and CSRF_SECRET (two different values, 32 bytes or more each)');
+const prisma = createPrisma(
+  process.env.DATABASE_URL ?? 'postgresql://auth:auth@localhost:5440/auth',
+);
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6390');
 const port = Number(process.env.PORT ?? 3000);
 

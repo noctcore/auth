@@ -12,7 +12,13 @@
  * session and its user's index together, so Redis Cluster is not supported;
  * a single primary, with replicas or Sentinel, is.
  */
-import type { Clock, CounterStore, CounterWindow, SessionStore, StoredSession } from '@noctcore/auth';
+import type {
+  Clock,
+  CounterStore,
+  CounterWindow,
+  SessionStore,
+  StoredSession,
+} from '@noctcore/auth';
 import { AuthConfigError, systemClock, toMilliseconds, type Duration } from '@noctcore/auth';
 import type { Redis } from 'ioredis';
 
@@ -93,7 +99,9 @@ export class RedisSessionStore implements SessionStore {
     this.epochTtlMs = toMilliseconds(options.epochTtl ?? '90d');
     this.maxSessionTtlMs = toMilliseconds(options.maxSessionTtl ?? '30d');
     if (this.epochTtlMs <= this.maxSessionTtlMs) {
-      throw new AuthConfigError('epochTtl must be longer than the longest session (maxSessionTtl, your remember-me TTL)');
+      throw new AuthConfigError(
+        'epochTtl must be longer than the longest session (maxSessionTtl, your remember-me TTL)',
+      );
     }
   }
 
@@ -111,7 +119,9 @@ export class RedisSessionStore implements SessionStore {
 
   async create(session: StoredSession, ttlMs: number): Promise<void> {
     if (ttlMs > this.epochTtlMs) {
-      throw new AuthConfigError('A session may not outlive its revocation epoch: raise epochTtl above the remember-me TTL');
+      throw new AuthConfigError(
+        'A session may not outlive its revocation epoch: raise epochTtl above the remember-me TTL',
+      );
     }
     await this.redis.eval(
       CREATE,
@@ -134,7 +144,12 @@ export class RedisSessionStore implements SessionStore {
 
   async touch(session: StoredSession): Promise<boolean> {
     // XX: only if it still exists; KEEPTTL: the absolute end never moves.
-    const result = await this.redis.set(this.sessionKey(session.id), JSON.stringify(session), 'KEEPTTL', 'XX');
+    const result = await this.redis.set(
+      this.sessionKey(session.id),
+      JSON.stringify(session),
+      'KEEPTTL',
+      'XX',
+    );
     return result === 'OK';
   }
 
@@ -200,15 +215,21 @@ export class RedisCounterStore implements CounterStore {
   }
 
   async increment(key: string, windowMs: number): Promise<CounterWindow> {
-    const [count, ttl] = (await this.redis.eval(INCREMENT, 1, this.key(key), String(Math.max(1, Math.ceil(windowMs))))) as [number, number];
+    const [count, ttl] = (await this.redis.eval(
+      INCREMENT,
+      1,
+      this.key(key),
+      String(Math.max(1, Math.ceil(windowMs))),
+    )) as [number, number];
     return { count: Number(count), resetAt: this.clock.now() + Number(ttl) };
   }
 
   async get(key: string): Promise<CounterWindow | null> {
-    const [[, count], [, ttl]] = (await this.redis.multi().get(this.key(key)).pttl(this.key(key)).exec()) as [
-      [Error | null, string | null],
-      [Error | null, number],
-    ];
+    const [[, count], [, ttl]] = (await this.redis
+      .multi()
+      .get(this.key(key))
+      .pttl(this.key(key))
+      .exec()) as [[Error | null, string | null], [Error | null, number]];
     if (count === null || ttl < 0) return null;
     return { count: Number(count), resetAt: this.clock.now() + ttl };
   }
@@ -228,7 +249,10 @@ export class RedisCounterStore implements CounterStore {
 
 /** Both Redis stores on one client. */
 export function redisStores(redis: Redis, options: RedisSessionStoreOptions = {}) {
-  return { sessions: new RedisSessionStore(redis, options), counters: new RedisCounterStore(redis, options) };
+  return {
+    sessions: new RedisSessionStore(redis, options),
+    counters: new RedisCounterStore(redis, options),
+  };
 }
 
 function parse(value: string | null): StoredSession | null {

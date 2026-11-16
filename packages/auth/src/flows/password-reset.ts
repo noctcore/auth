@@ -39,12 +39,18 @@ export async function requestPasswordReset<U extends AuthUser, A>(
   if (!email) return fail('invalid_email', 'invalid_email');
 
   const bucket = Math.floor(core.clock.now() / DEDUPE_WINDOW_MS);
-  const job: PasswordResetJob = { email, ip: meta.ip, dedupeKey: sha256Hex(`password-reset:${email}:${bucket}`) };
+  const job: PasswordResetJob = {
+    email,
+    ip: meta.ip,
+    dedupeKey: sha256Hex(`password-reset:${email}:${bucket}`),
+  };
   if (settings.reset.enqueue) {
     await settings.reset.enqueue(job);
   } else {
     void processPasswordReset(core, settings, job).catch((error: unknown) => {
-      core.logger.error('Detached password reset job failed', { error: error instanceof Error ? error.message : String(error) });
+      core.logger.error('Detached password reset job failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
   }
   await core.emit({ type: 'password.reset_requested' }, meta);
@@ -68,22 +74,49 @@ export async function processPasswordReset<U extends AuthUser, A>(
   for (const hook of core.hooks.beforePasswordResetRequest) {
     const refusal = await hook({ user });
     if (refusal) {
-      await core.emit({ type: 'password.reset_request_ignored', userId: user.id, reason: refusal.reason }, meta);
+      await core.emit(
+        { type: 'password.reset_request_ignored', userId: user.id, reason: refusal.reason },
+        meta,
+      );
       return;
     }
   }
   if (await core.rateLimit('password-reset-mail', user.id, meta)) {
-    await core.emit({ type: 'password.reset_request_ignored', userId: user.id, reason: 'mail_limit' }, meta);
+    await core.emit(
+      { type: 'password.reset_request_ignored', userId: user.id, reason: 'mail_limit' },
+      meta,
+    );
     return;
   }
   if (settings.reset.kind === 'code') {
-    const { code, expiresAt } = await core.tokens.issueCode(PURPOSE.passwordReset, user.id, settings.reset.ttlMs, settings.reset.digits);
-    await core.mail({ type: 'password-reset-code', to: user.email, userId: user.id, code, expiresAt: new Date(expiresAt) });
+    const { code, expiresAt } = await core.tokens.issueCode(
+      PURPOSE.passwordReset,
+      user.id,
+      settings.reset.ttlMs,
+      settings.reset.digits,
+    );
+    await core.mail({
+      type: 'password-reset-code',
+      to: user.email,
+      userId: user.id,
+      code,
+      expiresAt: new Date(expiresAt),
+    });
   } else {
     const url = settings.urls.resetPassword;
     if (!url) throw new Error('urls.resetPassword is required for link resets');
-    const { token, expiresAt } = await core.tokens.issueLink(PURPOSE.passwordReset, user.id, settings.reset.ttlMs);
-    await core.mail({ type: 'password-reset', to: user.email, userId: user.id, url: url(token), expiresAt: new Date(expiresAt) });
+    const { token, expiresAt } = await core.tokens.issueLink(
+      PURPOSE.passwordReset,
+      user.id,
+      settings.reset.ttlMs,
+    );
+    await core.mail({
+      type: 'password-reset',
+      to: user.email,
+      userId: user.id,
+      url: url(token),
+      expiresAt: new Date(expiresAt),
+    });
   }
 }
 
@@ -99,10 +132,19 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
   const email = normalizeEmail(input.email);
   // Guesses are also counted per address, whether or not it has an account or
   // a code outstanding, so spreading guesses over many IPs does not help.
-  const perAddress = await core.rateLimit('password-reset-code-address', accountKey(email ?? input.email), meta);
+  const perAddress = await core.rateLimit(
+    'password-reset-code-address',
+    accountKey(email ?? input.email),
+    meta,
+  );
   if (perAddress) return perAddress;
   const user = await core.users.findCredentialByEmail(email ?? ('' as NormalizedEmail));
-  const redemption = await core.tokens.redeemCode(PURPOSE.passwordReset, user?.id ?? null, input.code, settings.reset.maxAttempts);
+  const redemption = await core.tokens.redeemCode(
+    PURPOSE.passwordReset,
+    user?.id ?? null,
+    input.code,
+    settings.reset.maxAttempts,
+  );
   if (redemption.status !== 'valid') {
     await core.emit(
       {
@@ -114,7 +156,11 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
     );
     return fail('invalid_token', `reset_code_${redemption.status}`);
   }
-  const ticket = await core.tokens.issueLink(PURPOSE.passwordResetTicket, redemption.userId, settings.reset.ticketTtlMs);
+  const ticket = await core.tokens.issueLink(
+    PURPOSE.passwordResetTicket,
+    redemption.userId,
+    settings.reset.ticketTtlMs,
+  );
   await core.emit({ type: 'password.reset_code_verified', userId: redemption.userId }, meta);
   return ok({ ticket: ticket.token, expiresAt: ticket.expiresAt });
 }
@@ -127,10 +173,17 @@ export async function resetPassword<U extends AuthUser, A>(
   const { meta } = input;
   const limited = await core.rateLimit('password-reset', meta.ip, meta);
   if (limited) return limited;
-  const purpose = settings.reset.kind === 'code' ? PURPOSE.passwordResetTicket : PURPOSE.passwordReset;
+  const purpose =
+    settings.reset.kind === 'code' ? PURPOSE.passwordResetTicket : PURPOSE.passwordReset;
 
   const peek = await core.tokens.peekLink(purpose, input.token);
-  if (peek.status !== 'valid') return failed(core, peek.status === 'unknown' ? undefined : peek.namedUserId, peek.status, meta);
+  if (peek.status !== 'valid')
+    return failed(
+      core,
+      peek.status === 'unknown' ? undefined : peek.namedUserId,
+      peek.status,
+      meta,
+    );
   const user = await core.users.findById(peek.userId);
   if (!user) return failed(core, peek.userId, 'user_missing', meta);
 
@@ -142,8 +195,10 @@ export async function resetPassword<U extends AuthUser, A>(
   if (!hashed.ok) return hashed;
 
   const redeemed = await core.tokens.redeemLink(purpose, input.token);
-  if (redeemed.status !== 'valid') return failed(core, user.id, `lost_race_${redeemed.status}`, meta);
-  if (!(await core.users.setPasswordHash(user.id, hashed.value))) return failed(core, user.id, 'write_refused', meta);
+  if (redeemed.status !== 'valid')
+    return failed(core, user.id, `lost_race_${redeemed.status}`, meta);
+  if (!(await core.users.setPasswordHash(user.id, hashed.value)))
+    return failed(core, user.id, 'write_refused', meta);
 
   await core.revokeAllSessions(user.id, 'password-reset');
   await core.tokens.revokeAll(user.id, RESET_PURPOSES);
@@ -152,7 +207,12 @@ export async function resetPassword<U extends AuthUser, A>(
     await core.users.markEmailVerified(user.id, user.email as NormalizedEmail);
   }
   await core.emit({ type: 'password.reset', userId: user.id }, meta);
-  await core.mail({ type: 'password-changed', to: user.email, userId: user.id, at: new Date(core.clock.now()) });
+  await core.mail({
+    type: 'password-changed',
+    to: user.email,
+    userId: user.id,
+    at: new Date(core.clock.now()),
+  });
   return ok();
 }
 

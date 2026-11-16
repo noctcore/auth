@@ -9,7 +9,14 @@
 import assert from 'node:assert/strict';
 
 import type { NormalizedEmail } from '../email';
-import type { CounterStore, SessionStore, StoredSession, StoredToken, TokenStore, UserStore } from '../stores';
+import type {
+  CounterStore,
+  SessionStore,
+  StoredSession,
+  StoredToken,
+  TokenStore,
+  UserStore,
+} from '../stores';
 import { systemClock } from '../clock';
 import { silentLogger } from '../logger';
 import { cryptoRandom } from '../random';
@@ -51,7 +58,10 @@ export interface SessionStoreConformanceOptions extends ConformanceContext {
   readonly epochTtlMs?: (userId: string) => Promise<number>;
 }
 
-export function sessionStoreConformance(store: SessionStore, context: SessionStoreConformanceOptions = {}): ConformanceCase[] {
+export function sessionStoreConformance(
+  store: SessionStore,
+  context: SessionStoreConformanceOptions = {},
+): ConformanceCase[] {
   const cases = sessionCases(store, context);
   const epochTtlMs = context.epochTtlMs;
   if (epochTtlMs) {
@@ -62,14 +72,20 @@ export function sessionStoreConformance(store: SessionStore, context: SessionSto
         const session = sampleSession({ expiresAt: Date.now() + longest });
         await store.bumpEpoch(session.userId);
         await store.create({ ...session, epoch: 1 }, longest);
-        assert.ok((await epochTtlMs(session.userId)) >= longest, 'epoch TTL shorter than the session TTL');
+        assert.ok(
+          (await epochTtlMs(session.userId)) >= longest,
+          'epoch TTL shorter than the session TTL',
+        );
       },
     });
   }
   return cases;
 }
 
-function sessionCases(store: SessionStore, context: SessionStoreConformanceOptions): ConformanceCase[] {
+function sessionCases(
+  store: SessionStore,
+  context: SessionStoreConformanceOptions,
+): ConformanceCase[] {
   const wait = advance(context);
   const other = context.secondary ?? store;
   return [
@@ -138,18 +154,36 @@ function sessionCases(store: SessionStore, context: SessionStoreConformanceOptio
       async run() {
         for (let i = 0; i < 25; i++) {
           const manager = new SessionManager(store, {}, systemClock, cryptoRandom, silentLogger);
-          const otherManager = new SessionManager(other, {}, systemClock, cryptoRandom, silentLogger);
+          const otherManager = new SessionManager(
+            other,
+            {},
+            systemClock,
+            cryptoRandom,
+            silentLogger,
+          );
           const userId = uniqueId('user');
           const meta = { ip: '203.0.113.7' };
           // The login reads the epoch first, as the flows do, then mints.
           const login = async () => {
             const epoch = await manager.readEpoch(userId);
-            return manager.mint({ userId, attributes: {}, rememberMe: false, persistentCookie: false, authenticatedAt: Date.now(), epoch, meta });
+            return manager.mint({
+              userId,
+              attributes: {},
+              rememberMe: false,
+              persistentCookie: false,
+              authenticatedAt: Date.now(),
+              epoch,
+              meta,
+            });
           };
           const [minted] = await Promise.all([login(), otherManager.revokeAll(userId)]);
           const current = await store.getEpoch(userId);
           for (const session of await store.listByUser(userId)) {
-            assert.equal(session.epoch, current, `iteration ${i}: a session on epoch ${session.epoch} survived epoch ${current}`);
+            assert.equal(
+              session.epoch,
+              current,
+              `iteration ${i}: a session on epoch ${session.epoch} survived epoch ${current}`,
+            );
           }
           if (minted.ok) {
             const validated = await manager.validate(minted.token, { touch: false });
@@ -165,11 +199,18 @@ function sessionCases(store: SessionStore, context: SessionStoreConformanceOptio
         const a = sampleSession({ userId });
         const b = sampleSession({ userId });
         const other = sampleSession();
-        await Promise.all([store.create(a, 60_000), store.create(b, 60_000), store.create(other, 60_000)]);
+        await Promise.all([
+          store.create(a, 60_000),
+          store.create(b, 60_000),
+          store.create(other, 60_000),
+        ]);
         const ids = (await store.listByUser(userId)).map((s) => s.id).sort();
         assert.deepEqual(ids, [a.id, b.id].sort());
         await store.delete(userId, [a.id]);
-        assert.deepEqual((await store.listByUser(userId)).map((s) => s.id), [b.id]);
+        assert.deepEqual(
+          (await store.listByUser(userId)).map((s) => s.id),
+          [b.id],
+        );
         assert.equal(await store.get(a.id), null);
       },
     },
@@ -250,7 +291,9 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
       async run() {
         const token = sampleToken();
         await store.put(token);
-        const results = await times(50, () => store.incrementAttempts(token.purpose, token.userId, 5));
+        const results = await times(50, () =>
+          store.incrementAttempts(token.purpose, token.userId, 5),
+        );
         const granted = results.filter((r): r is number => r !== null).sort((a, b) => a - b);
         assert.deepEqual(granted, [1, 2, 3, 4, 5]);
         assert.equal((await store.find(token.purpose, token.hash))?.attempts, 5);
@@ -276,7 +319,10 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
   ];
 }
 
-export function counterStoreConformance(store: CounterStore, context: ConformanceContext = {}): ConformanceCase[] {
+export function counterStoreConformance(
+  store: CounterStore,
+  context: ConformanceContext = {},
+): ConformanceCase[] {
   const wait = advance(context);
   return [
     {
@@ -307,8 +353,13 @@ export function counterStoreConformance(store: CounterStore, context: Conformanc
       name: 'concurrent increments each see a distinct count',
       async run() {
         const key = uniqueId('counter');
-        const counts = (await times(50, () => store.increment(key, 60_000))).map((w) => w.count).sort((a, b) => a - b);
-        assert.deepEqual(counts, Array.from({ length: 50 }, (_, i) => i + 1));
+        const counts = (await times(50, () => store.increment(key, 60_000)))
+          .map((w) => w.count)
+          .sort((a, b) => a - b);
+        assert.deepEqual(
+          counts,
+          Array.from({ length: 50 }, (_, i) => i + 1),
+        );
       },
     },
     {
@@ -321,7 +372,10 @@ export function counterStoreConformance(store: CounterStore, context: Conformanc
         await store.decrement(key);
         const after = await store.get(key);
         assert.equal(after?.count, 2);
-        assert.ok(Math.abs((after?.resetAt ?? 0) - first.resetAt) < 150, 'decrement must not move the window end');
+        assert.ok(
+          Math.abs((after?.resetAt ?? 0) - first.resetAt) < 150,
+          'decrement must not move the window end',
+        );
         await times(10, () => store.decrement(key));
         assert.equal((await store.get(key))?.count, 0, 'never below 0');
         assert.equal((await store.increment(key, 60_000)).count, 1);
@@ -335,7 +389,10 @@ export function counterStoreConformance(store: CounterStore, context: Conformanc
       async run() {
         const key = uniqueId('counter');
         await times(20, () => store.increment(key, 60_000));
-        await Promise.all([times(10, () => store.decrement(key)), times(10, () => store.increment(key, 60_000))]);
+        await Promise.all([
+          times(10, () => store.decrement(key)),
+          times(10, () => store.increment(key, 60_000)),
+        ]);
         assert.equal((await store.get(key))?.count, 20);
       },
     },
@@ -369,7 +426,10 @@ export interface UserStoreConformanceOptions {
   readonly softDelete?: (id: string) => Promise<void>;
 }
 
-export function userStoreConformance(store: UserStore, options: UserStoreConformanceOptions = {}): ConformanceCase[] {
+export function userStoreConformance(
+  store: UserStore,
+  options: UserStoreConformanceOptions = {},
+): ConformanceCase[] {
   const email = () => `${uniqueId('person')}@example.com` as NormalizedEmail;
   const cases: ConformanceCase[] = [
     {
@@ -415,7 +475,9 @@ export function userStoreConformance(store: UserStore, options: UserStoreConform
         assert.ok(user);
         assert.equal(await store.setPasswordHash(user.id, 'v2', { expected: 'stale' }), false);
         assert.equal((await store.findCredentialById(user.id))?.passwordHash, 'v1');
-        const results = await times(10, (i) => store.setPasswordHash(user.id, `next-${i}`, { expected: 'v1' }));
+        const results = await times(10, (i) =>
+          store.setPasswordHash(user.id, `next-${i}`, { expected: 'v1' }),
+        );
         assert.equal(results.filter(Boolean).length, 1, 'exactly one compare-and-set may win');
       },
     },

@@ -78,7 +78,11 @@ export function argon2id(options: Argon2idOptions = {}): PasswordHasher {
     hash: (password) => hash(password, params),
     async verify(stored, password) {
       try {
-        return await verify(stored, password, options.secret ? { secret: options.secret } : undefined);
+        return await verify(
+          stored,
+          password,
+          options.secret ? { secret: options.secret } : undefined,
+        );
       } catch {
         // A malformed stored hash (bad import or migration) is not a correct
         // password. The flow logs it through needsRehash's caller; no secret
@@ -90,7 +94,9 @@ export function argon2id(options: Argon2idOptions = {}): PasswordHasher {
       const match = PHC.exec(stored);
       if (!match) return true;
       return (
-        Number(match[1]) !== memoryCost || Number(match[2]) !== timeCost || Number(match[3]) !== parallelism
+        Number(match[1]) !== memoryCost ||
+        Number(match[2]) !== timeCost ||
+        Number(match[3]) !== parallelism
       );
     },
   };

@@ -66,11 +66,17 @@ const STATUS: Record<string, number> = {
 };
 
 export function createApp(options: AppOptions) {
-  if (options.secret === options.csrfSecret) throw new Error('Use separate secrets for auth and CSRF');
+  if (options.secret === options.csrfSecret)
+    throw new Error('Use separate secrets for auth and CSRF');
   const secret = new TextEncoder().encode(options.secret);
   const csrfSecret = new TextEncoder().encode(options.csrfSecret);
-  const { users, tokens } = prismaStores({ delegate: options.prisma.user, tokenDelegate: options.prisma.authToken });
-  const { sessions, counters } = redisStores(options.redis, { prefix: options.redisPrefix ?? 'example:' });
+  const { users, tokens } = prismaStores({
+    delegate: options.prisma.user,
+    tokenDelegate: options.prisma.authToken,
+  });
+  const { sessions, counters } = redisStores(options.redis, {
+    prefix: options.redisPrefix ?? 'example:',
+  });
 
   const auth = createAuth({
     stores: { users, tokens, sessions, counters },
@@ -89,12 +95,19 @@ export function createApp(options: AppOptions) {
     const id = randomBytes(16).toString('hex');
     return {
       id,
-      spec: { name: preSessionCookieName, value: id, attributes: { httpOnly: true, secure: options.secureCookies, sameSite: 'lax', path: '/' } },
+      spec: {
+        name: preSessionCookieName,
+        value: id,
+        attributes: { httpOnly: true, secure: options.secureCookies, sameSite: 'lax', path: '/' },
+      },
     };
   }
 
   /** Signed in: bound to the session. Signed out: bound to the browser's pre-session id. */
-  function binding(session: StoredSession<unknown> | null, preSession: string | null): string | null {
+  function binding(
+    session: StoredSession<unknown> | null,
+    preSession: string | null,
+  ): string | null {
     if (session) return `session:${session.id}`;
     return preSession ? `pre:${preSession}` : null;
   }
@@ -117,15 +130,23 @@ export function createApp(options: AppOptions) {
     const method = req.method ?? 'GET';
     const cookies = parseCookieHeader(req.headers.cookie);
     const meta: RequestMeta = {
-      ip: clientIp({ remoteAddress: req.socket.remoteAddress, forwardedFor: req.headers['x-forwarded-for'], trustedHops: 0 }) ?? 'unknown',
+      ip:
+        clientIp({
+          remoteAddress: req.socket.remoteAddress,
+          forwardedFor: req.headers['x-forwarded-for'],
+          trustedHops: 0,
+        }) ?? 'unknown',
       userAgent: req.headers['user-agent'] ?? '',
       ...(req.headers.origin ? { origin: req.headers.origin } : {}),
     };
     const sessionToken = cookies.get(auth.cookieName) ?? null;
-    const validated = sessionToken ? await auth.validateRequest({ token: sessionToken, meta }) : null;
+    const validated = sessionToken
+      ? await auth.validateRequest({ token: sessionToken, meta })
+      : null;
     const session = validated?.ok ? validated.value : null;
     const cookiePreSession = cookies.get(preSessionCookieName);
-    const preSession = cookiePreSession && PRE_SESSION.test(cookiePreSession) ? cookiePreSession : null;
+    const preSession =
+      cookiePreSession && PRE_SESSION.test(cookiePreSession) ? cookiePreSession : null;
 
     // CSRF, for every unsafe method: the Origin must be ours, Sec-Fetch-Site
     // must say same-origin whenever the browser sends it, and the
@@ -133,8 +154,14 @@ export function createApp(options: AppOptions) {
     // (or, signed out, to this browser's pre-session id).
     if (method !== 'GET' && method !== 'HEAD') {
       const secFetchSite = req.headers['sec-fetch-site'];
-      const originOk = verifyRequestOrigin({ method, origin: req.headers.origin, allowedOrigins: [options.origin] });
-      const siteOk = secFetchSite === undefined || verifyFetchSite({ method, secFetchSite: String(secFetchSite) });
+      const originOk = verifyRequestOrigin({
+        method,
+        origin: req.headers.origin,
+        allowedOrigins: [options.origin],
+      });
+      const siteOk =
+        secFetchSite === undefined ||
+        verifyFetchSite({ method, secFetchSite: String(secFetchSite) });
       const bound = binding(session, preSession);
       const tokenOk =
         bound !== null &&
@@ -154,10 +181,19 @@ export function createApp(options: AppOptions) {
       case 'GET /api/csrf': {
         const fresh = session || preSession ? null : newPreSession();
         const csrf = csrfCookie(binding(session, preSession ?? fresh?.id ?? null) ?? '');
-        return send(res, 200, { csrfToken: csrf.token }, fresh ? [fresh.spec, csrf.spec] : [csrf.spec]);
+        return send(
+          res,
+          200,
+          { csrfToken: csrf.token },
+          fresh ? [fresh.spec, csrf.spec] : [csrf.spec],
+        );
       }
       case 'POST /api/register': {
-        const result = await auth.register({ email: str(body.email), password: str(body.password), meta });
+        const result = await auth.register({
+          email: str(body.email),
+          password: str(body.password),
+          meta,
+        });
         if (!result.ok) return failure(res, result);
         return send(res, 202, { status: 'check-your-email' });
       }
@@ -171,25 +207,40 @@ export function createApp(options: AppOptions) {
         });
         if (!result.ok) return failure(res, result);
         if (result.value.kind === 'challenge') {
-          return send(res, 200, { challenge: result.value.challenge, methods: result.value.methods });
+          return send(res, 200, {
+            challenge: result.value.challenge,
+            methods: result.value.methods,
+          });
         }
-        return signedIn(res, result.value.session.cookie, result.value.session.session, {}, [result.value.session.deviceCookie]);
+        return signedIn(res, result.value.session.cookie, result.value.session.session, {}, [
+          result.value.session.deviceCookie,
+        ]);
       }
       case 'POST /api/verify-email': {
-        if (!session) return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+        if (!session)
+          return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
         const result = await auth.verifyEmailCode({ session, code: str(body.code), meta });
         if (!result.ok) return failure(res, result);
         if (!result.value.session) return send(res, 200, { verified: true });
-        return signedIn(res, result.value.session.cookie, result.value.session.session, { verified: true }, [result.value.session.deviceCookie]);
+        return signedIn(
+          res,
+          result.value.session.cookie,
+          result.value.session.session,
+          { verified: true },
+          [result.value.session.deviceCookie],
+        );
       }
       case 'GET /api/me': {
-        if (!session) return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+        if (!session)
+          return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
         const user = await users.findById(session.userId);
-        if (!user) return failure(res, { ok: false, code: 'session_expired', reason: 'user_missing' });
+        if (!user)
+          return failure(res, { ok: false, code: 'session_expired', reason: 'user_missing' });
         return send(res, 200, { user });
       }
       case 'GET /api/sessions': {
-        if (!session) return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+        if (!session)
+          return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
         return send(res, 200, { sessions: await auth.sessions.list(session) });
       }
       case 'POST /api/logout': {
@@ -205,14 +256,22 @@ export function createApp(options: AppOptions) {
   }
 
   /** A new session means a new CSRF binding: hand out both. */
-  function signedIn(res: ServerResponse, cookie: CookieSpec, session: StoredSession<unknown>, extra: object = {}, more: CookieSpec[] = []) {
+  function signedIn(
+    res: ServerResponse,
+    cookie: CookieSpec,
+    session: StoredSession<unknown>,
+    extra: object = {},
+    more: CookieSpec[] = [],
+  ) {
     const csrf = csrfCookie(binding(session, null) ?? '');
     return send(res, 200, { ...extra, csrfToken: csrf.token }, [cookie, csrf.spec, ...more]);
   }
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
-      process.stderr.write(`request failed: ${error instanceof Error ? error.stack : String(error)}\n`);
+      process.stderr.write(
+        `request failed: ${error instanceof Error ? error.stack : String(error)}\n`,
+      );
       if (!res.headersSent) send(res, 500, { error: { code: 'internal' } });
     });
   });
@@ -221,11 +280,19 @@ export function createApp(options: AppOptions) {
 
 function failure(res: ServerResponse, result: AuthFailure) {
   const error = toPublicError(result);
-  const headers: Record<string, string> = error.retryAfterSeconds ? { 'retry-after': String(error.retryAfterSeconds) } : {};
+  const headers: Record<string, string> = error.retryAfterSeconds
+    ? { 'retry-after': String(error.retryAfterSeconds) }
+    : {};
   return send(res, STATUS[error.code] ?? 400, { error }, [], headers);
 }
 
-function send(res: ServerResponse, status: number, body: unknown, cookies: CookieSpec[] = [], headers: Record<string, string> = {}) {
+function send(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  cookies: CookieSpec[] = [],
+  headers: Record<string, string> = {},
+) {
   res.writeHead(status, {
     'content-type': 'application/json',
     'cache-control': 'no-store',

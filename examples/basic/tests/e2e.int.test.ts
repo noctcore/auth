@@ -22,7 +22,12 @@ class Browser {
     private readonly ip: string,
   ) {}
 
-  async request(method: string, path: string, body?: unknown, override: Record<string, string | null> = {}) {
+  async request(
+    method: string,
+    path: string,
+    body?: unknown,
+    override: Record<string, string | null> = {},
+  ) {
     const headers: Record<string, string> = {
       origin: this.origin,
       'sec-fetch-site': 'same-origin',
@@ -35,7 +40,11 @@ class Browser {
       if (value === null) delete headers[key];
       else headers[key] = value;
     }
-    const response = await fetch(`${this.base}${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const response = await fetch(`${this.base}${path}`, {
+      method,
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
     for (const line of response.headers.getSetCookie()) {
       const [pair, ...attributes] = line.split(';');
       const [name, ...rest] = (pair ?? '').split('=');
@@ -62,7 +71,16 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
   const password = 'correct horse battery staple';
 
   beforeAll(async () => {
-    const { server } = createApp({ prisma, redis, mailer, origin, secret: 'e2e-secret-that-is-at-least-32-bytes!', csrfSecret: 'e2e-csrf-secret-at-least-32-bytes-long', secureCookies: false, redisPrefix: prefix });
+    const { server } = createApp({
+      prisma,
+      redis,
+      mailer,
+      origin,
+      secret: 'e2e-secret-that-is-at-least-32-bytes!',
+      csrfSecret: 'e2e-csrf-secret-at-least-32-bytes-long',
+      secureCookies: false,
+      redisPrefix: prefix,
+    });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     close = () => new Promise((resolve) => server.close(() => resolve()));
@@ -82,7 +100,10 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
     expect((await browser.request('GET', '/api/csrf')).status).toBe(200);
     expect(browser.cookies.has('csrf')).toBe(true);
 
-    expect(await browser.request('POST', '/api/register', { email, password })).toEqual({ status: 202, json: { status: 'check-your-email' } });
+    expect(await browser.request('POST', '/api/register', { email, password })).toEqual({
+      status: 202,
+      json: { status: 'check-your-email' },
+    });
     const code = mailer.last('verify-email')?.code;
     expect(code).toMatch(/^\d{8}$/u);
 
@@ -104,14 +125,23 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
 
     expect((await browser.request('POST', '/api/logout')).status).toBe(200);
     expect(browser.cookies.has('session')).toBe(false);
-    expect(await browser.request('GET', '/api/me')).toEqual({ status: 401, json: { error: { code: 'session_expired' } } });
+    expect(await browser.request('GET', '/api/me')).toEqual({
+      status: 401,
+      json: { error: { code: 'session_expired' } },
+    });
   });
 
   it('answers a wrong password and an unknown address with the same body', async () => {
     const browser = new Browser(base, origin, '203.0.113.11');
     await browser.request('GET', '/api/csrf');
-    const wrong = await browser.request('POST', '/api/login', { email, password: 'not the password at all' });
-    const unknown = await browser.request('POST', '/api/login', { email: 'nobody@example.com', password });
+    const wrong = await browser.request('POST', '/api/login', {
+      email,
+      password: 'not the password at all',
+    });
+    const unknown = await browser.request('POST', '/api/login', {
+      email: 'nobody@example.com',
+      password,
+    });
     expect(wrong).toEqual({ status: 401, json: { error: { code: 'invalid_credentials' } } });
     expect(unknown).toEqual(wrong);
   });
@@ -121,11 +151,19 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
     await browser.request('GET', '/api/csrf');
     const body = { email, password };
     const forbidden = { status: 403, json: { error: { code: 'forbidden' } } };
-    expect(await browser.request('POST', '/api/login', body, { origin: 'https://evil.test' })).toEqual(forbidden);
+    expect(
+      await browser.request('POST', '/api/login', body, { origin: 'https://evil.test' }),
+    ).toEqual(forbidden);
     expect(await browser.request('POST', '/api/login', body, { origin: null })).toEqual(forbidden);
-    expect(await browser.request('POST', '/api/login', body, { 'sec-fetch-site': 'cross-site' })).toEqual(forbidden);
-    expect(await browser.request('POST', '/api/login', body, { 'x-csrf-token': null })).toEqual(forbidden);
-    expect(await browser.request('POST', '/api/login', body, { 'x-csrf-token': 'forged.token' })).toEqual(forbidden);
+    expect(
+      await browser.request('POST', '/api/login', body, { 'sec-fetch-site': 'cross-site' }),
+    ).toEqual(forbidden);
+    expect(await browser.request('POST', '/api/login', body, { 'x-csrf-token': null })).toEqual(
+      forbidden,
+    );
+    expect(
+      await browser.request('POST', '/api/login', body, { 'x-csrf-token': 'forged.token' }),
+    ).toEqual(forbidden);
   });
 
   it('refuses a CSRF token minted for another session', async () => {

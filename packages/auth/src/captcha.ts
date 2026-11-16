@@ -16,7 +16,10 @@ export type CaptchaVerdict = 'pass' | 'reject' | 'unavailable';
 export type CaptchaDoor = 'login' | 'register' | 'password-reset' | 'email-verification';
 
 export interface CaptchaVerifier {
-  verify(token: string | undefined, context: { ip?: string; door: CaptchaDoor }): Promise<CaptchaVerdict>;
+  verify(
+    token: string | undefined,
+    context: { ip?: string; door: CaptchaDoor },
+  ): Promise<CaptchaVerdict>;
 }
 
 export interface TurnstileOptions {
@@ -54,15 +57,25 @@ export function turnstile(options: TurnstileOptions): CaptchaVerifier {
       } catch {
         return 'unavailable';
       }
-      if (typeof data !== 'object' || data === null || typeof (data as { success?: unknown }).success !== 'boolean') {
+      if (
+        typeof data !== 'object' ||
+        data === null ||
+        typeof (data as { success?: unknown }).success !== 'boolean'
+      ) {
         return 'unavailable';
       }
-      const body = data as { success: boolean; hostname?: unknown; action?: unknown; 'error-codes'?: unknown };
+      const body = data as {
+        success: boolean;
+        hostname?: unknown;
+        action?: unknown;
+        'error-codes'?: unknown;
+      };
       if (!body.success) {
         const codes = Array.isArray(body['error-codes']) ? body['error-codes'] : [];
         return codes.includes('internal-error') ? 'unavailable' : 'reject';
       }
-      if (options.expectedHostnames && !options.expectedHostnames.includes(String(body.hostname))) return 'reject';
+      if (options.expectedHostnames && !options.expectedHostnames.includes(String(body.hostname)))
+        return 'reject';
       if (options.checkAction && body.action !== context.door) return 'reject';
       return 'pass';
     },

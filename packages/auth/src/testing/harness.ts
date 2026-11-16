@@ -21,9 +21,15 @@ export interface ConformanceContext {
   readonly advanceTime?: (ms: number) => Promise<void>;
 }
 
-export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+export const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
-export function runConformance(title: string, cases: readonly ConformanceCase[], api: TestApi, timeout = 20_000): void {
+export function runConformance(
+  title: string,
+  cases: readonly ConformanceCase[],
+  api: TestApi,
+  timeout = 20_000,
+): void {
   api.describe(title, () => {
     for (const testCase of cases) api.it(testCase.name, () => testCase.run(), timeout);
   });

@@ -37,10 +37,27 @@ export type AuthMailEvent =
       readonly expiresAt: Date;
       readonly dedupeKey: string;
     }
-  | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string }
+  | {
+      readonly type: 'password-changed';
+      readonly to: string;
+      readonly userId: string;
+      readonly at: Date;
+      readonly dedupeKey: string;
+    }
   /** Registration of an address that already has an account: the uniform answer's mail. */
-  | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string }
-  | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string };
+  | {
+      readonly type: 'account-exists';
+      readonly to: string;
+      readonly userId: string;
+      readonly dedupeKey: string;
+    }
+  | {
+      readonly type: 'lockout';
+      readonly to: string;
+      readonly userId: string;
+      readonly until: Date;
+      readonly dedupeKey: string;
+    };
 
 export interface Mailer {
   send(event: AuthMailEvent): Promise<void>;

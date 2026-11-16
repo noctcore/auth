@@ -56,10 +56,14 @@ try {
   for (const { dir, manifest } of published) {
     console.log(`\n=== ${manifest.name}`);
     const before = new Set(readdirSync(scratch));
-    const packed = spawnSync(process.execPath, ['pm', 'pack', '--destination', scratch, '--quiet'], {
-      cwd: dir,
-      stdio: ['ignore', 'ignore', 'inherit'],
-    });
+    const packed = spawnSync(
+      process.execPath,
+      ['pm', 'pack', '--destination', scratch, '--quiet'],
+      {
+        cwd: dir,
+        stdio: ['ignore', 'ignore', 'inherit'],
+      },
+    );
     const tarball = readdirSync(scratch).find((file) => !before.has(file));
     if (packed.status !== 0 || tarball === undefined) {
       failed.push(`${manifest.name} (bun pm pack failed)`);

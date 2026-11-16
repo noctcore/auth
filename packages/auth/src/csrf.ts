@@ -84,7 +84,11 @@ function mac(secret: Uint8Array, binding: string, nonce: string): string {
 }
 
 /** A token `<nonce>.<hmac>` bound to `binding` under the current secret. */
-export function createCsrfToken(secret: Uint8Array, binding: string, random: RandomSource = cryptoRandom): string {
+export function createCsrfToken(
+  secret: Uint8Array,
+  binding: string,
+  random: RandomSource = cryptoRandom,
+): string {
   checkSecret(secret);
   const nonce = encodeHexLowerCase(randomBytes(16, random));
   return `${nonce}.${mac(secret, binding, nonce)}`;
