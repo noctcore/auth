@@ -11,7 +11,7 @@ People reuse passwords. A table of stored passwords, or of fast hashes of them, 
 
 **Hash with Argon2id, salted, at a cost you have measured.** Argon2id needs a block of memory per hash, which is what makes GPU and custom hardware attacks expensive. Each hash gets its own random salt, so equal passwords produce different hashes and precomputed tables are useless. The defaults are 19 MiB of memory, 3 passes and 1 lane: the memory figure is OWASP's floor, the pass count is the auth guide's. Raise the memory on a box that can afford it, not the passes or lanes.
 
-**Hashes upgrade themselves.** Every login that succeeds checks whether the stored hash was made with the current parameters. If not, the password the user just typed is hashed again and stored. Raising the cost later, or adopting hashes made by an older app, needs no migration and no reset.
+**Hashes upgrade themselves.** Every login that succeeds checks whether the stored hash was made with the current parameters. If not, the password the user just typed is hashed again and stored, as a compare-and-set on the old hash: if a password change or reset lands while the new hash is being computed, the upgrade is dropped instead of bringing the old password back. Raising the cost later, or adopting hashes made by an older app, needs no migration and no reset.
 
 **Check length, not composition.** A password must be 12 to 256 characters, counted as Unicode code points after NFC normalisation (so the same password typed on two keyboards hashes the same). There are no "one digit, one symbol" rules: they push people towards predictable patterns without adding much strength. Instead, a new password is checked against known breaches (next section).
 

@@ -15,18 +15,26 @@ A registration answers the same way whether or not the email is taken. When the 
 
 - There is no permanent lockout, because a permanent lock lets an attacker lock a victim out.
 - Attempt budgets are keyed on account plus IP, and on the account as a whole.
-- Backoff is exponential, capped at 1 hour.
-- The owner is mailed when the account locks.
+- Backoff is exponential, capped at 1 hour, and resets only after a quiet day with no new lock.
+- A correct password returns only the budget of the source that proved it, never the account-wide one.
+- A browser that has signed in to the account before carries a signed device cookie and gets through a lock on its own small budget, so a distributed attack cannot keep the owner out.
+- The owner is mailed when the account locks; the mail is sent off the response path.
 - A password reset lifts the lock.
-- A locked account is answered exactly like a wrong password.
+- A locked account is answered exactly like a wrong password, after the same work: the same store calls and a full password verify.
+
+## Sessions
+
+- Revoking another device, or every other device, needs fresh authentication, so a stolen session cannot sign the owner out.
+- Plugins and `auth.context` see sessions without a way to mint one; every session goes through one internal seam.
+- A login rehash is a compare-and-set, so it can never bring back a password changed meanwhile.
 
 ## CSRF
 
-An Origin allowlist, a `Sec-Fetch-Site` check and a signed double-submit token bound to the session. See [CSRF](/auth/learn/csrf/).
+An Origin allowlist, a `Sec-Fetch-Site` check and a signed double-submit token bound to the session, or before sign-in to a random per-browser pre-session id, signed with its own secret of 32 bytes or more. See [CSRF](/auth/learn/csrf/).
 
 ## Breached passwords
 
-The check uses the Have I Been Pwned k-anonymity range API. It fails open, so an outage does not block sign-ups, and each failure is counted so it stays visible.
+The check uses the Have I Been Pwned k-anonymity range API. It fails open, so an outage does not block sign-ups, password changes or resets, and each failure is counted and written to the audit trail as `password.breach_check_unavailable`.
 
 ## Password hashing
 

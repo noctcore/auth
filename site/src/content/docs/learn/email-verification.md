@@ -19,7 +19,7 @@ The sharper version is account pre-hijacking. The attacker registers the victim'
 
 **Verifying ends every other session.** When the address is verified, every session of the account is revoked and the caller's own session is re-issued. A squatter who registered first is signed out the moment the real owner proves the mailbox. A completed password reset does the same, and also marks the address verified, since the reset link reached it.
 
-**Links when you need them.** `emailVerification.kind: 'link'` mails a single-use link instead (32 random bytes, stored as SHA-256, 24 hours). A link can be opened on any device, which is the trade-off the code avoids.
+**Links when you need them.** `emailVerification.kind: 'link'` mails a single-use link instead (32 random bytes, stored as SHA-256, 24 hours). The link only verifies when it is opened in a signed-in session of the same account; opened anywhere else, it is refused and left unspent, so the user can sign in and open it again. That keeps the pre-hijacking defence: a squatter's session can never be the one that completes verification.
 
 ## Where the package and the guide differ
 

@@ -19,7 +19,7 @@ Whoever can reset a password owns the account, so the reset flow is a second log
 4. *Consume* the token atomically. Of two concurrent resets with the same link, exactly one gets past this step.
 5. *Write* the new hash.
 
-**Codes become tickets.** With `passwordReset.kind: 'code'` the mail carries 8 digits instead. A correct code is exchanged for a ticket valid for 10 minutes, and only the ticket can set the password. The code is checked once, with an attempt cap, and never authorises the write itself.
+**Codes become tickets.** With `passwordReset.kind: 'code'` the mail carries 8 digits instead. A correct code is exchanged for a ticket valid for 10 minutes, and only the ticket can set the password. The code is checked once, with an attempt cap of 5 per code and a second cap of 5 guesses per 15 minutes per address from every network (known address or not, code outstanding or not), and never authorises the write itself.
 
 **A completed reset cleans up.** Every session is revoked, every outstanding reset token is voided, the lockout is lifted (the mailbox was proved), the address is marked verified unless you turn that off, and the owner gets a "password changed" mail. No session is issued: the user signs in with the new password.
 

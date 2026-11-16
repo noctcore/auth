@@ -19,7 +19,9 @@ The answer text is the obvious leak. The less obvious ones are timing (a passwor
 
 **The same work on both paths.**
 
-- Login on an unknown address still runs a full password verify, against a dummy hash made with the same parameters.
+- Login makes the same store calls on every path: the address lookup, the epoch read and a credential lookup by id (under an id no store issues, for an unknown address), then one full password verify, against a dummy hash made with the same parameters when there is no real one. A locked account takes the same path: the verify still runs, its result is ignored.
+- A new lock's audit row and owner mail are not awaited in the request; they run in the background with errors logged, so a known address does not answer slower than an unknown one.
+- A reset-code check for an unknown address computes the same HMAC and makes the same token lookup as for a known one.
 - The lockout counters are keyed on the normalised address, not on the user id, so an unknown address spends and checks counters exactly like a known one.
 - Registration checks and hashes the password before it looks the address up.
 - The reset request does none of the per-account work on the response path: looking up the account, its mail limit and the mail itself run in a job, on your queue or detached.
