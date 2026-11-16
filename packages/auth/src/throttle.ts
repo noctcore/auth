@@ -17,7 +17,16 @@
  *   one against distributed guessing.
  * - Spending the account-wide budget locks the account with exponential
  *   backoff, capped (1 h by default). There is no permanent tier. The tier
- *   decays after a quiet period. A new lock mails the owner.
+ *   resets only after a quiet period (24 h by default) with no new lock. A new
+ *   lock mails the owner.
+ * - A correct password returns only the budget of the source that proved it
+ *   (its per-(account, IP) or per-device budget), never the account-wide one.
+ * - Trusted devices: a successful login gets a signed per-account device token
+ *   (see device.ts). A login that presents a valid one skips the account lock
+ *   and the account-wide and per-IP budgets, and spends a small budget of its
+ *   own instead (5 per 15 min by default). An attacker spreading failures over
+ *   many IPs can keep the account locked for everyone else, but not for the
+ *   owner on a device they have signed in from before.
  * - Keys are derived from the normalised EMAIL, not the user id, so a known and
  *   an unknown address do identical counter work and get identical answers.
  *
@@ -42,8 +51,10 @@ export interface LockoutOptions {
   readonly baseLock?: Duration;
   /** Cap on a single lock. Default 1 h. */
   readonly maxLock?: Duration;
-  /** The backoff tier resets after this long. Default 24 h. */
+  /** The backoff tier resets after this long without a new lock. Default 24 h. */
   readonly quietPeriod?: Duration;
+  /** Attempts per trusted device per window. Default 5 per 15 min. */
+  readonly perDevice?: RateLimitRule;
 }
 
 export interface Hit {
@@ -56,7 +67,11 @@ export interface Hit {
 
 export type LoginGate =
   | { readonly allowed: true }
-  | { readonly allowed: false; readonly reason: 'locked' | 'account_ip_budget'; readonly newLock?: { until: number } };
+  | {
+      readonly allowed: false;
+      readonly reason: 'locked' | 'account_ip_budget' | 'device_budget';
+      readonly newLock?: { until: number };
+    };
 
 /** Store key for an account derived from its normalised email. */
 export function accountKey(normalizedEmail: string): string {
@@ -66,6 +81,7 @@ export function accountKey(normalizedEmail: string): string {
 export class Throttle {
   private readonly perAccountIp: { limit: number; windowMs: number };
   private readonly perAccount: { limit: number; windowMs: number };
+  private readonly perDevice: { limit: number; windowMs: number };
   private readonly baseLockMs: number;
   private readonly maxLockMs: number;
   private readonly quietPeriodMs: number;
@@ -81,6 +97,7 @@ export class Throttle {
     });
     this.perAccountIp = rule(lockout.perAccountIp, 5, '15m');
     this.perAccount = rule(lockout.perAccount, 10, '15m');
+    this.perDevice = rule(lockout.perDevice, 5, '15m');
     this.baseLockMs = toMilliseconds(lockout.baseLock ?? '5m');
     this.maxLockMs = toMilliseconds(lockout.maxLock ?? '1h');
     this.quietPeriodMs = toMilliseconds(lockout.quietPeriod ?? '24h');
@@ -98,8 +115,16 @@ export class Throttle {
     };
   }
 
-  /** Call BEFORE verifying the password: checks the lock and reserves one attempt on both budgets. */
-  async gateLogin(account: string, ip: string): Promise<LoginGate> {
+  /**
+   * Call BEFORE verifying the password: checks the lock and reserves one
+   * attempt. `deviceId` is the id from a device token the caller has already
+   * verified for this account; such a request spends only its device budget.
+   */
+  async gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate> {
+    if (deviceId) {
+      const device = await this.counters.increment(`dev:${account}:${deviceId}`, this.perDevice.windowMs);
+      return device.count > this.perDevice.limit ? { allowed: false, reason: 'device_budget' } : { allowed: true };
+    }
     const lock = await this.counters.get(`lock:${account}`);
     if (lock && lock.count > 0) return { allowed: false, reason: 'locked' };
 
@@ -120,17 +145,19 @@ export class Throttle {
   }
 
   private async lock(account: string): Promise<{ until: number }> {
-    const tier = (await this.counters.increment(`tier:${account}`, this.quietPeriodMs)).count;
-    const duration = Math.min(this.baseLockMs * 3 ** (tier - 1), this.maxLockMs);
+    // The tier's TTL is renewed on every lock, so it only decays after a full
+    // quiet period without one.
+    const tier = ((await this.counters.get(`tier:${account}`))?.count ?? 0) + 1;
+    await this.counters.set(`tier:${account}`, tier, this.quietPeriodMs);
+    const duration = Math.min(this.baseLockMs * 3 ** Math.min(tier - 1, 20), this.maxLockMs);
     const lock = await this.counters.increment(`lock:${account}`, duration);
     await this.counters.reset(`acct:${account}`);
     return { until: lock.resetAt };
   }
 
-  /** The password was right: the budgets this source spent are returned. The lock tier stays. */
-  async loginSucceeded(account: string, ip: string): Promise<void> {
-    await this.counters.reset(`aip:${account}:${ip}`);
-    await this.counters.reset(`acct:${account}`);
+  /** The password was right: only the budget of the source that proved it is returned. */
+  async loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void> {
+    await this.counters.reset(deviceId ? `dev:${account}:${deviceId}` : `aip:${account}:${ip}`);
   }
 
   /** A completed password reset proves the mailbox: lift the lock and its history. */

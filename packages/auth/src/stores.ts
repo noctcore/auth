@@ -116,5 +116,7 @@ export interface CounterStore {
    */
   increment(key: string, windowMs: number): Promise<CounterWindow>;
   get(key: string): Promise<CounterWindow | null>;
+  /** Overwrites the counter with `count` and a fresh TTL of `windowMs`. */
+  set(key: string, count: number, windowMs: number): Promise<void>;
   reset(key: string): Promise<void>;
 }

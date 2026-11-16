@@ -257,6 +257,10 @@ export class MemoryCounterStore implements CounterStore {
     return entry ? { ...entry } : null;
   }
 
+  async set(key: string, count: number, windowMs: number): Promise<void> {
+    this.counters.set(key, { count, resetAt: this.clock.now() + windowMs });
+  }
+
   async reset(key: string): Promise<void> {
     this.counters.delete(key);
   }

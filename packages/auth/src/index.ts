@@ -73,6 +73,7 @@ export type {
   WithPasswordHash,
 } from './stores';
 export { NO_SUCH_USER_ID } from './stores';
+export { createDeviceToken, verifyDeviceToken } from './device';
 export type { AuthMailEvent, Mailer } from './mail';
 export type { AuditSink, AuthEvent, AuthEventType } from './audit';
 export {
