@@ -34,15 +34,24 @@ function asciiLower(value: string): string {
  */
 export function normalizeEmail(input: unknown): NormalizedEmail | null {
   if (typeof input !== 'string') return null;
+
   const trimmed = input.trim();
+
   if (trimmed.length === 0 || trimmed.length > MAX_LENGTH || !ALLOWED.test(trimmed)) return null;
+
   const value = asciiLower(trimmed);
   const at = value.indexOf('@');
+
   if (at <= 0 || at !== value.lastIndexOf('@')) return null;
+
   const local = value.slice(0, at);
   const domain = value.slice(at + 1);
+
   if (local.length > MAX_LOCAL_LENGTH) return null;
+
   const dot = domain.lastIndexOf('.');
+
   if (dot <= 0 || dot === domain.length - 1) return null;
+
   return value as NormalizedEmail;
 }

@@ -5,13 +5,16 @@ import { clientIp, maskIp, parseTrustProxy } from '../../src/ip';
 
 describe('parseTrustProxy', () => {
   it('turns an all-digit value into a hop count', () => expect(parseTrustProxy(' 1 ')).toBe(1));
+
   it('passes presets and address lists through', () =>
     expect(parseTrustProxy('loopback')).toBe('loopback'));
+
   it('treats empty and false as no proxy', () => {
     expect(parseTrustProxy(undefined)).toBe(false);
     expect(parseTrustProxy('')).toBe(false);
     expect(parseTrustProxy('false')).toBe(false);
   });
+
   it('refuses true, which lets clients pick their IP', () =>
     expect(() => parseTrustProxy('true')).toThrow(AuthConfigError));
 });
@@ -28,6 +31,7 @@ describe('clientIp', () => {
     expect(
       clientIp({ remoteAddress: '10.0.0.2', forwardedFor: '6.6.6.6, 1.2.3.4', trustedHops: 1 }),
     ).toBe('1.2.3.4');
+
     expect(
       clientIp({
         remoteAddress: '10.0.0.3',

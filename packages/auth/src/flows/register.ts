@@ -35,18 +35,26 @@ export async function register<U extends AuthUser, A>(
 ): Promise<AuthResult<RegisterOutcome<A>>> {
   const { meta } = input;
   const captcha = await core.checkCaptcha('register', input.captchaToken, meta);
+
   if (captcha) return refused(core, captcha, meta);
+
   const limited = await core.rateLimit('register', meta.ip, meta);
+
   if (limited) return limited;
 
   const email = normalizeEmail(input.email);
+
   if (!email) return refused(core, fail('invalid_email', 'invalid_email'), meta);
+
   const hashed = await core.hashNewPassword(input.password, meta);
+
   if (!hashed.ok) return refused(core, hashed, meta);
 
   const user = await core.users.create({ email, passwordHash: hashed.value });
+
   if (!user) {
     const existing = await core.users.findCredentialByEmail(email);
+
     if (settings.revealExisting) {
       await core.emit(
         {
@@ -56,23 +64,30 @@ export async function register<U extends AuthUser, A>(
         },
         meta,
       );
+
       return fail('email_in_use', 'email_in_use');
     }
+
     if (existing)
       await core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
+
     await core.emit(
       { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },
       meta,
     );
+
     return ok({ session: null });
   }
 
   for (const hook of core.hooks.afterRegister) await hook({ user, meta });
+
   await sendVerification(core, settings, user, meta);
   await core.emit({ type: 'register.created', userId: user.id }, meta);
 
   if (!settings.autoLogin) return ok({ session: null });
+
   const issued = await core.issueSession(user, { via: 'register', meta });
+
   return issued.ok ? ok({ session: issued.value }) : issued;
 }
 
@@ -82,5 +97,6 @@ async function refused<U extends AuthUser, A>(
   meta: RequestMeta,
 ): Promise<AuthFailure> {
   await core.emit({ type: 'register.refused', reason: failure.reason }, meta);
+
   return failure;
 }

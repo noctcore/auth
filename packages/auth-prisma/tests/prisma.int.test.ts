@@ -12,15 +12,18 @@ import { PrismaClient } from './generated/prisma/client';
 
 const url = process.env.DATABASE_URL;
 const required = process.env.AUTH_REQUIRE_SERVICES === '1';
+
 if (!url && required) throw new Error('DATABASE_URL is required when AUTH_REQUIRE_SERVICES=1');
 
 describe.skipIf(!url)('prisma stores on postgres', () => {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: url ?? '' }) });
+
   afterAll(async () => {
     await prisma.$disconnect();
   });
 
   const api = { describe, it };
+
   runConformance(
     'prisma user store',
     userStoreConformance(new PrismaUserStore({ delegate: prisma.user }), {
@@ -30,6 +33,7 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     }),
     api,
   );
+
   runConformance(
     'prisma token store',
     tokenStoreConformance(new PrismaTokenStore(prisma.authToken)),
@@ -40,6 +44,7 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     interface Member extends AuthUser {
       readonly displayName: string;
     }
+
     const { users } = prismaStores<Member>({
       delegate: prisma.user,
       tokenDelegate: prisma.authToken,
@@ -52,12 +57,15 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
         displayName: String(row.displayName),
       }),
     });
+
     const created = await users.create({
       email: `${uniqueId('m')}@example.com` as NormalizedEmail,
       passwordHash: 'h',
     });
+
     expect(created?.displayName).toBe('New member');
     const found = await users.findCredentialById(created?.id ?? '');
+
     expect(found).toMatchObject({ displayName: 'New member', passwordHash: 'h' });
   });
 
@@ -65,6 +73,7 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     const tokens = new PrismaTokenStore(prisma.authToken);
     const userId = uniqueId('u');
     const hash = uniqueId('hash');
+
     await tokens.put({
       purpose: 'email-verification',
       userId,
@@ -73,10 +82,13 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
       attempts: 0,
       data: { email: 'a@example.com' },
     });
+
     const row = await prisma.authToken.findUnique({
       where: { userId_purpose: { userId, purpose: 'email-verification' } },
     });
+
     expect(row?.hash).toBe(hash);
+
     expect((await tokens.findByUser('email-verification', userId))?.data).toEqual({
       email: 'a@example.com',
     });

@@ -10,14 +10,19 @@ const PATTERN = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/u;
 
 export function toMilliseconds(duration: Duration): number {
   let ms: number;
+
   if (typeof duration === 'number') {
     ms = duration * 1000;
   } else {
     const match = PATTERN.exec(duration);
+
     if (!match) throw new TypeError(`Invalid duration: ${JSON.stringify(duration)}`);
+
     ms = Number(match[1]) * UNIT_MS[match[2] as keyof typeof UNIT_MS];
   }
+
   if (!Number.isFinite(ms) || ms < 0) throw new TypeError(`Invalid duration: ${String(duration)}`);
+
   return Math.round(ms);
 }
 

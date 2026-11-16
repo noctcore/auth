@@ -45,7 +45,9 @@ const NAME = /^[A-Za-z0-9_-]+$/u;
 
 export function sessionCookieName(config: SessionCookieConfig = {}): string {
   const base = config.name ?? 'session';
+
   if (!NAME.test(base)) throw new AuthConfigError(`Invalid cookie name: ${base}`);
+
   return (config.secure ?? true) ? `__Host-${base}` : base;
 }
 
@@ -55,11 +57,14 @@ function attributes(
   maxAge?: number,
 ): CookieAttributes {
   const secure = config.secure ?? true;
+
   const sameSite =
     typeof config.sameSite === 'function' ? config.sameSite(origin) : (config.sameSite ?? 'lax');
+
   if (sameSite === 'none' && !secure) {
     throw new AuthConfigError('SameSite=None requires a Secure cookie');
   }
+
   return maxAge === undefined
     ? { httpOnly: true, secure, sameSite, path: '/' }
     : { httpOnly: true, secure, sameSite, path: '/', maxAge };
@@ -73,6 +78,7 @@ export function createSessionCookie(
   const maxAge = options.persistent
     ? Math.max(0, Math.floor((options.expiresAt - options.now) / 1000))
     : undefined;
+
   return {
     name: sessionCookieName(config),
     value: token,
@@ -107,30 +113,41 @@ export function deviceCookie(
 /** `Set-Cookie` header value, for servers without a cookie helper of their own. */
 export function serializeCookie(spec: CookieSpec): string {
   const parts = [`${spec.name}=${encodeURIComponent(spec.value)}`, `Path=${spec.attributes.path}`];
+
   if (spec.attributes.maxAge !== undefined) parts.push(`Max-Age=${spec.attributes.maxAge}`);
   if (spec.attributes.httpOnly) parts.push('HttpOnly');
   if (spec.attributes.secure) parts.push('Secure');
+
   parts.push(
     `SameSite=${spec.attributes.sameSite[0]?.toUpperCase()}${spec.attributes.sameSite.slice(1)}`,
   );
+
   return parts.join('; ');
 }
 
 /** Reads a `Cookie` request header. Later duplicates do not override the first value. */
 export function parseCookieHeader(header: string | null | undefined): Map<string, string> {
   const cookies = new Map<string, string>();
+
   if (!header) return cookies;
+
   for (const pair of header.split(';')) {
     const eq = pair.indexOf('=');
+
     if (eq <= 0) continue;
+
     const name = pair.slice(0, eq).trim();
+
     if (cookies.has(name)) continue;
+
     const raw = pair.slice(eq + 1).trim();
+
     try {
       cookies.set(name, decodeURIComponent(raw));
     } catch {
       // A malformed escape is not a value we can trust; skip it.
     }
   }
+
   return cookies;
 }

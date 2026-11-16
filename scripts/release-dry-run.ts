@@ -27,22 +27,26 @@ function run(command: string, args: readonly string[], cwd: string): void {
     stdio: 'inherit',
     shell: process.platform === 'win32',
   });
-  if (result.status !== 0) {
-    console.error(`${command} ${args.join(' ')} failed in ${cwd}`);
-    process.exit(result.status ?? 1);
-  }
+
+  if (result.status === 0) return;
+
+  console.error(`${command} ${args.join(' ')} failed in ${cwd}`);
+  process.exit(result.status ?? 1);
 }
 
 run(process.execPath, ['run', 'build'], ROOT);
 
 for (const dir of readdirSync(PACKAGES).sort()) {
   const cwd = join(PACKAGES, dir);
+
   const manifest = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8')) as {
     name: string;
     version: string;
     private?: boolean;
   };
+
   if (manifest.private === true) continue;
+
   console.log(`\n=== ${manifest.name}@${manifest.version} (dry run)`);
   run('npm', ['publish', '--dry-run', '--provenance=false', '--access', 'public'], cwd);
 }

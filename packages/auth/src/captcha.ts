@@ -39,12 +39,17 @@ const MAX_TOKEN_LENGTH = 2048;
 export function turnstile(options: TurnstileOptions): CaptchaVerifier {
   const doFetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 5000;
+
   return {
     async verify(token, context) {
       if (!token || token.length > MAX_TOKEN_LENGTH) return 'reject';
+
       const form = new URLSearchParams({ secret: options.secret, response: token });
+
       if (context.ip) form.set('remoteip', context.ip);
+
       let data: unknown;
+
       try {
         const response = await doFetch(SITEVERIFY, {
           method: 'POST',
@@ -52,11 +57,14 @@ export function turnstile(options: TurnstileOptions): CaptchaVerifier {
           body: form,
           signal: AbortSignal.timeout(timeoutMs),
         });
+
         if (!response.ok) return 'unavailable';
+
         data = await response.json();
       } catch {
         return 'unavailable';
       }
+
       if (
         typeof data !== 'object' ||
         data === null ||
@@ -64,19 +72,24 @@ export function turnstile(options: TurnstileOptions): CaptchaVerifier {
       ) {
         return 'unavailable';
       }
+
       const body = data as {
         success: boolean;
         hostname?: unknown;
         action?: unknown;
         'error-codes'?: unknown;
       };
+
       if (!body.success) {
         const codes = Array.isArray(body['error-codes']) ? body['error-codes'] : [];
+
         return codes.includes('internal-error') ? 'unavailable' : 'reject';
       }
+
       if (options.expectedHostnames && !options.expectedHostnames.includes(String(body.hostname)))
         return 'reject';
       if (options.checkAction && body.action !== context.door) return 'reject';
+
       return 'pass';
     },
   };

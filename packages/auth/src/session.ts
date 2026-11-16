@@ -92,22 +92,30 @@ export class SessionManager<A> {
     this.rememberMeTtlMs = toMilliseconds(options.rememberMeTtl ?? '30d');
     this.touchIntervalMs = toMilliseconds(options.touchInterval ?? '60s');
     this.maxPerUser = options.maxPerUser === undefined ? 10 : options.maxPerUser;
+
     if (this.maxPerUser !== null && (!Number.isInteger(this.maxPerUser) || this.maxPerUser < 1)) {
       throw new AuthConfigError('session.maxPerUser must be a positive integer or null');
     }
-    if (typeof options.idleTimeout !== 'function') {
-      const idle = toMilliseconds(options.idleTimeout ?? '30m');
-      if (this.touchIntervalMs >= idle) {
-        throw new AuthConfigError('session.touchInterval must be shorter than the idle timeout');
-      }
+
+    // An idle timeout chosen per session (a function) can only be checked
+    // when a session is minted; a fixed one is checked here, at startup.
+    const fixedIdleMs =
+      typeof options.idleTimeout === 'function'
+        ? null
+        : toMilliseconds(options.idleTimeout ?? '30m');
+
+    if (fixedIdleMs !== null && this.touchIntervalMs >= fixedIdleMs) {
+      throw new AuthConfigError('session.touchInterval must be shorter than the idle timeout');
     }
   }
 
   private idleTimeoutMs(rememberMe: boolean, attributes: A): number {
     const configured = this.options.idleTimeout;
+
     if (typeof configured === 'function')
       return toMilliseconds(configured({ rememberMe, attributes }));
     if (configured !== undefined) return toMilliseconds(configured);
+
     return toMilliseconds(rememberMe ? '7d' : '30m');
   }
 
@@ -120,6 +128,7 @@ export class SessionManager<A> {
     const now = this.clock.now();
     const ttlMs = input.rememberMe ? this.rememberMeTtlMs : this.absoluteTtlMs;
     const epoch = input.epoch ?? (await this.store.getEpoch(input.userId));
+
     const session: StoredSession<A> = {
       id: sha256Hex(token),
       userId: input.userId,
@@ -135,6 +144,7 @@ export class SessionManager<A> {
       userAgent: input.meta.userAgent ?? '',
       attributes: input.attributes,
     };
+
     await this.store.create(session, ttlMs);
 
     // Second half of the fence: a revocation that landed after the epoch was
@@ -143,37 +153,52 @@ export class SessionManager<A> {
     // refused login instead of a session that merely dies at its first use.
     if ((await this.store.getEpoch(input.userId)) !== epoch) {
       await this.store.delete(input.userId, [session.id]);
+
       this.logger.warn('Session mint lost the epoch fence; a revocation landed mid-login', {
         userId: input.userId,
       });
+
       return { ok: false, reason: 'epoch_fence' };
     }
 
     const evicted = await this.evictOverCap(input.userId);
+
     return { ok: true, token, session, evicted };
   }
 
   /** Validates a cookie token. `touch: false` for traffic the client makes on its own (polls, socket handshakes). */
   async validate(token: unknown, options: { touch?: boolean } = {}): Promise<ValidateResult<A>> {
     if (!isTokenShape(token)) return { ok: false, reason: 'malformed' };
+
     const stored = await this.store.get(sha256Hex(token));
+
     if (!stored) return { ok: false, reason: 'unknown' };
+
     const now = this.clock.now();
     const refusal = await this.refusalFor(stored, now);
+
     if (refusal) {
       await this.store.delete(stored.userId, [stored.id]);
+
       return { ok: false, reason: refusal };
     }
+
     const session = this.parse(stored);
+
     if (!session) {
       await this.store.delete(stored.userId, [stored.id]);
+
       return { ok: false, reason: 'corrupt' };
     }
+
     if ((options.touch ?? true) && now - session.lastActiveAt >= this.touchIntervalMs) {
       const touched = { ...session, lastActiveAt: now };
+
       if (!(await this.store.touch(touched))) return { ok: false, reason: 'revoked' };
+
       return { ok: true, session: touched };
     }
+
     return { ok: true, session };
   }
 
@@ -183,11 +208,13 @@ export class SessionManager<A> {
     // Strict inequality both ways: a session ahead of the counter (a lost or
     // restored counter) is as untrustworthy as one behind it.
     if (stored.epoch !== (await this.store.getEpoch(stored.userId))) return 'epoch';
+
     return null;
   }
 
   private parse(stored: StoredSession): StoredSession<A> | null {
     if (!this.options.attributes) return stored as StoredSession<A>;
+
     try {
       return { ...stored, attributes: this.options.attributes.parse(stored.attributes) };
     } catch {
@@ -195,6 +222,7 @@ export class SessionManager<A> {
       this.logger.warn('Session attributes failed validation; treating the session as invalid', {
         userId: stored.userId,
       });
+
       return null;
     }
   }
@@ -206,16 +234,21 @@ export class SessionManager<A> {
     const now = this.clock.now();
     const active: StoredSession<A>[] = [];
     const stale: string[] = [];
+
     for (const stored of sessions) {
       const live =
         stored.expiresAt > now &&
         now < stored.lastActiveAt + stored.idleTimeoutMs &&
         stored.epoch === epoch;
+
       const parsed = live ? this.parse(stored) : null;
+
       if (parsed) active.push(parsed);
       else stale.push(stored.id);
     }
+
     if (stale.length > 0) await this.store.delete(userId, stale);
+
     return active;
   }
 
@@ -226,11 +259,16 @@ export class SessionManager<A> {
    */
   private async evictOverCap(userId: string): Promise<string[]> {
     if (this.maxPerUser === null) return [];
+
     const active = await this.listActive(userId);
+
     if (active.length <= this.maxPerUser) return [];
+
     active.sort((a, b) => a.createdAt - b.createdAt);
     const evicted = active.slice(0, active.length - this.maxPerUser).map((s) => s.id);
+
     await this.store.delete(userId, evicted);
+
     return evicted;
   }
 
@@ -238,15 +276,20 @@ export class SessionManager<A> {
   async revoke(userId: string, ids: readonly string[]): Promise<string[]> {
     const owned = new Set((await this.store.listByUser(userId)).map((s) => s.id));
     const mine = ids.filter((id) => owned.has(id));
+
     if (mine.length > 0) await this.store.delete(userId, mine);
+
     return mine;
   }
 
   /** Deletes the session a token names (single-device logout; no epoch bump). */
   async revokeToken(token: unknown): Promise<StoredSession | null> {
     if (!isTokenShape(token)) return null;
+
     const stored = await this.store.get(sha256Hex(token));
+
     if (stored) await this.store.delete(stored.userId, [stored.id]);
+
     return stored;
   }
 
@@ -257,12 +300,15 @@ export class SessionManager<A> {
    */
   async revokeAll(userId: string): Promise<string[]> {
     const epoch = await this.store.bumpEpoch(userId);
+
     // A session stamped with the new epoch is a login that started after the
     // revocation; it is legitimate and stays.
     const ids = (await this.store.listByUser(userId))
       .filter((s) => s.epoch < epoch)
       .map((s) => s.id);
+
     if (ids.length > 0) await this.store.delete(userId, ids);
+
     return ids;
   }
 }

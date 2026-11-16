@@ -112,6 +112,7 @@ export class Throttle {
       limit: r?.limit ?? limit,
       windowMs: toMilliseconds(r?.window ?? window),
     });
+
     this.perAccountIp = rule(lockout.perAccountIp, 5, '15m');
     this.perAccount = rule(lockout.perAccount, 10, '15m');
     this.perDevice = rule(lockout.perDevice, 5, '15m');
@@ -125,6 +126,7 @@ export class Throttle {
   async hit(scope: string, rule: RateLimitRule): Promise<Hit> {
     const window = await this.counters.increment(`rl:${scope}`, toMilliseconds(rule.window));
     const retryAfterSeconds = Math.max(1, Math.ceil((window.resetAt - this.clock.now()) / 1000));
+
     return {
       allowed: window.count <= rule.limit,
       count: window.count,
@@ -144,40 +146,52 @@ export class Throttle {
    */
   async gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate> {
     const lock = await this.counters.get(`lock:${account}`);
+
     if (lock && lock.count > 0) {
       if (!deviceId) return { allowed: false, reason: 'locked' };
+
       // Both slots are reserved atomically before the verify, so a parallel
       // burst over any number of tokens gets no more than the shared budget.
       // A refused attempt hands its reservations back at once.
       const ownKey = `dev:${account}:${deviceId}`;
       const own = await this.counters.increment(ownKey, this.perDevice.windowMs);
+
       if (own.count > this.perDevice.limit) {
         await this.counters.decrement(ownKey);
+
         return { allowed: false, reason: 'device_budget' };
       }
+
       const shared = await this.counters.increment(`devs:${account}`, this.perDevice.windowMs);
+
       if (shared.count > this.perDevice.limit) {
         await this.counters.decrement(`devs:${account}`);
         await this.counters.decrement(ownKey);
+
         return { allowed: false, reason: 'device_budget' };
       }
+
       return { allowed: true, viaDevice: true };
     }
 
     const pair = await this.counters.increment(`aip:${account}:${ip}`, this.perAccountIp.windowMs);
+
     if (pair.count > this.perAccountIp.limit)
       return { allowed: false, reason: 'account_ip_budget' };
 
     const all = await this.counters.increment(`acct:${account}`, this.perAccount.windowMs);
+
     if (all.count > this.perAccount.limit) {
       return { allowed: false, reason: 'locked', newLock: await this.lock(account) };
     }
+
     return { allowed: true };
   }
 
   /** A failed proof outside login (a wrong current password) still spends the account-wide budget. */
   async recordFailure(account: string): Promise<{ newLock?: { until: number } }> {
     const all = await this.counters.increment(`acct:${account}`, this.perAccount.windowMs);
+
     return all.count > this.perAccount.limit ? { newLock: await this.lock(account) } : {};
   }
 
@@ -193,10 +207,13 @@ export class Throttle {
     // The tier's TTL is renewed on every lock, so it only decays after a full
     // quiet period without one.
     const tier = ((await this.counters.get(`tier:${account}`))?.count ?? 0) + 1;
+
     await this.counters.set(`tier:${account}`, tier, this.quietPeriodMs);
     const duration = Math.min(this.baseLockMs * 3 ** Math.min(tier - 1, 20), this.maxLockMs);
     const lock = await this.counters.increment(`lock:${account}`, duration);
+
     await this.counters.reset(`acct:${account}`);
+
     return { until: lock.resetAt };
   }
 
@@ -207,6 +224,7 @@ export class Throttle {
    */
   async loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void> {
     if (!deviceId) return this.counters.reset(`aip:${account}:${ip}`);
+
     await this.counters.decrement(`dev:${account}:${deviceId}`);
     await this.counters.decrement(`devs:${account}`);
   }

@@ -17,6 +17,7 @@ describe('session cookie', () => {
 
   it('is HttpOnly, Path=/, Lax by default and has no Domain', () => {
     const spec = createSessionCookie({}, 't', { expiresAt: 61_000, persistent: true, now: 0 });
+
     expect(spec.attributes).toEqual({
       httpOnly: true,
       secure: true,
@@ -24,6 +25,7 @@ describe('session cookie', () => {
       path: '/',
       maxAge: 61,
     });
+
     expect(serializeCookie(spec)).toBe(
       '__Host-session=t; Path=/; Max-Age=61; HttpOnly; Secure; SameSite=Lax',
     );
@@ -31,11 +33,13 @@ describe('session cookie', () => {
 
   it('is a browser-session cookie when the session was not remembered', () => {
     const spec = createSessionCookie({}, 't', { expiresAt: 61_000, persistent: false, now: 0 });
+
     expect(spec.attributes.maxAge).toBeUndefined();
   });
 
   it('picks SameSite per origin and refuses None without Secure', () => {
     const sameSite = (origin: string | undefined) => (origin === 'app://app' ? 'none' : 'lax');
+
     expect(
       createSessionCookie({ sameSite }, 't', {
         expiresAt: 0,
@@ -44,6 +48,7 @@ describe('session cookie', () => {
         origin: 'app://app',
       }).attributes.sameSite,
     ).toBe('none');
+
     expect(() => createBlankSessionCookie({ secure: false, sameSite: 'none' })).toThrow(
       AuthConfigError,
     );
@@ -57,6 +62,7 @@ describe('session cookie', () => {
 describe('parseCookieHeader', () => {
   it('keeps the first value of a duplicated name and skips malformed escapes', () => {
     const cookies = parseCookieHeader('a=1; b=%E0%A4%A; a=2; c=x%20y');
+
     expect(cookies.get('a')).toBe('1');
     expect(cookies.has('b')).toBe(false);
     expect(cookies.get('c')).toBe('x y');

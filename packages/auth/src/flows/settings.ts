@@ -41,5 +41,6 @@ export interface FlowSettings {
 /** The user without its hash: what hooks and callers are given. */
 export function publicUser<U extends AuthUser>(credential: WithPasswordHash<U>): U {
   const { passwordHash: _hash, ...user } = credential;
+
   return user as unknown as U;
 }

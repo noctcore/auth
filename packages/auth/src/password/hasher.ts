@@ -32,13 +32,16 @@ const dummyHashes = new WeakMap<PasswordHasher, Promise<string>>();
  */
 export function dummyHashFor(hasher: PasswordHasher): Promise<string> {
   let cached = dummyHashes.get(hasher);
+
   if (!cached) {
     const bytes = new Uint8Array(24);
+
     globalThis.crypto.getRandomValues(bytes);
     cached = hasher.hash(Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(''));
     // A failed computation must not be cached forever.
     cached.catch(() => dummyHashes.delete(hasher));
     dummyHashes.set(hasher, cached);
   }
+
   return cached;
 }

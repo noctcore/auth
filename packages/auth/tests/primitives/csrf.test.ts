@@ -24,6 +24,7 @@ describe('verifyRequestOrigin', () => {
         allowedOrigins: allowed,
       }),
     ).toBe(true);
+
     expect(
       verifyRequestOrigin({ method: 'post', origin: 'app://app', allowedOrigins: allowed }),
     ).toBe(true);
@@ -48,6 +49,7 @@ describe('signed double-submit token', () => {
 
   it('verifies when cookie and header match and the binding is right', () => {
     const token = createCsrfToken(current, 'session-1');
+
     expect(
       verifyCsrfToken({
         cookieToken: token,
@@ -60,6 +62,7 @@ describe('signed double-submit token', () => {
 
   it('refuses a token minted for another binding', () => {
     const token = createCsrfToken(current, 'session-1');
+
     expect(
       verifyCsrfToken({
         cookieToken: token,
@@ -73,9 +76,11 @@ describe('signed double-submit token', () => {
   it('refuses when the header does not echo the cookie', () => {
     const token = createCsrfToken(current, 's');
     const other = createCsrfToken(current, 's');
+
     expect(
       verifyCsrfToken({ cookieToken: token, headerToken: other, binding: 's', secrets: [current] }),
     ).toBe(false);
+
     expect(
       verifyCsrfToken({
         cookieToken: token,
@@ -88,6 +93,7 @@ describe('signed double-submit token', () => {
 
   it('accepts a previous secret during rollover and nothing after it is dropped', () => {
     const token = createCsrfToken(previous, 's');
+
     expect(
       verifyCsrfToken({
         cookieToken: token,
@@ -96,6 +102,7 @@ describe('signed double-submit token', () => {
         secrets: [current, previous],
       }),
     ).toBe(true);
+
     expect(
       verifyCsrfToken({ cookieToken: token, headerToken: token, binding: 's', secrets: [current] }),
     ).toBe(false);
@@ -140,7 +147,9 @@ describe('csrf token hardening', () => {
 
   it('refuses secrets shorter than 32 bytes', () => {
     const short = new TextEncoder().encode('too-short');
+
     expect(() => createCsrfToken(short, 's')).toThrow(/at least 32 bytes/u);
+
     expect(() =>
       verifyCsrfToken({ cookieToken: 'a.b', headerToken: 'a.b', binding: 's', secrets: [short] }),
     ).toThrow(/at least 32 bytes/u);
@@ -149,8 +158,10 @@ describe('csrf token hardening', () => {
   it('refuses a token whose nonce is not 32 lowercase hex characters', () => {
     const token = createCsrfToken(secret, 's');
     const [, mac] = token.split('.');
+
     for (const nonce of ['', 'zz'.repeat(16), 'AB'.repeat(16), 'ab'.repeat(15)]) {
       const forged = `${nonce}.${mac}`;
+
       expect(
         verifyCsrfToken({
           cookieToken: forged,
@@ -165,9 +176,11 @@ describe('csrf token hardening', () => {
   it('frames binding and nonce so a colon in the binding cannot shift them', () => {
     // Without framing, binding "a:b" + nonce "c" and binding "a" + nonce "b:c" sign the same text.
     const token = createCsrfToken(secret, 'a');
+
     expect(
       verifyCsrfToken({ cookieToken: token, headerToken: token, binding: 'a:', secrets: [secret] }),
     ).toBe(false);
+
     expect(
       verifyCsrfToken({ cookieToken: token, headerToken: token, binding: 'a', secrets: [secret] }),
     ).toBe(true);
@@ -175,6 +188,7 @@ describe('csrf token hardening', () => {
 
   it('refuses everything with no secrets', () => {
     const token = createCsrfToken(secret, 's');
+
     expect(
       verifyCsrfToken({ cookieToken: token, headerToken: token, binding: 's', secrets: [] }),
     ).toBe(false);

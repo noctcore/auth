@@ -52,16 +52,22 @@ export async function login<U extends AuthUser, A>(
   const { meta } = input;
   const rememberMe = input.rememberMe ?? false;
   const captcha = await core.checkCaptcha('login', input.captchaToken, meta);
+
   if (captcha) {
     await core.emit({ type: 'login.failure', reason: captcha.reason }, meta);
+
     return captcha;
   }
+
   const limited = await core.rateLimit('login', meta.ip, meta);
+
   if (limited) return limited;
 
   const email = normalizeEmail(input.email);
+
   if (!email) {
     await core.emit({ type: 'login.failure', reason: 'invalid_email' }, meta);
+
     return fail('invalid_credentials', 'invalid_email');
   }
 
@@ -77,6 +83,7 @@ export async function login<U extends AuthUser, A>(
 
   if (!gate.allowed) {
     notifyLock(core, credential, gate.newLock, meta);
+
     await core.emit(
       {
         type: 'login.failure',
@@ -85,33 +92,41 @@ export async function login<U extends AuthUser, A>(
       },
       meta,
     );
+
     return fail('invalid_credentials', gate.reason);
   }
+
   if (!credential || !verified) {
     // A device token lets only a correct password through a lock; a wrong one
     // counts against the devices' shared failures and the account-wide budget.
     if (gate.viaDevice)
       notifyLock(core, credential, (await core.throttle.deviceFailed(account)).newLock, meta);
+
     const reason = !credential
       ? 'unknown_user'
       : credential.passwordHash
         ? 'wrong_password'
         : 'password_not_set';
+
     await core.emit(
       { type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason },
       meta,
     );
+
     return fail('invalid_credentials', reason);
   }
 
   await core.throttle.loginSucceeded(account, meta.ip, gate.viaDevice ? deviceId : null);
+
   if (credential.passwordHash && core.hasher.needsRehash(credential.passwordHash)) {
     await rehash(core, credential.id, credential.passwordHash, input.password, meta);
   }
 
   const user = publicUser(credential);
+
   for (const hook of core.hooks.loginChallenge) {
     const challenge = await hook({ user, rememberMe, epoch, meta });
+
     if (challenge) {
       // No device cookie yet: it comes with the session, after every factor.
       await core.emit(
@@ -122,13 +137,17 @@ export async function login<U extends AuthUser, A>(
         },
         meta,
       );
+
       return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods });
     }
   }
 
   const issued = await core.issueSession(user, { via: 'password', meta, rememberMe, epoch });
+
   if (!issued.ok) return issued;
+
   await core.emit({ type: 'login.success', userId: user.id }, meta);
+
   return ok({ kind: 'session', session: issued.value });
 }
 
@@ -140,11 +159,13 @@ function notifyLock<U extends AuthUser, A>(
   meta: RequestMeta,
 ): void {
   if (!newLock || !credential) return;
+
   core.background('lockout notice', async () => {
     await core.emit(
       { type: 'account.locked', userId: credential.id, data: { until: newLock.until } },
       meta,
     );
+
     await core.mail({
       type: 'lockout',
       to: credential.email,
@@ -164,6 +185,7 @@ async function rehash<U extends AuthUser, A>(
 ) {
   try {
     const hash = await core.hasher.hash(normalizePassword(password));
+
     // Compare-and-set: a password change or reset that landed while this hash
     // was computed must win, or the old password would come back.
     if (await core.users.setPasswordHash(userId, hash, { expected: previous })) {

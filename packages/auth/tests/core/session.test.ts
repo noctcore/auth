@@ -18,12 +18,14 @@ const attributes = {
   parse(value: unknown): Attrs {
     if (typeof value !== 'object' || value === null || typeof (value as Attrs).role !== 'string')
       throw new Error('bad');
+
     return { role: (value as Attrs).role };
   },
 };
 
 let clock: ManualClock;
 let store: MemorySessionStore;
+
 function manager(options: SessionOptions<Attrs> = {}) {
   return new SessionManager<Attrs>(
     store,
@@ -33,6 +35,7 @@ function manager(options: SessionOptions<Attrs> = {}) {
     silentLogger,
   );
 }
+
 const mintFor = (
   m: SessionManager<Attrs>,
   userId = 'u1',
@@ -57,9 +60,12 @@ describe('SessionManager.mint', () => {
   it('stores only the SHA-256 of the token and stamps every field exactly', async () => {
     const m = manager();
     const minted = await mintFor(m);
+
     if (!minted.ok) throw new Error('mint failed');
+
     expect(minted.token).toMatch(/^[0-9a-f]{64}$/u);
     expect(await store.get(minted.token)).toBeNull();
+
     expect(await store.get(sha256Hex(minted.token))).toEqual({
       id: sha256Hex(minted.token),
       userId: 'u1',
@@ -79,7 +85,9 @@ describe('SessionManager.mint', () => {
 
   it('gives remember-me sessions the long TTL and the long idle limit', async () => {
     const minted = await mintFor(manager(), 'u1', { rememberMe: true });
+
     if (!minted.ok) throw new Error('mint failed');
+
     expect(minted.session.expiresAt - clock.now()).toBe(30 * 24 * 60 * MIN);
     expect(minted.session.idleTimeoutMs).toBe(7 * 24 * 60 * MIN);
   });
@@ -87,8 +95,10 @@ describe('SessionManager.mint', () => {
   it('refuses and rolls back a mint whose epoch moved during the login', async () => {
     const m = manager();
     const epochBeforeCredentialRead = await m.readEpoch('u1');
+
     await m.revokeAll('u1'); // a password change commits while the login verifies the old hash
     const minted = await mintFor(m, 'u1', { epoch: epochBeforeCredentialRead });
+
     expect(minted).toEqual({ ok: false, reason: 'epoch_fence' });
     expect(await store.listByUser('u1')).toEqual([]);
   });
@@ -96,11 +106,14 @@ describe('SessionManager.mint', () => {
   it('evicts the oldest sessions beyond the cap and reports them', async () => {
     const m = manager({ maxPerUser: 2 });
     const first = await mintFor(m);
+
     clock.advance(1000);
     await mintFor(m);
     clock.advance(1000);
     const third = await mintFor(m);
+
     if (!first.ok || !third.ok) throw new Error('mint failed');
+
     expect(third.evicted).toEqual([first.session.id]);
     expect((await m.listActive('u1')).map((s) => s.id)).not.toContain(first.session.id);
   });
@@ -114,6 +127,7 @@ describe('SessionManager.mint', () => {
 describe('SessionManager.validate', () => {
   it('refuses malformed and unknown tokens', async () => {
     const m = manager();
+
     expect(await m.validate('nope')).toEqual({ ok: false, reason: 'malformed' });
     expect(await m.validate('a'.repeat(64))).toEqual({ ok: false, reason: 'unknown' });
   });
@@ -121,12 +135,16 @@ describe('SessionManager.validate', () => {
   it('touches at most once per interval, never extending the absolute expiry', async () => {
     const m = manager();
     const minted = await mintFor(m);
+
     if (!minted.ok) throw new Error('mint failed');
+
     clock.advance(30_000);
     const early = await m.validate(minted.token);
+
     expect(early.ok && early.session.lastActiveAt).toBe(minted.session.lastActiveAt);
     clock.advance(31_000);
     const later = await m.validate(minted.token);
+
     expect(later.ok && later.session.lastActiveAt).toBe(clock.now());
     expect(later.ok && later.session.expiresAt).toBe(minted.session.expiresAt);
   });
@@ -134,7 +152,9 @@ describe('SessionManager.validate', () => {
   it('does not touch when asked not to (background traffic)', async () => {
     const m = manager();
     const minted = await mintFor(m);
+
     if (!minted.ok) throw new Error('mint failed');
+
     clock.advance(25 * MIN);
     await m.validate(minted.token, { touch: false });
     clock.advance(6 * MIN);
@@ -144,7 +164,9 @@ describe('SessionManager.validate', () => {
   it('ends an idle session and reaps it', async () => {
     const m = manager();
     const minted = await mintFor(m);
+
     if (!minted.ok) throw new Error('mint failed');
+
     clock.advance(30 * MIN);
     expect(await m.validate(minted.token)).toEqual({ ok: false, reason: 'idle' });
     expect(await store.listByUser('u1')).toEqual([]);
@@ -153,11 +175,14 @@ describe('SessionManager.validate', () => {
   it('keeps an active session alive until its absolute expiry', async () => {
     const m = manager({ absoluteTtl: '2h' });
     const minted = await mintFor(m);
+
     if (!minted.ok) throw new Error('mint failed');
+
     for (let i = 0; i < 7; i++) {
       clock.advance(15 * MIN);
       expect((await m.validate(minted.token)).ok).toBe(true);
     }
+
     clock.advance(15 * MIN);
     expect((await m.validate(minted.token)).ok).toBe(false);
   });
@@ -165,7 +190,9 @@ describe('SessionManager.validate', () => {
   it('refuses every session minted before a revoke-all, even one the walk could not see', async () => {
     const m = manager();
     const minted = await mintFor(m);
+
     if (!minted.ok) throw new Error('mint failed');
+
     // Simulate a walk that missed the session: bump the epoch only.
     await store.bumpEpoch('u1');
     expect(await m.validate(minted.token)).toEqual({ ok: false, reason: 'epoch' });
@@ -174,7 +201,9 @@ describe('SessionManager.validate', () => {
   it('refuses a session whose stored attributes no longer validate', async () => {
     const m = manager();
     const minted = await mintFor(m);
+
     if (!minted.ok) throw new Error('mint failed');
+
     await store.touch({ ...minted.session, attributes: { role: 7 } });
     expect(await m.validate(minted.token)).toEqual({ ok: false, reason: 'corrupt' });
   });
@@ -182,13 +211,18 @@ describe('SessionManager.validate', () => {
   it('reports a session revoked between the read and the touch as revoked', async () => {
     const m = manager();
     const minted = await mintFor(m);
+
     if (!minted.ok) throw new Error('mint failed');
+
     clock.advance(2 * MIN);
     const original = store.touch.bind(store);
+
     store.touch = async (session) => {
       await store.delete(session.userId, [session.id]);
+
       return original(session);
     };
+
     expect(await m.validate(minted.token)).toEqual({ ok: false, reason: 'revoked' });
     expect(await store.get(minted.session.id)).toBeNull();
   });
@@ -200,7 +234,9 @@ describe('SessionManager revocation', () => {
     const before = await mintFor(m);
     const ids = await m.revokeAll('u1');
     const after = await mintFor(m);
+
     if (!before.ok || !after.ok) throw new Error('mint failed');
+
     expect(ids).toEqual([before.session.id]);
     expect((await m.validate(after.token)).ok).toBe(true);
   });
@@ -209,7 +245,9 @@ describe('SessionManager revocation', () => {
     const m = manager();
     const mine = await mintFor(m, 'u1');
     const theirs = await mintFor(m, 'u2');
+
     if (!mine.ok || !theirs.ok) throw new Error('mint failed');
+
     expect(await m.revoke('u1', [theirs.session.id])).toEqual([]);
     expect((await m.validate(theirs.token)).ok).toBe(true);
     expect(await m.revoke('u1', [mine.session.id])).toEqual([mine.session.id]);

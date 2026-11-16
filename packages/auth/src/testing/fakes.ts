@@ -17,6 +17,7 @@ export interface ManualClock extends Clock {
 
 export function manualClock(start = Date.UTC(2026, 0, 1)): ManualClock {
   let current = start;
+
   return {
     now: () => current,
     advance: (ms) => {
@@ -36,6 +37,7 @@ export interface RecordingMailer extends Mailer {
 
 export function recordingMailer(): RecordingMailer {
   const sent: AuthMailEvent[] = [];
+
   return {
     sent,
     async send(event) {
@@ -44,8 +46,10 @@ export function recordingMailer(): RecordingMailer {
     last(type) {
       for (let i = sent.length - 1; i >= 0; i--) {
         const event = sent[i];
+
         if (event?.type === type) return event as never;
       }
+
       return undefined;
     },
   };
@@ -58,6 +62,7 @@ export interface RecordingAudit extends AuditSink {
 
 export function recordingAudit(): RecordingAudit {
   const events: Array<AuthEvent & { meta?: RequestMeta | undefined }> = [];
+
   return {
     events,
     async emit(event, meta) {
@@ -73,10 +78,12 @@ export function recordingAudit(): RecordingAudit {
  */
 export function plainHasher(version = 1): PasswordHasher {
   const prefix = `plain$v${version}$`;
+
   return {
     hash: async (password) => `${prefix}${sha256Hex(password)}`,
     verify: async (hash, password) => {
       const at = hash.lastIndexOf('$');
+
       return at > 0 && hash.slice(at + 1) === sha256Hex(password);
     },
     needsRehash: (hash) => !hash.startsWith(prefix),
