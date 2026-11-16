@@ -10,6 +10,12 @@ declare const mailer: Mailer;
 declare function reply(status: number, body: unknown): Response;
 declare function statusFor(code: AuthErrorCode): number;
 
+interface LoginForm {
+  readonly email: string;
+  readonly password: string;
+  readonly meta: RequestMeta;
+}
+
 // landing:start
 import { createAuth, toPublicError } from '@noctcore/auth';
 import { argon2id } from '@noctcore/auth/argon2';
@@ -30,8 +36,8 @@ export const auth = createAuth({
 });
 
 // In your own route handler:
-export async function login(email: string, password: string, meta: RequestMeta) {
-  const result = await auth.login({ email, password, meta });
+export async function login(form: LoginForm) {
+  const result = await auth.login(form);
 
   if (!result.ok) {
     // A wrong password, an unknown address and a locked account
@@ -39,5 +45,5 @@ export async function login(email: string, password: string, meta: RequestMeta) 
     return reply(statusFor(result.code), toPublicError(result));
   }
 
-  return reply(200, { signedIn: result.value.kind === 'session' });
+  return reply(200, { kind: result.value.kind });
 }
