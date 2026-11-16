@@ -52,7 +52,7 @@ export {
   type SameSite,
   type SessionCookieConfig,
 } from './cookie';
-export { createCsrfToken, MIN_CSRF_SECRET_BYTES, verifyCsrfToken, verifyFetchSite, verifyRequestOrigin } from './csrf';
+export { createCsrfToken, verifyCsrfToken, verifyFetchSite, verifyRequestOrigin } from './csrf';
 export {
   turnstile,
   type CaptchaDoor,
@@ -61,3 +61,27 @@ export {
   type TurnstileOptions,
 } from './captcha';
 export { clientIp, maskIp, parseTrustProxy } from './ip';
+export type {
+  AuthUser,
+  CounterStore,
+  CounterWindow,
+  SessionStore,
+  StoredSession,
+  StoredToken,
+  TokenStore,
+  UserStore,
+  WithPasswordHash,
+} from './stores';
+export type { AuthMailEvent, Mailer } from './mail';
+export type { AuditSink, AuthEvent, AuthEventType } from './audit';
+export {
+  SessionManager,
+  type AttributeSchema,
+  type MintInput,
+  type MintResult,
+  type SessionOptions,
+  type SessionRefusal,
+  type ValidateResult,
+} from './session';
+export { OneTimeTokens, type TokenRedemption } from './tokens';
+export { accountKey, Throttle, type Hit, type LockoutOptions, type LoginGate, type RateLimitRule } from './throttle';
