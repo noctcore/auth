@@ -7,7 +7,7 @@
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "docs:build": "ASTRO_TELEMETRY_DISABLED=1 astro build && bun scripts/check-build.ts",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
-    "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro sync && tsc --noEmit",
+    "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro sync && tsc --noEmit && PRISMA_HIDE_UPDATE_MESSAGE=1 prisma generate --schema snippets/prisma/schema.prisma && tsc -p snippets",
     "test": "bun test scripts --pass-with-no-tests"
   },
   "dependencies": {
