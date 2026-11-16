@@ -13,7 +13,7 @@
  * Hashing is CPU and memory heavy: every door that hashes a password is rate
  * limited by the flows, so it cannot be used to exhaust the server.
  *
- * Guide: Learn, "Password hashing".
+ * Guide: Learn, "Passwords".
  */
 import { hash, verify } from '@node-rs/argon2';
 import type { PasswordHasher } from './hasher';

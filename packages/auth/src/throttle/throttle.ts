@@ -39,7 +39,7 @@
  * - Keys are derived from the normalised EMAIL, not the user id, so a known and
  *   an unknown address do identical counter work and get identical answers.
  *
- * Guide: Learn, "Brute force and victim lockout".
+ * Guide: Learn, "Brute force and lockout".
  */
 import { counterKeys as keys } from './counter-keys';
 import {

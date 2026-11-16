@@ -4,7 +4,7 @@
  * `@noctcore/auth/testing` is a valid one. The suite checks the properties the
  * flows rely on, which are listed on each method.
  *
- * Guide: Build, "Writing a store adapter".
+ * Planned guide: Build, "Writing a store adapter".
  */
 import type { NormalizedEmail } from '../shared/email';
 

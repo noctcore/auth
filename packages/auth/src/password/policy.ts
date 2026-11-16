@@ -7,7 +7,7 @@
  * Length is counted in Unicode code points of the NFC form, so a password typed
  * on a phone (often NFD) and on a desktop is the same length and the same hash.
  *
- * Guide: Learn, "Password hashing".
+ * Guide: Learn, "Passwords".
  */
 export interface PasswordPolicy {
   readonly minLength: number;

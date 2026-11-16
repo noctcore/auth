@@ -3,7 +3,7 @@
  * tickets) is 32 bytes from the platform CSPRNG: 256 bits, far beyond what an
  * online or offline guesser can search. `Math.random` is never used.
  *
- * Guide: Learn, "Entropy and tokens".
+ * Guide: Learn, "Sessions and expiry".
  */
 import { encodeHexLowerCase } from '@oslojs/encoding';
 

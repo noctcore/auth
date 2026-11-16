@@ -5,7 +5,7 @@
  * Flows hand the hasher the NFC-normalised password, so implementations never
  * normalise themselves.
  *
- * Guide: Learn, "Password hashing".
+ * Guide: Learn, "Passwords".
  */
 export interface PasswordHasher {
   hash(password: string): Promise<string>;
