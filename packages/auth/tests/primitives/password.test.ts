@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { argon2id, OWASP_ARGON2ID } from '../../src/argon2';
+import { argon2id, DEFAULT_ARGON2ID, OWASP_ARGON2ID } from '../../src/argon2';
 import { AuthConfigError } from '../../src/errors';
 import { pwnedPasswords } from '../../src/password/breach';
 import { dummyHashFor } from '../../src/password/hasher';
@@ -22,14 +22,15 @@ describe('checkPasswordPolicy', () => {
 });
 
 describe('argon2id', () => {
-  it('defaults to the OWASP floor and round-trips', async () => {
+  it('defaults to the stricter of the OWASP and auth guide floors and round-trips', async () => {
     const hasher = argon2id();
     const hash = await hasher.hash('correct horse battery staple');
-    expect(hash).toMatch(/^\$argon2id\$v=19\$m=19456,t=2,p=1\$/u);
+    expect(hash).toMatch(/^\$argon2id\$v=19\$m=19456,t=3,p=1\$/u);
     expect(await hasher.verify(hash, 'correct horse battery staple')).toBe(true);
     expect(await hasher.verify(hash, 'wrong')).toBe(false);
     expect(hasher.needsRehash(hash)).toBe(false);
     expect(OWASP_ARGON2ID).toEqual({ memoryCost: 19_456, timeCost: 2, parallelism: 1 });
+    expect(DEFAULT_ARGON2ID).toEqual({ memoryCost: 19_456, timeCost: 3, parallelism: 1 });
   });
 
   it('returns false for a malformed stored hash instead of throwing', async () => {
@@ -41,6 +42,9 @@ describe('argon2id', () => {
     const hash = await old.hash('pw');
     expect(argon2id().needsRehash(hash)).toBe(true);
     expect(argon2id().needsRehash('$2b$10$bcrypt')).toBe(true);
+    // Hashes from apps on the OWASP floor (t=2) upgrade on their next login.
+    const floor = await argon2id(OWASP_ARGON2ID).hash('pw');
+    expect(argon2id().needsRehash(floor)).toBe(true);
   });
 
   it('refuses parameters below the OWASP table', () => {
