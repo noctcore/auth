@@ -44,6 +44,8 @@ export default defineConfig({
       components: { Hero: './src/components/Hero.astro' },
       expressiveCode: {
         themes: ['github-dark-default', 'github-light'],
+        // Long install commands wrap instead of hiding their tail behind a scrollbar.
+        defaultProps: { overridesByLang: { 'sh,bash,shell': { wrap: true } } },
         styleOverrides: {
           borderRadius: 'var(--nc-radius)',
           borderColor: 'var(--nc-line-soft)',
