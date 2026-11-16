@@ -1,0 +1,41 @@
+name: Security hardening idea
+description: A default that could be stricter, a missing check, or a defense the library should offer. Not for vulnerabilities.
+labels: ['security', 'enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is for making the library harder to misuse or attack, discussed in public. If you found a way to break a guarantee the library already claims (authenticate as someone else, replay a token, enumerate accounts, lock a user out past the cap), **do not file it here**: report it privately as [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md) describes.
+  - type: input
+    id: area
+    attributes:
+      label: Module or default
+      description: For example the session idle timeout, the lockout budgets, the CSRF checks, the reset token lifetime.
+    validations:
+      required: true
+  - type: textarea
+    id: attack
+    attributes:
+      label: The attack or mistake
+      description: What an attacker gains, or what an app developer gets wrong, with the current behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: The new default, check or option.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: OWASP cheat sheets, NIST SP 800-63B, an RFC, an advisory or a write-up that backs the change.
+    validations:
+      required: true
+  - type: textarea
+    id: breakage
+    attributes:
+      label: What it can break
+      description: Who gets logged out, which old input gets refused, what an app has to change. A stricter default that may log users out ships as a minor release with a "Behaviour change" note.

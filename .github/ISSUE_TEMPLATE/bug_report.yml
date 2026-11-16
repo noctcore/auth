@@ -1,0 +1,59 @@
+name: Bug report
+description: Something in @noctcore/auth or one of its adapters crashed, misbehaved or returned the wrong result.
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If the bug lets someone sign in as another user, keep a session past revocation or expiry, replay a token, or learn whether an email has an account, **do not file it here**: report it privately as [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md) describes.
+
+        Never paste secrets, session tokens, password hashes, real email addresses or real hostnames.
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - '@noctcore/auth'
+        - '@noctcore/auth/argon2'
+        - '@noctcore/auth/testing'
+        - '@noctcore/auth-redis'
+        - '@noctcore/auth-prisma'
+        - The example app
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Nothing is on npm yet, so the commit SHA you built from.
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime and stores
+      description: For example Node 22.12 with Redis 7.4 and PostgreSQL 17, or Bun 1.4 with the in-memory fakes.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest config and calls that show it. A failing test against `@noctcore/auth/testing` is the best form.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The returned `AuthResult`, the error and its stack, or the log line. Read it before pasting.
+    validations:
+      required: true
