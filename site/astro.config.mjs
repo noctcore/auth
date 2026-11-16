@@ -11,6 +11,33 @@ export default defineConfig({
   integrations: [
     starlight({
       title: '@noctcore/auth',
+      logo: {
+        light: './src/assets/brand/mark-light.svg',
+        dark: './src/assets/brand/mark-dark.svg',
+      },
+      customCss: ['./src/styles/tokens.css', './src/styles/theme.css'],
+      expressiveCode: {
+        themes: ['github-dark-default', 'github-light'],
+        styleOverrides: {
+          borderRadius: 'var(--nc-radius)',
+          borderColor: 'var(--nc-line-soft)',
+          codeBackground: 'var(--nc-code-bg)',
+          codeFontFamily: 'var(--nc-font-mono)',
+          uiFontFamily: 'var(--nc-font)',
+          frames: {
+            editorBackground: 'var(--nc-code-bg)',
+            editorTabBarBackground: 'var(--nc-bg-raised)',
+            editorActiveTabBackground: 'var(--nc-code-bg)',
+            editorActiveTabIndicatorTopColor: 'var(--nc-accent)',
+            editorActiveTabIndicatorBottomColor: 'transparent',
+            editorTabBarBorderBottomColor: 'var(--nc-line-soft)',
+            terminalBackground: 'var(--nc-code-bg)',
+            terminalTitlebarBackground: 'var(--nc-bg-raised)',
+            terminalTitlebarBorderBottomColor: 'var(--nc-line-soft)',
+            frameBoxShadowCssValue: 'none',
+          },
+        },
+      },
       description: 'A small, readable auth library: every module is tied to the attack it stops.',
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/noctcore/auth' }],
       editLink: { baseUrl: 'https://github.com/noctcore/auth/edit/main/site/' },
