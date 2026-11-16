@@ -2,8 +2,14 @@
  * Cross-site request forgery: a page on another site makes the browser send a
  * state-changing request with the user's cookies attached.
  *
- * Two checks, both on by default in the framework adapters:
+ * The checks, on by default in the framework adapters:
  *
+ * 0. `verifyFetchSite`: browsers send `Sec-Fetch-Site` on every request and
+ *    page script cannot forge it. For an app served from one origin, refusing
+ *    unsafe requests unless it says `same-origin` (and refusing it missing) is
+ *    the strictest check and the auth guide's first recommendation. Apps with
+ *    a desktop shell or sibling subdomains cannot use it alone, which is why
+ *    the Origin allowlist below exists.
  * 1. `verifyRequestOrigin`: every unsafe method must carry an `Origin` header
  *    naming an allowed origin. Browsers always send it on cross-site requests,
  *    and a page cannot forge it. A missing or `null` Origin is refused.
@@ -43,6 +49,22 @@ export function verifyRequestOrigin(input: {
   const origin = normalizeOrigin(input.origin);
   if (origin === null) return false;
   return input.allowedOrigins.some((allowed) => normalizeOrigin(allowed) === origin);
+}
+
+/**
+ * Refuses unsafe requests whose `Sec-Fetch-Site` is missing or not
+ * `same-origin` (or `same-site` when `allowSameSite` is set, for sibling
+ * subdomains you trust). Note that requests from a desktop shell on its own
+ * scheme arrive as `cross-site`; use `verifyRequestOrigin` for those clients.
+ */
+export function verifyFetchSite(input: {
+  method: string;
+  secFetchSite: string | null | undefined;
+  allowSameSite?: boolean;
+}): boolean {
+  if (SAFE_METHODS.has(input.method.toUpperCase())) return true;
+  if (input.secFetchSite === 'same-origin') return true;
+  return input.allowSameSite === true && input.secFetchSite === 'same-site';
 }
 
 function mac(secret: Uint8Array, binding: string, nonce: string): string {

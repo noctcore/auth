@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createCsrfToken, verifyCsrfToken, verifyRequestOrigin } from '../../src/csrf';
+import { createCsrfToken, verifyCsrfToken, verifyFetchSite, verifyRequestOrigin } from '../../src/csrf';
 
 const allowed = ['https://app.example.com', 'app://app'];
 
@@ -53,5 +53,20 @@ describe('signed double-submit token', () => {
     for (const token of ['', '.', 'abc', 'abc.', '.abc', 'zz.zz']) {
       expect(verifyCsrfToken({ cookieToken: token, headerToken: token, binding: 's', secrets: [current] })).toBe(false);
     }
+  });
+});
+
+describe('verifyFetchSite', () => {
+  it('accepts same-origin unsafe requests and any safe request', () => {
+    expect(verifyFetchSite({ method: 'POST', secFetchSite: 'same-origin' })).toBe(true);
+    expect(verifyFetchSite({ method: 'GET', secFetchSite: 'cross-site' })).toBe(true);
+  });
+
+  it.each([undefined, null, '', 'cross-site', 'none', 'same-site'])('refuses %j on an unsafe method by default', (value) => {
+    expect(verifyFetchSite({ method: 'DELETE', secFetchSite: value })).toBe(false);
+  });
+
+  it('accepts same-site only when asked', () => {
+    expect(verifyFetchSite({ method: 'POST', secFetchSite: 'same-site', allowSameSite: true })).toBe(true);
   });
 });
