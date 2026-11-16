@@ -63,13 +63,8 @@ export {
   verifyFetchSite,
   verifyRequestOrigin,
 } from './http/csrf';
-export {
-  turnstile,
-  type CaptchaDoor,
-  type CaptchaVerdict,
-  type CaptchaVerifier,
-  type TurnstileOptions,
-} from './ports/captcha';
+export type { CaptchaDoor, CaptchaVerdict, CaptchaVerifier } from './ports/captcha';
+export { turnstile, type TurnstileOptions } from './http/turnstile';
 export { clientIp, maskIp, parseTrustProxy } from './http/ip';
 export type {
   AuthUser,
