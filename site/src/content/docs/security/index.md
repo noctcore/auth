@@ -11,13 +11,17 @@ These are the defaults chosen for v1. The code that implements them is not publi
 
 A registration answers the same way whether or not the email is taken. When the account already exists, the owner of that address gets an "account exists" mail instead of the caller seeing an `email in use` error, so registration cannot be used to find out who has an account.
 
+## Email addresses
+
+Addresses are trimmed and their ASCII letters lowercased; an address with any non-ASCII character is refused, which is stricter than NFC plus Unicode lowercasing (that folding can merge two different addresses into one account). Internationalised domains go in as punycode. An app adopting the package must find stored addresses with non-ASCII characters first, because their owners can no longer sign in or reset by them.
+
 ## Lockout
 
 - There is no permanent lockout, because a permanent lock lets an attacker lock a victim out.
 - Attempt budgets are keyed on account plus IP, and on the account as a whole.
 - Backoff is exponential, capped at 1 hour, and resets only after a quiet day with no new lock.
 - A correct password returns only the budget of the source that proved it, never the account-wide one.
-- A browser that has signed in to the account before carries a signed device cookie and gets through a lock on its own small budget, so a distributed attack cannot keep the owner out.
+- A browser that completed a full login carries a signed device cookie that lets a correct password through a lock, on a small budget shared by all of the account's devices; its wrong guesses still count against the account. The cookie is refused after 30 days and voided by a password change, a reset or signing out everywhere. A distributed attack cannot keep the owner out, and holding many cookies adds no guesses.
 - The owner is mailed when the account locks; the mail is sent off the response path.
 - A password reset lifts the lock.
 - A locked account is answered exactly like a wrong password, after the same work: the same store calls and a full password verify.

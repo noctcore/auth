@@ -21,6 +21,8 @@ Whoever can reset a password owns the account, so the reset flow is a second log
 
 **Codes become tickets.** With `passwordReset.kind: 'code'` the mail carries 8 digits instead. A correct code is exchanged for a ticket valid for 10 minutes, and only the ticket can set the password. The code is checked once, with an attempt cap of 5 per code and a second cap of 5 guesses per 15 minutes per address from every network (known address or not, code outstanding or not), and never authorises the write itself.
 
+**The trade-off of the per-address cap.** Anyone who knows an address can spend those 5 guesses and block code-mode resets for that address for 15 minutes. That is the price of stopping guesses spread over many networks. The default link mode does not use this cap and is unaffected; apps that choose codes accept the 15-minute nuisance.
+
 **A completed reset cleans up.** Every session is revoked, every outstanding reset token is voided, the lockout is lifted (the mailbox was proved), the address is marked verified unless you turn that off, and the owner gets a "password changed" mail. No session is issued: the user signs in with the new password.
 
 **Keep the token out of logs and referrers.** Put it in the URL fragment or path, not the query string, and serve the page with `Referrer-Policy: no-referrer`.
