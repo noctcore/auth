@@ -1,0 +1,131 @@
+/**
+ * Single-use, purpose-bound tokens: email verification and password reset
+ * links, short codes a person types, and the ticket a verified code is
+ * exchanged for.
+ *
+ * - Links are 32 random bytes; only their SHA-256 is stored.
+ * - Codes (6 to 9 digits) are stored as an HMAC under the server secret, bound
+ *   to purpose and user, because a plain hash of a 6-digit code is reversed in
+ *   milliseconds from a leaked table. Each code has an attempt cap enforced by
+ *   an atomic increment BEFORE the comparison, so parallel guesses cannot
+ *   exceed it. A correct code is exchanged for a short-lived link-style ticket,
+ *   so the code itself is never what authorises the password write.
+ * - One live token per user and purpose: issuing a new one replaces the old.
+ * - Consumption is atomic: of many concurrent redemptions, exactly one wins.
+ *
+ * Guide: Learn, "Email verification" and "Password reset".
+ */
+import type { Clock } from './clock';
+import { hexDigestsEqual, hmacSha256Hex, sha256Hex } from './hash';
+import { generateNumericCode, generateToken, isTokenShape, type RandomSource } from './random';
+import type { StoredToken, TokenStore } from './stores';
+
+/**
+ * What a redemption found. Only `valid` carries `userId`; refusals that still
+ * know the account carry it as `namedUserId`, so a careless caller cannot act
+ * on a dead token's account (it is there for the audit row only).
+ */
+export type TokenRedemption =
+  | { readonly status: 'valid'; readonly userId: string; readonly data: Readonly<Record<string, string>> }
+  | { readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch'; readonly namedUserId: string }
+  | { readonly status: 'unknown' };
+
+const CODE_PATTERN = /^\d{6,9}$/u;
+
+export class OneTimeTokens {
+  constructor(
+    private readonly store: TokenStore,
+    private readonly clock: Clock,
+    private readonly random: RandomSource,
+    /** Server secret for code HMACs. Codes are refused when it is absent. */
+    private readonly secret: Uint8Array | undefined,
+  ) {}
+
+  private codeHash(purpose: string, userId: string, code: string): string {
+    if (!this.secret) throw new Error('A server secret is required for code tokens');
+    return hmacSha256Hex(this.secret, `${purpose}:${userId}:${code}`);
+  }
+
+  async issueLink(
+    purpose: string,
+    userId: string,
+    ttlMs: number,
+    data: Record<string, string> = {},
+  ): Promise<{ token: string; expiresAt: number }> {
+    const token = generateToken(this.random);
+    const expiresAt = this.clock.now() + ttlMs;
+    await this.store.put({ purpose, userId, hash: sha256Hex(token), expiresAt, attempts: 0, data });
+    return { token, expiresAt };
+  }
+
+  /** Looks a link up without consuming it (cheap checks before expensive work). */
+  async peekLink(purpose: string, token: unknown): Promise<TokenRedemption> {
+    if (!isTokenShape(token)) return { status: 'unknown' };
+    const found = await this.store.find(purpose, sha256Hex(token));
+    return this.classify(found, found);
+  }
+
+  /** Consumes a link. Expiry is checked after the atomic consume, so an expired link is also gone. */
+  async redeemLink(purpose: string, token: unknown): Promise<TokenRedemption> {
+    if (!isTokenShape(token)) return { status: 'unknown' };
+    const hash = sha256Hex(token);
+    const found = await this.store.find(purpose, hash);
+    if (!found) return { status: 'unknown' };
+    const consumed = await this.store.consume(purpose, hash);
+    return this.classify(found, consumed);
+  }
+
+  private classify(found: StoredToken | null, consumed: StoredToken | null): TokenRedemption {
+    if (!found) return { status: 'unknown' };
+    if (!consumed) return { status: 'consumed', namedUserId: found.userId };
+    if (consumed.expiresAt <= this.clock.now()) return { status: 'expired', namedUserId: consumed.userId };
+    return { status: 'valid', userId: consumed.userId, data: consumed.data };
+  }
+
+  async issueCode(
+    purpose: string,
+    userId: string,
+    ttlMs: number,
+    digits: number,
+    data: Record<string, string> = {},
+  ): Promise<{ code: string; expiresAt: number }> {
+    const code = generateNumericCode(digits, this.random);
+    const expiresAt = this.clock.now() + ttlMs;
+    await this.store.put({ purpose, userId, hash: this.codeHash(purpose, userId, code), expiresAt, attempts: 0, data });
+    return { code, expiresAt };
+  }
+
+  /**
+   * Checks a code for a user. The attempt is counted atomically before the
+   * comparison; the code is deleted when it expires, is exhausted, or wins.
+   */
+  async redeemCode(purpose: string, userId: string | null, code: unknown, maxAttempts: number): Promise<TokenRedemption> {
+    // Unknown users still pay for an HMAC, so the work does not depend on whether the account exists.
+    const candidate = typeof code === 'string' && CODE_PATTERN.test(code) ? code : '000000';
+    const expected = this.codeHash(purpose, userId ?? 'unknown', candidate);
+    if (userId === null || typeof code !== 'string' || !CODE_PATTERN.test(code)) return { status: 'unknown' };
+
+    const found = await this.store.findByUser(purpose, userId);
+    if (!found) return { status: 'unknown' };
+    if (found.expiresAt <= this.clock.now()) {
+      await this.store.deleteByUser(userId, [purpose]);
+      return { status: 'expired', namedUserId: userId };
+    }
+    const attempt = await this.store.incrementAttempts(purpose, userId, maxAttempts);
+    if (attempt === null) {
+      await this.store.deleteByUser(userId, [purpose]);
+      return { status: 'exhausted', namedUserId: userId };
+    }
+    if (!hexDigestsEqual(found.hash, expected)) {
+      if (attempt >= maxAttempts) await this.store.deleteByUser(userId, [purpose]);
+      return { status: 'mismatch', namedUserId: userId };
+    }
+    const consumed = await this.store.consume(purpose, found.hash);
+    if (!consumed) return { status: 'consumed', namedUserId: userId };
+    return { status: 'valid', userId, data: consumed.data };
+  }
+
+  revokeAll(userId: string, purposes: readonly string[]): Promise<void> {
+    return this.store.deleteByUser(userId, purposes);
+  }
+}
