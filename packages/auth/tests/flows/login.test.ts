@@ -286,6 +286,31 @@ describe('login', () => {
     expect(!sixth.ok && sixth.reason).toBe('device_budget');
   });
 
+  it('gives four cookies firing twenty wrong guesses each at once five password checks in all', async () => {
+    const { auth, stores } = await registered();
+    const tokens: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const r = await auth.login({ email: EMAIL, password: PASSWORD, meta: meta(`203.0.113.${i}`) });
+      if (!r.ok || r.value.kind !== 'session') throw new Error('login failed');
+      tokens.push(r.value.session.deviceCookie.value);
+    }
+    for (let i = 0; i < 11; i++) await auth.login({ email: EMAIL, password: 'wrong passphrase!', meta: meta(`192.0.2.${i}`) });
+    const account = accountKey(EMAIL as never);
+
+    // A correct login under the lock refunds both device counters.
+    const owner = await auth.login({ email: EMAIL, password: PASSWORD, deviceToken: tokens[0], meta: meta('203.0.113.50') });
+    if (!owner.ok || owner.value.kind !== 'session') throw new Error('owner refused under the lock');
+    expect((await stores.counters.get(`devs:${account}`))?.count).toBe(0);
+
+    const burst = await Promise.all(
+      Array.from({ length: 80 }, (_, i) =>
+        auth.login({ email: EMAIL, password: `wrong guess ${String(i).padStart(3, '0')}!`, deviceToken: tokens[i % 4], meta: meta(`198.18.${i}.1`) }),
+      ),
+    );
+    expect(burst.filter((r) => !r.ok && r.reason === 'wrong_password')).toHaveLength(5);
+    expect(burst.filter((r) => !r.ok && r.reason === 'device_budget')).toHaveLength(75);
+  });
+
   it('probe E: a rehash finishing after a password change cannot bring the old password back', async () => {
     const env = setup({ password: { hasher: plainHasher(1), breachCheck: false } });
     await env.auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });

@@ -129,5 +129,10 @@ export interface CounterStore {
   get(key: string): Promise<CounterWindow | null>;
   /** Overwrites the counter with `count` and a fresh TTL of `windowMs`. */
   set(key: string, count: number, windowMs: number): Promise<void>;
+  /**
+   * Takes one back: atomically lowers the counter by 1, never below 0, keeping
+   * its TTL. A missing key stays missing. Used to refund a reserved attempt.
+   */
+  decrement(key: string): Promise<void>;
   reset(key: string): Promise<void>;
 }

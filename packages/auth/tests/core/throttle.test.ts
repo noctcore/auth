@@ -186,6 +186,22 @@ describe('trusted devices', () => {
     expect(gates.filter((g) => g.allowed)).toHaveLength(5);
   });
 
+  it('caps a parallel burst over many devices at the shared budget, and refunds both slots on success', async () => {
+    const t = new Throttle(counters, clock, { perAccount: { limit: 1, window: '15m' } });
+    await t.gateLogin(victim, 'a');
+    await t.gateLogin(victim, 'b');
+    // A correct login under the lock hands back its own and its shared slot.
+    expect(await t.gateLogin(victim, 'owner', 'device-0')).toEqual({ allowed: true, viaDevice: true });
+    await t.loginSucceeded(victim, 'owner', 'device-0');
+    expect((await counters.get(`devs:${victim}`))?.count).toBe(0);
+    expect((await counters.get(`dev:${victim}:device-0`))?.count).toBe(0);
+    // Four devices, twenty attempts each, all at once: five get through in all.
+    const burst = Array.from({ length: 80 }, (_, i) => t.gateLogin(victim, 'x', `device-${(i % 4) + 1}`));
+    expect((await Promise.all(burst)).filter((g) => g.allowed)).toHaveLength(5);
+    // Refused attempts handed their reservations back: only the five admitted ones are held.
+    expect((await counters.get(`devs:${victim}`))?.count).toBe(5);
+  });
+
   it('counts a wrong password made under a lock with a device against the account-wide budget', async () => {
     const t = new Throttle(counters, clock, { perAccount: { limit: 3, window: '15m' } });
     for (let i = 0; i < 4; i++) await t.gateLogin(victim, `ip-${i}`);

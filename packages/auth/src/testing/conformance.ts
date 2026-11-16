@@ -312,6 +312,34 @@ export function counterStoreConformance(store: CounterStore, context: Conformanc
       },
     },
     {
+      name: 'decrement takes one back, keeps the TTL, never goes below 0 and never creates a key',
+      async run() {
+        const key = uniqueId('counter');
+        const first = await store.increment(key, 60_000);
+        await store.increment(key, 60_000);
+        await store.increment(key, 60_000);
+        await store.decrement(key);
+        const after = await store.get(key);
+        assert.equal(after?.count, 2);
+        assert.ok(Math.abs((after?.resetAt ?? 0) - first.resetAt) < 150, 'decrement must not move the window end');
+        await times(10, () => store.decrement(key));
+        assert.equal((await store.get(key))?.count, 0, 'never below 0');
+        assert.equal((await store.increment(key, 60_000)).count, 1);
+        const missing = uniqueId('never');
+        await store.decrement(missing);
+        assert.equal(await store.get(missing), null);
+      },
+    },
+    {
+      name: 'concurrent increments and decrements net out exactly',
+      async run() {
+        const key = uniqueId('counter');
+        await times(20, () => store.increment(key, 60_000));
+        await Promise.all([times(10, () => store.decrement(key)), times(10, () => store.increment(key, 60_000))]);
+        assert.equal((await store.get(key))?.count, 20);
+      },
+    },
+    {
       name: 'set overwrites the count and arms a fresh TTL',
       async run() {
         const key = uniqueId('counter');

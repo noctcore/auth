@@ -262,6 +262,11 @@ export class MemoryCounterStore implements CounterStore {
     this.counters.set(key, { count, resetAt: this.clock.now() + windowMs });
   }
 
+  async decrement(key: string): Promise<void> {
+    const entry = this.live(key);
+    if (entry && entry.count > 0) entry.count -= 1;
+  }
+
   async reset(key: string): Promise<void> {
     this.counters.delete(key);
   }
