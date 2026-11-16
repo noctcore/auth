@@ -11,10 +11,10 @@
  * `updateMany` with the guard in `where`, consume is a delete that returns the
  * row, and the attempt cap is an update whose `where` carries the cap.
  */
+import type { AuthUser } from '@noctcore/auth';
 import type { PrismaAuthTokenDelegate } from './delegates';
 import { PrismaTokenStore } from './token-store';
 import { PrismaUserStore, type PrismaUserStoreOptions } from './user-store';
-import type { AuthUser } from '@noctcore/auth';
 
 export type { PrismaAuthTokenDelegate, PrismaUserDelegate } from './delegates';
 export { PrismaTokenStore } from './token-store';
