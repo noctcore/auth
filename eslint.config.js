@@ -56,6 +56,42 @@ const padding = [
   { blankLine: 'always', prev: ['block-like', 'try', 'for', 'while', 'switch'], next: '*' },
 ];
 
+// The core package's folders are layers. Each one names the folders it may
+// import from; everything else is banned, so the primitives never grow a
+// dependency on the flows that use them, and session, tokens and throttle
+// stay independent of one another. `index.ts` and `create-auth.ts` at the top
+// are the composition root and may import anything.
+const LAYERS = {
+  shared: [],
+  crypto: ['shared'],
+  ports: ['shared', 'crypto'],
+  http: ['shared', 'crypto', 'ports'],
+  password: ['shared', 'crypto', 'ports'],
+  session: ['shared', 'crypto', 'ports'],
+  tokens: ['shared', 'crypto', 'ports'],
+  throttle: ['shared', 'crypto', 'ports'],
+  core: ['shared', 'crypto', 'ports', 'http', 'password', 'session', 'tokens', 'throttle'],
+  flows: ['shared', 'crypto', 'ports', 'http', 'password', 'session', 'tokens', 'throttle', 'core'],
+  // The test kit builds on the stores and primitives, never on the flows.
+  testing: ['shared', 'crypto', 'ports', 'password', 'session'],
+};
+
+function layerBoundaries() {
+  const folders = [...Object.keys(LAYERS), 'create-auth'];
+  const bans = Object.fromEntries(
+    folders.map((folder) => [
+      folder,
+      [{ modules: [`**/${folder}`], message: `Only a higher layer may import from ${folder}.` }],
+    ]),
+  );
+  const layers = Object.entries(LAYERS).map(([folder, allowed]) => ({
+    files: [`packages/auth/src/${folder}/**`],
+    bans: folders.filter((other) => other !== folder && !allowed.includes(other)),
+  }));
+
+  return { bans, layers };
+}
+
 export default tseslint.config(
   {
     ignores: ['**/dist/**', '**/node_modules/**', '**/generated/**', 'site/**', '**/*.d.ts'],
@@ -189,5 +225,12 @@ export default tseslint.config(
       'noctcore-contracts/fetch-must-check-ok': 'off',
     },
   },
-  architecture.configs.recommended,
+  {
+    ...architecture.configs.recommended,
+    files: ['packages/auth/src/**/*.ts'],
+    rules: {
+      ...architecture.configs.recommended.rules,
+      'noctcore-architecture/no-restricted-imports-layered': ['error', layerBoundaries()],
+    },
+  },
 );
