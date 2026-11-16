@@ -1,0 +1,117 @@
+---
+title: Getting started
+description: Install the packages, create the tables, call createAuth with the Redis and Prisma stores, and serve register, login and logout from node:http.
+---
+
+import { Code, TabItem, Tabs } from '@astrojs/starlight/components';
+import authPrisma from '../../../../../packages/auth-prisma/prisma/auth.prisma?raw';
+import authTs from '../../../../snippets/start/auth.ts?raw';
+import dbTs from '../../../../snippets/start/db.ts?raw';
+import serverTs from '../../../../snippets/start/server.ts?raw';
+
+:::caution[Pre-release]
+Nothing is published to npm yet, and the API can change until 1.0.
+:::
+
+This page builds the smallest app that signs people in: users and one-time tokens in PostgreSQL through Prisma 7, sessions and rate-limit counters in Redis, passwords hashed with Argon2id. It needs Node 22 or newer, Redis 6.2 or newer and PostgreSQL. Every code sample on this page is compiled with the site, so it matches the current API.
+
+## Install
+
+The three packages, the Argon2id binding, the Redis client and Prisma with its PostgreSQL driver adapter:
+
+<Tabs syncKey="pkg">
+  <TabItem label="bun">
+```sh
+bun add @noctcore/auth @noctcore/auth-redis @noctcore/auth-prisma @node-rs/argon2 ioredis @prisma/client @prisma/adapter-pg
+bun add -d prisma
+```
+  </TabItem>
+  <TabItem label="pnpm">
+```sh
+pnpm add @noctcore/auth @noctcore/auth-redis @noctcore/auth-prisma @node-rs/argon2 ioredis @prisma/client @prisma/adapter-pg
+pnpm add -D prisma
+```
+  </TabItem>
+  <TabItem label="npm">
+```sh
+npm install @noctcore/auth @noctcore/auth-redis @noctcore/auth-prisma @node-rs/argon2 ioredis @prisma/client @prisma/adapter-pg
+npm install -D prisma
+```
+  </TabItem>
+</Tabs>
+
+- `@node-rs/argon2` is an optional peer of `@noctcore/auth`, needed only by the `@noctcore/auth/argon2` entry point. Skip it if you bring your own `PasswordHasher`.
+- `ioredis` (5.4 or newer, below 7) is a peer of `@noctcore/auth-redis`; `@prisma/client` (7.x) is a peer of `@noctcore/auth-prisma`.
+- `@prisma/adapter-pg` brings the `pg` driver with it. Any other Prisma 7 driver adapter works the same way.
+
+## Add the tables
+
+`@noctcore/auth-prisma` stores users in your own user model and one-time tokens (verification codes, reset links) in an `AuthToken` model that ships with the package.
+
+1. Copy the `AuthToken` model from `node_modules/@noctcore/auth-prisma/prisma/auth.prisma` into your `schema.prisma`. With a multi-file schema folder, copy the whole file into the folder instead.
+2. Make sure your user model has what the store reads: an id, a unique `email`, a boolean `emailVerified` and a nullable `passwordHash`. A nullable `deletedAt` turns on soft deletion; leave it out and pass `fields: { deletedAt: null }`. Columns with other names are mapped with `fields`, as in the [package README](https://github.com/noctcore/auth/tree/main/packages/auth-prisma).
+3. Generate the client and migrate: `prisma migrate dev --name auth`.
+
+The model to copy, read from the package itself:
+
+<Code code={authPrisma} lang="prisma" title="node_modules/@noctcore/auth-prisma/prisma/auth.prisma" />
+
+And a minimal user model beside it:
+
+```prisma title="prisma/schema.prisma"
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  passwordHash  String?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+}
+```
+
+Prisma 7 reads the database URL from `prisma.config.ts`, not from the schema; see the Prisma docs for that file.
+
+## Create the Prisma client
+
+Prisma 7 generates the client into your app, so the import path is the generator's `output`:
+
+<Code code={dbTs} lang="ts" title="src/db.ts" />
+
+## Create the auth object
+
+`createAuth` takes the four stores, a password hasher, a server secret of 32 bytes or more and a mailer. It checks the whole configuration once, at startup, and throws an `AuthConfigError` for anything unsafe.
+
+<Code code={authTs} lang="ts" title="src/auth.ts" />
+
+- `breachCheck: pwnedPasswords()` refuses passwords found in known breaches through the Have I Been Pwned range API. Leave it out and no check runs. It fails open: an outage never blocks a sign-up.
+- The mailer here only prints. In production `send` must put the mail on a queue rather than talk to SMTP inline; [Mail into your templates and queue](/auth/build/mail/) shows how.
+- Every option and its default is on the [configuration reference](/auth/reference/configuration/).
+
+## Serve register, login and logout
+
+The flows return results instead of throwing, and never touch HTTP: your server reads the request, calls the flow and maps the result onto a response with `toPublicError`. A plain `node:http` server:
+
+<Code code={serverTs} lang="ts" title="src/server.ts" />
+
+The session cookie is `__Host-session`: HttpOnly, Secure and `SameSite=Lax`. The `__Host-` prefix means the browser accepts it only over HTTPS, so for plain-HTTP local development pass `session: { cookie: { secure: false } }` to `createAuth`.
+
+:::caution[What this sample leaves out]
+CSRF protection here is the Origin allowlist and the `Sec-Fetch-Site` check only. It leaves out the signed double-submit token, which the full example adds on top for older browsers and for apps whose sibling subdomains can set cookies. Read [CSRF](/auth/learn/csrf/) before you ship, then take the token layer from [the Node server guide](/auth/build/node-server/) or from `examples/basic` in the repository.
+
+The sample also has no email verification or password reset routes; the guide adds both.
+:::
+
+## Next
+
+- [A Node server with Redis and Prisma](/auth/build/node-server/): the same app with every layer a production server needs.
+- [Security defaults](/auth/security/): what the package does without being asked.
+- [Learn](/auth/learn/): the reasoning behind each rule.
