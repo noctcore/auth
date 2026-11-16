@@ -15,11 +15,11 @@ const code = source.slice(source.indexOf('\n', source.indexOf('// landing:start'
       hands back functions, not handlers.
     </p>
     <ol class="nc-steps">
-      <li><span>Your router reads the request and calls a flow.</span></li>
-      <li>
+      <li data-match="auth\.login\("><span>Your router reads the request and calls a flow.</span></li>
+      <li data-match="result\.ok|invalid_credentials|A wrong password">
         <span>The flow returns <code>{'{ ok: true, value }'}</code> or a refusal with a public code.</span>
       </li>
-      <li><span>You choose the status, the cookie and the copy.</span></li>
+      <li data-match="reply\("><span>You choose the status, the cookie and the copy.</span></li>
     </ol>
   </div>
   <div class="nc-sample__code">

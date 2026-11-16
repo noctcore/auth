@@ -12,6 +12,12 @@ const { data } = Astro.locals.starlightRoute.entry;
 const { title = data.title, tagline, actions = [] } = data.hero ?? {};
 ---
 
+<script is:inline>
+  // Set before the hero paints, so animated parts start hidden instead of flashing in.
+  if (matchMedia('(prefers-reduced-motion: no-preference)').matches)
+    document.documentElement.classList.add('nc-motion');
+</script>
+
 <header class="nc-hero not-content">
   <div class="nc-hero__lead">
     <p class="nc-eyebrow">Authentication for TypeScript servers</p>

@@ -1,0 +1,323 @@
+/*
+ * Landing page motion. Every hidden starting state sits behind
+ * html.nc-motion, which Hero.astro sets only when the reader has not asked
+ * for reduced motion. Without it (reduced motion, or no JavaScript) the page
+ * shows every final frame at once. Only transform, opacity and
+ * stroke-dashoffset move; nothing animates layout.
+ */
+:root {
+  --nc-ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* expo */
+  --nc-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@keyframes nc-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes nc-rise {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+
+@keyframes nc-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes nc-pop {
+  from {
+    opacity: 0;
+    scale: 0.3;
+  }
+}
+
+/* The login: appears at the start, travels the straight route, fades into the session dot. */
+@keyframes nc-travel {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+  }
+
+  6% {
+    opacity: 1;
+  }
+
+  92% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    translate: 874px -340px;
+  }
+}
+
+@keyframes nc-ring {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+
+  60% {
+    opacity: 1;
+    scale: 1.25;
+  }
+}
+
+/* ---------- Hero: the brand art, played once ---------- */
+.nc-h-traveler {
+  opacity: 0;
+}
+
+/* Not the gates: they carry a transform attribute that a transform-origin would shift. */
+.nc-h-stop,
+.nc-h-end-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.nc-motion .nc-hero-svg:not(.is-playing) :is(
+    .nc-h-arrow,
+    .nc-h-gate,
+    .nc-h-stop,
+    .nc-h-attack-label,
+    .nc-h-step,
+    .nc-h-end-ring,
+    .nc-h-end-label
+  ) {
+  opacity: 0;
+}
+
+.nc-motion .nc-hero-svg:not(.is-playing) :is(.nc-h-route, .nc-h-draw) {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.nc-motion .nc-hero-svg.is-playing {
+  /* Route draws first, the checkpoints rise along it. */
+  .nc-h-route {
+    stroke-dasharray: 1;
+    animation: nc-draw 1.1s var(--nc-ease-quart) both;
+  }
+
+  .nc-h-arrow {
+    animation: nc-fade-in 0.4s var(--nc-ease-out) both;
+  }
+
+  .nc-h-arrow.nc-h-n1 {
+    animation-delay: 0.2s;
+  }
+
+  .nc-h-arrow.nc-h-n2 {
+    animation-delay: 0.45s;
+  }
+
+  .nc-h-arrow.nc-h-n3 {
+    animation-delay: 0.7s;
+  }
+
+  .nc-h-arrow.nc-h-n4 {
+    animation-delay: 0.95s;
+  }
+
+  .nc-h-gate {
+    animation: nc-rise 0.8s var(--nc-ease-out) both;
+  }
+
+  .nc-h-gate.nc-h-n1 {
+    animation-delay: 0.15s;
+  }
+
+  .nc-h-gate.nc-h-n2 {
+    animation-delay: 0.4s;
+  }
+
+  .nc-h-gate.nc-h-n3 {
+    animation-delay: 0.65s;
+  }
+
+  /* Each attack: its label, then its branch draws down to the checkpoint and stops. */
+  .nc-h-attack-label {
+    animation: nc-fade-in 0.5s var(--nc-ease-out) both;
+  }
+
+  .nc-h-draw {
+    stroke-dasharray: 1;
+    animation: nc-draw 0.75s var(--nc-ease-quart) both;
+  }
+
+  .nc-h-stop {
+    animation: nc-pop 0.45s var(--nc-ease-out) both;
+  }
+
+  .nc-h-n1:is(.nc-h-attack-label) {
+    animation-delay: 1s;
+  }
+
+  .nc-h-draw.nc-h-n1 {
+    animation-delay: 1.15s;
+  }
+
+  .nc-h-stop.nc-h-n1 {
+    animation-delay: 1.8s;
+  }
+
+  .nc-h-n2:is(.nc-h-attack-label) {
+    animation-delay: 1.4s;
+  }
+
+  .nc-h-draw.nc-h-n2 {
+    animation-delay: 1.55s;
+  }
+
+  .nc-h-stop.nc-h-n2 {
+    animation-delay: 2.2s;
+  }
+
+  .nc-h-n3:is(.nc-h-attack-label) {
+    animation-delay: 1.8s;
+  }
+
+  .nc-h-draw.nc-h-n3 {
+    animation-delay: 1.95s;
+  }
+
+  .nc-h-stop.nc-h-n3 {
+    animation-delay: 2.6s;
+  }
+
+  /* Then the real login walks through, and each checkpoint names itself as it passes. */
+  .nc-h-traveler {
+    animation: nc-travel 2.2s linear 2.8s both;
+  }
+
+  .nc-h-step {
+    animation: nc-rise 0.6s var(--nc-ease-out) both;
+  }
+
+  .nc-h-step.nc-h-n1 {
+    animation-delay: 3.15s;
+  }
+
+  .nc-h-step.nc-h-n2 {
+    animation-delay: 3.85s;
+  }
+
+  .nc-h-step.nc-h-n3 {
+    animation-delay: 4.55s;
+  }
+
+  .nc-h-end-ring {
+    animation: nc-ring 0.7s var(--nc-ease-out) 4.9s both;
+  }
+
+  .nc-h-end-label {
+    animation: nc-fade-in 0.5s var(--nc-ease-out) 4.95s both;
+  }
+}
+
+/* ---------- Passage band: each row as it scrolls in ---------- */
+@keyframes nc-slide-in {
+  from {
+    opacity: 0;
+    translate: -14px 0;
+  }
+}
+
+@keyframes nc-wire {
+  from {
+    translate: -100% 0;
+  }
+}
+
+.nc-motion .nc-passage__step:not(.is-in) :is(.nc-passage__attack, .nc-passage__answer) {
+  opacity: 0;
+}
+
+.nc-motion .nc-passage__step:not(.is-in) .nc-passage__dash {
+  translate: -100% 0;
+}
+
+.nc-motion .nc-passage__step:not(.is-in) .nc-passage__stop {
+  opacity: 0;
+}
+
+.nc-motion .nc-passage__step:not(.is-in) .nc-passage__node::after {
+  opacity: 0;
+  scale: 0.3;
+}
+
+.nc-motion .nc-passage__step.is-in {
+  .nc-passage__attack {
+    animation: nc-slide-in 0.6s var(--nc-ease-out) both;
+  }
+
+  .nc-passage__node::after {
+    animation: nc-pop 0.45s var(--nc-ease-out) 0.1s both;
+  }
+
+  .nc-passage__dash {
+    animation: nc-wire 0.7s var(--nc-ease-quart) 0.15s both;
+  }
+
+  .nc-passage__stop {
+    transform-origin: center;
+    animation: nc-pop 0.35s var(--nc-ease-out) 0.75s both;
+  }
+
+  .nc-passage__answer {
+    animation: nc-rise 0.6s var(--nc-ease-out) 0.35s both;
+  }
+}
+
+/* ---------- Code sample: steps light their lines ---------- */
+.nc-sample .ec-line {
+  position: relative;
+  isolation: isolate;
+}
+
+.nc-sample .ec-line::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--nc-accent-soft);
+  opacity: 0;
+}
+
+.nc-sample .ec-line.is-lit::before {
+  opacity: 0.75;
+}
+
+.nc-steps li {
+  cursor: default;
+}
+
+.nc-steps li > span {
+  transition: color 0.3s var(--nc-ease-out);
+}
+
+.nc-steps li.is-active > span {
+  color: var(--nc-text-strong);
+}
+
+.nc-steps li::before {
+  transition:
+    color 0.3s var(--nc-ease-out),
+    opacity 0.3s var(--nc-ease-out);
+}
+
+.nc-steps li.is-active::before {
+  color: var(--nc-text-strong);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nc-sample .ec-line::before {
+    transition: opacity 0.45s var(--nc-ease-out);
+  }
+}
