@@ -5,6 +5,7 @@
  * the brand art (HeroArt.astro).
  */
 import { LinkButton } from '@astrojs/starlight/components';
+import { PRE_RELEASE } from '../release';
 import HeroArt from './landing/HeroArt.astro';
 
 const { data } = Astro.locals.starlightRoute.entry;
@@ -31,7 +32,11 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {};
       <span class="nc-install__prompt" aria-hidden="true">$</span>
       <code>bun add @noctcore/auth</code>
     </p>
-    <p class="nc-hero__status">Pre-release: not on npm yet, and the API may change until 1.0.</p>
+    {
+      PRE_RELEASE && (
+        <p class="nc-hero__status">Pre-release: not on npm yet, and the API may change until 1.0.</p>
+      )
+    }
   </div>
   <div class="nc-hero__art" data-slot="hero-art">
     <HeroArt />
