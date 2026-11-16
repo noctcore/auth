@@ -22,6 +22,7 @@
  *
  * Guide: Learn, "CSRF".
  */
+import { AuthConfigError } from './errors';
 import { hexDigestsEqual, hmacSha256Hex, secretsEqual } from './hash';
 import { cryptoRandom, randomBytes, type RandomSource } from './random';
 import { encodeHexLowerCase } from '@oslojs/encoding';
@@ -67,12 +68,24 @@ export function verifyFetchSite(input: {
   return input.allowSameSite === true && input.secFetchSite === 'same-site';
 }
 
+/** Shortest accepted secret. */
+export const MIN_CSRF_SECRET_BYTES = 32;
+const NONCE = /^[0-9a-f]{32}$/u;
+
+function checkSecret(secret: Uint8Array): void {
+  if (secret.byteLength < MIN_CSRF_SECRET_BYTES) {
+    throw new AuthConfigError(`CSRF secrets must be at least ${MIN_CSRF_SECRET_BYTES} bytes`);
+  }
+}
+
+/** The binding is length-prefixed, so no binding and nonce pair can be read as another. */
 function mac(secret: Uint8Array, binding: string, nonce: string): string {
-  return hmacSha256Hex(secret, `csrf:${binding}:${nonce}`);
+  return hmacSha256Hex(secret, `csrf:${binding.length}:${binding}:${nonce}`);
 }
 
 /** A token `<nonce>.<hmac>` bound to `binding` under the current secret. */
 export function createCsrfToken(secret: Uint8Array, binding: string, random: RandomSource = cryptoRandom): string {
+  checkSecret(secret);
   const nonce = encodeHexLowerCase(randomBytes(16, random));
   return `${nonce}.${mac(secret, binding, nonce)}`;
 }
@@ -87,11 +100,14 @@ export function verifyCsrfToken(input: {
   secrets: readonly Uint8Array[];
 }): boolean {
   const { cookieToken, headerToken } = input;
+  if (input.secrets.length === 0) return false;
+  for (const secret of input.secrets) checkSecret(secret);
   if (!cookieToken || !headerToken || !secretsEqual(cookieToken, headerToken)) return false;
   const dot = cookieToken.indexOf('.');
   if (dot <= 0) return false;
   const nonce = cookieToken.slice(0, dot);
   const given = cookieToken.slice(dot + 1);
+  if (!NONCE.test(nonce)) return false;
   // Check every secret, without stopping at the first match, so timing does not
   // reveal which secret signed the token.
   let valid = false;

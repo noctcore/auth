@@ -52,7 +52,7 @@ export {
   type SameSite,
   type SessionCookieConfig,
 } from './cookie';
-export { createCsrfToken, verifyCsrfToken, verifyFetchSite, verifyRequestOrigin } from './csrf';
+export { createCsrfToken, MIN_CSRF_SECRET_BYTES, verifyCsrfToken, verifyFetchSite, verifyRequestOrigin } from './csrf';
 export {
   turnstile,
   type CaptchaDoor,
