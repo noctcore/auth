@@ -13,7 +13,7 @@
  * a single primary, with replicas or Sentinel, is.
  */
 import type { Clock, CounterStore, CounterWindow, SessionStore, StoredSession } from '@noctcore/auth';
-import { systemClock, toMilliseconds, type Duration } from '@noctcore/auth';
+import { AuthConfigError, systemClock, toMilliseconds, type Duration } from '@noctcore/auth';
 import type { Redis } from 'ioredis';
 
 export interface RedisStoreOptions {
@@ -29,6 +29,12 @@ export interface RedisSessionStoreOptions extends RedisStoreOptions {
    * lapses, the user's sessions fail closed (they are signed out), never open.
    */
   readonly epochTtl?: Duration;
+  /**
+   * The longest session this store will hold: your remember-me TTL (30 d by
+   * default). The store refuses to start when `epochTtl` is not longer, and
+   * refuses any session whose TTL is longer than `epochTtl`.
+   */
+  readonly maxSessionTtl?: Duration;
 }
 
 // KEYS[1] session, KEYS[2] user index, KEYS[3] epoch
@@ -82,6 +88,10 @@ export class RedisSessionStore implements SessionStore {
     this.prefix = options.prefix ?? 'auth:';
     this.clock = options.clock ?? systemClock;
     this.epochTtlMs = toMilliseconds(options.epochTtl ?? '90d');
+    const maxSessionTtlMs = toMilliseconds(options.maxSessionTtl ?? '30d');
+    if (this.epochTtlMs <= maxSessionTtlMs) {
+      throw new AuthConfigError('epochTtl must be longer than the longest session (maxSessionTtl, your remember-me TTL)');
+    }
   }
 
   private sessionKey(id: string): string {
@@ -97,6 +107,9 @@ export class RedisSessionStore implements SessionStore {
   }
 
   async create(session: StoredSession, ttlMs: number): Promise<void> {
+    if (ttlMs > this.epochTtlMs) {
+      throw new AuthConfigError('A session may not outlive its revocation epoch: raise epochTtl above the remember-me TTL');
+    }
     await this.redis.eval(
       CREATE,
       3,
@@ -154,6 +167,11 @@ export class RedisSessionStore implements SessionStore {
   async getEpoch(userId: string): Promise<number> {
     const value = await this.redis.get(this.epochKey(userId));
     return value === null ? 0 : Number(value);
+  }
+
+  /** Remaining TTL of the user's epoch in ms (-2 when absent). */
+  async epochTtlRemaining(userId: string): Promise<number> {
+    return this.redis.pttl(this.epochKey(userId));
   }
 
   async bumpEpoch(userId: string): Promise<number> {

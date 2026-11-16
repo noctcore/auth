@@ -17,7 +17,25 @@ describe.skipIf(!url)('redis stores', () => {
   });
 
   const api = { describe, it };
-  runConformance('redis session store', sessionStoreConformance(new RedisSessionStore(redis, { prefix })), api);
+  // A second connection, so the touch-versus-delete race really crosses connections.
+  const second = new Redis(url ?? 'redis://localhost:6390', { lazyConnect: false, maxRetriesPerRequest: 1 });
+  afterAll(async () => {
+    await second.quit();
+  });
+  const sessions = new RedisSessionStore(redis, { prefix });
+  runConformance(
+    'redis session store',
+    sessionStoreConformance(sessions, {
+      secondary: new RedisSessionStore(second, { prefix }),
+      epochTtlMs: (userId) => sessions.epochTtlRemaining(userId),
+    }),
+    api,
+  );
+
+  it('refuses an epoch TTL that does not outlive the longest session', () => {
+    expect(() => new RedisSessionStore(redis, { epochTtl: '30d' })).toThrow(/epochTtl must be longer/u);
+    expect(() => new RedisSessionStore(redis, { epochTtl: '20d', maxSessionTtl: '7d' })).not.toThrow();
+  });
   runConformance('redis counter store', counterStoreConformance(new RedisCounterStore(redis, { prefix })), api);
 
   it('keeps every key it writes under a TTL', async () => {
@@ -50,7 +68,7 @@ describe.skipIf(!url)('redis stores', () => {
   });
 
   it('extends the epoch TTL when a later session is created', async () => {
-    const store = new RedisSessionStore(redis, { prefix: `${prefix}epoch:`, epochTtl: '10s' });
+    const store = new RedisSessionStore(redis, { prefix: `${prefix}epoch:`, epochTtl: '10s', maxSessionTtl: '5s' });
     const userId = uniqueId('user');
     await store.bumpEpoch(userId);
     await redis.pexpire(`${prefix}epoch:e:${userId}`, 1000);
