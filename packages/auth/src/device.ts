@@ -16,7 +16,8 @@ import { encodeHexLowerCase } from '@oslojs/encoding';
 import { hexDigestsEqual, hmacSha256Hex } from './hash';
 import { cryptoRandom, randomBytes, type RandomSource } from './random';
 
-const TOKEN = /^([0-9a-f]{32})\.(\d{1,16})\.(\d{1,16})\.([0-9a-f]{64})$/u;
+// Canonical decimals only (no leading zeros), so one token has one spelling.
+const TOKEN = /^([0-9a-f]{32})\.(0|[1-9]\d{0,15})\.(0|[1-9]\d{0,15})\.([0-9a-f]{64})$/u;
 
 export interface DeviceClaims {
   readonly userId: string;

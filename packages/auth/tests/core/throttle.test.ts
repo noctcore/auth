@@ -149,26 +149,54 @@ describe('trusted devices', () => {
     // Moving the issue time forward breaks the HMAC.
     expect(verifyDeviceToken(key, token.replace(`.${issued}.`, `.${claims.issuedAt + DAY}.`), check())).toBeNull();
     expect(verifyDeviceToken(key, 'nope', check())).toBeNull();
+    // One spelling per token: a leading zero in the issue time or the epoch is refused.
+    expect(verifyDeviceToken(key, token.replace(`.${issued}.`, `.0${issued}.`), check())).toBeNull();
+    expect(verifyDeviceToken(key, token.replace(`.${issued}.${epoch}.`, `.${issued}.0${epoch}.`), check())).toBeNull();
   });
 
-  it('lets a device past a lock within its own budget and a budget shared by all devices', async () => {
+  it('ignores device tokens while the account is unlocked, so correct logins never spend a device budget', async () => {
+    for (let i = 0; i < 10; i++) {
+      expect(await throttle.gateLogin(victim, 'owner', 'device-1')).toEqual({ allowed: true });
+      await throttle.loginSucceeded(victim, 'owner', null);
+    }
+  });
+
+  it('under a lock, lets correct device logins through and stops after five device failures in all', async () => {
     const t = new Throttle(counters, clock, { perAccount: { limit: 1, window: '15m' } });
     await t.gateLogin(victim, 'a');
     expect((await t.gateLogin(victim, 'b')).allowed).toBe(false);
-    for (let i = 0; i < 5; i++) expect((await t.gateLogin(victim, 'owner', `device-${i}`)).allowed).toBe(true);
-    // Five attempts over five devices spend the shared budget: a sixth device gets nothing.
-    expect(await t.gateLogin(victim, 'owner', 'device-9')).toEqual({ allowed: false, reason: 'device_budget' });
-  });
-
-  it('counts a wrong password made with a device against the account-wide budget', async () => {
-    const t = new Throttle(counters, clock, { perAccount: { limit: 3, window: '15m' } });
-    for (let i = 0; i < 3; i++) {
-      await t.gateLogin(victim, 'owner', 'device-1');
+    // Correct logins hand their reserved attempt back: ten in a row all pass.
+    for (let i = 0; i < 10; i++) {
+      expect(await t.gateLogin(victim, 'owner', 'device-0')).toEqual({ allowed: true, viaDevice: true });
+      await t.loginSucceeded(victim, 'owner', 'device-0');
+    }
+    // Five failures spread over five devices spend the shared budget: a sixth device gets nothing.
+    for (let i = 1; i <= 5; i++) {
+      expect((await t.gateLogin(victim, 'x', `device-${i}`)).allowed).toBe(true);
       await t.deviceFailed(victim);
     }
-    // The account budget is spent by device failures alone: the next attempt locks.
-    expect(await t.deviceFailed(victim)).toMatchObject({ newLock: { until: clock.now() + 5 * MIN } });
+    expect(await t.gateLogin(victim, 'x', 'device-9')).toEqual({ allowed: false, reason: 'device_budget' });
+  });
+
+  it('caps one device at its own budget even before any failure is recorded (parallel burst)', async () => {
+    const t = new Throttle(counters, clock, { perAccount: { limit: 1, window: '15m' } });
+    await t.gateLogin(victim, 'a');
+    await t.gateLogin(victim, 'b');
+    const gates = await Promise.all(Array.from({ length: 20 }, () => t.gateLogin(victim, 'x', 'device-1')));
+    expect(gates.filter((g) => g.allowed)).toHaveLength(5);
+  });
+
+  it('counts a wrong password made under a lock with a device against the account-wide budget', async () => {
+    const t = new Throttle(counters, clock, { perAccount: { limit: 3, window: '15m' } });
+    for (let i = 0; i < 4; i++) await t.gateLogin(victim, `ip-${i}`);
     expect((await t.gateLogin(victim, 'stranger')).allowed).toBe(false);
+    for (let i = 0; i < 3; i++) {
+      await t.gateLogin(victim, 'owner', 'device-1');
+      expect(await t.deviceFailed(victim)).toEqual({});
+    }
+    // The fourth device failure spends the account budget again and renews the lock.
+    await t.gateLogin(victim, 'owner', 'device-1');
+    expect(await t.deviceFailed(victim)).toHaveProperty('newLock');
   });
 
   it('probe A: the owner signs in every hour while an attacker spreads failures across IPs', async () => {

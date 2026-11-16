@@ -22,14 +22,17 @@
  * - A correct password returns only the budget of the source that proved it
  *   (its per-(account, IP) or per-device budget), never the account-wide one.
  * - Trusted devices: every issued session carries a signed device token bound
- *   to the user, their revocation epoch and an issue time (see device.ts). A
- *   login that presents a valid one is not refused by the account lock, but the
- *   bypass only ever helps a CORRECT password: the attempt first spends the
- *   token's own budget and a budget shared by all of the account's tokens (5
- *   per 15 min each by default), and a wrong password is then also counted
- *   against the account-wide budget, exactly like any other failure. Holding
- *   many tokens adds no guesses, and a password change, a reset or revoke-all
- *   voids every token. An attacker spreading failures over many IPs can keep
+ *   to the user, their revocation epoch and an issue time (see device.ts).
+ *   The token matters only while the account is LOCKED: an unlocked account
+ *   takes the normal path whatever the request carries, so the owner never
+ *   spends a device budget by signing in. Under a lock, a valid token is not
+ *   refused, but the bypass only ever helps a CORRECT password: the attempt
+ *   reserves one of the token's own attempts (returned when the password is
+ *   right), it is refused once the account's devices together have failed 5
+ *   times in 15 min (by default), and a wrong password then counts against
+ *   that shared budget and the account-wide budget, like any other failure.
+ *   Holding many tokens adds no guesses, and a password change, a reset or
+ *   revoke-all voids every token. An attacker spreading failures over many IPs can keep
  *   the account locked for everyone else, but not for the owner on a device
  *   they have fully signed in from since the last revocation.
  * - Keys are derived from the normalised EMAIL, not the user id, so a known and
@@ -76,7 +79,8 @@ export interface Hit {
 }
 
 export type LoginGate =
-  | { readonly allowed: true }
+  /** `viaDevice`: let through a lock by a device token; report the outcome with `deviceFailed` or `loginSucceeded`. */
+  | { readonly allowed: true; readonly viaDevice?: true }
   | {
       readonly allowed: false;
       readonly reason: 'locked' | 'account_ip_budget' | 'device_budget';
@@ -131,19 +135,22 @@ export class Throttle {
   /**
    * Call BEFORE verifying the password: checks the lock and reserves one
    * attempt. `deviceId` is the id from a device token the caller has already
-   * verified for this account: such a request skips the lock and spends the
-   * device's own budget and the account's shared device budget. If its
-   * password then proves wrong, call `deviceFailed`.
+   * verified for this account. It is used only while the account is locked:
+   * then the request reserves one of the device's own attempts, is checked
+   * against the failures of all the account's devices, and comes back with
+   * `viaDevice`. If its password proves wrong, call `deviceFailed`.
    */
   async gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate> {
-    if (deviceId) {
-      const shared = await this.counters.increment(`devs:${account}`, this.perDevice.windowMs);
-      const own = await this.counters.increment(`dev:${account}:${deviceId}`, this.perDevice.windowMs);
-      const spent = shared.count > this.perDevice.limit || own.count > this.perDevice.limit;
-      return spent ? { allowed: false, reason: 'device_budget' } : { allowed: true };
-    }
     const lock = await this.counters.get(`lock:${account}`);
-    if (lock && lock.count > 0) return { allowed: false, reason: 'locked' };
+    if (lock && lock.count > 0) {
+      if (!deviceId) return { allowed: false, reason: 'locked' };
+      // Reserved before the verify, so a parallel burst on one token gets no
+      // more than its budget; a correct password hands the attempt back.
+      const own = await this.counters.increment(`dev:${account}:${deviceId}`, this.perDevice.windowMs);
+      const failures = (await this.counters.get(`devs:${account}`))?.count ?? 0;
+      const spent = own.count > this.perDevice.limit || failures >= this.perDevice.limit;
+      return spent ? { allowed: false, reason: 'device_budget' } : { allowed: true, viaDevice: true };
+    }
 
     const pair = await this.counters.increment(`aip:${account}:${ip}`, this.perAccountIp.windowMs);
     if (pair.count > this.perAccountIp.limit) return { allowed: false, reason: 'account_ip_budget' };
@@ -161,8 +168,12 @@ export class Throttle {
     return all.count > this.perAccount.limit ? { newLock: await this.lock(account) } : {};
   }
 
-  /** A wrong password presented with a device token: it counts against the account-wide budget too. */
+  /**
+   * A wrong password let through a lock by a device token: it counts against
+   * the failures shared by all the account's devices and the account-wide budget.
+   */
   async deviceFailed(account: string): Promise<{ newLock?: { until: number } }> {
+    await this.counters.increment(`devs:${account}`, this.perDevice.windowMs);
     return this.recordFailure(account);
   }
 
@@ -179,7 +190,8 @@ export class Throttle {
 
   /**
    * The password was right: only the budget of the source that proved it is
-   * returned (the device's own budget, never the shared device budget).
+   * returned. Pass `deviceId` only for a `viaDevice` attempt: its reserved
+   * device attempt comes back, and the shared device failures stay.
    */
   async loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void> {
     await this.counters.reset(deviceId ? `dev:${account}:${deviceId}` : `aip:${account}:${ip}`);

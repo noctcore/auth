@@ -78,15 +78,15 @@ export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: 
     return fail('invalid_credentials', gate.reason);
   }
   if (!credential || !verified) {
-    // A device token lets only a correct password through the lock; a wrong
-    // one counts against the account-wide budget like any other failure.
-    if (deviceId) notifyLock(core, credential, (await core.throttle.deviceFailed(account)).newLock, meta);
+    // A device token lets only a correct password through a lock; a wrong one
+    // counts against the devices' shared failures and the account-wide budget.
+    if (gate.viaDevice) notifyLock(core, credential, (await core.throttle.deviceFailed(account)).newLock, meta);
     const reason = !credential ? 'unknown_user' : credential.passwordHash ? 'wrong_password' : 'password_not_set';
     await core.emit({ type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason }, meta);
     return fail('invalid_credentials', reason);
   }
 
-  await core.throttle.loginSucceeded(account, meta.ip, deviceId);
+  await core.throttle.loginSucceeded(account, meta.ip, gate.viaDevice ? deviceId : null);
   if (credential.passwordHash && core.hasher.needsRehash(credential.passwordHash)) {
     await rehash(core, credential.id, credential.passwordHash, input.password, meta);
   }

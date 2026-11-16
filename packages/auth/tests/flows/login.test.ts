@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { refuse, toPublicError } from '../../src';
 import { plainHasher } from '../../src/testing';
+import { accountKey } from '../../src/throttle';
 import { meta, NEW_PASSWORD, PASSWORD, setup } from './setup';
 
 const EMAIL = 'ada@example.com';
@@ -253,18 +254,36 @@ describe('login', () => {
     expect(!owner.ok && owner.reason).toBe('device_budget');
   });
 
-  it('counts a wrong password made with a device cookie against the account-wide budget', async () => {
-    const { auth } = await registered();
+  it('never spends a device budget on correct logins while the account is unlocked', async () => {
+    const { auth, clock } = await registered();
+    let deviceToken: string | undefined;
+    for (let i = 0; i < 10; i++) {
+      const r = await auth.login({ email: EMAIL, password: PASSWORD, deviceToken, meta: meta() });
+      if (!r.ok || r.value.kind !== 'session') throw new Error(`login ${i} refused`);
+      deviceToken = r.value.session.deviceCookie.value;
+      clock.advance(60_000);
+    }
+  });
+
+  it('under a lock, lets the owner in with the cookie and counts wrong guesses against the device and the account', async () => {
+    const { auth, stores } = await registered();
     const first = await auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
     if (!first.ok || first.value.kind !== 'session') throw new Error('first login failed');
-    const deviceToken = first.value.session.deviceCookie.value;
-    for (let i = 0; i < 5; i++) await auth.login({ email: EMAIL, password: 'wrong passphrase!', deviceToken, meta: meta() });
-    const sixth = await auth.login({ email: EMAIL, password: PASSWORD, deviceToken, meta: meta() });
+    let deviceToken = first.value.session.deviceCookie.value;
+    for (let i = 0; i < 11; i++) await auth.login({ email: EMAIL, password: 'wrong passphrase!', meta: meta(`192.0.2.${i}`) });
+
+    const owner = await auth.login({ email: EMAIL, password: PASSWORD, deviceToken, meta: meta('203.0.113.5') });
+    if (!owner.ok || owner.value.kind !== 'session') throw new Error('owner refused under the lock');
+    deviceToken = owner.value.session.deviceCookie.value;
+
+    const account = accountKey(EMAIL as never);
+    for (let i = 0; i < 5; i++) {
+      const r = await auth.login({ email: EMAIL, password: 'wrong passphrase!', deviceToken, meta: meta(`198.51.100.${i}`) });
+      expect(!r.ok && r.reason).toBe('wrong_password');
+    }
+    expect((await stores.counters.get(`acct:${account}`))?.count).toBe(5);
+    const sixth = await auth.login({ email: EMAIL, password: PASSWORD, deviceToken, meta: meta('203.0.113.5') });
     expect(!sixth.ok && sixth.reason).toBe('device_budget');
-    // Five device failures already sit in the account budget of 10: five more from other networks lock it.
-    for (let i = 0; i < 5; i++) await auth.login({ email: EMAIL, password: 'wrong passphrase!', meta: meta(`192.0.2.${i}`) });
-    const locked = await auth.login({ email: EMAIL, password: PASSWORD, meta: meta('198.51.100.30') });
-    expect(!locked.ok && locked.reason).toBe('locked');
   });
 
   it('probe E: a rehash finishing after a password change cannot bring the old password back', async () => {
