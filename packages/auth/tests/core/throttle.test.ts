@@ -125,34 +125,61 @@ describe('login lockout', () => {
 
 describe('trusted devices', () => {
   const key = new TextEncoder().encode('device-key-device-key-device-key');
-
-  it('signs a device id to one account', () => {
-    const token = createDeviceToken(key, victim);
-    expect(verifyDeviceToken(key, victim, token)).toMatch(/^[0-9a-f]{32}$/u);
-    expect(verifyDeviceToken(key, accountKey('other@example.com'), token)).toBeNull();
-    expect(verifyDeviceToken(key, victim, `${token.slice(0, 32)}.${'0'.repeat(64)}`)).toBeNull();
-    expect(verifyDeviceToken(key, victim, 'nope')).toBeNull();
+  const DAY = 24 * 60 * MIN;
+  const claims = { userId: 'user-1', epoch: 2, issuedAt: Date.UTC(2026, 0, 1) };
+  const check = (over: Partial<{ userId: string; epoch: number; now: number; maxAgeMs: number }> = {}) => ({
+    userId: 'user-1',
+    epoch: 2,
+    now: claims.issuedAt + DAY,
+    maxAgeMs: 30 * DAY,
+    ...over,
   });
 
-  it('lets a trusted device through a lock, within its own small budget', async () => {
+  it('binds a device id to the user, the epoch and the issue time', () => {
+    const token = createDeviceToken(key, claims);
+    expect(verifyDeviceToken(key, token, check())).toMatch(/^[0-9a-f]{32}$/u);
+    expect(verifyDeviceToken(key, token, check({ userId: 'user-2' }))).toBeNull();
+    // A password change, a reset or revoke-all bumps the epoch: the token is void.
+    expect(verifyDeviceToken(key, token, check({ epoch: 3 }))).toBeNull();
+    // Older than the max age, whatever the cookie says.
+    expect(verifyDeviceToken(key, token, check({ now: claims.issuedAt + 31 * DAY }))).toBeNull();
+    expect(verifyDeviceToken(key, token, check({ now: claims.issuedAt - 5 * MIN }))).toBeNull();
+    const [id, issued, epoch] = token.split('.');
+    expect(verifyDeviceToken(key, `${id}.${issued}.${epoch}.${'0'.repeat(64)}`, check())).toBeNull();
+    // Moving the issue time forward breaks the HMAC.
+    expect(verifyDeviceToken(key, token.replace(`.${issued}.`, `.${claims.issuedAt + DAY}.`), check())).toBeNull();
+    expect(verifyDeviceToken(key, 'nope', check())).toBeNull();
+  });
+
+  it('lets a device past a lock within its own budget and a budget shared by all devices', async () => {
     const t = new Throttle(counters, clock, { perAccount: { limit: 1, window: '15m' } });
     await t.gateLogin(victim, 'a');
     expect((await t.gateLogin(victim, 'b')).allowed).toBe(false);
-    const device = verifyDeviceToken(key, victim, createDeviceToken(key, victim));
-    for (let i = 0; i < 5; i++) expect((await t.gateLogin(victim, 'owner', device)).allowed).toBe(true);
-    expect(await t.gateLogin(victim, 'owner', device)).toEqual({ allowed: false, reason: 'device_budget' });
+    for (let i = 0; i < 5; i++) expect((await t.gateLogin(victim, 'owner', `device-${i}`)).allowed).toBe(true);
+    // Five attempts over five devices spend the shared budget: a sixth device gets nothing.
+    expect(await t.gateLogin(victim, 'owner', 'device-9')).toEqual({ allowed: false, reason: 'device_budget' });
+  });
+
+  it('counts a wrong password made with a device against the account-wide budget', async () => {
+    const t = new Throttle(counters, clock, { perAccount: { limit: 3, window: '15m' } });
+    for (let i = 0; i < 3; i++) {
+      await t.gateLogin(victim, 'owner', 'device-1');
+      await t.deviceFailed(victim);
+    }
+    // The account budget is spent by device failures alone: the next attempt locks.
+    expect(await t.deviceFailed(victim)).toMatchObject({ newLock: { until: clock.now() + 5 * MIN } });
+    expect((await t.gateLogin(victim, 'stranger')).allowed).toBe(false);
   });
 
   it('probe A: the owner signs in every hour while an attacker spreads failures across IPs', async () => {
-    const device = verifyDeviceToken(key, victim, createDeviceToken(key, victim));
     let ip = 0;
     for (let hour = 0; hour < 48; hour++) {
       // Thirty failures an hour from thirty fresh IPs keep the account locked for everyone else.
       for (let i = 0; i < 30; i++) await throttle.gateLogin(victim, `192.0.2.${ip++ % 250}-${hour}`);
       expect((await throttle.gateLogin(victim, `198.51.100.${hour}`)).allowed).toBe(false);
-      const owner = await throttle.gateLogin(victim, '203.0.113.5', device);
+      const owner = await throttle.gateLogin(victim, '203.0.113.5', 'owner-device');
       expect(owner.allowed).toBe(true);
-      await throttle.loginSucceeded(victim, '203.0.113.5', device);
+      await throttle.loginSucceeded(victim, '203.0.113.5', 'owner-device');
       clock.advance(60 * MIN);
     }
   });

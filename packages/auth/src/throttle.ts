@@ -21,12 +21,17 @@
  *   lock mails the owner.
  * - A correct password returns only the budget of the source that proved it
  *   (its per-(account, IP) or per-device budget), never the account-wide one.
- * - Trusted devices: a successful login gets a signed per-account device token
- *   (see device.ts). A login that presents a valid one skips the account lock
- *   and the account-wide and per-IP budgets, and spends a small budget of its
- *   own instead (5 per 15 min by default). An attacker spreading failures over
- *   many IPs can keep the account locked for everyone else, but not for the
- *   owner on a device they have signed in from before.
+ * - Trusted devices: every issued session carries a signed device token bound
+ *   to the user, their revocation epoch and an issue time (see device.ts). A
+ *   login that presents a valid one is not refused by the account lock, but the
+ *   bypass only ever helps a CORRECT password: the attempt first spends the
+ *   token's own budget and a budget shared by all of the account's tokens (5
+ *   per 15 min each by default), and a wrong password is then also counted
+ *   against the account-wide budget, exactly like any other failure. Holding
+ *   many tokens adds no guesses, and a password change, a reset or revoke-all
+ *   voids every token. An attacker spreading failures over many IPs can keep
+ *   the account locked for everyone else, but not for the owner on a device
+ *   they have fully signed in from since the last revocation.
  * - Keys are derived from the normalised EMAIL, not the user id, so a known and
  *   an unknown address do identical counter work and get identical answers.
  *
@@ -53,8 +58,13 @@ export interface LockoutOptions {
   readonly maxLock?: Duration;
   /** The backoff tier resets after this long without a new lock. Default 24 h. */
   readonly quietPeriod?: Duration;
-  /** Attempts per trusted device per window. Default 5 per 15 min. */
+  /**
+   * Attempts per trusted device per window, and also the budget shared by all
+   * of an account's devices together. Default 5 per 15 min.
+   */
   readonly perDevice?: RateLimitRule;
+  /** Oldest device token accepted, checked on use. Default 30 d. */
+  readonly deviceMaxAge?: Duration;
 }
 
 export interface Hit {
@@ -82,6 +92,8 @@ export class Throttle {
   private readonly perAccountIp: { limit: number; windowMs: number };
   private readonly perAccount: { limit: number; windowMs: number };
   private readonly perDevice: { limit: number; windowMs: number };
+  /** Oldest device token accepted. */
+  readonly deviceMaxAgeMs: number;
   private readonly baseLockMs: number;
   private readonly maxLockMs: number;
   private readonly quietPeriodMs: number;
@@ -98,6 +110,7 @@ export class Throttle {
     this.perAccountIp = rule(lockout.perAccountIp, 5, '15m');
     this.perAccount = rule(lockout.perAccount, 10, '15m');
     this.perDevice = rule(lockout.perDevice, 5, '15m');
+    this.deviceMaxAgeMs = toMilliseconds(lockout.deviceMaxAge ?? '30d');
     this.baseLockMs = toMilliseconds(lockout.baseLock ?? '5m');
     this.maxLockMs = toMilliseconds(lockout.maxLock ?? '1h');
     this.quietPeriodMs = toMilliseconds(lockout.quietPeriod ?? '24h');
@@ -118,12 +131,16 @@ export class Throttle {
   /**
    * Call BEFORE verifying the password: checks the lock and reserves one
    * attempt. `deviceId` is the id from a device token the caller has already
-   * verified for this account; such a request spends only its device budget.
+   * verified for this account: such a request skips the lock and spends the
+   * device's own budget and the account's shared device budget. If its
+   * password then proves wrong, call `deviceFailed`.
    */
   async gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate> {
     if (deviceId) {
-      const device = await this.counters.increment(`dev:${account}:${deviceId}`, this.perDevice.windowMs);
-      return device.count > this.perDevice.limit ? { allowed: false, reason: 'device_budget' } : { allowed: true };
+      const shared = await this.counters.increment(`devs:${account}`, this.perDevice.windowMs);
+      const own = await this.counters.increment(`dev:${account}:${deviceId}`, this.perDevice.windowMs);
+      const spent = shared.count > this.perDevice.limit || own.count > this.perDevice.limit;
+      return spent ? { allowed: false, reason: 'device_budget' } : { allowed: true };
     }
     const lock = await this.counters.get(`lock:${account}`);
     if (lock && lock.count > 0) return { allowed: false, reason: 'locked' };
@@ -144,6 +161,11 @@ export class Throttle {
     return all.count > this.perAccount.limit ? { newLock: await this.lock(account) } : {};
   }
 
+  /** A wrong password presented with a device token: it counts against the account-wide budget too. */
+  async deviceFailed(account: string): Promise<{ newLock?: { until: number } }> {
+    return this.recordFailure(account);
+  }
+
   private async lock(account: string): Promise<{ until: number }> {
     // The tier's TTL is renewed on every lock, so it only decays after a full
     // quiet period without one.
@@ -155,7 +177,10 @@ export class Throttle {
     return { until: lock.resetAt };
   }
 
-  /** The password was right: only the budget of the source that proved it is returned. */
+  /**
+   * The password was right: only the budget of the source that proved it is
+   * returned (the device's own budget, never the shared device budget).
+   */
   async loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void> {
     await this.counters.reset(deviceId ? `dev:${account}:${deviceId}` : `aip:${account}:${ip}`);
   }

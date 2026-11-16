@@ -1,34 +1,59 @@
 /**
- * Trusted-device tokens for the lockout bypass. After a successful login the
- * flow hands the browser a long-lived cookie holding `<id>.<hmac>`, where the
- * HMAC binds the random device id to the account. A later login for the same
- * account that presents a valid token spends that device's own small budget
- * instead of being refused by the account lock (see throttle.ts).
+ * Trusted-device tokens for the lockout bypass. Every issued session (so only
+ * after a full login, every factor included) hands the browser a cookie
+ * holding `<id>.<issuedAt>.<epoch>.<hmac>`. The HMAC binds the random device
+ * id to the user id, the user's revocation epoch and the issue time:
  *
- * The token proves only that this browser once signed in to this account. It
- * grants no session and skips no password check.
+ * - a password change, a reset and revoke-all all bump the epoch, so every
+ *   device token issued before them stops working;
+ * - a token older than the configured max age (30 days by default) is refused,
+ *   whatever the cookie's own expiry says.
+ *
+ * A valid token never skips the password check and grants no session. It only
+ * lets a correct password through an account lock (see throttle.ts).
  */
 import { encodeHexLowerCase } from '@oslojs/encoding';
 import { hexDigestsEqual, hmacSha256Hex } from './hash';
 import { cryptoRandom, randomBytes, type RandomSource } from './random';
 
-const ID = /^[0-9a-f]{32}$/u;
+const TOKEN = /^([0-9a-f]{32})\.(\d{1,16})\.(\d{1,16})\.([0-9a-f]{64})$/u;
 
-function mac(key: Uint8Array, account: string, id: string): string {
-  return hmacSha256Hex(key, `device:${account.length}:${account}:${id}`);
+export interface DeviceClaims {
+  readonly userId: string;
+  /** The user's revocation epoch when the token was issued. */
+  readonly epoch: number;
+  /** Issue time, ms since the epoch. */
+  readonly issuedAt: number;
 }
 
-/** A new device token for an account key (see `accountKey`). */
-export function createDeviceToken(key: Uint8Array, account: string, random: RandomSource = cryptoRandom): string {
+function mac(key: Uint8Array, id: string, claims: DeviceClaims): string {
+  const { userId, epoch, issuedAt } = claims;
+  return hmacSha256Hex(key, `device:${userId.length}:${userId}:${epoch}:${issuedAt}:${id}`);
+}
+
+/** A new device token for these claims. */
+export function createDeviceToken(key: Uint8Array, claims: DeviceClaims, random: RandomSource = cryptoRandom): string {
   const id = encodeHexLowerCase(randomBytes(16, random));
-  return `${id}.${mac(key, account, id)}`;
+  return `${id}.${claims.issuedAt}.${claims.epoch}.${mac(key, id, claims)}`;
 }
 
-/** The device id when the token is valid for this account, otherwise null. */
-export function verifyDeviceToken(key: Uint8Array, account: string, token: unknown): string | null {
+export interface DeviceCheck {
+  readonly userId: string;
+  /** The user's current epoch. */
+  readonly epoch: number;
+  readonly now: number;
+  readonly maxAgeMs: number;
+}
+
+/** The device id when the token is valid for this user, epoch and age, otherwise null. */
+export function verifyDeviceToken(key: Uint8Array, token: unknown, check: DeviceCheck): string | null {
   if (typeof token !== 'string') return null;
-  const dot = token.indexOf('.');
-  const id = token.slice(0, dot);
-  if (dot <= 0 || !ID.test(id)) return null;
-  return hexDigestsEqual(token.slice(dot + 1), mac(key, account, id)) ? id : null;
+  const match = TOKEN.exec(token);
+  if (!match) return null;
+  const [, id = '', issued = '', epoch = '', given = ''] = match;
+  const issuedAt = Number(issued);
+  if (Number(epoch) !== check.epoch) return null;
+  // A minute of clock skew between servers, no more.
+  if (issuedAt > check.now + 60_000 || check.now - issuedAt > check.maxAgeMs) return null;
+  return hexDigestsEqual(given, mac(key, id, { userId: check.userId, epoch: check.epoch, issuedAt })) ? id : null;
 }

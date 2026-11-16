@@ -28,6 +28,8 @@ export interface IssuedSession<A> {
   readonly token: string;
   readonly session: StoredSession<A>;
   readonly cookie: CookieSpec;
+  /** The trusted-device cookie: set it with the session cookie. Voided by a password change, reset or revoke-all. */
+  readonly deviceCookie: CookieSpec;
 }
 
 export interface IssueOptions<A> {

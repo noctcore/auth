@@ -5,7 +5,7 @@
 import type { AuditSink, AuthEvent } from './audit';
 import type { CaptchaDoor, CaptchaVerifier } from './captcha';
 import type { Clock } from './clock';
-import { createSessionCookie, deviceCookie, type CookieSpec, type SessionCookieConfig } from './cookie';
+import { createSessionCookie, deviceCookie, type SessionCookieConfig } from './cookie';
 import { createDeviceToken, verifyDeviceToken } from './device';
 import { DEFAULT_DOOR_LIMITS, type Door } from './config';
 import { fail, ok, type AuthFailure, type AuthResult } from './errors';
@@ -47,9 +47,6 @@ export interface CoreDependencies<U extends AuthUser, A> {
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-
-/** Remembers the device for a year (browsers cap cookies at 400 days). */
-const DEVICE_COOKIE_MAX_AGE = 365 * 24 * 3600;
 
 export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   readonly users: UserStore<U>;
@@ -201,7 +198,16 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       now: this.clock.now(),
       origin: options.meta.origin,
     });
-    return ok({ token: minted.token, session: minted.session, cookie });
+    // Only here, after every factor: the device token for the lockout bypass,
+    // bound to the user and the epoch the session was stamped with.
+    const deviceToken = createDeviceToken(
+      this.#deps.deviceKey,
+      { userId: user.id, epoch: minted.session.epoch, issuedAt: this.clock.now() },
+      this.random,
+    );
+    const maxAge = Math.floor(this.throttle.deviceMaxAgeMs / 1000);
+    const device = deviceCookie(this.cookie, deviceToken, maxAge, options.meta.origin);
+    return ok({ token: minted.token, session: minted.session, cookie, deviceCookie: device });
   }
 
   /** The only call that mints a session. Private: every caller goes through `issueSession`. */
@@ -216,15 +222,14 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     });
   }
 
-  /** The device id when `token` is a valid trusted-device token for the account. */
-  verifyDevice(account: string, token: string | null | undefined): string | null {
-    return verifyDeviceToken(this.#deps.deviceKey, account, token);
-  }
-
-  /** A fresh trusted-device cookie for the account. */
-  createDeviceCookie(account: string, origin: string | undefined): CookieSpec {
-    const token = createDeviceToken(this.#deps.deviceKey, account, this.random);
-    return deviceCookie(this.cookie, token, DEVICE_COOKIE_MAX_AGE, origin);
+  /** The device id when `token` is a valid, unexpired device token for this user at this epoch. */
+  verifyDevice(userId: string, epoch: number, token: string | null | undefined): string | null {
+    return verifyDeviceToken(this.#deps.deviceKey, token, {
+      userId,
+      epoch,
+      now: this.clock.now(),
+      maxAgeMs: this.throttle.deviceMaxAgeMs,
+    });
   }
 
   async revokeAllSessions(userId: string, reason: RevocationReason): Promise<void> {

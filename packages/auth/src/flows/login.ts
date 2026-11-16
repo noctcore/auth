@@ -17,8 +17,9 @@
  * 4. a locked account still pays for the password verify, and the lock notice
  *    (audit row and owner mail) runs off the response path.
  *
- * A successful login returns a trusted-device cookie. Presenting it on a later
- * login lets the owner through an account lock (see throttle.ts).
+ * Every issued session carries a trusted-device cookie (`session.deviceCookie`),
+ * minted in `issueSession`, so never before the last factor. Presenting it on a
+ * later login lets a correct password through an account lock (see throttle.ts).
  */
 import type { AuthCore } from '../core';
 import { normalizeEmail } from '../email';
@@ -28,7 +29,6 @@ import { normalizePassword } from '../password/policy';
 import type { IssuedSession } from '../plugin-context';
 import { accountKey } from '../throttle';
 import { NO_SUCH_USER_ID, type AuthUser } from '../stores';
-import type { CookieSpec } from '../cookie';
 import { publicUser } from './settings';
 
 export interface LoginInput {
@@ -42,13 +42,8 @@ export interface LoginInput {
 }
 
 export type LoginOutcome<A> =
-  | { readonly kind: 'session'; readonly session: IssuedSession<A>; readonly deviceCookie: CookieSpec }
-  | {
-      readonly kind: 'challenge';
-      readonly challenge: string;
-      readonly methods: readonly string[];
-      readonly deviceCookie: CookieSpec;
-    };
+  | { readonly kind: 'session'; readonly session: IssuedSession<A> }
+  | { readonly kind: 'challenge'; readonly challenge: string; readonly methods: readonly string[] };
 
 export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: LoginInput): Promise<AuthResult<LoginOutcome<A>>> {
   const { meta } = input;
@@ -67,37 +62,31 @@ export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: 
     return fail('invalid_credentials', 'invalid_email');
   }
 
+  // Known and unknown addresses, locked or not, make the same store calls and
+  // pay for the same password verify.
   const account = accountKey(email);
-  const deviceId = core.verifyDevice(account, input.deviceToken);
-  const gate = await core.throttle.gateLogin(account, meta.ip, deviceId);
-
-  // From here on, known and unknown addresses, locked or not, make the same
-  // store calls and pay for the same password verify.
   const found = await core.users.findCredentialByEmail(email);
   const epoch = await core.sessions.readEpoch(found?.id ?? NO_SUCH_USER_ID);
   const credential = await core.users.findCredentialById(found?.id ?? NO_SUCH_USER_ID);
+  const deviceId = core.verifyDevice(credential?.id ?? NO_SUCH_USER_ID, epoch, input.deviceToken);
+  const gate = await core.throttle.gateLogin(account, meta.ip, deviceId);
   const verified = await core.verifyPassword(credential?.passwordHash, input.password);
 
   if (!gate.allowed) {
-    const newLock = gate.newLock;
-    if (newLock && credential) {
-      // Off the response path: a known account must not answer slower than an unknown one.
-      core.background('lockout notice', async () => {
-        await core.emit({ type: 'account.locked', userId: credential.id, data: { until: newLock.until } }, meta);
-        await core.mail({ type: 'lockout', to: credential.email, userId: credential.id, until: new Date(newLock.until) });
-      });
-    }
+    notifyLock(core, credential, gate.newLock, meta);
     await core.emit({ type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason: gate.reason }, meta);
     return fail('invalid_credentials', gate.reason);
   }
   if (!credential || !verified) {
+    // A device token lets only a correct password through the lock; a wrong
+    // one counts against the account-wide budget like any other failure.
+    if (deviceId) notifyLock(core, credential, (await core.throttle.deviceFailed(account)).newLock, meta);
     const reason = !credential ? 'unknown_user' : credential.passwordHash ? 'wrong_password' : 'password_not_set';
     await core.emit({ type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason }, meta);
     return fail('invalid_credentials', reason);
   }
 
   await core.throttle.loginSucceeded(account, meta.ip, deviceId);
-  const deviceCookie = core.createDeviceCookie(account, meta.origin);
   if (credential.passwordHash && core.hasher.needsRehash(credential.passwordHash)) {
     await rehash(core, credential.id, credential.passwordHash, input.password, meta);
   }
@@ -106,15 +95,30 @@ export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: 
   for (const hook of core.hooks.loginChallenge) {
     const challenge = await hook({ user, rememberMe, epoch, meta });
     if (challenge) {
+      // No device cookie yet: it comes with the session, after every factor.
       await core.emit({ type: 'login.challenge', userId: user.id, data: { methods: challenge.methods.join(',') } }, meta);
-      return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods, deviceCookie });
+      return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods });
     }
   }
 
   const issued = await core.issueSession(user, { via: 'password', meta, rememberMe, epoch });
   if (!issued.ok) return issued;
   await core.emit({ type: 'login.success', userId: user.id }, meta);
-  return ok({ kind: 'session', session: issued.value, deviceCookie });
+  return ok({ kind: 'session', session: issued.value });
+}
+
+/** A new lock's audit row and owner mail, off the response path so a known account answers no slower. */
+function notifyLock<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  credential: { id: string; email: string } | null,
+  newLock: { until: number } | undefined,
+  meta: RequestMeta,
+): void {
+  if (!newLock || !credential) return;
+  core.background('lockout notice', async () => {
+    await core.emit({ type: 'account.locked', userId: credential.id, data: { until: newLock.until } }, meta);
+    await core.mail({ type: 'lockout', to: credential.email, userId: credential.id, until: new Date(newLock.until) });
+  });
 }
 
 /** Upgrades a hash made with older parameters. A failure only costs the upgrade, never the login. */
