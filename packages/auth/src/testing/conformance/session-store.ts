@@ -2,7 +2,7 @@
  * SessionStore conformance: no session resurrection after a revocation, the
  * epoch fence, and every record expiring with its session.
  *
- * Planned guide: Build, "Writing a store adapter".
+ * Guide: Build, "Writing a store adapter".
  */
 import assert from 'node:assert/strict';
 import { cryptoRandom } from '../../crypto/random';
