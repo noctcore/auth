@@ -38,7 +38,7 @@ An Origin allowlist, a `Sec-Fetch-Site` check and a signed double-submit token b
 
 ## Breached passwords
 
-The check uses the Have I Been Pwned k-anonymity range API. It fails open, so an outage does not block sign-ups, password changes or resets, and each failure is counted and written to the audit trail as `password.breach_check_unavailable`.
+The check is off until you pass `password.breachCheck: pwnedPasswords()` to `createAuth`. It uses the Have I Been Pwned k-anonymity range API and fails open, so an outage does not block sign-ups, password changes or resets, and each failure is counted and written to the audit trail as `password.breach_check_unavailable`.
 
 ## Password hashing
 
