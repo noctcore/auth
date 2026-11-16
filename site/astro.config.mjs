@@ -96,6 +96,7 @@ export default defineConfig({
       editLink: { baseUrl: 'https://github.com/noctcore/auth/edit/main/site/' },
       sidebar: [
         { label: 'Overview', link: '/' },
+        { label: 'Getting started', link: '/start/getting-started/' },
         {
           label: 'Learn',
           items: [
@@ -115,6 +116,7 @@ export default defineConfig({
           label: 'Build',
           items: [
             { label: 'Guides', link: '/build/' },
+            { label: 'A Node server with Redis and Prisma', link: '/build/node-server/' },
             { label: 'Mail into your templates and queue', link: '/build/mail/' },
             { label: 'Writing a store adapter', link: '/build/store-adapter/' },
           ],
