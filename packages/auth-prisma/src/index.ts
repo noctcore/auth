@@ -122,9 +122,11 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     }
   }
 
-  async setPasswordHash(id: string, passwordHash: string): Promise<boolean> {
+  async setPasswordHash(id: string, passwordHash: string, options: { readonly expected?: string | null } = {}): Promise<boolean> {
+    // With `expected`, the hash check is part of the same UPDATE: a compare-and-set.
+    const guard = options.expected === undefined ? {} : { [this.f.passwordHash]: options.expected };
     const { count } = await this.options.delegate.updateMany({
-      where: this.live({ [this.f.id]: id }),
+      where: this.live({ [this.f.id]: id, ...guard }),
       data: { [this.f.passwordHash]: passwordHash },
     });
     return count > 0;
