@@ -32,6 +32,21 @@ describe.skipIf(!url)('redis stores', () => {
     api,
   );
 
+  it('tells createAuth the longest session it guards', async () => {
+    const { createAuth } = await import('@noctcore/auth');
+    const { memoryStores, plainHasher } = await import('@noctcore/auth/testing');
+    const memory = memoryStores();
+    const config = {
+      stores: { ...memory, sessions: new RedisSessionStore(redis, { prefix, epochTtl: '20d', maxSessionTtl: '7d' }) },
+      password: { hasher: plainHasher() },
+      mailer: { send: async () => undefined },
+      secret: 'redis-test-secret-at-least-32-bytes-long',
+      urls: { resetPassword: (t: string) => t },
+    };
+    expect(() => createAuth(config)).toThrow(/maxSessionTtl/u);
+    expect(() => createAuth({ ...config, session: { rememberMeTtl: '7d' } })).not.toThrow();
+  });
+
   it('refuses an epoch TTL that does not outlive the longest session', () => {
     expect(() => new RedisSessionStore(redis, { epochTtl: '30d' })).toThrow(/epochTtl must be longer/u);
     expect(() => new RedisSessionStore(redis, { epochTtl: '20d', maxSessionTtl: '7d' })).not.toThrow();

@@ -30,9 +30,10 @@ export interface RedisSessionStoreOptions extends RedisStoreOptions {
    */
   readonly epochTtl?: Duration;
   /**
-   * The longest session this store will hold: your remember-me TTL (30 d by
-   * default). The store refuses to start when `epochTtl` is not longer, and
-   * refuses any session whose TTL is longer than `epochTtl`.
+   * The longest session this store will hold: at least your remember-me TTL
+   * (`session.rememberMeTtl`, 30 d by default). The store refuses to start when
+   * `epochTtl` is not longer, and `createAuth` refuses a remember-me or
+   * absolute TTL longer than this value.
    */
   readonly maxSessionTtl?: Duration;
 }
@@ -80,6 +81,8 @@ export class RedisSessionStore implements SessionStore {
   private readonly prefix: string;
   private readonly clock: Clock;
   private readonly epochTtlMs: number;
+  /** The longest session this store guards; `createAuth` refuses a longer remember-me TTL. */
+  readonly maxSessionTtlMs: number;
 
   constructor(
     private readonly redis: Redis,
@@ -88,8 +91,8 @@ export class RedisSessionStore implements SessionStore {
     this.prefix = options.prefix ?? 'auth:';
     this.clock = options.clock ?? systemClock;
     this.epochTtlMs = toMilliseconds(options.epochTtl ?? '90d');
-    const maxSessionTtlMs = toMilliseconds(options.maxSessionTtl ?? '30d');
-    if (this.epochTtlMs <= maxSessionTtlMs) {
+    this.maxSessionTtlMs = toMilliseconds(options.maxSessionTtl ?? '30d');
+    if (this.epochTtlMs <= this.maxSessionTtlMs) {
       throw new AuthConfigError('epochTtl must be longer than the longest session (maxSessionTtl, your remember-me TTL)');
     }
   }
