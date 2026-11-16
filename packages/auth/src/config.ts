@@ -1,0 +1,150 @@
+/**
+ * Everything an app can change, with the default and the reason for it.
+ * Where published guidance disagrees on a default, the stricter value wins.
+ */
+import type { AuditSink } from './audit';
+import type { CaptchaVerifier } from './captcha';
+import type { Clock } from './clock';
+import type { SessionCookieConfig } from './cookie';
+import type { Duration } from './duration';
+import type { HookInput } from './hooks';
+import type { Logger, Metrics } from './logger';
+import type { Mailer } from './mail';
+import type { BreachChecker } from './password/breach';
+import type { PasswordHasher } from './password/hasher';
+import type { PasswordPolicy } from './password/policy';
+import type { PluginContext } from './plugin-context';
+import type { RandomSource } from './random';
+import type { SessionOptions } from './session';
+import type { AuthUser, CounterStore, SessionStore, TokenStore, UserStore } from './stores';
+import type { LockoutOptions, RateLimitRule } from './throttle';
+
+/** Doors with their own rate limit. Keyed by client IP unless noted. */
+export type Door =
+  | 'login'
+  | 'register'
+  | 'password-reset-request'
+  /** Per user: reset mails one account can receive. */
+  | 'password-reset-mail'
+  | 'password-reset'
+  | 'password-reset-code'
+  | 'email-verification'
+  /** Per user: verification mails one account can request. */
+  | 'email-verification-request'
+  /** Per user. */
+  | 'password-change'
+  /** Per user: re-entering the password for a sensitive action. */
+  | 'reauthenticate';
+
+export const DEFAULT_DOOR_LIMITS: Readonly<Record<Door, RateLimitRule>> = {
+  login: { limit: 10, window: '1m' },
+  register: { limit: 10, window: '1m' },
+  'password-reset-request': { limit: 10, window: '1m' },
+  'password-reset-mail': { limit: 3, window: '1h' },
+  'password-reset': { limit: 10, window: '1m' },
+  'password-reset-code': { limit: 10, window: '1m' },
+  'email-verification': { limit: 10, window: '1m' },
+  'email-verification-request': { limit: 3, window: '1h' },
+  'password-change': { limit: 5, window: '5m' },
+  reauthenticate: { limit: 5, window: '5m' },
+};
+
+export interface PasswordResetJob {
+  readonly email: string;
+  /** Server-minted; safe as a queue job id. Same for repeated requests for one address within a window. */
+  readonly dedupeKey: string;
+  readonly ip: string;
+}
+
+/** A plugin: adds hooks and flows, never endpoints. `Id` becomes the namespace on the auth object. */
+export interface AuthPlugin<Id extends string = string, F extends object = object> {
+  readonly id: Id;
+  // Plugins are written against any app's user and attribute types.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly hooks?: HookInput<any, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly flows?: (context: PluginContext<any, any>) => F;
+  /** Config the plugin cannot work without, checked by `createAuth`. */
+  readonly requires?: ReadonlyArray<'secret' | 'captcha'>;
+}
+
+export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin[]> {
+  readonly stores: {
+    readonly users: UserStore<U>;
+    readonly sessions: SessionStore;
+    readonly tokens: TokenStore;
+    readonly counters: CounterStore;
+  };
+  readonly password: {
+    readonly hasher: PasswordHasher;
+    /** Default 12 to 256 characters. */
+    readonly policy?: Partial<PasswordPolicy>;
+    /** `pwnedPasswords()` recommended. False disables the check. Fails open either way. */
+    readonly breachCheck?: BreachChecker | false;
+  };
+  readonly session?: SessionOptions<A> & {
+    readonly cookie?: SessionCookieConfig;
+    /** How recent a credential proof must be for sensitive actions. Default 10 min. */
+    readonly freshAuthAge?: Duration;
+  };
+  /**
+   * Server secret (at least 32 bytes) for code HMACs. Required when any token
+   * is a code. Rotating it invalidates outstanding codes only.
+   */
+  readonly secret?: Uint8Array | string;
+  readonly registration?: {
+    /**
+     * Answer `email_in_use` for a taken address instead of the uniform answer
+     * plus an "account exists" mail. Default false (enumeration safe).
+     */
+    readonly revealExisting?: boolean;
+    /** Issue a session on registration. Only allowed with `revealExisting`, or the session would reveal the account is new. */
+    readonly autoLogin?: boolean;
+  };
+  readonly emailVerification?: {
+    /** Default `code`: 8 digits, the auth guide's preference, bound to the address it was sent to. */
+    readonly kind?: 'code' | 'link';
+    /** Default 15 min for codes, 24 h for links. */
+    readonly ttl?: Duration;
+    readonly digits?: number;
+    readonly maxAttempts?: number;
+  };
+  readonly passwordReset?: {
+    /** Default `link`. `code` sends digits that are exchanged for a short ticket. */
+    readonly kind?: 'link' | 'code';
+    /** Default 1 h for links, 15 min for codes. */
+    readonly ttl?: Duration;
+    readonly digits?: number;
+    readonly maxAttempts?: number;
+    /** Lifetime of the ticket a verified code becomes. Default 10 min. */
+    readonly ticketTtl?: Duration;
+    /**
+     * Put the request on your queue; your worker calls `auth.jobs.processPasswordReset(job)`.
+     * Without it the job runs detached in-process, which keeps the response
+     * time independent of the address but is lost if the process dies.
+     */
+    readonly enqueue?: (job: PasswordResetJob) => Promise<void>;
+    /** A completed reset proves the mailbox, so it marks the address verified. Default true. */
+    readonly markEmailVerified?: boolean;
+  };
+  readonly urls?: {
+    /** Required for link verification. Put the token in the path or fragment and set `Referrer-Policy: no-referrer`. */
+    readonly verifyEmail?: (token: string) => string;
+    /** Required for link resets. */
+    readonly resetPassword?: (token: string) => string;
+  };
+  readonly throttle?: {
+    readonly lockout?: LockoutOptions;
+    readonly doors?: Partial<Record<Door, RateLimitRule>>;
+  };
+  /** Checked on login, register and the reset request. Fails closed. */
+  readonly captcha?: CaptchaVerifier;
+  readonly mailer: Mailer;
+  readonly audit?: AuditSink;
+  readonly hooks?: HookInput<U, A>;
+  readonly plugins?: P;
+  readonly clock?: Clock;
+  readonly random?: RandomSource;
+  readonly logger?: Logger;
+  readonly metrics?: Metrics;
+}
