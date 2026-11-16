@@ -33,9 +33,14 @@ jobs:
         run: bun install --lockfile-only && git diff --exit-code -- bun.lock
       # Adapters resolve @noctcore/auth through its emitted dist/*.d.ts, so the
       # build runs before typecheck.
+      - run: bun run format:check
       - run: bun run build
+      # Type-aware lint: it reads the adapters' view of @noctcore/auth from the
+      # build output, so it runs after the build, and never with --cache.
       - run: bun run lint
       - run: bun run typecheck
+      # The public API of every entry point, compared with the reports in api/.
+      - run: bun run check:api
       # Packs every published package and checks the tarball with publint and
       # @arethetypeswrong/cli, so a manifest that hands one runtime the other's
       # declarations fails here instead of in a consumer's editor.
