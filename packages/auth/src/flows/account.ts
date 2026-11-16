@@ -24,19 +24,34 @@ export async function validateRequest<U extends AuthUser, A>(
 ): Promise<AuthResult<StoredSession<A>>> {
   const result = await core.sessions.validate(input.token, { touch: input.touch ?? true });
   if (!result.ok) return fail('session_expired', `session_${result.reason}`);
-  const refusal = await firstRefusal(core.hooks.onSessionValidate, { session: result.session, meta: input.meta });
+  const refusal = await firstRefusal(core.hooks.onSessionValidate, {
+    session: result.session,
+    meta: input.meta,
+  });
   if (refusal) {
     const ids = await core.sessions.revoke(result.session.userId, [result.session.id]);
-    await core.emit({ type: 'session.revoked', userId: result.session.userId, reason: refusal.reason }, input.meta);
+    await core.emit(
+      { type: 'session.revoked', userId: result.session.userId, reason: refusal.reason },
+      input.meta,
+    );
     await core.notifyRevoked(result.session.userId, ids, refusal.reason);
-    return fail(refusal.code === 'invalid_credentials' ? 'session_expired' : refusal.code, refusal.reason);
+    return fail(
+      refusal.code === 'invalid_credentials' ? 'session_expired' : refusal.code,
+      refusal.reason,
+    );
   }
   return ok(result.session);
 }
 
 /** Refuses when the session's last credential proof is older than `freshAuthAge`. */
-export function requireFreshAuth<A>(core: { readonly clock: Clock }, settings: FlowSettings, session: StoredSession<A>): AuthResult<void> {
-  return core.clock.now() - session.authenticatedAt <= settings.freshAuthAgeMs ? ok() : fail('fresh_auth_required', 'stale_authentication');
+export function requireFreshAuth<A>(
+  core: { readonly clock: Clock },
+  settings: FlowSettings,
+  session: StoredSession<A>,
+): AuthResult<void> {
+  return core.clock.now() - session.authenticatedAt <= settings.freshAuthAgeMs
+    ? ok()
+    : fail('fresh_auth_required', 'stale_authentication');
 }
 
 /**
@@ -47,39 +62,79 @@ export async function reauthenticate<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   input: { session: StoredSession<A>; password: string; meta: RequestMeta },
 ): Promise<AuthResult<IssuedSession<A>>> {
-  const proved = await proveCurrentPassword(core, input.session, input.password, input.meta, 'reauthenticate');
+  const proved = await proveCurrentPassword(
+    core,
+    input.session,
+    input.password,
+    input.meta,
+    'reauthenticate',
+  );
   if (!proved.ok) return proved;
   await core.sessions.revoke(input.session.userId, [input.session.id]);
-  return core.issueSession(proved.value, { via: 'reauthenticate', meta: input.meta, inherit: input.session, epoch: input.session.epoch });
+  return core.issueSession(proved.value, {
+    via: 'reauthenticate',
+    meta: input.meta,
+    inherit: input.session,
+    epoch: input.session.epoch,
+  });
 }
 
 export async function changePassword<U extends AuthUser, A>(
   core: AuthCore<U, A>,
-  input: { session: StoredSession<A>; currentPassword: string; newPassword: string; secondFactor?: string; meta: RequestMeta },
+  input: {
+    session: StoredSession<A>;
+    currentPassword: string;
+    newPassword: string;
+    secondFactor?: string;
+    meta: RequestMeta;
+  },
 ): Promise<AuthResult<IssuedSession<A>>> {
   const { session, meta } = input;
-  const proved = await proveCurrentPassword(core, session, input.currentPassword, meta, 'password-change');
+  const proved = await proveCurrentPassword(
+    core,
+    session,
+    input.currentPassword,
+    meta,
+    'password-change',
+  );
   if (!proved.ok) return proved;
   const user = proved.value;
 
-  const refusal = await firstRefusal(core.hooks.beforePasswordChange, { user, session, secondFactor: input.secondFactor, meta });
+  const refusal = await firstRefusal(core.hooks.beforePasswordChange, {
+    user,
+    session,
+    secondFactor: input.secondFactor,
+    meta,
+  });
   if (refusal) {
-    await core.emit({ type: 'password.change_failed', userId: user.id, reason: refusal.reason }, meta);
+    await core.emit(
+      { type: 'password.change_failed', userId: user.id, reason: refusal.reason },
+      meta,
+    );
     return fail(refusal.code, refusal.reason);
   }
   const hashed = await core.hashNewPassword(input.newPassword, meta);
   if (!hashed.ok) {
-    await core.emit({ type: 'password.change_failed', userId: user.id, reason: hashed.reason }, meta);
+    await core.emit(
+      { type: 'password.change_failed', userId: user.id, reason: hashed.reason },
+      meta,
+    );
     return hashed;
   }
-  if (!(await core.users.setPasswordHash(user.id, hashed.value))) return fail('session_expired', 'user_missing');
+  if (!(await core.users.setPasswordHash(user.id, hashed.value)))
+    return fail('session_expired', 'user_missing');
 
   // Stricter than the auth guide's "offer it": every session ends, the
   // current one is re-issued, and the change is mailed to the owner.
   await core.revokeAllSessions(user.id, 'password-change');
   await core.tokens.revokeAll(user.id, RESET_PURPOSES);
   await core.emit({ type: 'password.changed', userId: user.id }, meta);
-  await core.mail({ type: 'password-changed', to: user.email, userId: user.id, at: new Date(core.clock.now()) });
+  await core.mail({
+    type: 'password-changed',
+    to: user.email,
+    userId: user.id,
+    at: new Date(core.clock.now()),
+  });
   return core.issueSession(user, { via: 'password-change', meta, inherit: session });
 }
 
@@ -98,10 +153,21 @@ async function proveCurrentPassword<U extends AuthUser, A>(
   if (!(await core.verifyPassword(credential.passwordHash, password))) {
     const { newLock } = await core.throttle.recordFailure(accountKey(credential.email));
     if (newLock) {
-      await core.emit({ type: 'account.locked', userId: credential.id, data: { until: newLock.until } }, meta);
-      await core.mail({ type: 'lockout', to: credential.email, userId: credential.id, until: new Date(newLock.until) });
+      await core.emit(
+        { type: 'account.locked', userId: credential.id, data: { until: newLock.until } },
+        meta,
+      );
+      await core.mail({
+        type: 'lockout',
+        to: credential.email,
+        userId: credential.id,
+        until: new Date(newLock.until),
+      });
     }
-    await core.emit({ type: 'password.change_failed', userId: credential.id, reason: `wrong_password:${door}` }, meta);
+    await core.emit(
+      { type: 'password.change_failed', userId: credential.id, reason: `wrong_password:${door}` },
+      meta,
+    );
     return fail('invalid_credentials', 'wrong_password');
   }
   return ok(publicUser(credential));
@@ -117,7 +183,10 @@ export interface SessionSummary {
   readonly userAgent: string;
 }
 
-export async function listSessions<U extends AuthUser, A>(core: AuthCore<U, A>, session: StoredSession<A>): Promise<SessionSummary[]> {
+export async function listSessions<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  session: StoredSession<A>,
+): Promise<SessionSummary[]> {
   const active = await core.sessions.listActive(session.userId);
   return active
     .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
@@ -144,7 +213,10 @@ export async function revokeSession<U extends AuthUser, A>(
   }
   const ids = await core.sessions.revoke(input.session.userId, [input.id]);
   if (ids.length > 0) {
-    await core.emit({ type: 'session.revoked', userId: input.session.userId, reason: 'revoke-one' }, input.meta);
+    await core.emit(
+      { type: 'session.revoked', userId: input.session.userId, reason: 'revoke-one' },
+      input.meta,
+    );
     await core.notifyRevoked(input.session.userId, ids, 'revoke-one');
   }
   return ok({ revoked: ids.length > 0 });

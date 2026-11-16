@@ -42,7 +42,8 @@ export class MemoryUserStore implements UserStore<AuthUser> {
 
   async findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<AuthUser> | null> {
     for (const record of this.byId.values()) {
-      if (record.email === email && this.live(record)) return { ...this.view(record), passwordHash: record.passwordHash };
+      if (record.email === email && this.live(record))
+        return { ...this.view(record), passwordHash: record.passwordHash };
     }
     return null;
   }
@@ -71,7 +72,11 @@ export class MemoryUserStore implements UserStore<AuthUser> {
     return this.view(record);
   }
 
-  async setPasswordHash(id: string, passwordHash: string, options: { readonly expected?: string | null } = {}): Promise<boolean> {
+  async setPasswordHash(
+    id: string,
+    passwordHash: string,
+    options: { readonly expected?: string | null } = {},
+  ): Promise<boolean> {
     const record = this.byId.get(id);
     if (!this.live(record)) return false;
     if (options.expected !== undefined && record.passwordHash !== options.expected) return false;
@@ -126,7 +131,10 @@ export class MemorySessionStore implements SessionStore {
   }
 
   async create(session: StoredSession, ttlMs: number): Promise<void> {
-    this.sessions.set(session.id, { session: structuredClone(session), expiresAt: this.clock.now() + ttlMs });
+    this.sessions.set(session.id, {
+      session: structuredClone(session),
+      expiresAt: this.clock.now() + ttlMs,
+    });
     let ids = this.byUser.get(session.userId);
     if (!ids) this.byUser.set(session.userId, (ids = new Set()));
     ids.add(session.id);
@@ -226,7 +234,8 @@ export class MemoryTokenStore implements TokenStore {
 
   private removeByUser(userId: string, purposes?: readonly string[]): void {
     for (const [key, token] of this.tokens) {
-      if (token.userId === userId && (!purposes || purposes.includes(token.purpose))) this.tokens.delete(key);
+      if (token.userId === userId && (!purposes || purposes.includes(token.purpose)))
+        this.tokens.delete(key);
     }
   }
 }

@@ -22,7 +22,11 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const PACKAGES = join(ROOT, 'packages');
 
 function run(command: string, args: readonly string[], cwd: string): void {
-  const result = spawnSync(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
+  const result = spawnSync(command, args, {
+    cwd,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  });
   if (result.status !== 0) {
     console.error(`${command} ${args.join(' ')} failed in ${cwd}`);
     process.exit(result.status ?? 1);

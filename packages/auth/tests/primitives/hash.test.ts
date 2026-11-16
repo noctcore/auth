@@ -4,7 +4,9 @@ import { hexDigestsEqual, hmacSha256Hex, secretsEqual, sha256Hex } from '../../s
 
 describe('sha256Hex', () => {
   it('hashes the UTF-8 string (known vector)', () => {
-    expect(sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+    expect(sha256Hex('abc')).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    );
   });
 });
 
@@ -20,7 +22,8 @@ describe('hmacSha256Hex', () => {
 describe('hexDigestsEqual', () => {
   const digest = sha256Hex('x');
   it('accepts equal digests', () => expect(hexDigestsEqual(digest, sha256Hex('x'))).toBe(true));
-  it('refuses different digests', () => expect(hexDigestsEqual(digest, sha256Hex('y'))).toBe(false));
+  it('refuses different digests', () =>
+    expect(hexDigestsEqual(digest, sha256Hex('y'))).toBe(false));
   it('refuses malformed hex even when a lenient decoder would match', () => {
     expect(hexDigestsEqual(`${digest}zz`, `${digest}zz`)).toBe(false);
     expect(hexDigestsEqual('ABCD', 'ABCD')).toBe(false);

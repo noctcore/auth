@@ -22,7 +22,11 @@ describe('links', () => {
     const { token } = await tokens.issueLink('verify', 'u1', 60_000, { email: 'a@example.com' });
     expect(await store.find('verify', token)).toBeNull();
     expect(await store.find('verify', sha256Hex(token))).not.toBeNull();
-    expect(await tokens.redeemLink('verify', token)).toEqual({ status: 'valid', userId: 'u1', data: { email: 'a@example.com' } });
+    expect(await tokens.redeemLink('verify', token)).toEqual({
+      status: 'valid',
+      userId: 'u1',
+      data: { email: 'a@example.com' },
+    });
     expect(await tokens.redeemLink('verify', token)).toEqual({ status: 'unknown' });
   });
 
@@ -34,13 +38,18 @@ describe('links', () => {
   it('refuses an expired link and removes it', async () => {
     const { token } = await tokens.issueLink('verify', 'u1', 60_000);
     clock.advance(60_000);
-    expect(await tokens.redeemLink('verify', token)).toEqual({ status: 'expired', namedUserId: 'u1' });
+    expect(await tokens.redeemLink('verify', token)).toEqual({
+      status: 'expired',
+      namedUserId: 'u1',
+    });
     expect(await store.findByUser('verify', 'u1')).toBeNull();
   });
 
   it('lets exactly one of many concurrent redemptions win', async () => {
     const { token } = await tokens.issueLink('verify', 'u1', 60_000);
-    const results = await Promise.all(Array.from({ length: 20 }, () => tokens.redeemLink('verify', token)));
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => tokens.redeemLink('verify', token)),
+    );
     expect(results.filter((r) => r.status === 'valid')).toHaveLength(1);
   });
 
@@ -74,14 +83,17 @@ describe('codes', () => {
   it('deletes the code after the last allowed wrong guess', async () => {
     const { code } = await tokens.issueCode('reset-code', 'u1', 60_000, 6);
     const wrong = code === '000000' ? '000001' : '000000';
-    for (let i = 0; i < 5; i++) expect((await tokens.redeemCode('reset-code', 'u1', wrong, 5)).status).toBe('mismatch');
+    for (let i = 0; i < 5; i++)
+      expect((await tokens.redeemCode('reset-code', 'u1', wrong, 5)).status).toBe('mismatch');
     expect((await tokens.redeemCode('reset-code', 'u1', code, 5)).status).toBe('unknown');
   });
 
   it('caps parallel guesses at the attempt limit', async () => {
     const { code } = await tokens.issueCode('reset-code', 'u1', 60_000, 6);
     const wrong = code === '000000' ? '000001' : '000000';
-    const results = await Promise.all(Array.from({ length: 30 }, () => tokens.redeemCode('reset-code', 'u1', wrong, 5)));
+    const results = await Promise.all(
+      Array.from({ length: 30 }, () => tokens.redeemCode('reset-code', 'u1', wrong, 5)),
+    );
     expect(results.filter((r) => r.status === 'mismatch')).toHaveLength(5);
   });
 
@@ -101,7 +113,10 @@ describe('codes', () => {
   it('makes the same store lookup for an unknown user as for a known one', async () => {
     const lookups: string[] = [];
     const spy = Object.assign(Object.create(store) as MemoryTokenStore, {
-      findByUser: (purpose: string, userId: string) => (lookups.push(userId), store.findByUser(purpose, userId)),
+      findByUser: (purpose: string, userId: string) => (
+        lookups.push(userId),
+        store.findByUser(purpose, userId)
+      ),
     });
     const spied = new OneTimeTokens(spy, clock, cryptoRandom, secret);
     await spied.redeemCode('reset', null, '12345678', 5);

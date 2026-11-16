@@ -45,7 +45,10 @@ export type LoginOutcome<A> =
   | { readonly kind: 'session'; readonly session: IssuedSession<A> }
   | { readonly kind: 'challenge'; readonly challenge: string; readonly methods: readonly string[] };
 
-export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: LoginInput): Promise<AuthResult<LoginOutcome<A>>> {
+export async function login<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  input: LoginInput,
+): Promise<AuthResult<LoginOutcome<A>>> {
   const { meta } = input;
   const rememberMe = input.rememberMe ?? false;
   const captcha = await core.checkCaptcha('login', input.captchaToken, meta);
@@ -74,15 +77,30 @@ export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: 
 
   if (!gate.allowed) {
     notifyLock(core, credential, gate.newLock, meta);
-    await core.emit({ type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason: gate.reason }, meta);
+    await core.emit(
+      {
+        type: 'login.failure',
+        ...(credential ? { userId: credential.id } : {}),
+        reason: gate.reason,
+      },
+      meta,
+    );
     return fail('invalid_credentials', gate.reason);
   }
   if (!credential || !verified) {
     // A device token lets only a correct password through a lock; a wrong one
     // counts against the devices' shared failures and the account-wide budget.
-    if (gate.viaDevice) notifyLock(core, credential, (await core.throttle.deviceFailed(account)).newLock, meta);
-    const reason = !credential ? 'unknown_user' : credential.passwordHash ? 'wrong_password' : 'password_not_set';
-    await core.emit({ type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason }, meta);
+    if (gate.viaDevice)
+      notifyLock(core, credential, (await core.throttle.deviceFailed(account)).newLock, meta);
+    const reason = !credential
+      ? 'unknown_user'
+      : credential.passwordHash
+        ? 'wrong_password'
+        : 'password_not_set';
+    await core.emit(
+      { type: 'login.failure', ...(credential ? { userId: credential.id } : {}), reason },
+      meta,
+    );
     return fail('invalid_credentials', reason);
   }
 
@@ -96,7 +114,14 @@ export async function login<U extends AuthUser, A>(core: AuthCore<U, A>, input: 
     const challenge = await hook({ user, rememberMe, epoch, meta });
     if (challenge) {
       // No device cookie yet: it comes with the session, after every factor.
-      await core.emit({ type: 'login.challenge', userId: user.id, data: { methods: challenge.methods.join(',') } }, meta);
+      await core.emit(
+        {
+          type: 'login.challenge',
+          userId: user.id,
+          data: { methods: challenge.methods.join(',') },
+        },
+        meta,
+      );
       return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods });
     }
   }
@@ -116,8 +141,16 @@ function notifyLock<U extends AuthUser, A>(
 ): void {
   if (!newLock || !credential) return;
   core.background('lockout notice', async () => {
-    await core.emit({ type: 'account.locked', userId: credential.id, data: { until: newLock.until } }, meta);
-    await core.mail({ type: 'lockout', to: credential.email, userId: credential.id, until: new Date(newLock.until) });
+    await core.emit(
+      { type: 'account.locked', userId: credential.id, data: { until: newLock.until } },
+      meta,
+    );
+    await core.mail({
+      type: 'lockout',
+      to: credential.email,
+      userId: credential.id,
+      until: new Date(newLock.until),
+    });
   });
 }
 
@@ -137,6 +170,9 @@ async function rehash<U extends AuthUser, A>(
       await core.emit({ type: 'password.rehashed', userId }, meta);
     }
   } catch (error) {
-    core.logger.warn('Password rehash failed', { userId, error: error instanceof Error ? error.message : String(error) });
+    core.logger.warn('Password rehash failed', {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }

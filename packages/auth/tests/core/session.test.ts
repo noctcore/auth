@@ -16,7 +16,8 @@ interface Attrs {
 
 const attributes = {
   parse(value: unknown): Attrs {
-    if (typeof value !== 'object' || value === null || typeof (value as Attrs).role !== 'string') throw new Error('bad');
+    if (typeof value !== 'object' || value === null || typeof (value as Attrs).role !== 'string')
+      throw new Error('bad');
     return { role: (value as Attrs).role };
   },
 };
@@ -24,9 +25,19 @@ const attributes = {
 let clock: ManualClock;
 let store: MemorySessionStore;
 function manager(options: SessionOptions<Attrs> = {}) {
-  return new SessionManager<Attrs>(store, { attributes, ...options }, clock, cryptoRandom, silentLogger);
+  return new SessionManager<Attrs>(
+    store,
+    { attributes, ...options },
+    clock,
+    cryptoRandom,
+    silentLogger,
+  );
 }
-const mintFor = (m: SessionManager<Attrs>, userId = 'u1', extra: { rememberMe?: boolean; epoch?: number } = {}) =>
+const mintFor = (
+  m: SessionManager<Attrs>,
+  userId = 'u1',
+  extra: { rememberMe?: boolean; epoch?: number } = {},
+) =>
   m.mint({
     userId,
     attributes: { role: 'member' },

@@ -49,9 +49,14 @@ export function sessionCookieName(config: SessionCookieConfig = {}): string {
   return (config.secure ?? true) ? `__Host-${base}` : base;
 }
 
-function attributes(config: SessionCookieConfig, origin: string | undefined, maxAge?: number): CookieAttributes {
+function attributes(
+  config: SessionCookieConfig,
+  origin: string | undefined,
+  maxAge?: number,
+): CookieAttributes {
   const secure = config.secure ?? true;
-  const sameSite = typeof config.sameSite === 'function' ? config.sameSite(origin) : (config.sameSite ?? 'lax');
+  const sameSite =
+    typeof config.sameSite === 'function' ? config.sameSite(origin) : (config.sameSite ?? 'lax');
   if (sameSite === 'none' && !secure) {
     throw new AuthConfigError('SameSite=None requires a Secure cookie');
   }
@@ -65,8 +70,14 @@ export function createSessionCookie(
   token: string,
   options: { expiresAt: number; persistent: boolean; now: number; origin?: string | undefined },
 ): CookieSpec {
-  const maxAge = options.persistent ? Math.max(0, Math.floor((options.expiresAt - options.now) / 1000)) : undefined;
-  return { name: sessionCookieName(config), value: token, attributes: attributes(config, options.origin, maxAge) };
+  const maxAge = options.persistent
+    ? Math.max(0, Math.floor((options.expiresAt - options.now) / 1000))
+    : undefined;
+  return {
+    name: sessionCookieName(config),
+    value: token,
+    attributes: attributes(config, options.origin, maxAge),
+  };
 }
 
 /** The cookie that clears the session cookie on logout. */
@@ -80,8 +91,17 @@ export function deviceCookieName(config: SessionCookieConfig = {}): string {
 }
 
 /** The trusted-device cookie: HttpOnly, long-lived, same attributes as the session cookie otherwise. */
-export function deviceCookie(config: SessionCookieConfig, token: string, maxAge: number, origin?: string): CookieSpec {
-  return { name: deviceCookieName(config), value: token, attributes: attributes(config, origin, maxAge) };
+export function deviceCookie(
+  config: SessionCookieConfig,
+  token: string,
+  maxAge: number,
+  origin?: string,
+): CookieSpec {
+  return {
+    name: deviceCookieName(config),
+    value: token,
+    attributes: attributes(config, origin, maxAge),
+  };
 }
 
 /** `Set-Cookie` header value, for servers without a cookie helper of their own. */
@@ -90,7 +110,9 @@ export function serializeCookie(spec: CookieSpec): string {
   if (spec.attributes.maxAge !== undefined) parts.push(`Max-Age=${spec.attributes.maxAge}`);
   if (spec.attributes.httpOnly) parts.push('HttpOnly');
   if (spec.attributes.secure) parts.push('Secure');
-  parts.push(`SameSite=${spec.attributes.sameSite[0]?.toUpperCase()}${spec.attributes.sameSite.slice(1)}`);
+  parts.push(
+    `SameSite=${spec.attributes.sameSite[0]?.toUpperCase()}${spec.attributes.sameSite.slice(1)}`,
+  );
   return parts.join('; ');
 }
 

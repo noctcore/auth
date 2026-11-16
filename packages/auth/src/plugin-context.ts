@@ -49,7 +49,14 @@ export interface IssueOptions<A> {
 /** Session reads and revocations. Deliberately without `mint`: sessions are only created by `issueSession`. */
 export type SessionAccess<A> = Pick<
   SessionManager<A>,
-  'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'
+  | 'absoluteTtlMs'
+  | 'rememberMeTtlMs'
+  | 'readEpoch'
+  | 'validate'
+  | 'listActive'
+  | 'revoke'
+  | 'revokeToken'
+  | 'revokeAll'
 >;
 
 export interface PluginContext<U extends AuthUser, A> {
@@ -71,7 +78,11 @@ export interface PluginContext<U extends AuthUser, A> {
   /** One hit on a door's window; a failure result when over the limit. */
   rateLimit(door: Door, key: string, meta: RequestMeta | undefined): Promise<AuthFailure | null>;
   /** Verifies the captcha when one is configured; a failure result when it does not pass. */
-  checkCaptcha(door: CaptchaDoor, token: string | undefined, meta: RequestMeta): Promise<AuthFailure | null>;
+  checkCaptcha(
+    door: CaptchaDoor,
+    token: string | undefined,
+    meta: RequestMeta,
+  ): Promise<AuthFailure | null>;
   /** Verifies a password against a stored hash, paying a full verify even when there is none. */
   verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>;
   /** Policy, breach check and hash for a NEW password. */
@@ -81,7 +92,11 @@ export interface PluginContext<U extends AuthUser, A> {
   /** Revokes every session of the user and tells the hooks. */
   revokeAllSessions(userId: string, reason: RevocationReason): Promise<void>;
   /** Tells the hooks sessions ended. Never throws. */
-  notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason): Promise<void>;
+  notifyRevoked(
+    userId: string,
+    sessionIds: readonly string[],
+    reason: RevocationReason,
+  ): Promise<void>;
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

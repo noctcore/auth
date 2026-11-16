@@ -5,14 +5,19 @@ describe('email verification by code (default)', () => {
   it('verifies the address, ends every other session and re-issues the current one', async () => {
     const env = setup();
     const { token, session } = await env.signedInUser();
-    const other = await env.auth.login({ email: 'ada@example.com', password: PASSWORD, meta: meta('198.51.100.2') });
+    const other = await env.auth.login({
+      email: 'ada@example.com',
+      password: PASSWORD,
+      meta: meta('198.51.100.2'),
+    });
     const code = env.mailer.last('verify-email')?.code ?? '';
 
     const result = await env.auth.verifyEmailCode({ session, code, meta: meta() });
     if (!result.ok || !result.value.session) throw new Error('expected a re-issued session');
     expect((await env.stores.users.findById(session.userId))?.emailVerified).toBe(true);
     expect(await env.sessionOf(token)).toBeNull();
-    if (other.ok && other.value.kind === 'session') expect(await env.sessionOf(other.value.session.token)).toBeNull();
+    if (other.ok && other.value.kind === 'session')
+      expect(await env.sessionOf(other.value.session.token)).toBeNull();
     expect(await env.sessionOf(result.value.session.token)).not.toBeNull();
     expect(result.value.session.session.authenticatedAt).toBe(session.authenticatedAt);
   });
@@ -22,7 +27,11 @@ describe('email verification by code (default)', () => {
     const ada = await env.signedInUser('ada@example.com');
     const adaCode = env.mailer.last('verify-email')?.code ?? '';
     const eve = await env.signedInUser('eve@example.com', '198.51.100.9');
-    const stolen = await env.auth.verifyEmailCode({ session: eve.session, code: adaCode, meta: meta() });
+    const stolen = await env.auth.verifyEmailCode({
+      session: eve.session,
+      code: adaCode,
+      meta: meta(),
+    });
     expect(!stolen.ok && stolen.code).toBe('invalid_token');
     expect((await env.stores.users.findById(ada.session.userId))?.emailVerified).toBe(false);
   });
@@ -32,7 +41,8 @@ describe('email verification by code (default)', () => {
     const { session } = await env.signedInUser();
     const code = env.mailer.last('verify-email')?.code ?? '';
     const wrong = code === '00000000' ? '11111111' : '00000000';
-    for (let i = 0; i < 5; i++) await env.auth.verifyEmailCode({ session, code: wrong, meta: meta() });
+    for (let i = 0; i < 5; i++)
+      await env.auth.verifyEmailCode({ session, code: wrong, meta: meta() });
     const late = await env.auth.verifyEmailCode({ session, code, meta: meta() });
     expect(!late.ok && late.code).toBe('invalid_token');
   });
@@ -59,13 +69,17 @@ describe('email verification by code (default)', () => {
     const env = setup();
     const { session } = await env.signedInUser();
     const sends = [];
-    for (let i = 0; i < 4; i++) sends.push(await env.auth.requestEmailVerification({ session, meta: meta() }));
+    for (let i = 0; i < 4; i++)
+      sends.push(await env.auth.requestEmailVerification({ session, meta: meta() }));
     expect(sends.map((s) => s.ok)).toEqual([true, true, true, false]);
     const code = env.mailer.last('verify-email')?.code ?? '';
     const verified = await env.auth.verifyEmailCode({ session, code, meta: meta() });
     if (!verified.ok || !verified.value.session) throw new Error('verify failed');
     env.clock.advance(3_600_000);
-    const after = await env.auth.requestEmailVerification({ session: verified.value.session.session, meta: meta() });
+    const after = await env.auth.requestEmailVerification({
+      session: verified.value.session.session,
+      meta: meta(),
+    });
     expect(after).toEqual({ ok: true, value: { sent: false } });
   });
 });
@@ -75,12 +89,18 @@ describe('email verification by link', () => {
     const env = setup({ emailVerification: { kind: 'link' } });
     const { token: cookie, session } = await env.signedInUser();
     const eve = await env.signedInUser('eve@example.com', '198.51.100.9');
-    const url = env.mailer.sent.filter((m) => m.type === 'verify-email' && m.to === 'ada@example.com').at(-1);
-    const token = (url?.type === 'verify-email' ? url.url ?? '' : '').split('#')[1] ?? '';
+    const url = env.mailer.sent
+      .filter((m) => m.type === 'verify-email' && m.to === 'ada@example.com')
+      .at(-1);
+    const token = (url?.type === 'verify-email' ? (url.url ?? '') : '').split('#')[1] ?? '';
 
     const anonymous = await env.auth.verifyEmailLink({ token, session: null, meta: meta() });
     expect(!anonymous.ok && anonymous.reason).toBe('verification_session_required');
-    const wrongAccount = await env.auth.verifyEmailLink({ token, session: eve.session, meta: meta() });
+    const wrongAccount = await env.auth.verifyEmailLink({
+      token,
+      session: eve.session,
+      meta: meta(),
+    });
     expect(!wrongAccount.ok && wrongAccount.reason).toBe('verification_session_required');
     expect((await env.stores.users.findById(session.userId))?.emailVerified).toBe(false);
 
@@ -88,7 +108,11 @@ describe('email verification by link', () => {
     if (!result.ok || !result.value.session) throw new Error('expected a re-issued session');
     expect((await env.stores.users.findById(session.userId))?.emailVerified).toBe(true);
     expect(await env.sessionOf(cookie)).toBeNull();
-    const replay = await env.auth.verifyEmailLink({ token, session: result.value.session.session, meta: meta() });
+    const replay = await env.auth.verifyEmailLink({
+      token,
+      session: result.value.session.session,
+      meta: meta(),
+    });
     expect(!replay.ok && replay.code).toBe('invalid_token');
   });
 });

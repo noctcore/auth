@@ -21,4 +21,8 @@ const api = { describe, it };
 runConformance('memory session store', sessionStoreConformance(stores.sessions, context), api);
 runConformance('memory token store', tokenStoreConformance(stores.tokens), api);
 runConformance('memory counter store', counterStoreConformance(stores.counters, context), api);
-runConformance('memory user store', userStoreConformance(stores.users, { softDelete: (id) => stores.users.softDelete(id) }), api);
+runConformance(
+  'memory user store',
+  userStoreConformance(stores.users, { softDelete: (id) => stores.users.softDelete(id) }),
+  api,
+);

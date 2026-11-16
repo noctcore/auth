@@ -165,7 +165,8 @@ export class Throttle {
     }
 
     const pair = await this.counters.increment(`aip:${account}:${ip}`, this.perAccountIp.windowMs);
-    if (pair.count > this.perAccountIp.limit) return { allowed: false, reason: 'account_ip_budget' };
+    if (pair.count > this.perAccountIp.limit)
+      return { allowed: false, reason: 'account_ip_budget' };
 
     const all = await this.counters.increment(`acct:${account}`, this.perAccount.windowMs);
     if (all.count > this.perAccount.limit) {

@@ -33,7 +33,11 @@ function mac(key: Uint8Array, id: string, claims: DeviceClaims): string {
 }
 
 /** A new device token for these claims. */
-export function createDeviceToken(key: Uint8Array, claims: DeviceClaims, random: RandomSource = cryptoRandom): string {
+export function createDeviceToken(
+  key: Uint8Array,
+  claims: DeviceClaims,
+  random: RandomSource = cryptoRandom,
+): string {
   const id = encodeHexLowerCase(randomBytes(16, random));
   return `${id}.${claims.issuedAt}.${claims.epoch}.${mac(key, id, claims)}`;
 }
@@ -47,7 +51,11 @@ export interface DeviceCheck {
 }
 
 /** The device id when the token is valid for this user, epoch and age, otherwise null. */
-export function verifyDeviceToken(key: Uint8Array, token: unknown, check: DeviceCheck): string | null {
+export function verifyDeviceToken(
+  key: Uint8Array,
+  token: unknown,
+  check: DeviceCheck,
+): string | null {
   if (typeof token !== 'string') return null;
   const match = TOKEN.exec(token);
   if (!match) return null;
@@ -56,5 +64,10 @@ export function verifyDeviceToken(key: Uint8Array, token: unknown, check: Device
   if (Number(epoch) !== check.epoch) return null;
   // A minute of clock skew between servers, no more.
   if (issuedAt > check.now + 60_000 || check.now - issuedAt > check.maxAgeMs) return null;
-  return hexDigestsEqual(given, mac(key, id, { userId: check.userId, epoch: check.epoch, issuedAt })) ? id : null;
+  return hexDigestsEqual(
+    given,
+    mac(key, id, { userId: check.userId, epoch: check.epoch, issuedAt }),
+  )
+    ? id
+    : null;
 }

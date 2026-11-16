@@ -17,8 +17,16 @@ describe('session cookie', () => {
 
   it('is HttpOnly, Path=/, Lax by default and has no Domain', () => {
     const spec = createSessionCookie({}, 't', { expiresAt: 61_000, persistent: true, now: 0 });
-    expect(spec.attributes).toEqual({ httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 61 });
-    expect(serializeCookie(spec)).toBe('__Host-session=t; Path=/; Max-Age=61; HttpOnly; Secure; SameSite=Lax');
+    expect(spec.attributes).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 61,
+    });
+    expect(serializeCookie(spec)).toBe(
+      '__Host-session=t; Path=/; Max-Age=61; HttpOnly; Secure; SameSite=Lax',
+    );
   });
 
   it('is a browser-session cookie when the session was not remembered', () => {
@@ -28,8 +36,17 @@ describe('session cookie', () => {
 
   it('picks SameSite per origin and refuses None without Secure', () => {
     const sameSite = (origin: string | undefined) => (origin === 'app://app' ? 'none' : 'lax');
-    expect(createSessionCookie({ sameSite }, 't', { expiresAt: 0, persistent: false, now: 0, origin: 'app://app' }).attributes.sameSite).toBe('none');
-    expect(() => createBlankSessionCookie({ secure: false, sameSite: 'none' })).toThrow(AuthConfigError);
+    expect(
+      createSessionCookie({ sameSite }, 't', {
+        expiresAt: 0,
+        persistent: false,
+        now: 0,
+        origin: 'app://app',
+      }).attributes.sameSite,
+    ).toBe('none');
+    expect(() => createBlankSessionCookie({ secure: false, sameSite: 'none' })).toThrow(
+      AuthConfigError,
+    );
   });
 
   it('clears with Max-Age=0', () => {

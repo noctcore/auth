@@ -1,0 +1,11 @@
+# Generated or recorded output: formatting it would only churn diffs.
+dist
+node_modules
+generated
+bun.lock
+api
+**/CHANGELOG.md
+.changeset/*.md
+# Docs prose is wrapped by hand; the site has its own Astro tooling.
+**/*.md
+site

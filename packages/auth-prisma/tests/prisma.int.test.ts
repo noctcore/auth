@@ -1,7 +1,12 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { AuthUser, NormalizedEmail } from '@noctcore/auth';
-import { runConformance, tokenStoreConformance, uniqueId, userStoreConformance } from '@noctcore/auth/testing';
+import {
+  runConformance,
+  tokenStoreConformance,
+  uniqueId,
+  userStoreConformance,
+} from '@noctcore/auth/testing';
 import { PrismaTokenStore, PrismaUserStore, prismaStores } from '../src';
 import { PrismaClient } from './generated/prisma/client';
 
@@ -25,7 +30,11 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     }),
     api,
   );
-  runConformance('prisma token store', tokenStoreConformance(new PrismaTokenStore(prisma.authToken)), api);
+  runConformance(
+    'prisma token store',
+    tokenStoreConformance(new PrismaTokenStore(prisma.authToken)),
+    api,
+  );
 
   it('maps extra columns into a richer user type', async () => {
     interface Member extends AuthUser {
@@ -43,7 +52,10 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
         displayName: String(row.displayName),
       }),
     });
-    const created = await users.create({ email: `${uniqueId('m')}@example.com` as NormalizedEmail, passwordHash: 'h' });
+    const created = await users.create({
+      email: `${uniqueId('m')}@example.com` as NormalizedEmail,
+      passwordHash: 'h',
+    });
     expect(created?.displayName).toBe('New member');
     const found = await users.findCredentialById(created?.id ?? '');
     expect(found).toMatchObject({ displayName: 'New member', passwordHash: 'h' });
@@ -53,9 +65,20 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     const tokens = new PrismaTokenStore(prisma.authToken);
     const userId = uniqueId('u');
     const hash = uniqueId('hash');
-    await tokens.put({ purpose: 'email-verification', userId, hash, expiresAt: Date.now() + 60_000, attempts: 0, data: { email: 'a@example.com' } });
-    const row = await prisma.authToken.findUnique({ where: { userId_purpose: { userId, purpose: 'email-verification' } } });
+    await tokens.put({
+      purpose: 'email-verification',
+      userId,
+      hash,
+      expiresAt: Date.now() + 60_000,
+      attempts: 0,
+      data: { email: 'a@example.com' },
+    });
+    const row = await prisma.authToken.findUnique({
+      where: { userId_purpose: { userId, purpose: 'email-verification' } },
+    });
     expect(row?.hash).toBe(hash);
-    expect((await tokens.findByUser('email-verification', userId))?.data).toEqual({ email: 'a@example.com' });
+    expect((await tokens.findByUser('email-verification', userId))?.data).toEqual({
+      email: 'a@example.com',
+    });
   });
 });

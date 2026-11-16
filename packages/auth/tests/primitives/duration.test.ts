@@ -11,7 +11,8 @@ describe('durations', () => {
     ['30d', 2_592_000_000],
     ['1.5s', 1500],
   ] as const)('parses %s', (input, ms) => expect(toMilliseconds(input)).toBe(ms));
-  it('rounds seconds up so a TTL is never shorter than asked', () => expect(toSeconds('1500ms')).toBe(2));
+  it('rounds seconds up so a TTL is never shorter than asked', () =>
+    expect(toSeconds('1500ms')).toBe(2));
   it('refuses garbage and negatives', () => {
     expect(() => toMilliseconds('10x' as never)).toThrow(TypeError);
     expect(() => toMilliseconds(-1)).toThrow(TypeError);

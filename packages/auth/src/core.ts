@@ -85,7 +85,10 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   }
 
   async emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void> {
-    this.metrics.count('auth_event', event.reason ? { type: event.type, reason: event.reason } : { type: event.type });
+    this.metrics.count(
+      'auth_event',
+      event.reason ? { type: event.type, reason: event.reason } : { type: event.type },
+    );
     if (!this.#deps.audit) return;
     try {
       await this.#deps.audit.emit(event, meta);
@@ -96,21 +99,38 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
 
   async mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): Promise<void> {
     try {
-      await this.#deps.mailer.send({ ...event, dedupeKey: generateToken(this.random) } as AuthMailEvent);
+      await this.#deps.mailer.send({
+        ...event,
+        dedupeKey: generateToken(this.random),
+      } as AuthMailEvent);
     } catch (error) {
-      this.logger.error('Mailer failed', { type: event.type, userId: event.userId, error: describe(error) });
+      this.logger.error('Mailer failed', {
+        type: event.type,
+        userId: event.userId,
+        error: describe(error),
+      });
     }
   }
 
-  async rateLimit(door: Door, key: string, meta: RequestMeta | undefined): Promise<AuthFailure | null> {
+  async rateLimit(
+    door: Door,
+    key: string,
+    meta: RequestMeta | undefined,
+  ): Promise<AuthFailure | null> {
     const rule = this.#deps.doors[door] ?? DEFAULT_DOOR_LIMITS[door];
     const hit = await this.throttle.hit(`${door}:${key}`, rule);
     if (hit.allowed) return null;
     if (hit.firstRefusal) await this.emit({ type: 'rate_limit.exceeded', reason: door }, meta);
-    return fail('rate_limited', `rate_limited:${door}`, { retryAfterSeconds: hit.retryAfterSeconds });
+    return fail('rate_limited', `rate_limited:${door}`, {
+      retryAfterSeconds: hit.retryAfterSeconds,
+    });
   }
 
-  async checkCaptcha(door: CaptchaDoor, token: string | undefined, meta: RequestMeta): Promise<AuthFailure | null> {
+  async checkCaptcha(
+    door: CaptchaDoor,
+    token: string | undefined,
+    meta: RequestMeta,
+  ): Promise<AuthFailure | null> {
     if (!this.#deps.captcha) return null;
     const verdict = await this.#deps.captcha.verify(token, { ip: meta.ip, door });
     this.metrics.count('auth_captcha', { door, verdict });
@@ -120,7 +140,10 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       : fail('captcha_failed', 'captcha_rejected');
   }
 
-  async verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean> {
+  async verifyPassword(
+    passwordHash: string | null | undefined,
+    password: string,
+  ): Promise<boolean> {
     // An oversized input is never a valid password; verify an empty one so the
     // hasher's cost stays bounded and the timing stays the same.
     const tooLong = checkPasswordPolicy(password, this.policy) === 'too_long';
@@ -134,7 +157,10 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return this.hasher.verify(passwordHash, normalized);
   }
 
-  async hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>> {
+  async hashNewPassword(
+    password: string,
+    meta: RequestMeta | undefined,
+  ): Promise<AuthResult<string>> {
     const verdict = checkPasswordPolicy(password, this.policy);
     if (verdict === 'too_short') return fail('weak_password', 'password_too_short');
     if (verdict === 'too_long') return fail('password_too_long', 'password_too_long');
@@ -145,7 +171,10 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       if (breach === 'breached') return fail('breached_password', 'password_breached');
       if (breach === 'unavailable') {
         this.logger.warn('Breached-password check unavailable; accepting the password unchecked');
-        await this.emit({ type: 'password.breach_check_unavailable', data: { accepted: true } }, meta);
+        await this.emit(
+          { type: 'password.breach_check_unavailable', data: { accepted: true } },
+          meta,
+        );
       }
     }
     return ok(await this.hasher.hash(normalized));
@@ -159,22 +188,41 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     }
     let attributes: A;
     try {
-      attributes = this.#deps.attributeSchema ? this.#deps.attributeSchema.parse(merged) : (merged as A);
+      attributes = this.#deps.attributeSchema
+        ? this.#deps.attributeSchema.parse(merged)
+        : (merged as A);
     } catch (error) {
       // A hook produced attributes the schema refuses: a bug in the app, never
       // something to mint a half-stamped session for.
-      this.logger.error('Session attributes failed the schema at issue time', { userId: user.id, error: describe(error) });
+      this.logger.error('Session attributes failed the schema at issue time', {
+        userId: user.id,
+        error: describe(error),
+      });
       return fail('forbidden', 'invalid_session_attributes');
     }
 
-    const refusal = await firstRefusal(this.hooks.beforeSessionCreate, { user, via: options.via, attributes, meta: options.meta });
+    const refusal = await firstRefusal(this.hooks.beforeSessionCreate, {
+      user,
+      via: options.via,
+      attributes,
+      meta: options.meta,
+    });
     if (refusal) {
-      await this.emit({ type: 'login.failure', userId: user.id, reason: refusal.reason, data: { via: options.via } }, options.meta);
+      await this.emit(
+        {
+          type: 'login.failure',
+          userId: user.id,
+          reason: refusal.reason,
+          data: { via: options.via },
+        },
+        options.meta,
+      );
       return fail(refusal.code, refusal.reason);
     }
 
     const rememberMe = options.rememberMe ?? options.inherit?.rememberMe ?? false;
-    const persistentCookie = options.persistentCookie ?? options.inherit?.persistentCookie ?? rememberMe;
+    const persistentCookie =
+      options.persistentCookie ?? options.inherit?.persistentCookie ?? rememberMe;
     const minted = await this.#startSession({
       userId: user.id,
       attributes,
@@ -185,11 +233,22 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       ...(options.epoch === undefined ? {} : { epoch: options.epoch }),
     });
     if (!minted.ok) {
-      await this.emit({ type: 'login.failure', userId: user.id, reason: minted.reason, data: { via: options.via } }, options.meta);
+      await this.emit(
+        {
+          type: 'login.failure',
+          userId: user.id,
+          reason: minted.reason,
+          data: { via: options.via },
+        },
+        options.meta,
+      );
       return fail('session_expired', minted.reason);
     }
     // A grant: its audit row is written before the session is handed out.
-    await this.emit({ type: 'session.created', userId: user.id, data: { via: options.via, rememberMe } }, options.meta);
+    await this.emit(
+      { type: 'session.created', userId: user.id, data: { via: options.via, rememberMe } },
+      options.meta,
+    );
     if (minted.evicted.length > 0) await this.notifyRevoked(user.id, minted.evicted, 'evicted');
 
     const cookie = createSessionCookie(this.cookie, minted.token, {
@@ -238,12 +297,20 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     await this.notifyRevoked(userId, ids, reason);
   }
 
-  async notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason): Promise<void> {
+  async notifyRevoked(
+    userId: string,
+    sessionIds: readonly string[],
+    reason: RevocationReason,
+  ): Promise<void> {
     for (const hook of this.hooks.onSessionsRevoked) {
       try {
         await hook({ userId, sessionIds, reason });
       } catch (error) {
-        this.logger.error('onSessionsRevoked hook failed', { userId, reason, error: describe(error) });
+        this.logger.error('onSessionsRevoked hook failed', {
+          userId,
+          reason,
+          error: describe(error),
+        });
       }
     }
   }

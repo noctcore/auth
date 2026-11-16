@@ -95,13 +95,18 @@ describe('pwnedPasswords', () => {
   it('sends only the five-character prefix with padding requested', async () => {
     const fetch = respond('0000000000000000000000000000000000A:0');
     await pwnedPasswords({ fetch })('password');
-    const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
     expect(url).toBe('https://api.pwnedpasswords.com/range/5BAA6');
     expect((init.headers as Record<string, string>)['Add-Padding']).toBe('true');
   });
 
   it('reports a listed suffix as breached', async () => {
-    expect(await pwnedPasswords({ fetch: respond(`${suffix}:3861493\r\n`) })('password')).toBe('breached');
+    expect(await pwnedPasswords({ fetch: respond(`${suffix}:3861493\r\n`) })('password')).toBe(
+      'breached',
+    );
   });
 
   it('treats count-0 padding rows as clean', async () => {
@@ -110,7 +115,9 @@ describe('pwnedPasswords', () => {
 
   it('fails open on errors, non-OK statuses and malformed bodies', async () => {
     expect(await pwnedPasswords({ fetch: respond('', 503) })('password')).toBe('unavailable');
-    expect(await pwnedPasswords({ fetch: respond('<html>captive portal</html>') })('password')).toBe('unavailable');
+    expect(
+      await pwnedPasswords({ fetch: respond('<html>captive portal</html>') })('password'),
+    ).toBe('unavailable');
     const throwing = vi.fn(async () => {
       throw new TypeError('network');
     }) as unknown as typeof fetch;

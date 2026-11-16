@@ -26,8 +26,15 @@ import { NO_SUCH_USER_ID, type StoredToken, type TokenStore } from './stores';
  * on a dead token's account (it is there for the audit row only).
  */
 export type TokenRedemption =
-  | { readonly status: 'valid'; readonly userId: string; readonly data: Readonly<Record<string, string>> }
-  | { readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch'; readonly namedUserId: string }
+  | {
+      readonly status: 'valid';
+      readonly userId: string;
+      readonly data: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch';
+      readonly namedUserId: string;
+    }
   | { readonly status: 'unknown' };
 
 const CODE_PATTERN = /^\d{6,9}$/u;
@@ -78,7 +85,8 @@ export class OneTimeTokens {
   private classify(found: StoredToken | null, consumed: StoredToken | null): TokenRedemption {
     if (!found) return { status: 'unknown' };
     if (!consumed) return { status: 'consumed', namedUserId: found.userId };
-    if (consumed.expiresAt <= this.clock.now()) return { status: 'expired', namedUserId: consumed.userId };
+    if (consumed.expiresAt <= this.clock.now())
+      return { status: 'expired', namedUserId: consumed.userId };
     return { status: 'valid', userId: consumed.userId, data: consumed.data };
   }
 
@@ -91,7 +99,14 @@ export class OneTimeTokens {
   ): Promise<{ code: string; expiresAt: number }> {
     const code = generateNumericCode(digits, this.random);
     const expiresAt = this.clock.now() + ttlMs;
-    await this.store.put({ purpose, userId, hash: this.codeHash(purpose, userId, code), expiresAt, attempts: 0, data });
+    await this.store.put({
+      purpose,
+      userId,
+      hash: this.codeHash(purpose, userId, code),
+      expiresAt,
+      attempts: 0,
+      data,
+    });
     return { code, expiresAt };
   }
 
@@ -99,14 +114,20 @@ export class OneTimeTokens {
    * Checks a code for a user. The attempt is counted atomically before the
    * comparison; the code is deleted when it expires, is exhausted, or wins.
    */
-  async redeemCode(purpose: string, userId: string | null, code: unknown, maxAttempts: number): Promise<TokenRedemption> {
+  async redeemCode(
+    purpose: string,
+    userId: string | null,
+    code: unknown,
+    maxAttempts: number,
+  ): Promise<TokenRedemption> {
     // An unknown user pays for the same HMAC and the same store lookup (under
     // an id no user can have), so neither the work nor the round trips depend
     // on whether the account exists.
     const candidate = typeof code === 'string' && CODE_PATTERN.test(code) ? code : '000000';
     const expected = this.codeHash(purpose, userId ?? NO_SUCH_USER_ID, candidate);
     const found = await this.store.findByUser(purpose, userId ?? NO_SUCH_USER_ID);
-    if (userId === null || typeof code !== 'string' || !CODE_PATTERN.test(code)) return { status: 'unknown' };
+    if (userId === null || typeof code !== 'string' || !CODE_PATTERN.test(code))
+      return { status: 'unknown' };
     if (!found) return { status: 'unknown' };
     if (found.expiresAt <= this.clock.now()) {
       await this.store.deleteByUser(userId, [purpose]);

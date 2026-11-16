@@ -48,7 +48,8 @@ export interface SessionOptions<A> {
   readonly attributes?: AttributeSchema<A>;
 }
 
-export type SessionRefusal = 'malformed' | 'unknown' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked';
+export type SessionRefusal =
+  'malformed' | 'unknown' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked';
 
 export interface MintInput<A> {
   readonly userId: string;
@@ -62,7 +63,12 @@ export interface MintInput<A> {
 }
 
 export type MintResult<A> =
-  | { readonly ok: true; readonly token: string; readonly session: StoredSession<A>; readonly evicted: readonly string[] }
+  | {
+      readonly ok: true;
+      readonly token: string;
+      readonly session: StoredSession<A>;
+      readonly evicted: readonly string[];
+    }
   | { readonly ok: false; readonly reason: 'epoch_fence' };
 
 export type ValidateResult<A> =
@@ -99,7 +105,8 @@ export class SessionManager<A> {
 
   private idleTimeoutMs(rememberMe: boolean, attributes: A): number {
     const configured = this.options.idleTimeout;
-    if (typeof configured === 'function') return toMilliseconds(configured({ rememberMe, attributes }));
+    if (typeof configured === 'function')
+      return toMilliseconds(configured({ rememberMe, attributes }));
     if (configured !== undefined) return toMilliseconds(configured);
     return toMilliseconds(rememberMe ? '7d' : '30m');
   }
@@ -136,7 +143,9 @@ export class SessionManager<A> {
     // refused login instead of a session that merely dies at its first use.
     if ((await this.store.getEpoch(input.userId)) !== epoch) {
       await this.store.delete(input.userId, [session.id]);
-      this.logger.warn('Session mint lost the epoch fence; a revocation landed mid-login', { userId: input.userId });
+      this.logger.warn('Session mint lost the epoch fence; a revocation landed mid-login', {
+        userId: input.userId,
+      });
       return { ok: false, reason: 'epoch_fence' };
     }
 
@@ -183,7 +192,9 @@ export class SessionManager<A> {
       return { ...stored, attributes: this.options.attributes.parse(stored.attributes) };
     } catch {
       // Attribute content stays unlogged: it can carry identity claims.
-      this.logger.warn('Session attributes failed validation; treating the session as invalid', { userId: stored.userId });
+      this.logger.warn('Session attributes failed validation; treating the session as invalid', {
+        userId: stored.userId,
+      });
       return null;
     }
   }
@@ -196,7 +207,10 @@ export class SessionManager<A> {
     const active: StoredSession<A>[] = [];
     const stale: string[] = [];
     for (const stored of sessions) {
-      const live = stored.expiresAt > now && now < stored.lastActiveAt + stored.idleTimeoutMs && stored.epoch === epoch;
+      const live =
+        stored.expiresAt > now &&
+        now < stored.lastActiveAt + stored.idleTimeoutMs &&
+        stored.epoch === epoch;
       const parsed = live ? this.parse(stored) : null;
       if (parsed) active.push(parsed);
       else stale.push(stored.id);
@@ -245,7 +259,9 @@ export class SessionManager<A> {
     const epoch = await this.store.bumpEpoch(userId);
     // A session stamped with the new epoch is a login that started after the
     // revocation; it is legitimate and stays.
-    const ids = (await this.store.listByUser(userId)).filter((s) => s.epoch < epoch).map((s) => s.id);
+    const ids = (await this.store.listByUser(userId))
+      .filter((s) => s.epoch < epoch)
+      .map((s) => s.id);
     if (ids.length > 0) await this.store.delete(userId, ids);
     return ids;
   }

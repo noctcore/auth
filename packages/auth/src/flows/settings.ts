@@ -8,7 +8,10 @@ export const PURPOSE = {
   passwordResetTicket: 'password-reset-ticket',
 } as const;
 
-export const RESET_PURPOSES: readonly string[] = [PURPOSE.passwordReset, PURPOSE.passwordResetTicket];
+export const RESET_PURPOSES: readonly string[] = [
+  PURPOSE.passwordReset,
+  PURPOSE.passwordResetTicket,
+];
 
 export interface FlowSettings {
   readonly revealExisting: boolean;

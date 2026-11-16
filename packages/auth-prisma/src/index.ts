@@ -11,7 +11,14 @@
  * `updateMany` with the guard in `where`, consume is a delete that returns the
  * row, and the attempt cap is an update whose `where` carries the cap.
  */
-import type { AuthUser, NormalizedEmail, StoredToken, TokenStore, UserStore, WithPasswordHash } from '@noctcore/auth';
+import type {
+  AuthUser,
+  NormalizedEmail,
+  StoredToken,
+  TokenStore,
+  UserStore,
+  WithPasswordHash,
+} from '@noctcore/auth';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Prisma delegates are generic per model; these are the structural shapes the stores call. */
 export interface PrismaUserDelegate {
@@ -55,7 +62,9 @@ const P2002 = 'P2002';
 const P2025 = 'P2025';
 
 function prismaCode(error: unknown): string | undefined {
-  return typeof error === 'object' && error !== null && 'code' in error ? String((error as { code: unknown }).code) : undefined;
+  return typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code: unknown }).code)
+    : undefined;
 }
 
 /** The `UserStore` on a Prisma model. */
@@ -73,7 +82,12 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
       passwordHash: fields.passwordHash ?? 'passwordHash',
       deletedAt: fields.deletedAt === undefined ? 'deletedAt' : fields.deletedAt,
     };
-    this.selectUser = { ...options.select, [this.f.id]: true, [this.f.email]: true, [this.f.emailVerified]: true };
+    this.selectUser = {
+      ...options.select,
+      [this.f.id]: true,
+      [this.f.email]: true,
+      [this.f.emailVerified]: true,
+    };
     this.selectWithHash = { ...this.selectUser, [this.f.passwordHash]: true };
   }
 
@@ -97,22 +111,39 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
   }
 
   async findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null> {
-    return this.withHash(await this.options.delegate.findFirst({ where: this.live({ [this.f.email]: email }), select: this.selectWithHash }));
+    return this.withHash(
+      await this.options.delegate.findFirst({
+        where: this.live({ [this.f.email]: email }),
+        select: this.selectWithHash,
+      }),
+    );
   }
 
   async findCredentialById(id: string): Promise<WithPasswordHash<U> | null> {
-    return this.withHash(await this.options.delegate.findFirst({ where: this.live({ [this.f.id]: id }), select: this.selectWithHash }));
+    return this.withHash(
+      await this.options.delegate.findFirst({
+        where: this.live({ [this.f.id]: id }),
+        select: this.selectWithHash,
+      }),
+    );
   }
 
   async findById(id: string): Promise<U | null> {
-    const row = await this.options.delegate.findFirst({ where: this.live({ [this.f.id]: id }), select: this.selectUser });
+    const row = await this.options.delegate.findFirst({
+      where: this.live({ [this.f.id]: id }),
+      select: this.selectUser,
+    });
     return row ? this.toUser(row) : null;
   }
 
   async create(input: { email: NormalizedEmail; passwordHash: string }): Promise<U | null> {
     try {
       const row = await this.options.delegate.create({
-        data: { ...this.options.createData?.(input), [this.f.email]: input.email, [this.f.passwordHash]: input.passwordHash },
+        data: {
+          ...this.options.createData?.(input),
+          [this.f.email]: input.email,
+          [this.f.passwordHash]: input.passwordHash,
+        },
         select: this.selectUser,
       });
       return this.toUser(row);
@@ -122,7 +153,11 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     }
   }
 
-  async setPasswordHash(id: string, passwordHash: string, options: { readonly expected?: string | null } = {}): Promise<boolean> {
+  async setPasswordHash(
+    id: string,
+    passwordHash: string,
+    options: { readonly expected?: string | null } = {},
+  ): Promise<boolean> {
     // With `expected`, the hash check is part of the same UPDATE: a compare-and-set.
     const guard = options.expected === undefined ? {} : { [this.f.passwordHash]: options.expected };
     const { count } = await this.options.delegate.updateMany({
@@ -152,8 +187,18 @@ interface TokenRow {
 
 function toToken(row: TokenRow | null): StoredToken | null {
   if (!row) return null;
-  const data = row.data && typeof row.data === 'object' && !Array.isArray(row.data) ? (row.data as Record<string, string>) : {};
-  return { purpose: row.purpose, userId: row.userId, hash: row.hash, expiresAt: row.expiresAt.getTime(), attempts: row.attempts, data };
+  const data =
+    row.data && typeof row.data === 'object' && !Array.isArray(row.data)
+      ? (row.data as Record<string, string>)
+      : {};
+  return {
+    purpose: row.purpose,
+    userId: row.userId,
+    hash: row.hash,
+    expiresAt: row.expiresAt.getTime(),
+    attempts: row.attempts,
+    data,
+  };
 }
 
 /** The `TokenStore` on the `AuthToken` model from `prisma/auth.prisma`. */
@@ -161,7 +206,12 @@ export class PrismaTokenStore implements TokenStore {
   constructor(private readonly delegate: PrismaAuthTokenDelegate) {}
 
   async put(token: StoredToken): Promise<void> {
-    const values = { hash: token.hash, expiresAt: new Date(token.expiresAt), attempts: token.attempts, data: { ...token.data } };
+    const values = {
+      hash: token.hash,
+      expiresAt: new Date(token.expiresAt),
+      attempts: token.attempts,
+      data: { ...token.data },
+    };
     const args = {
       where: { userId_purpose: { userId: token.userId, purpose: token.purpose } },
       create: { userId: token.userId, purpose: token.purpose, ...values },
@@ -181,7 +231,9 @@ export class PrismaTokenStore implements TokenStore {
   }
 
   async findByUser(purpose: string, userId: string): Promise<StoredToken | null> {
-    return toToken(await this.delegate.findUnique({ where: { userId_purpose: { userId, purpose } } }));
+    return toToken(
+      await this.delegate.findUnique({ where: { userId_purpose: { userId, purpose } } }),
+    );
   }
 
   async consume(purpose: string, hash: string): Promise<StoredToken | null> {
@@ -208,11 +260,18 @@ export class PrismaTokenStore implements TokenStore {
   }
 
   async deleteByUser(userId: string, purposes?: readonly string[]): Promise<void> {
-    await this.delegate.deleteMany({ where: purposes ? { userId, purpose: { in: [...purposes] } } : { userId } });
+    await this.delegate.deleteMany({
+      where: purposes ? { userId, purpose: { in: [...purposes] } } : { userId },
+    });
   }
 }
 
 /** Both Prisma stores. */
-export function prismaStores<U extends AuthUser = AuthUser>(options: PrismaUserStoreOptions<U> & { readonly tokenDelegate: PrismaAuthTokenDelegate }) {
-  return { users: new PrismaUserStore<U>(options), tokens: new PrismaTokenStore(options.tokenDelegate) };
+export function prismaStores<U extends AuthUser = AuthUser>(
+  options: PrismaUserStoreOptions<U> & { readonly tokenDelegate: PrismaAuthTokenDelegate },
+) {
+  return {
+    users: new PrismaUserStore<U>(options),
+    tokens: new PrismaTokenStore(options.tokenDelegate),
+  };
 }

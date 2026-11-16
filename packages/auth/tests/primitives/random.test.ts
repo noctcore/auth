@@ -17,12 +17,18 @@ describe('generateToken', () => {
 });
 
 describe('isTokenShape', () => {
-  it.each(['', '*', 'A'.repeat(64), 'a'.repeat(63), 'a'.repeat(65), `${'a'.repeat(63)}\n`, 42, null])(
-    'refuses %j',
-    (value) => {
-      expect(isTokenShape(value)).toBe(false);
-    },
-  );
+  it.each([
+    '',
+    '*',
+    'A'.repeat(64),
+    'a'.repeat(63),
+    'a'.repeat(65),
+    `${'a'.repeat(63)}\n`,
+    42,
+    null,
+  ])('refuses %j', (value) => {
+    expect(isTokenShape(value)).toBe(false);
+  });
 });
 
 describe('generateNumericCode', () => {

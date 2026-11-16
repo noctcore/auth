@@ -25,7 +25,9 @@ export function parseTrustProxy(raw: string | undefined): number | string | fals
   const value = raw.trim();
   if (value === '' || value === 'false') return false;
   if (value === 'true') {
-    throw new AuthConfigError('trust proxy "true" lets any client choose its own IP; set the number of proxy hops');
+    throw new AuthConfigError(
+      'trust proxy "true" lets any client choose its own IP; set the number of proxy hops',
+    );
   }
   return HOPS.test(value) ? Number(value) : value;
 }

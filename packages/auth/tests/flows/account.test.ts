@@ -7,9 +7,16 @@ const EMAIL = 'ada@example.com';
 async function twoDevices(overrides: Parameters<typeof setup>[0] = {}) {
   const t = setup(overrides);
   const laptop = await t.signedInUser(EMAIL);
-  const phoneLogin = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta('198.51.100.2') });
+  const phoneLogin = await t.auth.login({
+    email: EMAIL,
+    password: PASSWORD,
+    meta: meta('198.51.100.2'),
+  });
   if (!phoneLogin.ok || phoneLogin.value.kind !== 'session') throw new Error('phone login failed');
-  const phone = { token: phoneLogin.value.session.token, session: phoneLogin.value.session.session };
+  const phone = {
+    token: phoneLogin.value.session.token,
+    session: phoneLogin.value.session.session,
+  };
   return { ...t, laptop, phone };
 }
 
@@ -42,7 +49,10 @@ describe('validateRequest', () => {
     expect(await t.sessionOf(token)).not.toBeNull();
     allow = false;
     const refused = await t.auth.validateRequest({ token });
-    expect(!refused.ok && [refused.code, refused.reason]).toEqual(['session_expired', 'membership_ended']);
+    expect(!refused.ok && [refused.code, refused.reason]).toEqual([
+      'session_expired',
+      'membership_ended',
+    ]);
     allow = true;
     expect(await t.sessionOf(token)).toBeNull();
     expect(revoked).toEqual(['membership_ended']);
@@ -55,9 +65,16 @@ describe('fresh authentication', () => {
     const { session } = await t.signedInUser();
     expect(t.auth.requireFreshAuth(session).ok).toBe(true);
     t.clock.advance(10 * 60_000 + 1);
-    expect(t.auth.requireFreshAuth(session)).toMatchObject({ ok: false, code: 'fresh_auth_required' });
+    expect(t.auth.requireFreshAuth(session)).toMatchObject({
+      ok: false,
+      code: 'fresh_auth_required',
+    });
 
-    const wrong = await t.auth.reauthenticate({ session, password: 'wrong passphrase!', meta: meta() });
+    const wrong = await t.auth.reauthenticate({
+      session,
+      password: 'wrong passphrase!',
+      meta: meta(),
+    });
     expect(!wrong.ok && wrong.code).toBe('invalid_credentials');
     const renewed = await t.auth.reauthenticate({ session, password: PASSWORD, meta: meta() });
     if (!renewed.ok) throw new Error(renewed.reason);
@@ -79,29 +96,54 @@ describe('changePassword', () => {
     expect(await t.sessionOf(t.phone.token)).toBeNull();
     expect(await t.sessionOf(result.value.token)).not.toBeNull();
     expect(t.mailer.last('password-changed')?.to).toBe(EMAIL);
-    expect((await t.auth.login({ email: EMAIL, password: NEW_PASSWORD, meta: meta() })).ok).toBe(true);
+    expect((await t.auth.login({ email: EMAIL, password: NEW_PASSWORD, meta: meta() })).ok).toBe(
+      true,
+    );
   });
 
   it('refuses a wrong current password and counts it toward the lockout', async () => {
     const t = setup({ throttle: { lockout: { perAccount: { limit: 2, window: '15m' } } } });
     const { session } = await t.signedInUser();
     for (let i = 0; i < 3; i++) {
-      const result = await t.auth.changePassword({ session, currentPassword: 'wrong passphrase!', newPassword: NEW_PASSWORD, meta: meta() });
+      const result = await t.auth.changePassword({
+        session,
+        currentPassword: 'wrong passphrase!',
+        newPassword: NEW_PASSWORD,
+        meta: meta(),
+      });
       expect(!result.ok && result.code).toBe('invalid_credentials');
     }
     expect(t.mailer.last('lockout')?.to).toBe(EMAIL);
-    const login = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta('198.51.100.30') });
+    const login = await t.auth.login({
+      email: EMAIL,
+      password: PASSWORD,
+      meta: meta('198.51.100.30'),
+    });
     expect(!login.ok && login.reason).toBe('locked');
   });
 
   it('asks the second-factor seam and the policy before writing', async () => {
     const t = setup({
-      hooks: { beforePasswordChange: ({ secondFactor }) => (secondFactor ? undefined : refuse('totp_required', 'second_factor_required')) },
+      hooks: {
+        beforePasswordChange: ({ secondFactor }) =>
+          secondFactor ? undefined : refuse('totp_required', 'second_factor_required'),
+      },
     });
     const { session } = await t.signedInUser();
-    const missing = await t.auth.changePassword({ session, currentPassword: PASSWORD, newPassword: NEW_PASSWORD, meta: meta() });
+    const missing = await t.auth.changePassword({
+      session,
+      currentPassword: PASSWORD,
+      newPassword: NEW_PASSWORD,
+      meta: meta(),
+    });
     expect(!missing.ok && missing.code).toBe('second_factor_required');
-    const weak = await t.auth.changePassword({ session, currentPassword: PASSWORD, newPassword: 'short', secondFactor: '1', meta: meta() });
+    const weak = await t.auth.changePassword({
+      session,
+      currentPassword: PASSWORD,
+      newPassword: 'short',
+      secondFactor: '1',
+      meta: meta(),
+    });
     expect(!weak.ok && weak.code).toBe('weak_password');
     expect((await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() })).ok).toBe(true);
   });
@@ -110,7 +152,12 @@ describe('changePassword', () => {
     const t = setup();
     const { session } = await t.signedInUser();
     await t.stores.users.clearPassword(session.userId);
-    const result = await t.auth.changePassword({ session, currentPassword: PASSWORD, newPassword: NEW_PASSWORD, meta: meta() });
+    const result = await t.auth.changePassword({
+      session,
+      currentPassword: PASSWORD,
+      newPassword: NEW_PASSWORD,
+      meta: meta(),
+    });
     expect(!result.ok && result.code).toBe('password_not_set');
   });
 });
@@ -127,23 +174,43 @@ describe('session management', () => {
   it('needs fresh authentication to revoke another device, but not its own', async () => {
     const t = await twoDevices();
     t.clock.advance(11 * 60_000);
-    const stale = await t.auth.sessions.revoke({ session: t.laptop.session, id: t.phone.session.id, meta: meta() });
+    const stale = await t.auth.sessions.revoke({
+      session: t.laptop.session,
+      id: t.phone.session.id,
+      meta: meta(),
+    });
     expect(!stale.ok && stale.code).toBe('fresh_auth_required');
 
-    const renewed = await t.auth.reauthenticate({ session: t.laptop.session, password: PASSWORD, meta: meta() });
+    const renewed = await t.auth.reauthenticate({
+      session: t.laptop.session,
+      password: PASSWORD,
+      meta: meta(),
+    });
     if (!renewed.ok) throw new Error(renewed.reason);
-    const revoked = await t.auth.sessions.revoke({ session: renewed.value.session, id: t.phone.session.id, meta: meta() });
+    const revoked = await t.auth.sessions.revoke({
+      session: renewed.value.session,
+      id: t.phone.session.id,
+      meta: meta(),
+    });
     expect(revoked).toEqual({ ok: true, value: { revoked: true } });
     expect(await t.sessionOf(t.phone.token)).toBeNull();
 
-    const self = await t.auth.sessions.revoke({ session: renewed.value.session, id: renewed.value.session.id, meta: meta() });
+    const self = await t.auth.sessions.revoke({
+      session: renewed.value.session,
+      id: renewed.value.session.id,
+      meta: meta(),
+    });
     expect(self).toEqual({ ok: true, value: { revoked: true } });
   });
 
   it("cannot revoke another user's session", async () => {
     const t = await twoDevices();
     const eve = await t.signedInUser('eve@example.com', '192.0.2.99');
-    const result = await t.auth.sessions.revoke({ session: eve.session, id: t.phone.session.id, meta: meta() });
+    const result = await t.auth.sessions.revoke({
+      session: eve.session,
+      id: t.phone.session.id,
+      meta: meta(),
+    });
     expect(result).toEqual({ ok: true, value: { revoked: false } });
     expect(await t.sessionOf(t.phone.token)).not.toBeNull();
   });
@@ -187,7 +254,10 @@ describe('session management', () => {
     const evicted: string[][] = [];
     const t = setup({
       session: { maxPerUser: 2 },
-      hooks: { onSessionsRevoked: ({ sessionIds, reason }) => void (reason === 'evicted' && evicted.push([...sessionIds])) },
+      hooks: {
+        onSessionsRevoked: ({ sessionIds, reason }) =>
+          void (reason === 'evicted' && evicted.push([...sessionIds])),
+      },
     });
     const first = await t.signedInUser();
     t.clock.advance(1000);
