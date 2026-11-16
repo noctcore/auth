@@ -127,6 +127,14 @@ describe('createAuth configuration', () => {
     expect(() => createAuth({ ...base(), secret: 'short', urls: { resetPassword: (t) => t } })).toThrow(/at least 32 bytes/u);
   });
 
+  it('refuses sessions longer than the session store can guard', () => {
+    const stores = memoryStores();
+    const limited = Object.assign(stores.sessions, { maxSessionTtlMs: 7 * 24 * 3600_000 });
+    const config = { ...base(), stores: { ...stores, sessions: limited }, secret: SECRET, urls: { resetPassword: (t: string) => t } };
+    expect(() => createAuth(config)).toThrow(/maxSessionTtl/u);
+    expect(() => createAuth({ ...config, session: { rememberMeTtl: '7d' } })).not.toThrow();
+  });
+
   it('requires the URL builders for link flows', () => {
     expect(() => createAuth({ ...base(), secret: SECRET })).toThrow(/urls.resetPassword/u);
     expect(() => createAuth({ ...base(), emailVerification: { kind: 'link' }, passwordReset: { kind: 'code' }, secret: SECRET })).toThrow(

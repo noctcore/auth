@@ -120,9 +120,17 @@ export function createAuth<U extends AuthUser, A = Record<string, never>, const 
   const cookie = config.session?.cookie ?? {};
   sessionCookieName(cookie);
 
+  const sessions = new SessionManager<A>(config.stores.sessions, config.session ?? {}, clock, random, logger);
+  const storeLimit = config.stores.sessions.maxSessionTtlMs;
+  const longest = Math.max(sessions.absoluteTtlMs, sessions.rememberMeTtlMs);
+  if (storeLimit !== undefined && longest > storeLimit) {
+    throw new AuthConfigError(
+      `The session store guards sessions up to ${storeLimit} ms, but sessions may last ${longest} ms: raise the store's maxSessionTtl or lower session.rememberMeTtl`,
+    );
+  }
   const core = new AuthCore<U, A>({
     users: config.stores.users,
-    sessions: new SessionManager<A>(config.stores.sessions, config.session ?? {}, clock, random, logger),
+    sessions,
     tokens: new OneTimeTokens(config.stores.tokens, clock, random, codeKey),
     throttle: new Throttle(config.stores.counters, clock, config.throttle?.lockout),
     hasher: config.password.hasher,

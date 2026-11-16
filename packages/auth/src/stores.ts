@@ -61,6 +61,12 @@ export interface StoredSession<A = unknown> {
 }
 
 export interface SessionStore {
+  /**
+   * Longest session TTL this store can guard (for example a revocation epoch
+   * that must outlive every session). `createAuth` refuses a session config
+   * whose remember-me or absolute TTL is longer. Omit when there is no limit.
+   */
+  readonly maxSessionTtlMs?: number;
   /** Stores the session with a TTL of `ttlMs` and indexes it under its user. */
   create(session: StoredSession, ttlMs: number): Promise<void>;
   get(id: string): Promise<StoredSession | null>;
