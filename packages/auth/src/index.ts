@@ -81,15 +81,15 @@ export { NO_SUCH_USER_ID } from './ports/stores';
 export { createDeviceToken, verifyDeviceToken } from './throttle/device-token';
 export type { AuthMailEvent, Mailer } from './ports/mail';
 export type { AuditSink, AuthEvent, AuthEventType } from './ports/audit';
-export {
-  SessionManager,
-  type AttributeSchema,
-  type MintInput,
-  type MintResult,
-  type SessionOptions,
-  type SessionRefusal,
-  type ValidateResult,
-} from './session/session-manager';
+export { SessionManager } from './session/session-manager';
+export type {
+  AttributeSchema,
+  MintInput,
+  MintResult,
+  SessionOptions,
+  SessionRefusal,
+  ValidateResult,
+} from './session/session-types';
 export { OneTimeTokens, type TokenRedemption } from './tokens/one-time-tokens';
 export { Throttle } from './throttle/throttle';
 export { accountKey } from './throttle/counter-keys';

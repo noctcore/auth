@@ -15,7 +15,7 @@ import type { PasswordHasher } from '../password/hasher';
 import type { PasswordPolicy } from '../password/policy';
 import type { PluginContext } from './plugin-context';
 import type { RandomSource } from '../crypto/random';
-import type { SessionOptions } from '../session/session-manager';
+import type { SessionOptions } from '../session/session-types';
 import type { AuthUser, CounterStore, SessionStore, TokenStore, UserStore } from '../ports/stores';
 import type { LockoutOptions, RateLimitRule } from '../throttle/rules';
 
