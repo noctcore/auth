@@ -1,0 +1,33 @@
+// Test schema: a minimal user model plus the shipped AuthToken model.
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  passwordHash  String?
+  deletedAt     DateTime?
+  displayName   String    @default("")
+}
+
+model AuthToken {
+  id        String   @id @default(cuid())
+  purpose   String
+  userId    String
+  hash      String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@unique([userId, purpose])
+  @@unique([purpose, hash])
+  @@index([expiresAt])
+}

@@ -1,0 +1,26 @@
+// The one-time token table for @noctcore/auth-prisma. Copy this model into your
+// schema (or drop this file into a multi-file schema folder) and migrate.
+//
+// Rows hold only a SHA-256 (links) or an HMAC (codes), never the token itself.
+// A consumed token is deleted; an expired one is deleted when it is next seen,
+// and `expiresAt` is indexed for an optional sweep:
+//   prisma.authToken.deleteMany({ where: { expiresAt: { lt: new Date() } } })
+//
+// To cascade on user deletion, add a relation to your user model:
+//   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+model AuthToken {
+  id        String   @id @default(cuid())
+  purpose   String
+  userId    String
+  hash      String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  // One live token per user and purpose, enforced by the database.
+  @@unique([userId, purpose])
+  @@unique([purpose, hash])
+  @@index([expiresAt])
+}
