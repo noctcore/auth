@@ -8,7 +8,7 @@
  */
 import assert from 'node:assert/strict';
 
-import type { NormalizedEmail } from '../email';
+import type { NormalizedEmail } from '../shared/email';
 import type {
   CounterStore,
   SessionStore,
@@ -16,11 +16,11 @@ import type {
   StoredToken,
   TokenStore,
   UserStore,
-} from '../stores';
-import { systemClock } from '../clock';
-import { silentLogger } from '../logger';
-import { cryptoRandom } from '../random';
-import { SessionManager } from '../session';
+} from '../ports/stores';
+import { systemClock } from '../ports/clock';
+import { silentLogger } from '../ports/logger';
+import { cryptoRandom } from '../crypto/random';
+import { SessionManager } from '../session/session-manager';
 import { sleep, times, uniqueId, type ConformanceCase, type ConformanceContext } from './harness';
 
 function advance(context: ConformanceContext): (ms: number) => Promise<void> {

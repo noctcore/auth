@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { AuthConfigError } from '../../src/errors';
-import { clientIp, maskIp, parseTrustProxy } from '../../src/ip';
+import { AuthConfigError } from '../../src/shared/errors';
+import { clientIp, maskIp, parseTrustProxy } from '../../src/http/ip';
 
 describe('parseTrustProxy', () => {
   it('turns an all-digit value into a hop count', () => expect(parseTrustProxy(' 1 ')).toBe(1));

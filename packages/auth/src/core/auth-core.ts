@@ -2,26 +2,31 @@
  * The shared steps every flow runs through. See plugin-context.ts for what
  * each one promises.
  */
-import type { AuditSink, AuthEvent } from './audit';
-import type { CaptchaDoor, CaptchaVerifier } from './captcha';
-import type { Clock } from './clock';
-import { createSessionCookie, deviceCookie, type SessionCookieConfig } from './cookie';
-import { createDeviceToken, verifyDeviceToken } from './device';
+import type { AuditSink, AuthEvent } from '../ports/audit';
+import type { CaptchaDoor, CaptchaVerifier } from '../ports/captcha';
+import type { Clock } from '../ports/clock';
+import { createSessionCookie, deviceCookie, type SessionCookieConfig } from '../http/cookie';
+import { createDeviceToken, verifyDeviceToken } from '../throttle/device-token';
 import { DEFAULT_DOOR_LIMITS, type Door } from './config';
-import { fail, ok, type AuthFailure, type AuthResult } from './errors';
+import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import { firstRefusal, type HookLists, type RevocationReason } from './hooks';
-import type { Logger, Metrics } from './logger';
-import type { AuthMailEvent, Mailer } from './mail';
-import type { RequestMeta } from './meta';
-import type { BreachChecker } from './password/breach';
-import { dummyHashFor, type PasswordHasher } from './password/hasher';
-import { checkPasswordPolicy, normalizePassword, type PasswordPolicy } from './password/policy';
+import type { Logger, Metrics } from '../ports/logger';
+import type { AuthMailEvent, Mailer } from '../ports/mail';
+import type { RequestMeta } from '../shared/meta';
+import type { BreachChecker } from '../password/breach';
+import { dummyHashFor, type PasswordHasher } from '../password/hasher';
+import { checkPasswordPolicy, normalizePassword, type PasswordPolicy } from '../password/policy';
 import type { IssuedSession, IssueOptions, PluginContext, SessionAccess } from './plugin-context';
-import { generateToken, type RandomSource } from './random';
-import type { AttributeSchema, MintInput, MintResult, SessionManager } from './session';
-import type { AuthUser, UserStore } from './stores';
-import type { RateLimitRule, Throttle } from './throttle';
-import type { OneTimeTokens } from './tokens';
+import { generateToken, type RandomSource } from '../crypto/random';
+import type {
+  AttributeSchema,
+  MintInput,
+  MintResult,
+  SessionManager,
+} from '../session/session-manager';
+import type { AuthUser, UserStore } from '../ports/stores';
+import type { RateLimitRule, Throttle } from '../throttle/throttle';
+import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
 export interface CoreDependencies<U extends AuthUser, A> {
   readonly users: UserStore<U>;

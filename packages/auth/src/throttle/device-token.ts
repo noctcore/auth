@@ -13,8 +13,8 @@
  * lets a correct password through an account lock (see throttle.ts).
  */
 import { encodeHexLowerCase } from '@oslojs/encoding';
-import { hexDigestsEqual, hmacSha256Hex } from './hash';
-import { cryptoRandom, randomBytes, type RandomSource } from './random';
+import { hexDigestsEqual, hmacSha256Hex } from '../crypto/hash';
+import { cryptoRandom, randomBytes, type RandomSource } from '../crypto/random';
 
 // Canonical decimals only (no leading zeros), so one token has one spelling.
 const TOKEN = /^([0-9a-f]{32})\.(0|[1-9]\d{0,15})\.(0|[1-9]\d{0,15})\.([0-9a-f]{64})$/u;

@@ -4,8 +4,8 @@
  * prototypes only: nothing survives a restart and nothing is shared between
  * processes.
  */
-import { systemClock, type Clock } from '../clock';
-import type { NormalizedEmail } from '../email';
+import { systemClock, type Clock } from '../ports/clock';
+import type { NormalizedEmail } from '../shared/email';
 import type {
   AuthUser,
   CounterStore,
@@ -16,7 +16,7 @@ import type {
   TokenStore,
   UserStore,
   WithPasswordHash,
-} from '../stores';
+} from '../ports/stores';
 
 interface UserRecord {
   id: string;

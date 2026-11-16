@@ -10,7 +10,7 @@
  *
  * Guide: Learn, "Trust proxy and client IPs".
  */
-import { AuthConfigError } from './errors';
+import { AuthConfigError } from '../shared/errors';
 
 const HOPS = /^\d+$/u;
 

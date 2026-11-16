@@ -6,8 +6,8 @@ import {
   parseCookieHeader,
   serializeCookie,
   sessionCookieName,
-} from '../../src/cookie';
-import { AuthConfigError } from '../../src/errors';
+} from '../../src/http/cookie';
+import { AuthConfigError } from '../../src/shared/errors';
 
 describe('session cookie', () => {
   it('uses the __Host- prefix whenever it is Secure', () => {

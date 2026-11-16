@@ -13,7 +13,7 @@
  *
  * Guide: Learn, "Cookies and desktop shells".
  */
-import { AuthConfigError } from './errors';
+import { AuthConfigError } from '../shared/errors';
 
 export type SameSite = 'lax' | 'strict' | 'none';
 

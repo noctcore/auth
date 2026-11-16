@@ -7,15 +7,15 @@
  * credential proof, so a stolen session cannot keep signing the owner out.
  * Signing out of the current device, or everywhere including it, needs none.
  */
-import type { Clock } from '../clock';
-import { createBlankSessionCookie, type CookieSpec } from '../cookie';
-import type { AuthCore } from '../core';
-import { fail, ok, type AuthResult } from '../errors';
-import { firstRefusal } from '../hooks';
-import type { RequestMeta } from '../meta';
-import type { IssuedSession } from '../plugin-context';
-import { accountKey } from '../throttle';
-import type { AuthUser, StoredSession } from '../stores';
+import type { Clock } from '../ports/clock';
+import { createBlankSessionCookie, type CookieSpec } from '../http/cookie';
+import type { AuthCore } from '../core/auth-core';
+import { fail, ok, type AuthResult } from '../shared/errors';
+import { firstRefusal } from '../core/hooks';
+import type { RequestMeta } from '../shared/meta';
+import type { IssuedSession } from '../core/plugin-context';
+import { accountKey } from '../throttle/throttle';
+import type { AuthUser, StoredSession } from '../ports/stores';
 import { RESET_PURPOSES, publicUser, type FlowSettings } from './settings';
 
 export async function validateRequest<U extends AuthUser, A>(

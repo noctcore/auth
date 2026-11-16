@@ -148,7 +148,7 @@ export default tseslint.config(
     // The background-task failure log names the task in its message so the
     // alerts apps already match on keep working; moving the label into the
     // fields is a log-format change for a release note, not for a refactor.
-    files: ['packages/auth/src/core.ts'],
+    files: ['packages/auth/src/core/auth-core.ts'],
     rules: { 'noctcore-observability/structured-log-arguments': 'off' },
   },
   {

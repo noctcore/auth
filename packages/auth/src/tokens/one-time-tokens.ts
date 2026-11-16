@@ -15,10 +15,15 @@
  *
  * Guide: Learn, "Email verification" and "Password reset".
  */
-import type { Clock } from './clock';
-import { hexDigestsEqual, hmacSha256Hex, sha256Hex } from './hash';
-import { generateNumericCode, generateToken, isTokenShape, type RandomSource } from './random';
-import { NO_SUCH_USER_ID, type StoredToken, type TokenStore } from './stores';
+import type { Clock } from '../ports/clock';
+import { hexDigestsEqual, hmacSha256Hex, sha256Hex } from '../crypto/hash';
+import {
+  generateNumericCode,
+  generateToken,
+  isTokenShape,
+  type RandomSource,
+} from '../crypto/random';
+import { NO_SUCH_USER_ID, type StoredToken, type TokenStore } from '../ports/stores';
 
 /**
  * What a redemption found. Only `valid` carries `userId`; refusals that still

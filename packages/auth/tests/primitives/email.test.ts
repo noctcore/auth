@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeEmail } from '../../src/email';
+import { normalizeEmail } from '../../src/shared/email';
 
 describe('normalizeEmail', () => {
   it('trims and lowercases so one address has one spelling', () => {

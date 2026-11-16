@@ -1,6 +1,6 @@
 /** The resolved, validated settings the flows read. Built once by `createAuth`. */
-import type { PasswordResetJob } from '../config';
-import type { AuthUser, WithPasswordHash } from '../stores';
+import type { PasswordResetJob } from '../core/config';
+import type { AuthUser, WithPasswordHash } from '../ports/stores';
 
 export const PURPOSE = {
   emailVerification: 'email-verification',

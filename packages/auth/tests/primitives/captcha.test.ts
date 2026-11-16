@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { turnstile } from '../../src/captcha';
+import { turnstile } from '../../src/ports/captcha';
 
 const reply = (body: unknown, status = 200) =>
   vi.fn(async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;

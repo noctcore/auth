@@ -7,10 +7,10 @@
  * Argon2id lives in `@noctcore/auth/argon2` so its native dependency stays
  * optional.
  */
-export { systemClock, type Clock } from './clock';
-export { toMilliseconds, toSeconds, type Duration } from './duration';
-export { noopMetrics, silentLogger, type Logger, type Metrics } from './logger';
-export type { RequestMeta } from './meta';
+export { systemClock, type Clock } from './ports/clock';
+export { toMilliseconds, toSeconds, type Duration } from './shared/duration';
+export { noopMetrics, silentLogger, type Logger, type Metrics } from './ports/logger';
+export type { RequestMeta } from './shared/meta';
 export {
   cryptoRandom,
   generateNumericCode,
@@ -19,9 +19,9 @@ export {
   randomBytes,
   TOKEN_BYTES,
   type RandomSource,
-} from './random';
-export { hexDigestsEqual, hmacSha256Hex, secretsEqual, sha256Hex } from './hash';
-export { normalizeEmail, type NormalizedEmail } from './email';
+} from './crypto/random';
+export { hexDigestsEqual, hmacSha256Hex, secretsEqual, sha256Hex } from './crypto/hash';
+export { normalizeEmail, type NormalizedEmail } from './shared/email';
 export {
   AuthConfigError,
   fail,
@@ -31,7 +31,7 @@ export {
   type AuthFailure,
   type AuthResult,
   type AuthSuccess,
-} from './errors';
+} from './shared/errors';
 export {
   checkPasswordPolicy,
   DEFAULT_PASSWORD_POLICY,
@@ -56,16 +56,21 @@ export {
   type CookieSpec,
   type SameSite,
   type SessionCookieConfig,
-} from './cookie';
-export { createCsrfToken, verifyCsrfToken, verifyFetchSite, verifyRequestOrigin } from './csrf';
+} from './http/cookie';
+export {
+  createCsrfToken,
+  verifyCsrfToken,
+  verifyFetchSite,
+  verifyRequestOrigin,
+} from './http/csrf';
 export {
   turnstile,
   type CaptchaDoor,
   type CaptchaVerdict,
   type CaptchaVerifier,
   type TurnstileOptions,
-} from './captcha';
-export { clientIp, maskIp, parseTrustProxy } from './ip';
+} from './ports/captcha';
+export { clientIp, maskIp, parseTrustProxy } from './http/ip';
 export type {
   AuthUser,
   CounterStore,
@@ -76,11 +81,11 @@ export type {
   TokenStore,
   UserStore,
   WithPasswordHash,
-} from './stores';
-export { NO_SUCH_USER_ID } from './stores';
-export { createDeviceToken, verifyDeviceToken } from './device';
-export type { AuthMailEvent, Mailer } from './mail';
-export type { AuditSink, AuthEvent, AuthEventType } from './audit';
+} from './ports/stores';
+export { NO_SUCH_USER_ID } from './ports/stores';
+export { createDeviceToken, verifyDeviceToken } from './throttle/device-token';
+export type { AuthMailEvent, Mailer } from './ports/mail';
+export type { AuditSink, AuthEvent, AuthEventType } from './ports/audit';
 export {
   SessionManager,
   type AttributeSchema,
@@ -89,8 +94,8 @@ export {
   type SessionOptions,
   type SessionRefusal,
   type ValidateResult,
-} from './session';
-export { OneTimeTokens, type TokenRedemption } from './tokens';
+} from './session/session-manager';
+export { OneTimeTokens, type TokenRedemption } from './tokens/one-time-tokens';
 export {
   accountKey,
   Throttle,
@@ -98,9 +103,9 @@ export {
   type LockoutOptions,
   type LoginGate,
   type RateLimitRule,
-} from './throttle';
-export type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './config';
-export { DEFAULT_DOOR_LIMITS } from './config';
+} from './throttle/throttle';
+export type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './core/config';
+export { DEFAULT_DOOR_LIMITS } from './core/config';
 export { createAuth, definePlugin, type Auth, type PluginFlows } from './create-auth';
 export {
   refuse,
@@ -110,8 +115,8 @@ export {
   type IssueVia,
   type Refusal,
   type RevocationReason,
-} from './hooks';
-export type { IssuedSession, IssueOptions, PluginContext } from './plugin-context';
+} from './core/hooks';
+export type { IssuedSession, IssueOptions, PluginContext } from './core/plugin-context';
 export type { LoginInput, LoginOutcome } from './flows/login';
 export type { RegisterInput, RegisterOutcome } from './flows/register';
 export type { VerifiedEmail } from './flows/email-verification';

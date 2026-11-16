@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { generateNumericCode, generateToken, isTokenShape, TOKEN_BYTES } from '../../src/random';
+import {
+  generateNumericCode,
+  generateToken,
+  isTokenShape,
+  TOKEN_BYTES,
+} from '../../src/crypto/random';
 
 describe('generateToken', () => {
   it('mints 32 bytes as 64 lowercase hex characters', () => {

@@ -9,7 +9,7 @@ import {
   type AuthResult,
   type IssuedSession,
 } from '../../src';
-import type { AuthUser } from '../../src/stores';
+import type { AuthUser } from '../../src/ports/stores';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '../../src/testing';
 import { meta, PASSWORD, SECRET, setup } from './setup';
 
