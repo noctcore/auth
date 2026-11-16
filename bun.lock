@@ -15,6 +15,27 @@
         "typescript-eslint": "^8.72.1",
       },
     },
+    "examples/basic": {
+      "name": "@noctcore/example-basic",
+      "version": "0.0.0",
+      "dependencies": {
+        "@noctcore/auth": "0.0.0",
+        "@noctcore/auth-prisma": "0.0.0",
+        "@noctcore/auth-redis": "0.0.0",
+        "@node-rs/argon2": "2.2.2",
+        "@prisma/adapter-pg": "7.10.1",
+        "@prisma/client": "7.10.1",
+        "ioredis": "6.0.0",
+        "pg": "8.23.0",
+      },
+      "devDependencies": {
+        "@types/node": "22.20.5",
+        "@types/pg": "8.23.1",
+        "prisma": "7.10.1",
+        "typescript": "5.9.3",
+        "vitest": "5.1.0",
+      },
+    },
     "packages/auth": {
       "name": "@noctcore/auth",
       "version": "0.0.0",
@@ -243,6 +264,8 @@
     "@noctcore/auth-prisma": ["@noctcore/auth-prisma@workspace:packages/auth-prisma"],
 
     "@noctcore/auth-redis": ["@noctcore/auth-redis@workspace:packages/auth-redis"],
+
+    "@noctcore/example-basic": ["@noctcore/example-basic@workspace:examples/basic"],
 
     "@node-rs/argon2": ["@node-rs/argon2@2.2.2", "", { "optionalDependencies": { "@node-rs/argon2-android-arm-eabi": "2.2.2", "@node-rs/argon2-android-arm64": "2.2.2", "@node-rs/argon2-darwin-arm64": "2.2.2", "@node-rs/argon2-darwin-x64": "2.2.2", "@node-rs/argon2-freebsd-x64": "2.2.2", "@node-rs/argon2-linux-arm-gnueabihf": "2.2.2", "@node-rs/argon2-linux-arm64-gnu": "2.2.2", "@node-rs/argon2-linux-arm64-musl": "2.2.2", "@node-rs/argon2-linux-x64-gnu": "2.2.2", "@node-rs/argon2-linux-x64-musl": "2.2.2", "@node-rs/argon2-win32-arm64-msvc": "2.2.2", "@node-rs/argon2-win32-ia32-msvc": "2.2.2", "@node-rs/argon2-win32-x64-msvc": "2.2.2" } }, "sha512-NtdlPPWtR5U4BxX5EGJYza+UklNaoWORmkaKCMqf/nyKeXWKVwNt8KfQoRpNT7OB1DcEwmePafO4wZyW+sbfCQ=="],
 

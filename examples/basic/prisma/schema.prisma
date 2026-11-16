@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// The example lives in its own Postgres schema ("example", see
+// prisma.config.ts and src/db.ts), so it can share a database with the
+// adapter's integration tests.
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  passwordHash  String?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+}
+
+// Copied from @noctcore/auth-prisma/prisma/auth.prisma.
+model AuthToken {
+  id        String   @id @default(cuid())
+  purpose   String
+  userId    String
+  hash      String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@unique([userId, purpose])
+  @@unique([purpose, hash])
+  @@index([expiresAt])
+}
