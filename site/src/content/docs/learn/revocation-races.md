@@ -28,6 +28,10 @@ Each user has a counter, the epoch.
 
 The counter is the source of truth; deleting sessions only reclaims space.
 
+## Further reading
+
+[Auth sessions](https://auth.pilcrowonpaper.com/auth-sessions) in Pilcrow's auth guide, on tying a session to one authentication event.
+
 ## Related
 
 [Sessions and expiry](/auth/learn/sessions-and-expiry/) covers the token and its expiry.

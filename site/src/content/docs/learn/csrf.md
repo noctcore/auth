@@ -1,0 +1,29 @@
+---
+title: CSRF
+description: Why a cookie session needs a defence against other sites, and the three layers the package offers.
+---
+
+## What goes wrong
+
+Browsers attach cookies to every request for a site, including requests another site triggers: a hidden form that posts to your `/logout` or `/change-email`, or a link to a URL that changes state. The browser's same-origin policy stops the other site from reading the response, but some requests (a `GET`, a form `POST`) are sent anyway, and the harm is in the request, not the response.
+
+## The rule
+
+**Never change state on `GET`.** A redirect or an image tag can trigger a `GET` from anywhere. Every flow that changes something is meant for `POST` or another unsafe method.
+
+**`SameSite=Lax` on the session cookie.** The browser leaves the cookie off cross-site subrequests and cross-site form posts, while still sending it when a user follows a link to your site. This is the default and stops most attacks on its own, but not all: sibling subdomains count as the same site, and very old browsers ignore the attribute.
+
+**Check where the request came from.** For an app served from one origin, `verifyFetchSite` refuses any unsafe request whose `Sec-Fetch-Site` header is missing or not `same-origin`. Browsers set that header themselves and page scripts cannot change it. Apps that also serve a desktop shell (an `app://` origin) or trusted sibling subdomains use `verifyRequestOrigin` with an explicit allowlist instead, refusing requests without an `Origin`.
+
+**A signed double-submit token.** `createCsrfToken` mints a random nonce with an HMAC over it and a binding (the session id), which the page reads from a cookie and echoes in a header. `verifyCsrfToken` checks that cookie and header match and that the HMAC is valid for the current session. The HMAC stops a sibling origin that can write cookies from planting a pair of its own; the binding stops a token minted for one session from working in another. Secrets can be rotated with a list of accepted previous secrets.
+
+The example app combines all three; see `examples/basic` in the repository.
+
+## Where the package and the guide differ
+
+The guide's first recommendation is the `Sec-Fetch-Site` check, then `Origin`, then tokens for legacy browsers. The package offers all three, and its example app applies the stricter combination: the Origin allowlist always, `Sec-Fetch-Site` whenever the browser sends it, and the token on top, because apps that serve a desktop shell send requests that are cross-site by definition and need the allowlist anyway.
+
+## Further reading
+
+- [Cross-site request forgery](https://auth.pilcrowonpaper.com/csrf) in Pilcrow's auth guide.
+- [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).

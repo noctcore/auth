@@ -17,11 +17,12 @@ A registration answers the same way whether or not the email is taken. When the 
 - Attempt budgets are keyed on account plus IP, and on the account as a whole.
 - Backoff is exponential, capped at 1 hour.
 - The owner is mailed when the account locks.
+- A password reset lifts the lock.
 - A locked account is answered exactly like a wrong password.
 
 ## CSRF
 
-An Origin check plus a signed double-submit token.
+An Origin allowlist, a `Sec-Fetch-Site` check and a signed double-submit token bound to the session. See [CSRF](/auth/learn/csrf/).
 
 ## Breached passwords
 
@@ -29,7 +30,7 @@ The check uses the Have I Been Pwned k-anonymity range API. It fails open, so an
 
 ## Password hashing
 
-Argon2id at the OWASP floor: 19 MiB of memory, t=2, p=1. Hashes are rehashed on login when parameters change.
+Argon2id with 19 MiB of memory, t=3, p=1: OWASP's memory floor with the auth guide's pass count. Parameters below OWASP's table are refused. Hashes are rehashed on login when parameters change. See [Passwords](/auth/learn/passwords/).
 
 ## Sessions and scope
 
@@ -39,3 +40,7 @@ Argon2id at the OWASP floor: 19 MiB of memory, t=2, p=1. Hashes are rehashed on 
 ## How to report
 
 Report vulnerabilities privately, following [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md).
+
+## Where these come from
+
+The defaults come from an implementation that already runs in production, checked against [Pilcrow's auth guide](https://auth.pilcrowonpaper.com/); where they disagreed, the stricter one was kept. [Design choices](/auth/learn/design-choices/) lists each case.

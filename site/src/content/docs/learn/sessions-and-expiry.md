@@ -20,6 +20,17 @@ A session is a bearer credential: whoever holds the value is the user. Two thing
 
 **Refreshing last-active without resurrecting.** Validating a session would otherwise write on every request. Instead, the stored last-active time is refreshed at most once per interval. The write is update-only-if-exists and keeps the record's remaining TTL. That detail matters: a plain "set" could recreate a record that was revoked a moment earlier, between the read and the write. Update-only-if-exists means a revoked session can never be resurrected by a late refresh, and keeping the TTL means a refresh never extends the absolute expiry.
 
+## Where the package and the guide differ
+
+- **Token shape.** The guide recommends a session id plus a separate secret, so the session can be referenced without exposing a credential. The package keeps a single random token and uses its SHA-256 as the store key, which keeps sessions issued by the existing apps valid on adoption. The id an app lists or revokes is that hash, which is not a credential.
+- **Refresh interval.** The guide suggests refreshing the expiry hourly or daily. The package refreshes last-active at most once a minute, because the default idle timeout is 30 minutes; the refresh never moves the absolute expiry.
+- **Sign-out on password change.** The guide leaves it to the user. The package always revokes every session and re-issues the current one.
+- **Revoking one session.** As the guide asks, revoking another device's session needs a fresh credential proof, so a stolen session cannot keep signing the owner out.
+
+## Further reading
+
+[Sessions](https://auth.pilcrowonpaper.com/sessions) and [Auth sessions](https://auth.pilcrowonpaper.com/auth-sessions) in Pilcrow's auth guide.
+
 ## Related
 
 [Revocation races and the epoch fence](/auth/learn/revocation-races/) covers how revoking every session of a user stays correct while a login is in flight.

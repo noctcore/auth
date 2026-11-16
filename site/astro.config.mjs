@@ -16,7 +16,21 @@ export default defineConfig({
       editLink: { baseUrl: 'https://github.com/noctcore/auth/edit/main/site/' },
       sidebar: [
         { label: 'Overview', link: '/' },
-        { label: 'Learn', items: [{ label: 'Topics', link: '/learn/' }, { label: 'Sessions and expiry', link: '/learn/sessions-and-expiry/' }, { label: 'Revocation races and the epoch fence', link: '/learn/revocation-races/' }] },
+        {
+          label: 'Learn',
+          items: [
+            { label: 'Topics', link: '/learn/' },
+            { label: 'Design choices', link: '/learn/design-choices/' },
+            { label: 'Sessions and expiry', link: '/learn/sessions-and-expiry/' },
+            { label: 'Revocation races and the epoch fence', link: '/learn/revocation-races/' },
+            { label: 'Passwords', link: '/learn/passwords/' },
+            { label: 'Enumeration', link: '/learn/enumeration/' },
+            { label: 'Brute force and lockout', link: '/learn/brute-force-and-lockout/' },
+            { label: 'Email verification', link: '/learn/email-verification/' },
+            { label: 'Password reset', link: '/learn/password-reset/' },
+            { label: 'CSRF', link: '/learn/csrf/' },
+          ],
+        },
         { label: 'Build', items: [{ label: 'Guides', link: '/build/' }] },
         { label: 'Reference', items: [{ label: 'Reference', link: '/reference/' }] },
         { label: 'Security', items: [{ label: 'Security defaults', link: '/security/' }] },
