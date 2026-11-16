@@ -7,18 +7,29 @@ export type NormalizedEmail = string & { readonly __normalizedEmail: true };
 
 const MAX_LENGTH = 254;
 const MAX_LOCAL_LENGTH = 64;
-// No whitespace or control characters anywhere; exactly one @.
-const FORBIDDEN = /[\s\p{Cc}]/u;
+// Printable ASCII only, no spaces: refuses control characters and every
+// non-ASCII character in the local part and the domain.
+const ALLOWED = /^[\x21-\x7e]+$/u;
+
+/** Lowercases A to Z only. `String.prototype.toLowerCase` also folds non-ASCII letters. */
+function asciiLower(value: string): string {
+  return value.replace(/[A-Z]/gu, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
+}
 
 /**
- * Trims, applies Unicode NFC and lowercases. Returns null when the value is not
- * plausibly an address. Deliberately permissive beyond that: the verification
- * mail is the real check.
+ * Trims and lowercases ASCII letters. Returns null when the value is not
+ * plausibly an address, and for any non-ASCII character: Unicode case folding
+ * maps distinct characters onto ASCII ones (KELVIN SIGN to `k`, a dotted
+ * capital I to `i` plus a combining dot), which would let two different
+ * addresses normalise to one account. Internationalised domains must arrive in
+ * their ASCII (punycode) form. Deliberately permissive beyond that: the
+ * verification mail is the real check.
  */
 export function normalizeEmail(input: unknown): NormalizedEmail | null {
   if (typeof input !== 'string') return null;
-  const value = input.trim().normalize('NFC').toLowerCase();
-  if (value.length === 0 || value.length > MAX_LENGTH || FORBIDDEN.test(value)) return null;
+  const trimmed = input.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_LENGTH || !ALLOWED.test(trimmed)) return null;
+  const value = asciiLower(trimmed);
   const at = value.indexOf('@');
   if (at <= 0 || at !== value.lastIndexOf('@')) return null;
   const local = value.slice(0, at);
