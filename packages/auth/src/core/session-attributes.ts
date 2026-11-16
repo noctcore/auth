@@ -9,7 +9,7 @@ import type { Logger } from '../ports/logger';
 import type { AuthUser } from '../ports/stores';
 import { describeError } from '../shared/describe-error';
 import { fail, ok, type AuthResult } from '../shared/errors';
-import type { AttributeSchema } from '../session/session-manager';
+import type { AttributeSchema } from '../session/session-types';
 
 export interface AttributeSources<U extends AuthUser, A> {
   readonly hooks: HookLists<U, A>;

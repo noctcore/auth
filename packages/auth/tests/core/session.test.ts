@@ -4,7 +4,8 @@ import { AuthConfigError } from '../../src/shared/errors';
 import { sha256Hex } from '../../src/crypto/hash';
 import { silentLogger } from '../../src/ports/logger';
 import { cryptoRandom } from '../../src/crypto/random';
-import { SessionManager, type SessionOptions } from '../../src/session/session-manager';
+import { SessionManager } from '../../src/session/session-manager';
+import type { SessionOptions } from '../../src/session/session-types';
 import { manualClock, MemorySessionStore, type ManualClock } from '../../src/testing';
 
 const meta = { ip: '203.0.113.5', userAgent: 'test' };
