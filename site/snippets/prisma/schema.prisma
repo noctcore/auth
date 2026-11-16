@@ -1,0 +1,47 @@
+// The schema behind the docs' code samples. `bun run typecheck` generates a
+// client from it for each sample folder that talks to the database, so the
+// samples compile against real Prisma delegate types. Nothing connects to a
+// database. scripts/snippets.test.ts checks that AuthToken still matches
+// packages/auth-prisma/prisma/auth.prisma.
+
+generator start {
+  provider = "prisma-client"
+  output   = "../start/generated/prisma"
+}
+
+generator nodeServer {
+  provider = "prisma-client"
+  output   = "../build/node-server/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Your own user model: an id, a unique email, a boolean emailVerified and a
+// nullable password hash are what the store needs. deletedAt is optional.
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  passwordHash  String?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+// Copied from @noctcore/auth-prisma/prisma/auth.prisma.
+model AuthToken {
+  id        String   @id @default(cuid())
+  purpose   String
+  userId    String
+  hash      String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  // One live token per user and purpose, enforced by the database.
+  @@unique([userId, purpose])
+  @@unique([purpose, hash])
+  @@index([expiresAt])
+}
