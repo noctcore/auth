@@ -2,54 +2,35 @@
  * The shared steps every flow runs through. See plugin-context.ts for what
  * each one promises.
  */
-import type { AuditSink, AuthEvent } from '../ports/audit';
-import type { CaptchaDoor, CaptchaVerifier } from '../ports/captcha';
-import type { Clock } from '../ports/clock';
-import { createSessionCookie, deviceCookie, type SessionCookieConfig } from '../http/cookie';
-import { createDeviceToken, verifyDeviceToken } from '../throttle/device-token';
 import { DEFAULT_DOOR_LIMITS, type Door } from './config';
-import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
+import type { CoreDependencies } from './dependencies';
 import { firstRefusal, type HookLists, type RevocationReason } from './hooks';
-import type { Logger, Metrics } from '../ports/logger';
-import type { AuthMailEvent, Mailer } from '../ports/mail';
-import type { RequestMeta } from '../shared/meta';
-import type { BreachChecker } from '../password/breach';
-import { dummyHashFor, type PasswordHasher } from '../password/hasher';
-import { checkPasswordPolicy, normalizePassword, type PasswordPolicy } from '../password/policy';
 import type { IssuedSession, IssueOptions, PluginContext, SessionAccess } from './plugin-context';
+import { narrowSessions } from './session-access';
+import { resolveSessionAttributes } from './session-attributes';
 import { generateToken, type RandomSource } from '../crypto/random';
-import type {
-  AttributeSchema,
-  MintInput,
-  MintResult,
-  SessionManager,
-} from '../session/session-manager';
+import {
+  createSessionCookie,
+  deviceCookie,
+  type CookieSpec,
+  type SessionCookieConfig,
+} from '../http/cookie';
+import type { PasswordHasher } from '../password/hasher';
+import { checkPasswordPolicy, normalizePassword, type PasswordPolicy } from '../password/policy';
+import { verifyPasswordHash } from '../password/verify';
+import type { AuthEvent } from '../ports/audit';
+import type { CaptchaDoor } from '../ports/captcha';
+import type { Clock } from '../ports/clock';
+import type { Logger, Metrics } from '../ports/logger';
+import type { AuthMailEvent } from '../ports/mail';
 import type { AuthUser, UserStore } from '../ports/stores';
-import type { RateLimitRule, Throttle } from '../throttle/throttle';
+import type { MintInput, MintResult, SessionManager } from '../session/session-manager';
+import { describeError } from '../shared/describe-error';
+import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
+import type { RequestMeta } from '../shared/meta';
+import { createDeviceToken, verifyDeviceToken } from '../throttle/device-token';
+import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
-
-export interface CoreDependencies<U extends AuthUser, A> {
-  readonly users: UserStore<U>;
-  readonly sessions: SessionManager<A>;
-  readonly tokens: OneTimeTokens;
-  readonly throttle: Throttle;
-  readonly hasher: PasswordHasher;
-  readonly policy: PasswordPolicy;
-  readonly breachCheck: BreachChecker | undefined;
-  readonly captcha: CaptchaVerifier | undefined;
-  readonly mailer: Mailer;
-  readonly audit: AuditSink | undefined;
-  readonly hooks: HookLists<U, A>;
-  readonly doors: Readonly<Partial<Record<Door, RateLimitRule>>>;
-  readonly cookie: SessionCookieConfig;
-  readonly attributeSchema: AttributeSchema<A> | undefined;
-  /** Key for trusted-device tokens, derived from the server secret. */
-  readonly deviceKey: Uint8Array;
-  readonly clock: Clock;
-  readonly random: RandomSource;
-  readonly logger: Logger;
-  readonly metrics: Metrics;
-}
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -100,7 +81,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     try {
       await this.#deps.audit.emit(event, meta);
     } catch (error) {
-      this.logger.error('Audit sink failed', { type: event.type, error: describe(error) });
+      this.logger.error('Audit sink failed', { type: event.type, error: describeError(error) });
     }
   }
 
@@ -114,7 +95,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       this.logger.error('Mailer failed', {
         type: event.type,
         userId: event.userId,
-        error: describe(error),
+        error: describeError(error),
       });
     }
   }
@@ -157,20 +138,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     passwordHash: string | null | undefined,
     password: string,
   ): Promise<boolean> {
-    // An oversized input is never a valid password; verify an empty one so the
-    // hasher's cost stays bounded and the timing stays the same.
-    const tooLong = checkPasswordPolicy(password, this.policy) === 'too_long';
-    const normalized = tooLong ? '' : normalizePassword(password);
-
-    if (!passwordHash || tooLong) {
-      // Pay the same verify cost as a real account, and discard the result,
-      // so even a preimage of the dummy hash can never authenticate.
-      await this.hasher.verify(await dummyHashFor(this.hasher), normalized);
-
-      return false;
-    }
-
-    return this.hasher.verify(passwordHash, normalized);
+    return verifyPasswordHash(this.hasher, this.policy, passwordHash, password);
   }
 
   async hashNewPassword(
@@ -205,29 +173,15 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   }
 
   async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
-    const inherited = options.inherit?.attributes;
-    let merged: Record<string, unknown> = { ...(inherited as Record<string, unknown> | undefined) };
+    const resolved = await resolveSessionAttributes(
+      { hooks: this.hooks, schema: this.#deps.attributeSchema, logger: this.logger },
+      user,
+      options,
+    );
 
-    for (const hook of this.hooks.sessionAttributes) {
-      merged = { ...merged, ...(await hook({ user, via: options.via, inherited })) };
-    }
+    if (!resolved.ok) return resolved;
 
-    let attributes: A;
-
-    try {
-      attributes = this.#deps.attributeSchema
-        ? this.#deps.attributeSchema.parse(merged)
-        : (merged as A);
-    } catch (error) {
-      // A hook produced attributes the schema refuses: a bug in the app, never
-      // something to mint a half-stamped session for.
-      this.logger.error('Session attributes failed the schema at issue time', {
-        userId: user.id,
-        error: describe(error),
-      });
-
-      return fail('forbidden', 'invalid_session_attributes');
-    }
+    const attributes = resolved.value;
 
     const refusal = await firstRefusal(this.hooks.beforeSessionCreate, {
       user,
@@ -237,15 +191,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     });
 
     if (refusal) {
-      await this.emit(
-        {
-          type: 'login.failure',
-          userId: user.id,
-          reason: refusal.reason,
-          data: { via: options.via },
-        },
-        options.meta,
-      );
+      await this.#loginFailure(user, refusal.reason, options);
 
       return fail(refusal.code, refusal.reason);
     }
@@ -266,15 +212,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     });
 
     if (!minted.ok) {
-      await this.emit(
-        {
-          type: 'login.failure',
-          userId: user.id,
-          reason: minted.reason,
-          data: { via: options.via },
-        },
-        options.meta,
-      );
+      await this.#loginFailure(user, minted.reason, options);
 
       return fail('session_expired', minted.reason);
     }
@@ -296,16 +234,26 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
 
     // Only here, after every factor: the device token for the lockout bypass,
     // bound to the user and the epoch the session was stamped with.
-    const deviceToken = createDeviceToken(
-      this.#deps.deviceKey,
-      { userId: user.id, epoch: minted.session.epoch, issuedAt: this.clock.now() },
-      this.random,
-    );
-
-    const maxAge = Math.floor(this.throttle.deviceMaxAgeMs / 1000);
-    const device = deviceCookie(this.cookie, deviceToken, maxAge, options.meta.origin);
+    const device = this.#deviceCookie(user.id, minted.session.epoch, options.meta.origin);
 
     return ok({ token: minted.token, session: minted.session, cookie, deviceCookie: device });
+  }
+
+  /** The audit row for a sign-in that got this far and was still refused. */
+  async #loginFailure(user: U, reason: string, options: IssueOptions<A>): Promise<void> {
+    await this.emit(
+      { type: 'login.failure', userId: user.id, reason, data: { via: options.via } },
+      options.meta,
+    );
+  }
+
+  /** A trusted-device cookie for a session just issued at `epoch`. */
+  #deviceCookie(userId: string, epoch: number, origin: string | undefined): CookieSpec {
+    const issuedAt = this.clock.now();
+    const token = createDeviceToken(this.#deps.deviceKey, { userId, epoch, issuedAt }, this.random);
+    const maxAgeSeconds = Math.floor(this.throttle.deviceMaxAgeMs / 1000);
+
+    return deviceCookie(this.cookie, token, maxAgeSeconds, origin);
   }
 
   /** The only call that mints a session. Private: every caller goes through `issueSession`. */
@@ -316,7 +264,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   /** Runs a task off the response path; failures are logged, never thrown. */
   background(label: string, task: () => Promise<void>): void {
     void task().catch((error: unknown) => {
-      this.logger.error(`Background task failed: ${label}`, { error: describe(error) });
+      this.logger.error(`Background task failed: ${label}`, { error: describeError(error) });
     });
   }
 
@@ -349,27 +297,9 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
         this.logger.error('onSessionsRevoked hook failed', {
           userId,
           reason,
-          error: describe(error),
+          error: describeError(error),
         });
       }
     }
   }
-}
-
-/** The session manager without `mint`. */
-function narrowSessions<A>(manager: SessionManager<A>): SessionAccess<A> {
-  return {
-    absoluteTtlMs: manager.absoluteTtlMs,
-    rememberMeTtlMs: manager.rememberMeTtlMs,
-    readEpoch: (userId) => manager.readEpoch(userId),
-    validate: (token, options) => manager.validate(token, options),
-    listActive: (userId) => manager.listActive(userId),
-    revoke: (userId, ids) => manager.revoke(userId, ids),
-    revokeToken: (token) => manager.revokeToken(token),
-    revokeAll: (userId) => manager.revokeAll(userId),
-  };
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
