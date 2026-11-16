@@ -29,7 +29,7 @@ create-auth.ts and index.ts   the composition root and the public barrel
 ## Checks
 
 ```sh
-bun run build && bun run format:check && bun run lint && bun run typecheck && bun run test
+bun run build && bun run format:check && bun run typecheck && bun run lint && bun run test
 bun run check:package && bun run check:api
 bun run services:up && bun run test:integration
 ```
@@ -40,7 +40,8 @@ bun run services:up && bun run test:integration
 
 - `bun run format` rewrites every file with Prettier; `format:check` only reports.
 - `bun run lint` uses type information, so run it after `bun run build` (the adapters read the
-  core package's emitted declarations) and never with `--cache`: the cache does not notice when an
+  core package's emitted declarations) and `bun run typecheck` (which generates the Prisma
+  clients), and never with `--cache`: the cache does not notice when an
   imported function's type changes. `bunx eslint . --fix` applies the blank-line rules.
 - `bun run check:api` compares each entry point's public API (runtime export names and the
   emitted declarations) with the reports in `api/`. When a change to the API is intended, run

@@ -35,10 +35,12 @@ jobs:
       # build runs before typecheck.
       - run: bun run format:check
       - run: bun run build
-      # Type-aware lint: it reads the adapters' view of @noctcore/auth from the
-      # build output, so it runs after the build, and never with --cache.
-      - run: bun run lint
+      # typecheck also generates the Prisma clients the type-aware lint reads.
       - run: bun run typecheck
+      # Type-aware lint: it reads the adapters' view of @noctcore/auth from the
+      # build output and the generated Prisma clients, so it runs after both,
+      # and never with --cache.
+      - run: bun run lint
       # The public API of every entry point, compared with the reports in api/.
       - run: bun run check:api
       # Packs every published package and checks the tarball with publint and
