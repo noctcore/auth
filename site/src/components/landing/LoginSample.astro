@@ -5,6 +5,19 @@ import source from '../../../snippets/landing/login.ts?raw';
 
 // A compiled file (site typecheck), shown from its marker line down.
 const code = source.slice(source.indexOf('\n', source.indexOf('// landing:start')) + 1).trimEnd();
+
+// The code lines each step describes, as patterns. LandingMotion.astro reads them from data-match.
+const matches = ['auth\\.login\\(', 'result\\.ok|invalid_credentials|A wrong password', 'reply\\('];
+
+// Static default before the script takes over (reduced motion or no JavaScript): step 01's lines lit.
+const firstPattern = new RegExp(matches[0]!);
+const firstLines = code
+  .split('\n')
+  .flatMap((line, i) => (firstPattern.test(line) ? [i + 1] : []));
+if (firstLines.length === 0) throw new Error('LoginSample: step 01 matches no code line');
+const staticLit = `${firstLines
+  .map((n) => `.nc-sample:not(.is-live) .ec-line:nth-child(${n})::before`)
+  .join(',')}{opacity:0.75}`;
 ---
 
 <section class="nc-section nc-sample not-content" aria-labelledby="nc-sample-title">
@@ -15,13 +28,14 @@ const code = source.slice(source.indexOf('\n', source.indexOf('// landing:start'
       hands back functions, not handlers.
     </p>
     <ol class="nc-steps">
-      <li data-match="auth\.login\("><span>Your router reads the request and calls a flow.</span></li>
-      <li data-match="result\.ok|invalid_credentials|A wrong password">
+      <li data-match={matches[0]} tabindex="0"><span>Your router reads the request and calls a flow.</span></li>
+      <li data-match={matches[1]} tabindex="0">
         <span>The flow returns <code>{'{ ok: true, value }'}</code> or a refusal with a public code.</span>
       </li>
-      <li data-match="reply\("><span>You choose the status, the cookie and the copy.</span></li>
+      <li data-match={matches[2]} tabindex="0"><span>You choose the status, the cookie and the copy.</span></li>
     </ol>
   </div>
+  <style is:inline set:html={staticLit}></style>
   <div class="nc-sample__code">
     <Code code={code} lang="ts" title="src/auth.ts" />
   </div>
