@@ -13,9 +13,11 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {};
 ---
 
 <header class="nc-hero not-content">
-  <div class="nc-hero__copy">
+  <div class="nc-hero__lead">
     <p class="nc-eyebrow">Authentication for TypeScript servers</p>
     <h1 id="_top" data-page-title set:html={title} />
+  </div>
+  <div class="nc-hero__copy">
     {tagline && <p class="nc-hero__tagline" set:html={tagline} />}
     {
       actions.length > 0 && (
@@ -38,7 +40,7 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {};
       )
     }
   </div>
-  <div class="nc-hero__art" data-slot="hero-art">
+  <figure class="nc-hero__art" data-slot="hero-art">
     <HeroArt />
-  </div>
+  </figure>
 </header>

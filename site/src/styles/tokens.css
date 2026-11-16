@@ -47,14 +47,14 @@
 
   /* The login path and the attacks that stop on it. */
   --nc-path: var(--nc-pale-blue);
-  --nc-stop: oklch(0.78 0.11 55);
+  --nc-stop: oklch(0.755 0.073 38); /* #D9A08E, the brand art's stop */
   --nc-band: var(--nc-bg-deep);
   --nc-on-band: var(--nc-text);
   --nc-on-band-strong: var(--nc-text-strong);
   --nc-on-band-muted: var(--nc-muted);
   --nc-band-line: var(--nc-line-soft);
   --nc-band-path: var(--nc-pale-blue);
-  --nc-band-stop: oklch(0.78 0.11 55);
+  --nc-band-stop: oklch(0.755 0.073 38);
 
   --nc-code-bg: var(--nc-bg-deep);
 }
@@ -78,7 +78,7 @@
   --nc-on-accent: var(--nc-paper);
 
   --nc-path: var(--nc-blue);
-  --nc-stop: oklch(0.52 0.13 45);
+  --nc-stop: oklch(0.507 0.092 37); /* #92513E */
 
   /* The passage band stays night on a day page. */
   --nc-band: var(--nc-night);
