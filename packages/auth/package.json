@@ -18,6 +18,16 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./argon2": {
+      "import": {
+        "types": "./dist/argon2.d.ts",
+        "default": "./dist/argon2.js"
+      },
+      "require": {
+        "types": "./dist/argon2.d.cts",
+        "default": "./dist/argon2.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -54,9 +64,20 @@
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
   },
   "devDependencies": {
+    "@node-rs/argon2": "^2.2.2",
+    "@oslojs/crypto": "1.0.1",
+    "@oslojs/encoding": "1.1.0",
     "@types/node": "^22.20.5",
     "tsup": "^9.0.0",
     "typescript": "^5.9.3",
     "vitest": "^5.1.0"
+  },
+  "peerDependencies": {
+    "@node-rs/argon2": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@node-rs/argon2": {
+      "optional": true
+    }
   }
 }
