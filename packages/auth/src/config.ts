@@ -35,7 +35,12 @@ export type Door =
   | 'password-change'
   /** Per user: re-entering the password for a sensitive action. */
   | 'reauthenticate'
-  /** Per address: reset-code guesses for one email, known or not, from all IPs. */
+  /**
+   * Per address: reset-code guesses for one email, known or not, from all IPs.
+   * Trade-off: anyone who knows an address can spend this budget and block
+   * that address's code-mode reset for 15 minutes. Link-mode reset (the
+   * default) does not use this door and is unaffected.
+   */
   | 'password-reset-code-address';
 
 export const DEFAULT_DOOR_LIMITS: Readonly<Record<Door, RateLimitRule>> = {
