@@ -71,9 +71,10 @@ export class MemoryUserStore implements UserStore<AuthUser> {
     return this.view(record);
   }
 
-  async setPasswordHash(id: string, passwordHash: string): Promise<boolean> {
+  async setPasswordHash(id: string, passwordHash: string, options: { readonly expected?: string | null } = {}): Promise<boolean> {
     const record = this.byId.get(id);
     if (!this.live(record)) return false;
+    if (options.expected !== undefined && record.passwordHash !== options.expected) return false;
     record.passwordHash = passwordHash;
     return true;
   }

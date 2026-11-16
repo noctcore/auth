@@ -29,8 +29,13 @@ export interface UserStore<U extends AuthUser = AuthUser> {
   findById(id: string): Promise<U | null>;
   /** Null when the email is already taken. A unique violation is never thrown. */
   create(input: { email: NormalizedEmail; passwordHash: string }): Promise<U | null>;
-  /** Guarded: false (and nothing written) when the user is missing or soft-deleted. */
-  setPasswordHash(id: string, passwordHash: string): Promise<boolean>;
+  /**
+   * Guarded: false (and nothing written) when the user is missing or
+   * soft-deleted. With `expected` it is a compare-and-set: the write happens
+   * only if the stored hash still equals `expected` (null for no password), in
+   * one statement, so a rehash can never overwrite a password changed meanwhile.
+   */
+  setPasswordHash(id: string, passwordHash: string, options?: { readonly expected?: string | null }): Promise<boolean>;
   /** Guarded on the stored email still equalling `email`, so a stale link cannot verify a changed address. */
   markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>;
 }

@@ -381,6 +381,17 @@ export function userStoreConformance(store: UserStore, options: UserStoreConform
       },
     },
     {
+      name: 'compare-and-set writes only while the hash is still the expected one, even under concurrency',
+      async run() {
+        const user = await store.create({ email: email(), passwordHash: 'v1' });
+        assert.ok(user);
+        assert.equal(await store.setPasswordHash(user.id, 'v2', { expected: 'stale' }), false);
+        assert.equal((await store.findCredentialById(user.id))?.passwordHash, 'v1');
+        const results = await times(10, (i) => store.setPasswordHash(user.id, `next-${i}`, { expected: 'v1' }));
+        assert.equal(results.filter(Boolean).length, 1, 'exactly one compare-and-set may win');
+      },
+    },
+    {
       name: 'marks the email verified only while it is still the same address',
       async run() {
         const address = email();
