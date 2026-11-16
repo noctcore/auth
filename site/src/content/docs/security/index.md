@@ -21,7 +21,7 @@ Addresses are trimmed and their ASCII letters lowercased; an address with any no
 - Attempt budgets are keyed on account plus IP, and on the account as a whole.
 - Backoff is exponential, capped at 1 hour, and resets only after a quiet day with no new lock.
 - A correct password returns only the budget of the source that proved it, never the account-wide one.
-- A browser that completed a full login carries a signed device cookie that lets a correct password through a lock, on a small budget shared by all of the account's devices; its wrong guesses still count against the account. The cookie is refused after 30 days and voided by a password change, a reset or signing out everywhere. A distributed attack cannot keep the owner out, and holding many cookies adds no guesses.
+- A browser that completed a full login carries a signed device cookie. It is used only while the account is locked, where it lets a correct password through; correct logins never spend a device budget, and wrong guesses count against a failure budget shared by all of the account's devices and against the account. The cookie is refused after 30 days and voided by a password change, a reset or signing out everywhere. A distributed attack cannot keep the owner out, and holding many cookies adds no guesses.
 - The owner is mailed when the account locks; the mail is sent off the response path.
 - A password reset lifts the lock.
 - A locked account is answered exactly like a wrong password, after the same work: the same store calls and a full password verify.
