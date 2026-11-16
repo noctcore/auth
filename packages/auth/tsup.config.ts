@@ -10,7 +10,7 @@ import { defineConfig } from 'tsup';
 // runtime dependencies at all. @node-rs/argon2 stays external; it is an
 // optional peer that only the /argon2 entry imports.
 export default defineConfig({
-  entry: { index: 'src/index.ts', argon2: 'src/argon2.ts' },
+  entry: { index: 'src/index.ts', argon2: 'src/argon2.ts', testing: 'src/testing/index.ts' },
   format: ['esm', 'cjs'],
   dts: true,
   clean: true,
