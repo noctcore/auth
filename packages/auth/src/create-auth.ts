@@ -4,29 +4,29 @@
  * id. It returns functions, not HTTP handlers: your router calls them and maps
  * the results onto responses with `toPublicError`.
  */
-import { systemClock } from './clock';
-import type { AuthConfig, AuthPlugin, PasswordResetJob } from './config';
-import { AuthCore } from './core';
-import { deviceCookieName, parseCookieHeader, sessionCookieName } from './cookie';
-import { hmacSha256Hex } from './hash';
-import { toMilliseconds } from './duration';
-import { AuthConfigError } from './errors';
-import { mergeHooks } from './hooks';
-import { silentLogger, noopMetrics } from './logger';
+import { systemClock } from './ports/clock';
+import type { AuthConfig, AuthPlugin, PasswordResetJob } from './core/config';
+import { AuthCore } from './core/auth-core';
+import { deviceCookieName, parseCookieHeader, sessionCookieName } from './http/cookie';
+import { hmacSha256Hex } from './crypto/hash';
+import { toMilliseconds } from './shared/duration';
+import { AuthConfigError } from './shared/errors';
+import { mergeHooks } from './core/hooks';
+import { silentLogger, noopMetrics } from './ports/logger';
 import { DEFAULT_PASSWORD_POLICY } from './password/policy';
-import { cryptoRandom } from './random';
-import { SessionManager } from './session';
-import type { AuthUser, StoredSession } from './stores';
-import { Throttle } from './throttle';
-import { OneTimeTokens } from './tokens';
+import { cryptoRandom } from './crypto/random';
+import { SessionManager } from './session/session-manager';
+import type { AuthUser, StoredSession } from './ports/stores';
+import { Throttle } from './throttle/throttle';
+import { OneTimeTokens } from './tokens/one-time-tokens';
 import * as account from './flows/account';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
 import * as reset from './flows/password-reset';
 import { register, type RegisterInput } from './flows/register';
 import type { FlowSettings } from './flows/settings';
-import type { PluginContext } from './plugin-context';
-import type { RequestMeta } from './meta';
+import type { PluginContext } from './core/plugin-context';
+import type { RequestMeta } from './shared/meta';
 
 const MIN_SECRET_BYTES = 32;
 

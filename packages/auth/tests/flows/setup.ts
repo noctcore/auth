@@ -1,5 +1,5 @@
 import { createAuth, type AuthConfig, type AuthPlugin, type RequestMeta } from '../../src';
-import type { AuthUser, StoredSession } from '../../src/stores';
+import type { AuthUser, StoredSession } from '../../src/ports/stores';
 import {
   manualClock,
   memoryStores,

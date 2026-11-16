@@ -22,7 +22,7 @@
  * - A correct password returns only the budget of the source that proved it
  *   (its per-(account, IP) or per-device budget), never the account-wide one.
  * - Trusted devices: every issued session carries a signed device token bound
- *   to the user, their revocation epoch and an issue time (see device.ts).
+ *   to the user, their revocation epoch and an issue time (see device-token.ts).
  *   The token matters only while the account is LOCKED: an unlocked account
  *   takes the normal path whatever the request carries, so the owner never
  *   spends a device budget by signing in. Under a lock, a valid token is not
@@ -41,10 +41,10 @@
  *
  * Guide: Learn, "Brute force and victim lockout".
  */
-import type { Clock } from './clock';
-import { toMilliseconds, type Duration } from './duration';
-import { sha256Hex } from './hash';
-import type { CounterStore } from './stores';
+import type { Clock } from '../ports/clock';
+import { toMilliseconds, type Duration } from '../shared/duration';
+import { sha256Hex } from '../crypto/hash';
+import type { CounterStore } from '../ports/stores';
 
 export interface RateLimitRule {
   readonly limit: number;

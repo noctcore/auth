@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { argon2id, DEFAULT_ARGON2ID, OWASP_ARGON2ID } from '../../src/argon2';
-import { AuthConfigError } from '../../src/errors';
+import { argon2id, DEFAULT_ARGON2ID, OWASP_ARGON2ID } from '../../src/password/argon2';
+import { AuthConfigError } from '../../src/shared/errors';
 import { pwnedPasswords } from '../../src/password/breach';
 import { dummyHashFor } from '../../src/password/hasher';
 import { checkPasswordPolicy } from '../../src/password/policy';

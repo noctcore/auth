@@ -9,7 +9,7 @@
  *
  * Guide: Learn, "Audit trails".
  */
-import type { RequestMeta } from './meta';
+import type { RequestMeta } from '../shared/meta';
 
 export type AuthEventType =
   | 'register.created'

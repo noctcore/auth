@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { toMilliseconds, toSeconds } from '../../src/duration';
+import { toMilliseconds, toSeconds } from '../../src/shared/duration';
 
 describe('durations', () => {
   it('reads bare numbers as seconds', () => expect(toMilliseconds(90)).toBe(90_000));

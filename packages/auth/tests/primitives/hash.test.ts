@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { hexDigestsEqual, hmacSha256Hex, secretsEqual, sha256Hex } from '../../src/hash';
+import { hexDigestsEqual, hmacSha256Hex, secretsEqual, sha256Hex } from '../../src/crypto/hash';
 
 describe('sha256Hex', () => {
   it('hashes the UTF-8 string (known vector)', () => {

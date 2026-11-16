@@ -6,7 +6,7 @@
  *
  * Guide: Build, "Writing a store adapter".
  */
-import type { NormalizedEmail } from './email';
+import type { NormalizedEmail } from '../shared/email';
 
 /**
  * A user id no store issues (it starts with U+2205, outside any id alphabet).

@@ -13,14 +13,14 @@
  * session, voids every outstanding reset token, lifts the lockout (the mailbox
  * was proved) and, by default, marks the address verified.
  */
-import type { AuthCore } from '../core';
-import type { PasswordResetJob } from '../config';
-import { normalizeEmail, type NormalizedEmail } from '../email';
-import { fail, ok, type AuthErrorCode, type AuthFailure, type AuthResult } from '../errors';
-import { sha256Hex } from '../hash';
-import type { RequestMeta } from '../meta';
-import { accountKey } from '../throttle';
-import type { AuthUser } from '../stores';
+import type { AuthCore } from '../core/auth-core';
+import type { PasswordResetJob } from '../core/config';
+import { normalizeEmail, type NormalizedEmail } from '../shared/email';
+import { fail, ok, type AuthErrorCode, type AuthFailure, type AuthResult } from '../shared/errors';
+import { sha256Hex } from '../crypto/hash';
+import type { RequestMeta } from '../shared/meta';
+import { accountKey } from '../throttle/throttle';
+import type { AuthUser } from '../ports/stores';
 import { publicUser, PURPOSE, RESET_PURPOSES, type FlowSettings } from './settings';
 
 const DEDUPE_WINDOW_MS = 60_000;

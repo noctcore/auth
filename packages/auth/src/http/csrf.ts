@@ -22,9 +22,9 @@
  *
  * Guide: Learn, "CSRF".
  */
-import { AuthConfigError } from './errors';
-import { hexDigestsEqual, hmacSha256Hex, secretsEqual } from './hash';
-import { cryptoRandom, randomBytes, type RandomSource } from './random';
+import { AuthConfigError } from '../shared/errors';
+import { hexDigestsEqual, hmacSha256Hex, secretsEqual } from '../crypto/hash';
+import { cryptoRandom, randomBytes, type RandomSource } from '../crypto/random';
 import { encodeHexLowerCase } from '@oslojs/encoding';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);

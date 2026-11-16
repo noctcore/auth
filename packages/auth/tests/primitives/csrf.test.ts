@@ -5,7 +5,7 @@ import {
   verifyCsrfToken,
   verifyFetchSite,
   verifyRequestOrigin,
-} from '../../src/csrf';
+} from '../../src/http/csrf';
 
 const allowed = ['https://app.example.com', 'app://app'];
 

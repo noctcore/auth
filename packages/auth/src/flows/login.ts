@@ -19,16 +19,16 @@
  *
  * Every issued session carries a trusted-device cookie (`session.deviceCookie`),
  * minted in `issueSession`, so never before the last factor. Presenting it on a
- * later login lets a correct password through an account lock (see throttle.ts).
+ * later login lets a correct password through an account lock (see throttle/throttle.ts).
  */
-import type { AuthCore } from '../core';
-import { normalizeEmail } from '../email';
-import { fail, ok, type AuthResult } from '../errors';
-import type { RequestMeta } from '../meta';
+import type { AuthCore } from '../core/auth-core';
+import { normalizeEmail } from '../shared/email';
+import { fail, ok, type AuthResult } from '../shared/errors';
+import type { RequestMeta } from '../shared/meta';
 import { normalizePassword } from '../password/policy';
-import type { IssuedSession } from '../plugin-context';
-import { accountKey } from '../throttle';
-import { NO_SUCH_USER_ID, type AuthUser } from '../stores';
+import type { IssuedSession } from '../core/plugin-context';
+import { accountKey } from '../throttle/throttle';
+import { NO_SUCH_USER_ID, type AuthUser } from '../ports/stores';
 import { publicUser } from './settings';
 
 export interface LoginInput {

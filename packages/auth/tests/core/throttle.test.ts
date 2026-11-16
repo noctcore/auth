@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { manualClock, MemoryCounterStore, type ManualClock } from '../../src/testing';
-import { createDeviceToken, verifyDeviceToken } from '../../src/device';
-import { accountKey, Throttle } from '../../src/throttle';
+import { createDeviceToken, verifyDeviceToken } from '../../src/throttle/device-token';
+import { accountKey, Throttle } from '../../src/throttle/throttle';
 
 const MIN = 60_000;
 let clock: ManualClock;

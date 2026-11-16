@@ -9,13 +9,13 @@
  * address first and kept a session loses it the moment the real owner proves
  * the mailbox.
  */
-import type { AuthCore } from '../core';
-import { normalizeEmail } from '../email';
-import { fail, ok, type AuthResult } from '../errors';
-import type { RequestMeta } from '../meta';
-import type { IssuedSession } from '../plugin-context';
-import type { AuthUser, StoredSession } from '../stores';
-import type { TokenRedemption } from '../tokens';
+import type { AuthCore } from '../core/auth-core';
+import { normalizeEmail } from '../shared/email';
+import { fail, ok, type AuthResult } from '../shared/errors';
+import type { RequestMeta } from '../shared/meta';
+import type { IssuedSession } from '../core/plugin-context';
+import type { AuthUser, StoredSession } from '../ports/stores';
+import type { TokenRedemption } from '../tokens/one-time-tokens';
 import { PURPOSE, type FlowSettings } from './settings';
 
 /** Issues a verification code or link for the user's current address and mails it. */

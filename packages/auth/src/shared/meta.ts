@@ -1,6 +1,6 @@
 /**
  * What a flow knows about the request that triggered it. Frameworks fill it in
- * (the client IP after trust-proxy resolution, see `ip.ts`); flows never read
+ * (the client IP after trust-proxy resolution, see `http/ip.ts`); flows never read
  * a request object themselves.
  */
 export interface RequestMeta {

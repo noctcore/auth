@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { sha256Hex } from '../../src/hash';
-import { cryptoRandom } from '../../src/random';
+import { sha256Hex } from '../../src/crypto/hash';
+import { cryptoRandom } from '../../src/crypto/random';
 import { manualClock, MemoryTokenStore, type ManualClock } from '../../src/testing';
-import { NO_SUCH_USER_ID } from '../../src/stores';
-import { OneTimeTokens } from '../../src/tokens';
+import { NO_SUCH_USER_ID } from '../../src/ports/stores';
+import { OneTimeTokens } from '../../src/tokens/one-time-tokens';
 
 const secret = new TextEncoder().encode('server-secret-server-secret-0000');
 let clock: ManualClock;

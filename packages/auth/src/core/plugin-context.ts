@@ -5,23 +5,23 @@
  * session is minted by `issueSession`, the one seam, so no plugin can mint a
  * session that skips the hooks, the epoch fence or the attribute schema.
  */
-import type { AuthEvent } from './audit';
-import type { CaptchaDoor } from './captcha';
-import type { Clock } from './clock';
-import type { CookieSpec } from './cookie';
+import type { AuthEvent } from '../ports/audit';
+import type { CaptchaDoor } from '../ports/captcha';
+import type { Clock } from '../ports/clock';
+import type { CookieSpec } from '../http/cookie';
 import type { Door } from './config';
-import type { AuthFailure, AuthResult } from './errors';
+import type { AuthFailure, AuthResult } from '../shared/errors';
 import type { HookLists, IssueVia, RevocationReason } from './hooks';
-import type { Logger, Metrics } from './logger';
-import type { AuthMailEvent } from './mail';
-import type { RequestMeta } from './meta';
-import type { PasswordHasher } from './password/hasher';
-import type { PasswordPolicy } from './password/policy';
-import type { RandomSource } from './random';
-import type { SessionManager } from './session';
-import type { AuthUser, StoredSession, UserStore } from './stores';
-import type { Throttle } from './throttle';
-import type { OneTimeTokens } from './tokens';
+import type { Logger, Metrics } from '../ports/logger';
+import type { AuthMailEvent } from '../ports/mail';
+import type { RequestMeta } from '../shared/meta';
+import type { PasswordHasher } from '../password/hasher';
+import type { PasswordPolicy } from '../password/policy';
+import type { RandomSource } from '../crypto/random';
+import type { SessionManager } from '../session/session-manager';
+import type { AuthUser, StoredSession, UserStore } from '../ports/stores';
+import type { Throttle } from '../throttle/throttle';
+import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
 /** A session just issued: the token for the cookie, the stored record, and the cookie itself. */
 export interface IssuedSession<A> {

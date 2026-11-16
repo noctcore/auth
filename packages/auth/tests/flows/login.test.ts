@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { refuse, toPublicError } from '../../src';
 import { plainHasher } from '../../src/testing';
-import { accountKey } from '../../src/throttle';
+import { accountKey } from '../../src/throttle/throttle';
 import { meta, NEW_PASSWORD, PASSWORD, setup } from './setup';
 
 const EMAIL = 'ada@example.com';

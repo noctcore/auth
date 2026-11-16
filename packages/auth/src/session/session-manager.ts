@@ -19,14 +19,14 @@
  *
  * Guide: Learn, "Sessions and expiry" and "Revocation races and the epoch fence".
  */
-import type { Clock } from './clock';
-import { toMilliseconds, type Duration } from './duration';
-import { AuthConfigError } from './errors';
-import { sha256Hex } from './hash';
-import type { Logger } from './logger';
-import type { RequestMeta } from './meta';
-import { generateToken, isTokenShape, type RandomSource } from './random';
-import type { SessionStore, StoredSession } from './stores';
+import type { Clock } from '../ports/clock';
+import { toMilliseconds, type Duration } from '../shared/duration';
+import { AuthConfigError } from '../shared/errors';
+import { sha256Hex } from '../crypto/hash';
+import type { Logger } from '../ports/logger';
+import type { RequestMeta } from '../shared/meta';
+import { generateToken, isTokenShape, type RandomSource } from '../crypto/random';
+import type { SessionStore, StoredSession } from '../ports/stores';
 
 /** Anything with a zod-style `parse`: validates attributes read back from the store. */
 export interface AttributeSchema<A> {
