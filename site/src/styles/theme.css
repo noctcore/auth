@@ -194,12 +194,36 @@ starlight-toc a[aria-current='true'] {
   outline-offset: 2px;
 }
 
+/* Quick, quiet feedback on every page: color and tint only, never position. */
 @media (prefers-reduced-motion: no-preference) {
   .sl-markdown-content a,
-  .sl-link-button {
+  .sl-link-button,
+  .sidebar-content a,
+  starlight-toc a,
+  .pagination-links a,
+  .social-icons a,
+  site-search button {
     transition:
       color 160ms cubic-bezier(0.25, 1, 0.5, 1),
       background-color 160ms cubic-bezier(0.25, 1, 0.5, 1),
-      border-color 160ms cubic-bezier(0.25, 1, 0.5, 1);
+      border-color 160ms cubic-bezier(0.25, 1, 0.5, 1),
+      text-decoration-color 160ms cubic-bezier(0.25, 1, 0.5, 1);
   }
+
+  .pagination-links a svg {
+    transition: translate 200ms cubic-bezier(0.25, 1, 0.5, 1);
+  }
+
+  .pagination-links a[rel='next']:hover svg {
+    translate: 0.2rem 0;
+  }
+
+  .pagination-links a[rel='prev']:hover svg {
+    translate: -0.2rem 0;
+  }
+}
+
+.sidebar-content a:hover:not([aria-current='page']) {
+  color: var(--nc-text-strong);
+  background: color-mix(in oklch, var(--nc-accent-soft) 45%, transparent);
 }
