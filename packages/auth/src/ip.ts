@@ -22,13 +22,17 @@ const HOPS = /^\d+$/u;
  */
 export function parseTrustProxy(raw: string | undefined): number | string | false {
   if (raw === undefined) return false;
+
   const value = raw.trim();
+
   if (value === '' || value === 'false') return false;
+
   if (value === 'true') {
     throw new AuthConfigError(
       'trust proxy "true" lets any client choose its own IP; set the number of proxy hops',
     );
   }
+
   return HOPS.test(value) ? Number(value) : value;
 }
 
@@ -42,26 +46,35 @@ export function clientIp(input: {
   trustedHops: number;
 }): string | undefined {
   if (input.trustedHops <= 0) return input.remoteAddress;
+
   const raw = input.forwardedFor;
   const header: string = typeof raw === 'string' ? raw : raw ? raw.join(',') : '';
+
   const chain = header
     .split(',')
     .map((part) => part.trim())
     .filter((part) => part !== '');
+
   if (input.remoteAddress) chain.push(input.remoteAddress);
   if (chain.length === 0) return undefined;
+
   return chain[Math.max(0, chain.length - 1 - input.trustedHops)];
 }
 
 /** An IP coarsened for display in a session list: IPv4 to /24, IPv6 to /48. */
 export function maskIp(ip: string): string {
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/u.exec(ip.replace(/^::ffff:/u, ''));
+
   if (v4) return `${v4[1]}.${v4[2]}.${v4[3]}.0`;
+
   if (ip.includes(':')) {
     const head = ip.split('::')[0] ?? '';
     const groups = head.split(':').filter((g) => g !== '');
+
     while (groups.length < 3) groups.push('0');
+
     return `${groups.slice(0, 3).join(':')}::`;
   }
+
   return 'unknown';
 }

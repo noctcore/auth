@@ -68,12 +68,15 @@ const STATUS: Record<string, number> = {
 export function createApp(options: AppOptions) {
   if (options.secret === options.csrfSecret)
     throw new Error('Use separate secrets for auth and CSRF');
+
   const secret = new TextEncoder().encode(options.secret);
   const csrfSecret = new TextEncoder().encode(options.csrfSecret);
+
   const { users, tokens } = prismaStores({
     delegate: options.prisma.user,
     tokenDelegate: options.prisma.authToken,
   });
+
   const { sessions, counters } = redisStores(options.redis, {
     prefix: options.redisPrefix ?? 'example:',
   });
@@ -86,6 +89,7 @@ export function createApp(options: AppOptions) {
     urls: { resetPassword: (token) => `${options.origin}/reset-password#${token}` },
     mailer: options.mailer,
   });
+
   const csrfCookieName = options.secureCookies ? '__Host-csrf' : 'csrf';
   const preSessionCookieName = options.secureCookies ? '__Host-presession' : 'presession';
   const PRE_SESSION = /^[0-9a-f]{32}$/u;
@@ -93,6 +97,7 @@ export function createApp(options: AppOptions) {
   /** A random id per logged-out browser, so a CSRF token minted in one browser fails in every other. */
   function newPreSession(): { id: string; spec: CookieSpec } {
     const id = randomBytes(16).toString('hex');
+
     return {
       id,
       spec: {
@@ -109,11 +114,13 @@ export function createApp(options: AppOptions) {
     preSession: string | null,
   ): string | null {
     if (session) return `session:${session.id}`;
+
     return preSession ? `pre:${preSession}` : null;
   }
 
   function csrfCookie(bound: string): { spec: CookieSpec; token: string } {
     const token = createCsrfToken(csrfSecret, bound);
+
     return {
       token,
       spec: {
@@ -129,6 +136,7 @@ export function createApp(options: AppOptions) {
     const url = new URL(req.url ?? '/', options.origin);
     const method = req.method ?? 'GET';
     const cookies = parseCookieHeader(req.headers.cookie);
+
     const meta: RequestMeta = {
       ip:
         clientIp({
@@ -139,12 +147,16 @@ export function createApp(options: AppOptions) {
       userAgent: req.headers['user-agent'] ?? '',
       ...(req.headers.origin ? { origin: req.headers.origin } : {}),
     };
+
     const sessionToken = cookies.get(auth.cookieName) ?? null;
+
     const validated = sessionToken
       ? await auth.validateRequest({ token: sessionToken, meta })
       : null;
+
     const session = validated?.ok ? validated.value : null;
     const cookiePreSession = cookies.get(preSessionCookieName);
+
     const preSession =
       cookiePreSession && PRE_SESSION.test(cookiePreSession) ? cookiePreSession : null;
 
@@ -154,15 +166,19 @@ export function createApp(options: AppOptions) {
     // (or, signed out, to this browser's pre-session id).
     if (method !== 'GET' && method !== 'HEAD') {
       const secFetchSite = req.headers['sec-fetch-site'];
+
       const originOk = verifyRequestOrigin({
         method,
         origin: req.headers.origin,
         allowedOrigins: [options.origin],
       });
+
       const siteOk =
         secFetchSite === undefined ||
         verifyFetchSite({ method, secFetchSite: String(secFetchSite) });
+
       const bound = binding(session, preSession);
+
       const tokenOk =
         bound !== null &&
         verifyCsrfToken({
@@ -171,6 +187,7 @@ export function createApp(options: AppOptions) {
           binding: bound,
           secrets: [csrfSecret],
         });
+
       if (!originOk || !siteOk || !tokenOk) return send(res, 403, { error: { code: 'forbidden' } });
     }
 
@@ -181,6 +198,7 @@ export function createApp(options: AppOptions) {
       case 'GET /api/csrf': {
         const fresh = session || preSession ? null : newPreSession();
         const csrf = csrfCookie(binding(session, preSession ?? fresh?.id ?? null) ?? '');
+
         return send(
           res,
           200,
@@ -188,15 +206,19 @@ export function createApp(options: AppOptions) {
           fresh ? [fresh.spec, csrf.spec] : [csrf.spec],
         );
       }
+
       case 'POST /api/register': {
         const result = await auth.register({
           email: str(body.email),
           password: str(body.password),
           meta,
         });
+
         if (!result.ok) return failure(res, result);
+
         return send(res, 202, { status: 'check-your-email' });
       }
+
       case 'POST /api/login': {
         const result = await auth.login({
           email: str(body.email),
@@ -205,23 +227,30 @@ export function createApp(options: AppOptions) {
           deviceToken: auth.readDeviceToken(req.headers.cookie),
           meta,
         });
+
         if (!result.ok) return failure(res, result);
+
         if (result.value.kind === 'challenge') {
           return send(res, 200, {
             challenge: result.value.challenge,
             methods: result.value.methods,
           });
         }
+
         return signedIn(res, result.value.session.cookie, result.value.session.session, {}, [
           result.value.session.deviceCookie,
         ]);
       }
+
       case 'POST /api/verify-email': {
         if (!session)
           return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+
         const result = await auth.verifyEmailCode({ session, code: str(body.code), meta });
+
         if (!result.ok) return failure(res, result);
         if (!result.value.session) return send(res, 200, { verified: true });
+
         return signedIn(
           res,
           result.value.session.cookie,
@@ -230,26 +259,35 @@ export function createApp(options: AppOptions) {
           [result.value.session.deviceCookie],
         );
       }
+
       case 'GET /api/me': {
         if (!session)
           return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+
         const user = await users.findById(session.userId);
+
         if (!user)
           return failure(res, { ok: false, code: 'session_expired', reason: 'user_missing' });
+
         return send(res, 200, { user });
       }
+
       case 'GET /api/sessions': {
         if (!session)
           return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+
         return send(res, 200, { sessions: await auth.sessions.list(session) });
       }
+
       case 'POST /api/logout': {
         const { cookie } = await auth.logout({ token: sessionToken, meta });
         // Signed out again: a fresh pre-session id, and a token bound to it.
         const fresh = newPreSession();
         const csrf = csrfCookie(binding(null, fresh.id) ?? '');
+
         return send(res, 200, { csrfToken: csrf.token }, [cookie, fresh.spec, csrf.spec]);
       }
+
       default:
         return send(res, 404, { error: { code: 'not_found' } });
     }
@@ -264,6 +302,7 @@ export function createApp(options: AppOptions) {
     more: CookieSpec[] = [],
   ) {
     const csrf = csrfCookie(binding(session, null) ?? '');
+
     return send(res, 200, { ...extra, csrfToken: csrf.token }, [cookie, csrf.spec, ...more]);
   }
 
@@ -272,17 +311,21 @@ export function createApp(options: AppOptions) {
       process.stderr.write(
         `request failed: ${error instanceof Error ? error.stack : String(error)}\n`,
       );
+
       if (!res.headersSent) send(res, 500, { error: { code: 'internal' } });
     });
   });
+
   return { server, auth };
 }
 
 function failure(res: ServerResponse, result: AuthFailure) {
   const error = toPublicError(result);
+
   const headers: Record<string, string> = error.retryAfterSeconds
     ? { 'retry-after': String(error.retryAfterSeconds) }
     : {};
+
   return send(res, STATUS[error.code] ?? 400, { error }, [], headers);
 }
 
@@ -300,11 +343,13 @@ function send(
     ...headers,
     ...(cookies.length ? { 'set-cookie': cookies.map(serializeCookie) } : {}),
   });
+
   res.end(JSON.stringify(body));
 }
 
 function header(req: IncomingMessage, name: string): string | undefined {
   const value = req.headers[name];
+
   return Array.isArray(value) ? value[0] : value;
 }
 
@@ -314,16 +359,23 @@ function str(value: unknown): string {
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const type = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
+
   if (type !== 'application/json') return {};
+
   const chunks: Buffer[] = [];
   let size = 0;
+
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
+
     if (size > 16_384) return {};
+
     chunks.push(chunk as Buffer);
   }
+
   try {
     const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+
     return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};

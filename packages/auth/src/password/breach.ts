@@ -40,27 +40,36 @@ export function pwnedPasswords(options: PwnedPasswordsOptions = {}): BreachCheck
     const prefix = digest.slice(0, 5);
     const suffix = digest.slice(5);
     let body: string;
+
     try {
       const response = await doFetch(`${baseUrl}${prefix}`, {
         headers: { 'Add-Padding': 'true', 'User-Agent': userAgent },
         signal: AbortSignal.timeout(timeoutMs),
       });
+
       if (!response.ok) return 'unavailable';
+
       body = await response.text();
     } catch {
       return 'unavailable';
     }
+
     let breached = false;
+
     for (const raw of body.split(/\r?\n/u)) {
       const line = raw.trim().toUpperCase();
+
       if (line === '') continue;
+
       const match = RANGE_LINE.exec(line);
+
       // An error page served with 200, a captive portal, a changed format: not
       // an answer about this password.
       if (!match) return 'unavailable';
       // Count 0 is padding, never a breach.
       if (match[1] === suffix && Number(match[2]) > 0) breached = true;
     }
+
     return breached ? 'breached' : 'clean';
   };
 }

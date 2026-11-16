@@ -29,6 +29,7 @@ export interface DeviceClaims {
 
 function mac(key: Uint8Array, id: string, claims: DeviceClaims): string {
   const { userId, epoch, issuedAt } = claims;
+
   return hmacSha256Hex(key, `device:${userId.length}:${userId}:${epoch}:${issuedAt}:${id}`);
 }
 
@@ -39,6 +40,7 @@ export function createDeviceToken(
   random: RandomSource = cryptoRandom,
 ): string {
   const id = encodeHexLowerCase(randomBytes(16, random));
+
   return `${id}.${claims.issuedAt}.${claims.epoch}.${mac(key, id, claims)}`;
 }
 
@@ -57,13 +59,18 @@ export function verifyDeviceToken(
   check: DeviceCheck,
 ): string | null {
   if (typeof token !== 'string') return null;
+
   const match = TOKEN.exec(token);
+
   if (!match) return null;
+
   const [, id = '', issued = '', epoch = '', given = ''] = match;
   const issuedAt = Number(issued);
+
   if (Number(epoch) !== check.epoch) return null;
   // A minute of clock skew between servers, no more.
   if (issuedAt > check.now + 60_000 || check.now - issuedAt > check.maxAgeMs) return null;
+
   return hexDigestsEqual(
     given,
     mac(key, id, { userId: check.userId, epoch: check.epoch, issuedAt }),

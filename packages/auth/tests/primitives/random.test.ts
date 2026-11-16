@@ -5,6 +5,7 @@ import { generateNumericCode, generateToken, isTokenShape, TOKEN_BYTES } from '.
 describe('generateToken', () => {
   it('mints 32 bytes as 64 lowercase hex characters', () => {
     const token = generateToken();
+
     expect(TOKEN_BYTES).toBe(32);
     expect(token).toMatch(/^[0-9a-f]{64}$/u);
     expect(isTokenShape(token)).toBe(true);
@@ -12,6 +13,7 @@ describe('generateToken', () => {
 
   it('never repeats across a large sample', () => {
     const seen = new Set(Array.from({ length: 2000 }, () => generateToken()));
+
     expect(seen.size).toBe(2000);
   });
 });
@@ -34,6 +36,7 @@ describe('isTokenShape', () => {
 describe('generateNumericCode', () => {
   it('pads to the requested number of digits', () => {
     const zeros = (bytes: Uint8Array) => bytes.fill(0);
+
     expect(generateNumericCode(6, zeros)).toBe('000000');
     expect(generateNumericCode(8)).toMatch(/^\d{8}$/u);
   });
@@ -44,7 +47,9 @@ describe('generateNumericCode', () => {
       [0xff, 0xff, 0xff, 0xff],
       [0, 0, 0, 7],
     ];
+
     const source = (bytes: Uint8Array) => bytes.set(draws.shift() ?? [0, 0, 0, 0]);
+
     expect(generateNumericCode(6, source)).toBe('000007');
     expect(draws).toHaveLength(0);
   });
@@ -56,10 +61,13 @@ describe('generateNumericCode', () => {
 
   it('is roughly uniform over the first digit', () => {
     const counts = new Array<number>(10).fill(0);
+
     for (let i = 0; i < 20_000; i++) {
       const first = Number(generateNumericCode(6)[0]);
+
       counts[first] = (counts[first] ?? 0) + 1;
     }
+
     for (const count of counts) expect(count).toBeGreaterThan(1500);
   });
 });

@@ -98,6 +98,7 @@ export class RedisSessionStore implements SessionStore {
     this.clock = options.clock ?? systemClock;
     this.epochTtlMs = toMilliseconds(options.epochTtl ?? '90d');
     this.maxSessionTtlMs = toMilliseconds(options.maxSessionTtl ?? '30d');
+
     if (this.epochTtlMs <= this.maxSessionTtlMs) {
       throw new AuthConfigError(
         'epochTtl must be longer than the longest session (maxSessionTtl, your remember-me TTL)',
@@ -123,6 +124,7 @@ export class RedisSessionStore implements SessionStore {
         'A session may not outlive its revocation epoch: raise epochTtl above the remember-me TTL',
       );
     }
+
     await this.redis.eval(
       CREATE,
       3,
@@ -150,40 +152,52 @@ export class RedisSessionStore implements SessionStore {
       'KEEPTTL',
       'XX',
     );
+
     return result === 'OK';
   }
 
   async delete(userId: string, ids: readonly string[]): Promise<void> {
     if (ids.length === 0) return;
+
     const results = await this.redis
       .multi()
       .del(...ids.map((id) => this.sessionKey(id)))
       .zrem(this.userKey(userId), ...ids)
       .exec();
+
     const failure = results?.find(([error]) => error)?.[0];
+
     if (failure) throw failure;
   }
 
   async listByUser(userId: string): Promise<StoredSession[]> {
     const key = this.userKey(userId);
     const now = this.clock.now();
+
     await this.redis.zremrangebyscore(key, '-inf', String(now));
     const ids = await this.redis.zrange(key, '0', '-1');
+
     if (ids.length === 0) return [];
+
     const values = await this.redis.mget(...ids.map((id) => this.sessionKey(id)));
     const sessions: StoredSession[] = [];
     const gone: string[] = [];
+
     values.forEach((value, index) => {
       const session = parse(value);
+
       if (session) sessions.push(session);
       else gone.push(ids[index] as string);
     });
+
     if (gone.length > 0) await this.redis.zrem(key, ...gone);
+
     return sessions;
   }
 
   async getEpoch(userId: string): Promise<number> {
     const value = await this.redis.get(this.epochKey(userId));
+
     return value === null ? 0 : Number(value);
   }
 
@@ -221,6 +235,7 @@ export class RedisCounterStore implements CounterStore {
       this.key(key),
       String(Math.max(1, Math.ceil(windowMs))),
     )) as [number, number];
+
     return { count: Number(count), resetAt: this.clock.now() + Number(ttl) };
   }
 
@@ -230,7 +245,9 @@ export class RedisCounterStore implements CounterStore {
       .get(this.key(key))
       .pttl(this.key(key))
       .exec()) as [[Error | null, string | null], [Error | null, number]];
+
     if (count === null || ttl < 0) return null;
+
     return { count: Number(count), resetAt: this.clock.now() + ttl };
   }
 
@@ -257,6 +274,7 @@ export function redisStores(redis: Redis, options: RedisSessionStoreOptions = {}
 
 function parse(value: string | null): StoredSession | null {
   if (value === null) return null;
+
   try {
     return JSON.parse(value) as StoredSession;
   } catch {

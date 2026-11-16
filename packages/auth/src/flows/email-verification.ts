@@ -10,7 +10,7 @@
  * the mailbox.
  */
 import type { AuthCore } from '../core';
-import { normalizeEmail, type NormalizedEmail } from '../email';
+import { normalizeEmail } from '../email';
 import { fail, ok, type AuthResult } from '../errors';
 import type { RequestMeta } from '../meta';
 import type { IssuedSession } from '../plugin-context';
@@ -26,6 +26,7 @@ export async function sendVerification<U extends AuthUser, A>(
   meta: RequestMeta | undefined,
 ): Promise<void> {
   const data = { email: user.email };
+
   if (settings.verification.kind === 'code') {
     const { code, expiresAt } = await core.tokens.issueCode(
       PURPOSE.emailVerification,
@@ -34,6 +35,7 @@ export async function sendVerification<U extends AuthUser, A>(
       settings.verification.digits,
       data,
     );
+
     await core.mail({
       type: 'verify-email',
       to: user.email,
@@ -43,13 +45,16 @@ export async function sendVerification<U extends AuthUser, A>(
     });
   } else {
     const url = settings.urls.verifyEmail;
+
     if (!url) throw new Error('urls.verifyEmail is required for link verification');
+
     const { token, expiresAt } = await core.tokens.issueLink(
       PURPOSE.emailVerification,
       user.id,
       settings.verification.ttlMs,
       data,
     );
+
     await core.mail({
       type: 'verify-email',
       to: user.email,
@@ -58,6 +63,7 @@ export async function sendVerification<U extends AuthUser, A>(
       expiresAt: new Date(expiresAt),
     });
   }
+
   await core.emit(
     {
       type: 'email.verification_sent',
@@ -79,11 +85,16 @@ export async function requestEmailVerification<U extends AuthUser, A>(
     input.session.userId,
     input.meta,
   );
+
   if (limited) return limited;
+
   const user = await core.users.findById(input.session.userId);
+
   if (!user) return fail('session_expired', 'user_missing');
   if (user.emailVerified) return ok({ sent: false });
+
   await sendVerification(core, settings, user, input.meta);
+
   return ok({ sent: true });
 }
 
@@ -99,13 +110,16 @@ export async function verifyEmailCode<U extends AuthUser, A>(
   input: { session: StoredSession<A>; code: string; meta: RequestMeta },
 ): Promise<AuthResult<VerifiedEmail<A>>> {
   const limited = await core.rateLimit('email-verification', input.meta.ip, input.meta);
+
   if (limited) return limited;
+
   const redemption = await core.tokens.redeemCode(
     PURPOSE.emailVerification,
     input.session.userId,
     input.code,
     settings.verification.maxAttempts,
   );
+
   return finish(core, redemption, input.session, input.meta);
 }
 
@@ -120,16 +134,22 @@ export async function verifyEmailLink<U extends AuthUser, A>(
   input: { token: string; session: StoredSession<A> | null; meta: RequestMeta },
 ): Promise<AuthResult<VerifiedEmail<A>>> {
   const limited = await core.rateLimit('email-verification', input.meta.ip, input.meta);
+
   if (limited) return limited;
+
   const peek = await core.tokens.peekLink(PURPOSE.emailVerification, input.token);
+
   if (peek.status === 'valid' && input.session?.userId !== peek.userId) {
     await core.emit(
       { type: 'email.verification_failed', userId: peek.userId, reason: 'session_required' },
       input.meta,
     );
+
     return fail('session_expired', 'verification_session_required');
   }
+
   const redemption = await core.tokens.redeemLink(PURPOSE.emailVerification, input.token);
+
   return finish(core, redemption, input.session, input.meta);
 }
 
@@ -148,25 +168,32 @@ async function finish<U extends AuthUser, A>(
       },
       meta,
     );
+
     return fail('invalid_token', `verification_${redemption.status}`);
   }
+
   const user = await core.users.findById(redemption.userId);
   const sentTo = normalizeEmail(redemption.data.email);
+
   // The address changed since the mail was sent: the proof is for an old address.
   if (!user || !sentTo || user.email !== sentTo) {
     await core.emit(
       { type: 'email.verification_failed', userId: redemption.userId, reason: 'address_changed' },
       meta,
     );
+
     return fail('invalid_token', 'verification_address_changed');
   }
-  if (!(await core.users.markEmailVerified(user.id, sentTo as NormalizedEmail))) {
+
+  if (!(await core.users.markEmailVerified(user.id, sentTo))) {
     return fail('invalid_token', 'verification_write_refused');
   }
+
   await core.revokeAllSessions(user.id, 'email-verified');
   await core.emit({ type: 'email.verified', userId: user.id }, meta);
 
   if (!current || current.userId !== user.id) return ok({ session: null });
+
   const issued = await core.issueSession(
     { ...user, emailVerified: true },
     {
@@ -176,5 +203,6 @@ async function finish<U extends AuthUser, A>(
       authenticatedAt: current.authenticatedAt,
     },
   );
+
   return issued.ok ? ok({ session: issued.value }) : issued;
 }

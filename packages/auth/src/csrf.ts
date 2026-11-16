@@ -32,6 +32,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 function normalizeOrigin(value: string): string | null {
   try {
     const url = new URL(value);
+
     // `new URL('app://app').origin` is the string 'null' for non-special
     // schemes, so build scheme://host[:port] by hand.
     return `${url.protocol}//${url.host}`.toLowerCase();
@@ -47,8 +48,11 @@ export function verifyRequestOrigin(input: {
 }): boolean {
   if (SAFE_METHODS.has(input.method.toUpperCase())) return true;
   if (!input.origin || input.origin === 'null') return false;
+
   const origin = normalizeOrigin(input.origin);
+
   if (origin === null) return false;
+
   return input.allowedOrigins.some((allowed) => normalizeOrigin(allowed) === origin);
 }
 
@@ -65,6 +69,7 @@ export function verifyFetchSite(input: {
 }): boolean {
   if (SAFE_METHODS.has(input.method.toUpperCase())) return true;
   if (input.secFetchSite === 'same-origin') return true;
+
   return input.allowSameSite === true && input.secFetchSite === 'same-site';
 }
 
@@ -91,6 +96,7 @@ export function createCsrfToken(
 ): string {
   checkSecret(secret);
   const nonce = encodeHexLowerCase(randomBytes(16, random));
+
   return `${nonce}.${mac(secret, binding, nonce)}`;
 }
 
@@ -104,19 +110,29 @@ export function verifyCsrfToken(input: {
   secrets: readonly Uint8Array[];
 }): boolean {
   const { cookieToken, headerToken } = input;
+
   if (input.secrets.length === 0) return false;
+
   for (const secret of input.secrets) checkSecret(secret);
+
   if (!cookieToken || !headerToken || !secretsEqual(cookieToken, headerToken)) return false;
+
   const dot = cookieToken.indexOf('.');
+
   if (dot <= 0) return false;
+
   const nonce = cookieToken.slice(0, dot);
   const given = cookieToken.slice(dot + 1);
+
   if (!NONCE.test(nonce)) return false;
+
   // Check every secret, without stopping at the first match, so timing does not
   // reveal which secret signed the token.
   let valid = false;
+
   for (const secret of input.secrets) {
     if (hexDigestsEqual(given, mac(secret, input.binding, nonce))) valid = true;
   }
+
   return valid;
 }

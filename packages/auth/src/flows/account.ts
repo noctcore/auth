@@ -23,23 +23,30 @@ export async function validateRequest<U extends AuthUser, A>(
   input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean },
 ): Promise<AuthResult<StoredSession<A>>> {
   const result = await core.sessions.validate(input.token, { touch: input.touch ?? true });
+
   if (!result.ok) return fail('session_expired', `session_${result.reason}`);
+
   const refusal = await firstRefusal(core.hooks.onSessionValidate, {
     session: result.session,
     meta: input.meta,
   });
+
   if (refusal) {
     const ids = await core.sessions.revoke(result.session.userId, [result.session.id]);
+
     await core.emit(
       { type: 'session.revoked', userId: result.session.userId, reason: refusal.reason },
       input.meta,
     );
+
     await core.notifyRevoked(result.session.userId, ids, refusal.reason);
+
     return fail(
       refusal.code === 'invalid_credentials' ? 'session_expired' : refusal.code,
       refusal.reason,
     );
   }
+
   return ok(result.session);
 }
 
@@ -69,8 +76,11 @@ export async function reauthenticate<U extends AuthUser, A>(
     input.meta,
     'reauthenticate',
   );
+
   if (!proved.ok) return proved;
+
   await core.sessions.revoke(input.session.userId, [input.session.id]);
+
   return core.issueSession(proved.value, {
     via: 'reauthenticate',
     meta: input.meta,
@@ -90,6 +100,7 @@ export async function changePassword<U extends AuthUser, A>(
   },
 ): Promise<AuthResult<IssuedSession<A>>> {
   const { session, meta } = input;
+
   const proved = await proveCurrentPassword(
     core,
     session,
@@ -97,7 +108,9 @@ export async function changePassword<U extends AuthUser, A>(
     meta,
     'password-change',
   );
+
   if (!proved.ok) return proved;
+
   const user = proved.value;
 
   const refusal = await firstRefusal(core.hooks.beforePasswordChange, {
@@ -106,21 +119,27 @@ export async function changePassword<U extends AuthUser, A>(
     secondFactor: input.secondFactor,
     meta,
   });
+
   if (refusal) {
     await core.emit(
       { type: 'password.change_failed', userId: user.id, reason: refusal.reason },
       meta,
     );
+
     return fail(refusal.code, refusal.reason);
   }
+
   const hashed = await core.hashNewPassword(input.newPassword, meta);
+
   if (!hashed.ok) {
     await core.emit(
       { type: 'password.change_failed', userId: user.id, reason: hashed.reason },
       meta,
     );
+
     return hashed;
   }
+
   if (!(await core.users.setPasswordHash(user.id, hashed.value)))
     return fail('session_expired', 'user_missing');
 
@@ -129,12 +148,14 @@ export async function changePassword<U extends AuthUser, A>(
   await core.revokeAllSessions(user.id, 'password-change');
   await core.tokens.revokeAll(user.id, RESET_PURPOSES);
   await core.emit({ type: 'password.changed', userId: user.id }, meta);
+
   await core.mail({
     type: 'password-changed',
     to: user.email,
     userId: user.id,
     at: new Date(core.clock.now()),
   });
+
   return core.issueSession(user, { via: 'password-change', meta, inherit: session });
 }
 
@@ -146,17 +167,23 @@ async function proveCurrentPassword<U extends AuthUser, A>(
   door: 'password-change' | 'reauthenticate',
 ): Promise<AuthResult<U>> {
   const limited = await core.rateLimit(door, session.userId, meta);
+
   if (limited) return limited;
+
   const credential = await core.users.findCredentialById(session.userId);
+
   if (!credential) return fail('session_expired', 'user_missing');
   if (!credential.passwordHash) return fail('password_not_set', 'password_not_set');
+
   if (!(await core.verifyPassword(credential.passwordHash, password))) {
     const { newLock } = await core.throttle.recordFailure(accountKey(credential.email));
+
     if (newLock) {
       await core.emit(
         { type: 'account.locked', userId: credential.id, data: { until: newLock.until } },
         meta,
       );
+
       await core.mail({
         type: 'lockout',
         to: credential.email,
@@ -164,12 +191,15 @@ async function proveCurrentPassword<U extends AuthUser, A>(
         until: new Date(newLock.until),
       });
     }
+
     await core.emit(
       { type: 'password.change_failed', userId: credential.id, reason: `wrong_password:${door}` },
       meta,
     );
+
     return fail('invalid_credentials', 'wrong_password');
   }
+
   return ok(publicUser(credential));
 }
 
@@ -188,6 +218,7 @@ export async function listSessions<U extends AuthUser, A>(
   session: StoredSession<A>,
 ): Promise<SessionSummary[]> {
   const active = await core.sessions.listActive(session.userId);
+
   return active
     .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
     .map((s) => ({
@@ -209,16 +240,21 @@ export async function revokeSession<U extends AuthUser, A>(
 ): Promise<AuthResult<{ revoked: boolean }>> {
   if (input.id !== input.session.id) {
     const fresh = requireFreshAuth(core, settings, input.session);
+
     if (!fresh.ok) return fresh;
   }
+
   const ids = await core.sessions.revoke(input.session.userId, [input.id]);
+
   if (ids.length > 0) {
     await core.emit(
       { type: 'session.revoked', userId: input.session.userId, reason: 'revoke-one' },
       input.meta,
     );
+
     await core.notifyRevoked(input.session.userId, ids, 'revoke-one');
   }
+
   return ok({ revoked: ids.length > 0 });
 }
 
@@ -231,10 +267,15 @@ export async function revokeOtherSessions<U extends AuthUser, A>(
   // High privilege, like revoking one device: a stolen session must not be
   // able to sign the owner out everywhere.
   const fresh = requireFreshAuth(core, settings, input.session);
+
   if (!fresh.ok) return fresh;
+
   const user = await core.users.findById(input.session.userId);
+
   if (!user) return fail('session_expired', 'user_missing');
+
   await core.revokeAllSessions(user.id, 'revoke-others');
+
   return core.issueSession(user, {
     via: 'revoke-others',
     meta: input.meta,
@@ -249,6 +290,7 @@ export async function revokeAllSessions<U extends AuthUser, A>(
   input: { session: StoredSession<A>; meta: RequestMeta },
 ): Promise<{ cookie: CookieSpec }> {
   await core.revokeAllSessions(input.session.userId, 'revoke-all');
+
   return { cookie: createBlankSessionCookie(core.cookie, input.meta.origin) };
 }
 
@@ -258,9 +300,11 @@ export async function logout<U extends AuthUser, A>(
   input: { token: string | null | undefined; meta: RequestMeta },
 ): Promise<{ cookie: CookieSpec }> {
   const ended = await core.sessions.revokeToken(input.token);
+
   if (ended) {
     await core.emit({ type: 'logout', userId: ended.userId }, input.meta);
     await core.notifyRevoked(ended.userId, [ended.id], 'logout');
   }
+
   return { cookie: createBlankSessionCookie(core.cookie, input.meta.origin) };
 }

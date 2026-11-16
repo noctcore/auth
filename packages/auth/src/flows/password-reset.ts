@@ -32,18 +32,25 @@ export async function requestPasswordReset<U extends AuthUser, A>(
 ): Promise<AuthResult<void>> {
   const { meta } = input;
   const captcha = await core.checkCaptcha('password-reset', input.captchaToken, meta);
+
   if (captcha) return captcha;
+
   const limited = await core.rateLimit('password-reset-request', meta.ip, meta);
+
   if (limited) return limited;
+
   const email = normalizeEmail(input.email);
+
   if (!email) return fail('invalid_email', 'invalid_email');
 
   const bucket = Math.floor(core.clock.now() / DEDUPE_WINDOW_MS);
+
   const job: PasswordResetJob = {
     email,
     ip: meta.ip,
     dedupeKey: sha256Hex(`password-reset:${email}:${bucket}`),
   };
+
   if (settings.reset.enqueue) {
     await settings.reset.enqueue(job);
   } else {
@@ -53,7 +60,9 @@ export async function requestPasswordReset<U extends AuthUser, A>(
       });
     });
   }
+
   await core.emit({ type: 'password.reset_requested' }, meta);
+
   return ok();
 }
 
@@ -66,28 +75,37 @@ export async function processPasswordReset<U extends AuthUser, A>(
   const meta: RequestMeta = { ip: job.ip };
   const email = normalizeEmail(job.email);
   const credential = email ? await core.users.findCredentialByEmail(email) : null;
+
   if (!credential) {
     await core.emit({ type: 'password.reset_request_ignored', reason: 'unknown_user' }, meta);
+
     return;
   }
+
   const user = publicUser(credential);
+
   for (const hook of core.hooks.beforePasswordResetRequest) {
     const refusal = await hook({ user });
+
     if (refusal) {
       await core.emit(
         { type: 'password.reset_request_ignored', userId: user.id, reason: refusal.reason },
         meta,
       );
+
       return;
     }
   }
+
   if (await core.rateLimit('password-reset-mail', user.id, meta)) {
     await core.emit(
       { type: 'password.reset_request_ignored', userId: user.id, reason: 'mail_limit' },
       meta,
     );
+
     return;
   }
+
   if (settings.reset.kind === 'code') {
     const { code, expiresAt } = await core.tokens.issueCode(
       PURPOSE.passwordReset,
@@ -95,6 +113,7 @@ export async function processPasswordReset<U extends AuthUser, A>(
       settings.reset.ttlMs,
       settings.reset.digits,
     );
+
     await core.mail({
       type: 'password-reset-code',
       to: user.email,
@@ -104,12 +123,15 @@ export async function processPasswordReset<U extends AuthUser, A>(
     });
   } else {
     const url = settings.urls.resetPassword;
+
     if (!url) throw new Error('urls.resetPassword is required for link resets');
+
     const { token, expiresAt } = await core.tokens.issueLink(
       PURPOSE.passwordReset,
       user.id,
       settings.reset.ttlMs,
     );
+
     await core.mail({
       type: 'password-reset',
       to: user.email,
@@ -128,8 +150,11 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
 ): Promise<AuthResult<{ ticket: string; expiresAt: number }>> {
   const { meta } = input;
   const limited = await core.rateLimit('password-reset-code', meta.ip, meta);
+
   if (limited) return limited;
+
   const email = normalizeEmail(input.email);
+
   // Guesses are also counted per address, whether or not it has an account or
   // a code outstanding, so spreading guesses over many IPs does not help.
   const perAddress = await core.rateLimit(
@@ -137,14 +162,18 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
     accountKey(email ?? input.email),
     meta,
   );
+
   if (perAddress) return perAddress;
+
   const user = await core.users.findCredentialByEmail(email ?? ('' as NormalizedEmail));
+
   const redemption = await core.tokens.redeemCode(
     PURPOSE.passwordReset,
     user?.id ?? null,
     input.code,
     settings.reset.maxAttempts,
   );
+
   if (redemption.status !== 'valid') {
     await core.emit(
       {
@@ -154,14 +183,18 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
       },
       meta,
     );
+
     return fail('invalid_token', `reset_code_${redemption.status}`);
   }
+
   const ticket = await core.tokens.issueLink(
     PURPOSE.passwordResetTicket,
     redemption.userId,
     settings.reset.ticketTtlMs,
   );
+
   await core.emit({ type: 'password.reset_code_verified', userId: redemption.userId }, meta);
+
   return ok({ ticket: ticket.token, expiresAt: ticket.expiresAt });
 }
 
@@ -172,11 +205,14 @@ export async function resetPassword<U extends AuthUser, A>(
 ): Promise<AuthResult<void>> {
   const { meta } = input;
   const limited = await core.rateLimit('password-reset', meta.ip, meta);
+
   if (limited) return limited;
+
   const purpose =
     settings.reset.kind === 'code' ? PURPOSE.passwordResetTicket : PURPOSE.passwordReset;
 
   const peek = await core.tokens.peekLink(purpose, input.token);
+
   if (peek.status !== 'valid')
     return failed(
       core,
@@ -184,17 +220,23 @@ export async function resetPassword<U extends AuthUser, A>(
       peek.status,
       meta,
     );
+
   const user = await core.users.findById(peek.userId);
+
   if (!user) return failed(core, peek.userId, 'user_missing', meta);
 
   for (const hook of core.hooks.beforePasswordReset) {
     const refusal = await hook({ user, secondFactor: input.secondFactor, meta });
+
     if (refusal) return failed(core, user.id, refusal.reason, meta, refusal.code);
   }
+
   const hashed = await core.hashNewPassword(input.password, meta);
+
   if (!hashed.ok) return hashed;
 
   const redeemed = await core.tokens.redeemLink(purpose, input.token);
+
   if (redeemed.status !== 'valid')
     return failed(core, user.id, `lost_race_${redeemed.status}`, meta);
   if (!(await core.users.setPasswordHash(user.id, hashed.value)))
@@ -203,16 +245,20 @@ export async function resetPassword<U extends AuthUser, A>(
   await core.revokeAllSessions(user.id, 'password-reset');
   await core.tokens.revokeAll(user.id, RESET_PURPOSES);
   await core.throttle.clearAccount(accountKey(user.email));
+
   if (settings.reset.markEmailVerified && !user.emailVerified) {
     await core.users.markEmailVerified(user.id, user.email as NormalizedEmail);
   }
+
   await core.emit({ type: 'password.reset', userId: user.id }, meta);
+
   await core.mail({
     type: 'password-changed',
     to: user.email,
     userId: user.id,
     at: new Date(core.clock.now()),
   });
+
   return ok();
 }
 
@@ -224,5 +270,6 @@ async function failed<U extends AuthUser, A>(
   code: AuthErrorCode = 'invalid_token',
 ): Promise<AuthFailure> {
   await core.emit({ type: 'password.reset_failed', ...(userId ? { userId } : {}), reason }, meta);
+
   return fail(code, `reset_${reason}`);
 }

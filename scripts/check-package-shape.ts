@@ -38,6 +38,7 @@ function run(command: string, args: readonly string[], cwd: string): boolean {
     cwd,
     stdio: 'inherit',
   });
+
   return result.status === 0;
 }
 
@@ -56,6 +57,7 @@ try {
   for (const { dir, manifest } of published) {
     console.log(`\n=== ${manifest.name}`);
     const before = new Set(readdirSync(scratch));
+
     const packed = spawnSync(
       process.execPath,
       ['pm', 'pack', '--destination', scratch, '--quiet'],
@@ -64,13 +66,16 @@ try {
         stdio: ['ignore', 'ignore', 'inherit'],
       },
     );
+
     const tarball = readdirSync(scratch).find((file) => !before.has(file));
+
     if (packed.status !== 0 || tarball === undefined) {
       failed.push(`${manifest.name} (bun pm pack failed)`);
       continue;
     }
 
     const lintOk = run('publint', ['--strict'], dir);
+
     // `node16` skips the legacy `node10` resolution mode, which ignores
     // `exports` and so can never see lint-meta-rules' subpath entries. Every
     // supported consumer (Node 22, ESLint 9+ flat config) resolves through
@@ -80,6 +85,7 @@ try {
       [join(scratch, tarball), '--profile', 'node16', '--format', 'table-flipped'],
       dir,
     );
+
     if (!lintOk) failed.push(`${manifest.name} (publint)`);
     if (!typesOk) failed.push(`${manifest.name} (attw)`);
   }
@@ -91,4 +97,5 @@ if (failed.length > 0) {
   console.error(`\npackage shape check failed for:\n${failed.map((f) => `  - ${f}`).join('\n')}`);
   process.exit(1);
 }
+
 console.log(`\npackage shape ok: ${published.length} package(s)`);

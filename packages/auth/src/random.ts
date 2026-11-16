@@ -21,7 +21,9 @@ const TOKEN_PATTERN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`, 'u');
 
 export function randomBytes(length: number, random: RandomSource = cryptoRandom): Uint8Array {
   const bytes = new Uint8Array(length);
+
   random(bytes);
+
   return bytes;
 }
 
@@ -49,12 +51,15 @@ export function generateNumericCode(digits: number, random: RandomSource = crypt
   if (!Number.isInteger(digits) || digits < 6 || digits > 9) {
     throw new RangeError('A numeric code has 6 to 9 digits');
   }
+
   const modulus = 10 ** digits;
   const limit = Math.floor(0x1_0000_0000 / modulus) * modulus;
   const buffer = new Uint8Array(4);
+
   for (;;) {
     random(buffer);
     const value = new DataView(buffer.buffer).getUint32(0);
+
     if (value < limit) return String(value % modulus).padStart(digits, '0');
   }
 }

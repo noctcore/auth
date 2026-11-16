@@ -50,6 +50,7 @@ export class OneTimeTokens {
 
   private codeHash(purpose: string, userId: string, code: string): string {
     if (!this.secret) throw new Error('A server secret is required for code tokens');
+
     return hmacSha256Hex(this.secret, `${purpose}:${userId}:${code}`);
   }
 
@@ -61,24 +62,32 @@ export class OneTimeTokens {
   ): Promise<{ token: string; expiresAt: number }> {
     const token = generateToken(this.random);
     const expiresAt = this.clock.now() + ttlMs;
+
     await this.store.put({ purpose, userId, hash: sha256Hex(token), expiresAt, attempts: 0, data });
+
     return { token, expiresAt };
   }
 
   /** Looks a link up without consuming it (cheap checks before expensive work). */
   async peekLink(purpose: string, token: unknown): Promise<TokenRedemption> {
     if (!isTokenShape(token)) return { status: 'unknown' };
+
     const found = await this.store.find(purpose, sha256Hex(token));
+
     return this.classify(found, found);
   }
 
   /** Consumes a link. Expiry is checked after the atomic consume, so an expired link is also gone. */
   async redeemLink(purpose: string, token: unknown): Promise<TokenRedemption> {
     if (!isTokenShape(token)) return { status: 'unknown' };
+
     const hash = sha256Hex(token);
     const found = await this.store.find(purpose, hash);
+
     if (!found) return { status: 'unknown' };
+
     const consumed = await this.store.consume(purpose, hash);
+
     return this.classify(found, consumed);
   }
 
@@ -87,6 +96,7 @@ export class OneTimeTokens {
     if (!consumed) return { status: 'consumed', namedUserId: found.userId };
     if (consumed.expiresAt <= this.clock.now())
       return { status: 'expired', namedUserId: consumed.userId };
+
     return { status: 'valid', userId: consumed.userId, data: consumed.data };
   }
 
@@ -99,6 +109,7 @@ export class OneTimeTokens {
   ): Promise<{ code: string; expiresAt: number }> {
     const code = generateNumericCode(digits, this.random);
     const expiresAt = this.clock.now() + ttlMs;
+
     await this.store.put({
       purpose,
       userId,
@@ -107,6 +118,7 @@ export class OneTimeTokens {
       attempts: 0,
       data,
     });
+
     return { code, expiresAt };
   }
 
@@ -126,24 +138,35 @@ export class OneTimeTokens {
     const candidate = typeof code === 'string' && CODE_PATTERN.test(code) ? code : '000000';
     const expected = this.codeHash(purpose, userId ?? NO_SUCH_USER_ID, candidate);
     const found = await this.store.findByUser(purpose, userId ?? NO_SUCH_USER_ID);
+
     if (userId === null || typeof code !== 'string' || !CODE_PATTERN.test(code))
       return { status: 'unknown' };
     if (!found) return { status: 'unknown' };
+
     if (found.expiresAt <= this.clock.now()) {
       await this.store.deleteByUser(userId, [purpose]);
+
       return { status: 'expired', namedUserId: userId };
     }
+
     const attempt = await this.store.incrementAttempts(purpose, userId, maxAttempts);
+
     if (attempt === null) {
       await this.store.deleteByUser(userId, [purpose]);
+
       return { status: 'exhausted', namedUserId: userId };
     }
+
     if (!hexDigestsEqual(found.hash, expected)) {
       if (attempt >= maxAttempts) await this.store.deleteByUser(userId, [purpose]);
+
       return { status: 'mismatch', namedUserId: userId };
     }
+
     const consumed = await this.store.consume(purpose, found.hash);
+
     if (!consumed) return { status: 'consumed', namedUserId: userId };
+
     return { status: 'valid', userId, data: consumed.data };
   }
 

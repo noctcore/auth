@@ -51,9 +51,12 @@ export type PluginFlows<P extends readonly AuthPlugin[]> = UnionToIntersection<
 
 function toSecret(secret: Uint8Array | string | undefined): Uint8Array {
   if (secret === undefined) throw new AuthConfigError('secret is required (32 bytes or more)');
+
   const bytes = typeof secret === 'string' ? new TextEncoder().encode(secret) : secret;
+
   if (bytes.byteLength < MIN_SECRET_BYTES)
     throw new AuthConfigError(`secret must be at least ${MIN_SECRET_BYTES} bytes`);
+
   return bytes;
 }
 
@@ -62,6 +65,7 @@ function resolveSettings<U extends AuthUser, A, P extends readonly AuthPlugin[]>
 ): FlowSettings {
   const verificationKind = config.emailVerification?.kind ?? 'code';
   const resetKind = config.passwordReset?.kind ?? 'link';
+
   const settings: FlowSettings = {
     revealExisting: config.registration?.revealExisting ?? false,
     autoLogin: config.registration?.autoLogin ?? false,
@@ -85,15 +89,18 @@ function resolveSettings<U extends AuthUser, A, P extends readonly AuthPlugin[]>
     urls: { verifyEmail: config.urls?.verifyEmail, resetPassword: config.urls?.resetPassword },
     freshAuthAgeMs: toMilliseconds(config.session?.freshAuthAge ?? '10m'),
   };
+
   if (settings.autoLogin && !settings.revealExisting) {
     throw new AuthConfigError(
       'registration.autoLogin requires registration.revealExisting: a session would reveal that the account is new',
     );
   }
+
   if (verificationKind === 'link' && !settings.urls.verifyEmail)
     throw new AuthConfigError('urls.verifyEmail is required for link verification');
   if (resetKind === 'link' && !settings.urls.resetPassword)
     throw new AuthConfigError('urls.resetPassword is required for link resets');
+
   for (const [name, digits] of [
     ['emailVerification.digits', settings.verification.digits],
     ['passwordReset.digits', settings.reset.digits],
@@ -101,6 +108,7 @@ function resolveSettings<U extends AuthUser, A, P extends readonly AuthPlugin[]>
     if (!Number.isInteger(digits) || digits < 6 || digits > 9)
       throw new AuthConfigError(`${name} must be 6 to 9`);
   }
+
   return settings;
 }
 
@@ -119,6 +127,7 @@ export function createAuth<
       'stores.users, stores.sessions, stores.tokens and stores.counters are required',
     );
   }
+
   if (!config.password?.hasher) throw new AuthConfigError('password.hasher is required');
   if (!config.mailer) throw new AuthConfigError('mailer is required');
 
@@ -129,9 +138,12 @@ export function createAuth<
   const codeKey = deriveKey(secret, 'codes');
   const deviceKey = deriveKey(secret, 'device');
   const seen = new Set<string>();
+
   for (const plugin of plugins) {
     if (seen.has(plugin.id)) throw new AuthConfigError(`Duplicate plugin id: ${plugin.id}`);
+
     seen.add(plugin.id);
+
     if (plugin.requires?.includes('captcha') && !config.captcha)
       throw new AuthConfigError(`Plugin ${plugin.id} requires a captcha`);
   }
@@ -140,9 +152,12 @@ export function createAuth<
   const random = config.random ?? cryptoRandom;
   const logger = config.logger ?? silentLogger;
   const policy = { ...DEFAULT_PASSWORD_POLICY, ...config.password.policy };
+
   if (policy.minLength < 8)
     throw new AuthConfigError('password.policy.minLength must be at least 8');
+
   const cookie = config.session?.cookie ?? {};
+
   sessionCookieName(cookie);
 
   const sessions = new SessionManager<A>(
@@ -152,13 +167,16 @@ export function createAuth<
     random,
     logger,
   );
+
   const storeLimit = config.stores.sessions.maxSessionTtlMs;
   const longest = Math.max(sessions.absoluteTtlMs, sessions.rememberMeTtlMs);
+
   if (storeLimit !== undefined && longest > storeLimit) {
     throw new AuthConfigError(
       `The session store guards sessions up to ${storeLimit} ms, but sessions may last ${longest} ms: raise the store's maxSessionTtl or lower session.rememberMeTtl`,
     );
   }
+
   const core = new AuthCore<U, A>({
     users: config.stores.users,
     sessions,
@@ -250,11 +268,13 @@ export function createAuth<
   };
 
   const namespaced: Record<string, object> = {};
+
   for (const plugin of plugins) {
     if (plugin.id in flows)
       throw new AuthConfigError(`Plugin id ${plugin.id} collides with a core flow`);
     if (plugin.flows) namespaced[plugin.id] = plugin.flows(core);
   }
+
   return Object.assign(flows, namespaced) as typeof flows & PluginFlows<P>;
 }
 

@@ -28,7 +28,9 @@ export function checkPasswordPolicy(
   policy: PasswordPolicy = DEFAULT_PASSWORD_POLICY,
 ): PasswordPolicyVerdict {
   const length = [...normalizePassword(password)].length;
+
   if (length < policy.minLength) return 'too_short';
   if (length > policy.maxLength) return 'too_long';
+
   return 'ok';
 }

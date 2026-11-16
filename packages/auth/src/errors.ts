@@ -54,6 +54,7 @@ export type AuthResult<T> = AuthSuccess<T> | AuthFailure;
 
 export function ok<T>(value: T): AuthSuccess<T>;
 export function ok(): AuthSuccess<void>;
+
 export function ok<T>(value?: T): AuthSuccess<T | undefined> {
   return { ok: true, value };
 }

@@ -135,15 +135,23 @@ export function mergeHooks<U extends AuthUser, A>(
   inputs: ReadonlyArray<HookInput<U, A> | undefined>,
 ): HookLists<U, A> {
   const lists: Record<string, unknown[]> = {};
+
   for (const name of HOOK_NAMES) lists[name] = [];
+
   for (const input of inputs) {
     if (!input) continue;
+
     for (const name of HOOK_NAMES) {
       const value = (input as Record<string, unknown>)[name];
+
       if (value === undefined) continue;
-      lists[name]?.push(...(Array.isArray(value) ? value : [value]));
+
+      const entries: readonly unknown[] = Array.isArray(value) ? (value as unknown[]) : [value];
+
+      lists[name]?.push(...entries);
     }
   }
+
   return lists as unknown as HookLists<U, A>;
 }
 
@@ -154,7 +162,9 @@ export async function firstRefusal<C>(
 ): Promise<Refusal | null> {
   for (const hook of hooks) {
     const result = await hook(context);
+
     if (result && result.refuse === true) return result;
   }
+
   return null;
 }

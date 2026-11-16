@@ -38,7 +38,9 @@ export function runConformance(
 /** A unique id per call, so cases on a shared real backend never collide. */
 export function uniqueId(prefix: string): string {
   const bytes = new Uint8Array(8);
+
   globalThis.crypto.getRandomValues(bytes);
+
   return `${prefix}_${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 

@@ -33,6 +33,7 @@ export function hmacSha256Hex(key: Uint8Array, message: string): string {
  */
 export function hexDigestsEqual(a: string, b: string): boolean {
   if (!HEX.test(a) || !HEX.test(b)) return false;
+
   return constantTimeEqual(decodeHex(a), decodeHex(b));
 }
 

@@ -45,22 +45,26 @@ export class MemoryUserStore implements UserStore<AuthUser> {
       if (record.email === email && this.live(record))
         return { ...this.view(record), passwordHash: record.passwordHash };
     }
+
     return null;
   }
 
   async findCredentialById(id: string): Promise<WithPasswordHash<AuthUser> | null> {
     const record = this.byId.get(id);
+
     return this.live(record) ? { ...this.view(record), passwordHash: record.passwordHash } : null;
   }
 
   async findById(id: string): Promise<AuthUser | null> {
     const record = this.byId.get(id);
+
     return this.live(record) ? this.view(record) : null;
   }
 
   async create(input: { email: NormalizedEmail; passwordHash: string }): Promise<AuthUser | null> {
     // Unique on email across soft-deleted rows too, like a database constraint.
     for (const record of this.byId.values()) if (record.email === input.email) return null;
+
     const record: UserRecord = {
       id: `user_${++this.sequence}`,
       email: input.email,
@@ -68,7 +72,9 @@ export class MemoryUserStore implements UserStore<AuthUser> {
       passwordHash: input.passwordHash,
       deletedAt: null,
     };
+
     this.byId.set(record.id, record);
+
     return this.view(record);
   }
 
@@ -78,37 +84,46 @@ export class MemoryUserStore implements UserStore<AuthUser> {
     options: { readonly expected?: string | null } = {},
   ): Promise<boolean> {
     const record = this.byId.get(id);
+
     if (!this.live(record)) return false;
     if (options.expected !== undefined && record.passwordHash !== options.expected) return false;
+
     record.passwordHash = passwordHash;
+
     return true;
   }
 
   async markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean> {
     const record = this.byId.get(id);
+
     if (!this.live(record) || record.email !== email) return false;
+
     record.emailVerified = true;
+
     return true;
   }
 
   /** Test helper: soft-delete a user. */
   async softDelete(id: string): Promise<void> {
     const record = this.byId.get(id);
+
     if (record) record.deletedAt = this.clock.now();
   }
 
   /** Test helper: change a user's email (as an email change flow would). */
   async setEmail(id: string, email: NormalizedEmail): Promise<void> {
     const record = this.byId.get(id);
-    if (record) {
-      record.email = email;
-      record.emailVerified = false;
-    }
+
+    if (!record) return;
+
+    record.email = email;
+    record.emailVerified = false;
   }
 
   /** Test helper: give a user no password (a social-only account). */
   async clearPassword(id: string): Promise<void> {
     const record = this.byId.get(id);
+
     if (record) record.passwordHash = null;
   }
 }
@@ -122,11 +137,15 @@ export class MemorySessionStore implements SessionStore {
 
   private read(id: string): StoredSession | null {
     const entry = this.sessions.get(id);
+
     if (!entry) return null;
+
     if (entry.expiresAt <= this.clock.now()) {
       this.sessions.delete(id);
+
       return null;
     }
+
     return entry.session;
   }
 
@@ -135,25 +154,33 @@ export class MemorySessionStore implements SessionStore {
       session: structuredClone(session),
       expiresAt: this.clock.now() + ttlMs,
     });
+
     let ids = this.byUser.get(session.userId);
+
     if (!ids) this.byUser.set(session.userId, (ids = new Set()));
+
     ids.add(session.id);
   }
 
   async get(id: string): Promise<StoredSession | null> {
     const session = this.read(id);
+
     return session ? structuredClone(session) : null;
   }
 
   async touch(session: StoredSession): Promise<boolean> {
     const entry = this.sessions.get(session.id);
+
     if (!entry || !this.read(session.id)) return false;
+
     entry.session = structuredClone(session);
+
     return true;
   }
 
   async delete(userId: string, ids: readonly string[]): Promise<void> {
     const index = this.byUser.get(userId);
+
     for (const id of ids) {
       this.sessions.delete(id);
       index?.delete(id);
@@ -162,13 +189,18 @@ export class MemorySessionStore implements SessionStore {
 
   async listByUser(userId: string): Promise<StoredSession[]> {
     const index = this.byUser.get(userId);
+
     if (!index) return [];
+
     const live: StoredSession[] = [];
+
     for (const id of [...index]) {
       const session = this.read(id);
+
       if (session) live.push(structuredClone(session));
       else index.delete(id);
     }
+
     return live;
   }
 
@@ -178,7 +210,9 @@ export class MemorySessionStore implements SessionStore {
 
   async bumpEpoch(userId: string): Promise<number> {
     const next = (this.epochs.get(userId) ?? 0) + 1;
+
     this.epochs.set(userId, next);
+
     return next;
   }
 }
@@ -198,6 +232,7 @@ export class MemoryTokenStore implements TokenStore {
 
   async find(purpose: string, hash: string): Promise<StoredToken | null> {
     const token = this.tokens.get(this.key(purpose, hash));
+
     return token ? { ...token } : null;
   }
 
@@ -205,14 +240,18 @@ export class MemoryTokenStore implements TokenStore {
     for (const token of this.tokens.values()) {
       if (token.purpose === purpose && token.userId === userId) return { ...token };
     }
+
     return null;
   }
 
   async consume(purpose: string, hash: string): Promise<StoredToken | null> {
     const key = this.key(purpose, hash);
     const token = this.tokens.get(key);
+
     if (!token) return null;
+
     this.tokens.delete(key);
+
     return token;
   }
 
@@ -220,11 +259,15 @@ export class MemoryTokenStore implements TokenStore {
     for (const [key, token] of this.tokens) {
       if (token.purpose === purpose && token.userId === userId) {
         if (token.attempts >= max) return null;
+
         const attempts = token.attempts + 1;
+
         this.tokens.set(key, { ...token, attempts });
+
         return attempts;
       }
     }
+
     return null;
   }
 
@@ -247,23 +290,30 @@ export class MemoryCounterStore implements CounterStore {
 
   private live(key: string): { count: number; resetAt: number } | null {
     const entry = this.counters.get(key);
+
     if (!entry) return null;
+
     if (entry.resetAt <= this.clock.now()) {
       this.counters.delete(key);
+
       return null;
     }
+
     return entry;
   }
 
   async increment(key: string, windowMs: number): Promise<CounterWindow> {
     const entry = this.live(key) ?? { count: 0, resetAt: this.clock.now() + windowMs };
+
     entry.count += 1;
     this.counters.set(key, entry);
+
     return { count: entry.count, resetAt: entry.resetAt };
   }
 
   async get(key: string): Promise<CounterWindow | null> {
     const entry = this.live(key);
+
     return entry ? { ...entry } : null;
   }
 
@@ -273,6 +323,7 @@ export class MemoryCounterStore implements CounterStore {
 
   async decrement(key: string): Promise<void> {
     const entry = this.live(key);
+
     if (entry && entry.count > 0) entry.count -= 1;
   }
 

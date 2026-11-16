@@ -89,7 +89,9 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       'auth_event',
       event.reason ? { type: event.type, reason: event.reason } : { type: event.type },
     );
+
     if (!this.#deps.audit) return;
+
     try {
       await this.#deps.audit.emit(event, meta);
     } catch (error) {
@@ -102,7 +104,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       await this.#deps.mailer.send({
         ...event,
         dedupeKey: generateToken(this.random),
-      } as AuthMailEvent);
+      });
     } catch (error) {
       this.logger.error('Mailer failed', {
         type: event.type,
@@ -119,8 +121,10 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   ): Promise<AuthFailure | null> {
     const rule = this.#deps.doors[door] ?? DEFAULT_DOOR_LIMITS[door];
     const hit = await this.throttle.hit(`${door}:${key}`, rule);
+
     if (hit.allowed) return null;
     if (hit.firstRefusal) await this.emit({ type: 'rate_limit.exceeded', reason: door }, meta);
+
     return fail('rate_limited', `rate_limited:${door}`, {
       retryAfterSeconds: hit.retryAfterSeconds,
     });
@@ -132,9 +136,13 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     meta: RequestMeta,
   ): Promise<AuthFailure | null> {
     if (!this.#deps.captcha) return null;
+
     const verdict = await this.#deps.captcha.verify(token, { ip: meta.ip, door });
+
     this.metrics.count('auth_captcha', { door, verdict });
+
     if (verdict === 'pass') return null;
+
     return verdict === 'unavailable'
       ? fail('captcha_unavailable', 'captcha_unavailable')
       : fail('captcha_failed', 'captcha_rejected');
@@ -148,12 +156,15 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     // hasher's cost stays bounded and the timing stays the same.
     const tooLong = checkPasswordPolicy(password, this.policy) === 'too_long';
     const normalized = tooLong ? '' : normalizePassword(password);
+
     if (!passwordHash || tooLong) {
       // Pay the same verify cost as a real account, and discard the result,
       // so even a preimage of the dummy hash can never authenticate.
       await this.hasher.verify(await dummyHashFor(this.hasher), normalized);
+
       return false;
     }
+
     return this.hasher.verify(passwordHash, normalized);
   }
 
@@ -162,31 +173,42 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     meta: RequestMeta | undefined,
   ): Promise<AuthResult<string>> {
     const verdict = checkPasswordPolicy(password, this.policy);
+
     if (verdict === 'too_short') return fail('weak_password', 'password_too_short');
     if (verdict === 'too_long') return fail('password_too_long', 'password_too_long');
+
     const normalized = normalizePassword(password);
+
     if (this.#deps.breachCheck) {
       const breach = await this.#deps.breachCheck(normalized);
+
       this.metrics.count('auth_breach_check', { verdict: breach });
+
       if (breach === 'breached') return fail('breached_password', 'password_breached');
+
       if (breach === 'unavailable') {
         this.logger.warn('Breached-password check unavailable; accepting the password unchecked');
+
         await this.emit(
           { type: 'password.breach_check_unavailable', data: { accepted: true } },
           meta,
         );
       }
     }
+
     return ok(await this.hasher.hash(normalized));
   }
 
   async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
     const inherited = options.inherit?.attributes;
     let merged: Record<string, unknown> = { ...(inherited as Record<string, unknown> | undefined) };
+
     for (const hook of this.hooks.sessionAttributes) {
       merged = { ...merged, ...(await hook({ user, via: options.via, inherited })) };
     }
+
     let attributes: A;
+
     try {
       attributes = this.#deps.attributeSchema
         ? this.#deps.attributeSchema.parse(merged)
@@ -198,6 +220,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
         userId: user.id,
         error: describe(error),
       });
+
       return fail('forbidden', 'invalid_session_attributes');
     }
 
@@ -207,6 +230,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       attributes,
       meta: options.meta,
     });
+
     if (refusal) {
       await this.emit(
         {
@@ -217,12 +241,15 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
         },
         options.meta,
       );
+
       return fail(refusal.code, refusal.reason);
     }
 
     const rememberMe = options.rememberMe ?? options.inherit?.rememberMe ?? false;
+
     const persistentCookie =
       options.persistentCookie ?? options.inherit?.persistentCookie ?? rememberMe;
+
     const minted = await this.#startSession({
       userId: user.id,
       attributes,
@@ -232,6 +259,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       meta: options.meta,
       ...(options.epoch === undefined ? {} : { epoch: options.epoch }),
     });
+
     if (!minted.ok) {
       await this.emit(
         {
@@ -242,13 +270,16 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
         },
         options.meta,
       );
+
       return fail('session_expired', minted.reason);
     }
+
     // A grant: its audit row is written before the session is handed out.
     await this.emit(
       { type: 'session.created', userId: user.id, data: { via: options.via, rememberMe } },
       options.meta,
     );
+
     if (minted.evicted.length > 0) await this.notifyRevoked(user.id, minted.evicted, 'evicted');
 
     const cookie = createSessionCookie(this.cookie, minted.token, {
@@ -257,6 +288,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       now: this.clock.now(),
       origin: options.meta.origin,
     });
+
     // Only here, after every factor: the device token for the lockout bypass,
     // bound to the user and the epoch the session was stamped with.
     const deviceToken = createDeviceToken(
@@ -264,8 +296,10 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       { userId: user.id, epoch: minted.session.epoch, issuedAt: this.clock.now() },
       this.random,
     );
+
     const maxAge = Math.floor(this.throttle.deviceMaxAgeMs / 1000);
     const device = deviceCookie(this.cookie, deviceToken, maxAge, options.meta.origin);
+
     return ok({ token: minted.token, session: minted.session, cookie, deviceCookie: device });
   }
 
@@ -293,6 +327,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
 
   async revokeAllSessions(userId: string, reason: RevocationReason): Promise<void> {
     const ids = await this.sessions.revokeAll(userId);
+
     await this.emit({ type: 'sessions.revoked', userId, reason }, undefined);
     await this.notifyRevoked(userId, ids, reason);
   }

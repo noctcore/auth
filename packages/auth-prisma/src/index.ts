@@ -58,12 +58,15 @@ export interface PrismaUserStoreOptions<U extends AuthUser> {
   readonly createData?: (input: { email: NormalizedEmail }) => Record<string, unknown>;
 }
 
+/** A user row as selected: the mapped auth columns plus your `select`. */
+type UserRow = Record<string, unknown>;
+
 const P2002 = 'P2002';
 const P2025 = 'P2025';
 
 function prismaCode(error: unknown): string | undefined {
   return typeof error === 'object' && error !== null && 'code' in error
-    ? String((error as { code: unknown }).code)
+    ? String(error.code)
     : undefined;
 }
 
@@ -75,6 +78,7 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
 
   constructor(private readonly options: PrismaUserStoreOptions<U>) {
     const fields = options.fields ?? {};
+
     this.f = {
       id: fields.id ?? 'id',
       email: fields.email ?? 'email',
@@ -82,12 +86,14 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
       passwordHash: fields.passwordHash ?? 'passwordHash',
       deletedAt: fields.deletedAt === undefined ? 'deletedAt' : fields.deletedAt,
     };
+
     this.selectUser = {
       ...options.select,
       [this.f.id]: true,
       [this.f.email]: true,
       [this.f.emailVerified]: true,
     };
+
     this.selectWithHash = { ...this.selectUser, [this.f.passwordHash]: true };
   }
 
@@ -95,8 +101,9 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     return this.f.deletedAt ? { ...where, [this.f.deletedAt]: null } : where;
   }
 
-  private toUser(row: Record<string, unknown>): U {
+  private toUser(row: UserRow): U {
     if (this.options.toUser) return this.options.toUser(row);
+
     return {
       id: String(row[this.f.id]),
       email: String(row[this.f.email]),
@@ -104,51 +111,56 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     } as U;
   }
 
-  private withHash(row: Record<string, unknown> | null): WithPasswordHash<U> | null {
+  private withHash(row: UserRow | null): WithPasswordHash<U> | null {
     if (!row) return null;
+
     const hash = row[this.f.passwordHash];
+
     return { ...this.toUser(row), passwordHash: typeof hash === 'string' ? hash : null };
   }
 
   async findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null> {
-    return this.withHash(
-      await this.options.delegate.findFirst({
-        where: this.live({ [this.f.email]: email }),
-        select: this.selectWithHash,
-      }),
-    );
+    const row = (await this.options.delegate.findFirst({
+      where: this.live({ [this.f.email]: email }),
+      select: this.selectWithHash,
+    })) as UserRow | null;
+
+    return this.withHash(row);
   }
 
   async findCredentialById(id: string): Promise<WithPasswordHash<U> | null> {
-    return this.withHash(
-      await this.options.delegate.findFirst({
-        where: this.live({ [this.f.id]: id }),
-        select: this.selectWithHash,
-      }),
-    );
+    const row = (await this.options.delegate.findFirst({
+      where: this.live({ [this.f.id]: id }),
+      select: this.selectWithHash,
+    })) as UserRow | null;
+
+    return this.withHash(row);
   }
 
   async findById(id: string): Promise<U | null> {
-    const row = await this.options.delegate.findFirst({
+    const row = (await this.options.delegate.findFirst({
       where: this.live({ [this.f.id]: id }),
       select: this.selectUser,
-    });
+    })) as UserRow | null;
+
     return row ? this.toUser(row) : null;
   }
 
   async create(input: { email: NormalizedEmail; passwordHash: string }): Promise<U | null> {
     try {
-      const row = await this.options.delegate.create({
+      const row = (await this.options.delegate.create({
         data: {
           ...this.options.createData?.(input),
           [this.f.email]: input.email,
           [this.f.passwordHash]: input.passwordHash,
         },
         select: this.selectUser,
-      });
+      })) as UserRow;
+
       return this.toUser(row);
     } catch (error) {
       if (prismaCode(error) === P2002) return null;
+
       throw error;
     }
   }
@@ -160,10 +172,12 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
   ): Promise<boolean> {
     // With `expected`, the hash check is part of the same UPDATE: a compare-and-set.
     const guard = options.expected === undefined ? {} : { [this.f.passwordHash]: options.expected };
+
     const { count } = await this.options.delegate.updateMany({
       where: this.live({ [this.f.id]: id, ...guard }),
       data: { [this.f.passwordHash]: passwordHash },
     });
+
     return count > 0;
   }
 
@@ -172,6 +186,7 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
       where: this.live({ [this.f.id]: id, [this.f.email]: email }),
       data: { [this.f.emailVerified]: true },
     });
+
     return count > 0;
   }
 }
@@ -187,10 +202,12 @@ interface TokenRow {
 
 function toToken(row: TokenRow | null): StoredToken | null {
   if (!row) return null;
+
   const data =
     row.data && typeof row.data === 'object' && !Array.isArray(row.data)
       ? (row.data as Record<string, string>)
       : {};
+
   return {
     purpose: row.purpose,
     userId: row.userId,
@@ -212,35 +229,50 @@ export class PrismaTokenStore implements TokenStore {
       attempts: token.attempts,
       data: { ...token.data },
     };
+
     const args = {
       where: { userId_purpose: { userId: token.userId, purpose: token.purpose } },
       create: { userId: token.userId, purpose: token.purpose, ...values },
       update: values,
     };
+
     try {
       await this.delegate.upsert(args);
     } catch (error) {
       // Two concurrent first puts can both try to insert; the loser updates instead.
       if (prismaCode(error) !== P2002) throw error;
+
       await this.delegate.upsert(args);
     }
   }
 
   async find(purpose: string, hash: string): Promise<StoredToken | null> {
-    return toToken(await this.delegate.findUnique({ where: { purpose_hash: { purpose, hash } } }));
+    const row = (await this.delegate.findUnique({
+      where: { purpose_hash: { purpose, hash } },
+    })) as TokenRow | null;
+
+    return toToken(row);
   }
 
   async findByUser(purpose: string, userId: string): Promise<StoredToken | null> {
-    return toToken(
-      await this.delegate.findUnique({ where: { userId_purpose: { userId, purpose } } }),
-    );
+    const row = (await this.delegate.findUnique({
+      where: { userId_purpose: { userId, purpose } },
+    })) as TokenRow | null;
+
+    return toToken(row);
   }
 
   async consume(purpose: string, hash: string): Promise<StoredToken | null> {
     try {
-      return toToken(await this.delegate.delete({ where: { purpose_hash: { purpose, hash } } }));
+      // The delete returns the row it removed, so only one caller ever gets it.
+      const row = (await this.delegate.delete({
+        where: { purpose_hash: { purpose, hash } },
+      })) as TokenRow;
+
+      return toToken(row);
     } catch (error) {
       if (prismaCode(error) === P2025) return null;
+
       throw error;
     }
   }
@@ -252,9 +284,11 @@ export class PrismaTokenStore implements TokenStore {
         data: { attempts: { increment: 1 } },
         select: { attempts: true },
       })) as { attempts: number };
+
       return row.attempts;
     } catch (error) {
       if (prismaCode(error) === P2025) return null;
+
       throw error;
     }
   }

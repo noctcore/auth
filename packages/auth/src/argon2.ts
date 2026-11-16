@@ -61,11 +61,13 @@ export function argon2id(options: Argon2idOptions = {}): PasswordHasher {
   const timeCost = options.timeCost ?? DEFAULT_ARGON2ID.timeCost;
   const parallelism = options.parallelism ?? DEFAULT_ARGON2ID.parallelism;
   const acceptable = OWASP_TABLE.some(([m, t]) => memoryCost >= m && timeCost >= t);
+
   if (!acceptable && options.unsafeAllowWeakParameters !== true) {
     throw new AuthConfigError(
       `Argon2id m=${memoryCost} t=${timeCost} is below the OWASP minimum (for example m=19456 t=2)`,
     );
   }
+
   const params = {
     algorithm: ARGON2ID,
     memoryCost,
@@ -92,7 +94,9 @@ export function argon2id(options: Argon2idOptions = {}): PasswordHasher {
     },
     needsRehash(stored) {
       const match = PHC.exec(stored);
+
       if (!match) return true;
+
       return (
         Number(match[1]) !== memoryCost ||
         Number(match[2]) !== timeCost ||

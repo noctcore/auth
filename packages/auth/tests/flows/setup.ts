@@ -25,6 +25,7 @@ export function setup(overrides: Overrides = {}) {
   const stores = memoryStores(clock);
   const mailer = recordingMailer();
   const audit = recordingAudit();
+
   const auth = createAuth({
     stores,
     password: { hasher: plainHasher(), breachCheck: false },
@@ -42,9 +43,13 @@ export function setup(overrides: Overrides = {}) {
   /** Registers, verifies and signs in a user; returns the session and its token. */
   async function signedInUser(email = 'ada@example.com', ip = '203.0.113.7') {
     const registered = await auth.register({ email, password: PASSWORD, meta: meta(ip) });
+
     if (!registered.ok) throw new Error(`register failed: ${registered.reason}`);
+
     const login = await auth.login({ email, password: PASSWORD, meta: meta(ip) });
+
     if (!login.ok || login.value.kind !== 'session') throw new Error('login failed');
+
     return {
       token: login.value.session.token,
       session: login.value.session.session as StoredSession<Record<string, never>>,
@@ -53,6 +58,7 @@ export function setup(overrides: Overrides = {}) {
 
   async function sessionOf(token: string) {
     const result = await auth.validateRequest({ token, meta: meta() });
+
     return result.ok ? result.value : null;
   }
 
