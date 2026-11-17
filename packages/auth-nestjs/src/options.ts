@@ -96,6 +96,13 @@ export interface ResolvedOptions {
 
 const HEADER = /^[a-z0-9-]+$/u;
 
+/**
+ * The most proxy hops the module will trust. Real deployments run one to three
+ * (a CDN, a load balancer, an ingress); a larger number is far more likely a
+ * typo than a chain, and would trust entries a client wrote.
+ */
+export const MAX_TRUSTED_HOPS = 16;
+
 export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>): ResolvedOptions {
   const { auth, csrf, trustedHops } = options;
 
@@ -103,8 +110,10 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     throw new AuthConfigError('AuthModule needs the createAuth(...) result as `auth`');
   }
 
-  if (!Number.isInteger(trustedHops) || trustedHops < 0) {
-    throw new AuthConfigError('trustedHops must be a whole number of proxies, 0 when none');
+  if (!Number.isSafeInteger(trustedHops) || trustedHops < 0 || trustedHops > MAX_TRUSTED_HOPS) {
+    throw new AuthConfigError(
+      `trustedHops must be a whole number of proxies from 0 to ${MAX_TRUSTED_HOPS}`,
+    );
   }
 
   if (csrf.secrets.length === 0)
