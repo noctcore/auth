@@ -104,7 +104,7 @@ merge until each one passes, and none is `continue-on-error`.
 | CodeQL (security-extended) | `codeql · javascript-typescript` | CI only |
 | Dependency review (high severity, licence allowlist) | `dependency review` | CI only |
 
-**Scheduled, not required to merge.** These run on a schedule (and the first two on demand). A
+**Scheduled, not required to merge.** These run on a schedule, and each can also be started by hand. A
 failure shows as a failed run on `main` to fix, not as a blocked pull request.
 
 | Check | CI job | Locally |
