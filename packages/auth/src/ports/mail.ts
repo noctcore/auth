@@ -62,31 +62,6 @@ export type AuthMailEvent =
       readonly userId: string;
       readonly until: Date;
       readonly dedupeKey: string;
-    }
-  /** The two-factor plugin: a second factor was turned on for the account. */
-  | {
-      readonly type: 'two-factor-enabled';
-      readonly to: string;
-      readonly userId: string;
-      readonly at: Date;
-      readonly dedupeKey: string;
-    }
-  /** The two-factor plugin: the second factor was turned off. */
-  | {
-      readonly type: 'two-factor-disabled';
-      readonly to: string;
-      readonly userId: string;
-      readonly at: Date;
-      readonly dedupeKey: string;
-    }
-  /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */
-  | {
-      readonly type: 'recovery-code-used';
-      readonly to: string;
-      readonly userId: string;
-      readonly remaining: number;
-      readonly at: Date;
-      readonly dedupeKey: string;
     };
 
 export interface Mailer {

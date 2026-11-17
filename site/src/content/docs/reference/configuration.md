@@ -24,7 +24,7 @@ Every time option takes a `Duration`: a number is **seconds**, a string carries 
 | `stores.sessions` | A `SessionStore`. `@noctcore/auth-redis` ships one. |
 | `stores.counters` | A `CounterStore`: rate limits and lockout. `@noctcore/auth-redis` ships one. |
 | `password.hasher` | A `PasswordHasher`. Use `argon2id()` from `@noctcore/auth/argon2`. |
-| `secret` | The server secret, a string or `Uint8Array` of at least 32 bytes. Separate keys are derived from it for code HMACs and trusted-device tokens, so one key never serves two purposes. Rotating it invalidates outstanding codes and device cookies, never sessions, and also every recovery code of the two-factor plugin (their HMAC key is derived from it): after a rotation, have every user with a factor regenerate their recovery codes. Keep it apart from your CSRF secret. |
+| `secret` | The server secret, a string or `Uint8Array` of at least 32 bytes. Separate keys are derived from it for code HMACs and trusted-device tokens, so one key never serves two purposes. Rotating it invalidates outstanding codes and device cookies, never sessions. Keep it apart from your CSRF secret. |
 | `mailer` | A `Mailer` whose `send(event)` enqueues the mail. Flows never await it, and each mail is handed over at most once. See [Mail into your templates and queue](/auth/build/mail/). |
 
 Any store that passes the conformance suite in `@noctcore/auth/testing` is valid; see [Writing a store adapter](/auth/build/store-adapter/). Source: `create-auth.ts` (`assertRequiredConfig`), `crypto/keys.ts`.
@@ -161,7 +161,7 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 | `captcha` | none | A `CaptchaVerifier`, checked on login, register and the reset request. Fails closed: a provider outage refuses the request with `captcha_unavailable`. `turnstile(options)` builds one for Cloudflare Turnstile. |
 | `audit` | none | An `AuditSink`. Every flow emits an event for each success and each refusal, with the internal `reason`. Events that record a grant are awaited before the grant is returned; a failing sink never fails the flow. |
 | `hooks` | none | Functions the flows call at fixed points, such as `sessionAttributes`, `beforeSessionCreate`, `beforePasswordReset` and `afterRegister`. A hook can refuse with `refuse(code, reason)`. `afterRegister` is awaited and runs only for a new address, so its time shows in sign-up timing: queue slow work instead of awaiting it. |
-| `plugins` | `[]` | Plugins add hooks and flows, never endpoints. A plugin's flows appear on the auth object under its `id`. The two-factor plugin (`twoFactor` from `@noctcore/auth/two-factor`) is configured on its own; its options are in [Two-factor](/auth/build/two-factor/#wiring-the-plugin). |
+| `plugins` | `[]` | Plugins add hooks and flows, never endpoints. A plugin's flows appear on the auth object under its `id`. |
 | `logger` | silent | Where the package reports what it cannot return: a failed breach check, a mailer or audit sink that threw. Messages never carry secrets. |
 | `metrics` | no-op | Counters such as breach check outages and door refusals. Labels never carry user input. |
 | `clock` | system clock | Injectable so tests move time instead of sleeping. |

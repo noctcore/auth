@@ -3,8 +3,7 @@
  *
  * Applying a reset (from a link, or from the ticket a verified code was
  * exchanged for) peeks the token first, so a password that fails the policy
- * does not burn it, then hashes (before the hooks, so a refused password
- * spends nothing a hook asked for), then consumes it atomically, so of two
+ * does not burn it, then hashes, then consumes it atomically, so of two
  * concurrent resets exactly one writes. A completed reset revokes every
  * session, voids every outstanding reset token, lifts the lockout (the mailbox
  * was proved) and, by default, marks the address verified.
@@ -100,17 +99,15 @@ export async function resetPassword<U extends AuthUser, A>(
 
   if (!user) return failed(core, peek.userId, 'user_missing', meta);
 
-  // The new password is checked before the hooks, so one the policy refuses
-  // does not spend what a hook asked for (a second factor's code, say).
-  const hashed = await core.hashNewPassword(input.password, meta);
-
-  if (!hashed.ok) return hashed;
-
   for (const hook of core.hooks.beforePasswordReset) {
     const refusal = await hook({ user, secondFactor: input.secondFactor, meta });
 
     if (refusal) return failed(core, user.id, refusal.reason, meta, refusal.code);
   }
+
+  const hashed = await core.hashNewPassword(input.password, meta);
+
+  if (!hashed.ok) return hashed;
 
   const redeemed = await core.tokens.redeemLink(purpose, input.token);
 

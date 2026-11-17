@@ -36,7 +36,6 @@ const ENTRIES: readonly Entry[] = [
   { pkg: 'auth', name: 'index', base: 'packages/auth/dist/index' },
   { pkg: 'auth', name: 'argon2', base: 'packages/auth/dist/argon2' },
   { pkg: 'auth', name: 'testing', base: 'packages/auth/dist/testing' },
-  { pkg: 'auth', name: 'two-factor', base: 'packages/auth/dist/two-factor' },
   { pkg: 'auth-redis', name: 'index', base: 'packages/auth-redis/dist/index' },
   { pkg: 'auth-prisma', name: 'index', base: 'packages/auth-prisma/dist/index' },
   { pkg: 'auth-nestjs', name: 'index', base: 'packages/auth-nestjs/dist/index' },
@@ -118,16 +117,11 @@ function describe(checker: ts.TypeChecker, exported: ts.Symbol, file: ts.SourceF
   const symbol =
     exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported;
 
-  // Types print as seen from the file that declares the symbol, where every
-  // name is the declared one. Seen from the entry file, a type that lives in a
-  // shared declaration chunk would print under the chunk's minified export
-  // name (`z` for PasswordPolicy).
-  const home = symbol.declarations?.[0]?.getSourceFile() ?? file;
   const kind = kindOf(symbol);
   const head = `${exported.name} [${kind}]${typeParams(checker, symbol)}`;
 
   if (kind === 'interface') {
-    return [head, ...members(checker, checker.getDeclaredTypeOfSymbol(symbol), home)];
+    return [head, ...members(checker, checker.getDeclaredTypeOfSymbol(symbol), file)];
   }
 
   if (kind === 'type') {
@@ -138,14 +132,14 @@ function describe(checker: ts.TypeChecker, exported: ts.Symbol, file: ts.SourceF
   }
 
   if (kind === 'class') {
-    const instance = members(checker, checker.getDeclaredTypeOfSymbol(symbol), home);
-    const ctorType = checker.getTypeOfSymbolAtLocation(symbol, home);
+    const instance = members(checker, checker.getDeclaredTypeOfSymbol(symbol), file);
+    const ctorType = checker.getTypeOfSymbolAtLocation(symbol, file);
 
     const ctors = ctorType
       .getConstructSignatures()
-      .map((s) => `    (new) ${checker.signatureToString(s, home, FLAGS)}`);
+      .map((s) => `    (new) ${checker.signatureToString(s, file, FLAGS)}`);
 
-    const statics = members(checker, ctorType, home)
+    const statics = members(checker, ctorType, file)
       .filter((l) => !l.trimStart().startsWith('prototype:'))
       .map((l) => `    static ${l.trimStart()}`);
 
@@ -153,7 +147,7 @@ function describe(checker: ts.TypeChecker, exported: ts.Symbol, file: ts.SourceF
   }
 
   return [
-    `${head}: ${checker.typeToString(checker.getTypeOfSymbolAtLocation(symbol, home), home, FLAGS)}`,
+    `${head}: ${checker.typeToString(checker.getTypeOfSymbolAtLocation(symbol, file), file, FLAGS)}`,
   ];
 }
 

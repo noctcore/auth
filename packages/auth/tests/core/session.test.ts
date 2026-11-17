@@ -490,34 +490,3 @@ describe('SessionManager warnings', () => {
     ]);
   });
 });
-
-describe('SessionManager.findActive', () => {
-  it('finds a live session by id without touching or reaping anything', async () => {
-    const m = manager({ idleTimeout: '30m' });
-    const minted = await mintFor(m);
-
-    if (!minted.ok) throw new Error('mint failed');
-
-    expect(await m.findActive(minted.session.id)).toEqual(minted.session);
-    expect(await m.findActive('f'.repeat(64))).toBeNull();
-  });
-
-  it('refuses an idle session, and one from before a revoke-all, that the store still holds', async () => {
-    const m = manager({ idleTimeout: '30m' });
-    const idle = await mintFor(m);
-
-    if (!idle.ok) throw new Error('mint failed');
-
-    clock.advance(30 * MIN);
-    expect(await m.findActive(idle.session.id)).toBeNull();
-    expect(await store.get(idle.session.id)).not.toBeNull();
-
-    const stale = await mintFor(m, 'u2');
-
-    if (!stale.ok) throw new Error('mint failed');
-
-    await store.bumpEpoch('u2');
-    expect(await m.findActive(stale.session.id)).toBeNull();
-    expect(await store.get(stale.session.id)).not.toBeNull();
-  });
-});

@@ -31,9 +31,6 @@ Give the enqueue a timeout. The library sets none and does not cap how many send
 | `password-changed` | a password was changed or reset | `at` |
 | `account-exists` | someone registered with an address that already has an account | none |
 | `lockout` | failed sign-ins locked the account | `until` |
-| `two-factor-enabled` | the two-factor plugin: a second factor was turned on | `at` |
-| `two-factor-disabled` | the two-factor plugin: the second factor was turned off | `at` |
-| `recovery-code-used` | the two-factor plugin: a recovery code was spent | `remaining`, `at` |
 
 `account-exists` is the other half of the uniform registration answer: the caller sees "check your email" either way, and only the owner of the address learns the account exists. `lockout` tells the owner someone is guessing their password.
 

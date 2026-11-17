@@ -43,10 +43,6 @@ export type LoginGate =
       readonly newLock?: { until: number };
     };
 
-/** A second-factor attempt: let through, or refused (locked now or already). */
-export type FactorGate =
-  { readonly allowed: true } | { readonly allowed: false; readonly newLock?: { until: number } };
-
 /** A rule with its window in milliseconds, ready for the counter store. */
 export interface WindowRule {
   readonly limit: number;

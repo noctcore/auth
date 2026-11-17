@@ -81,7 +81,6 @@ export default defineConfig({
             './typedoc/entries/auth.ts',
             './typedoc/entries/argon2.ts',
             './typedoc/entries/testing.ts',
-            './typedoc/entries/two-factor.ts',
           ],
           tsconfig: typeDocTsconfig,
           output: 'reference/api/auth',
@@ -134,7 +133,6 @@ export default defineConfig({
             { label: 'Email verification', link: '/learn/email-verification/' },
             { label: 'Password reset', link: '/learn/password-reset/' },
             { label: 'CSRF', link: '/learn/csrf/' },
-            { label: 'Second factors', link: '/learn/second-factors/' },
           ],
         },
         {
@@ -146,7 +144,6 @@ export default defineConfig({
             { label: 'Use with NestJS', link: '/build/nestjs/' },
             { label: 'Use with tRPC', link: '/build/trpc/' },
             { label: 'Writing a store adapter', link: '/build/store-adapter/' },
-            { label: 'Two-factor', link: '/build/two-factor/' },
           ],
         },
         {

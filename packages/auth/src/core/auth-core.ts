@@ -5,12 +5,10 @@
 import { runInBackground } from './background';
 import { DEFAULT_DOOR_LIMITS, type Door } from './config';
 import type { CoreDependencies } from './dependencies';
-import { firstRefusal, type HookLists, type IssueVia, type RevocationReason } from './hooks';
+import { firstRefusal, type HookLists, type RevocationReason } from './hooks';
 import type { IssuedSession, IssueOptions, PluginContext, SessionAccess } from './plugin-context';
 import { narrowSessions } from './session-access';
 import { resolveSessionAttributes } from './session-attributes';
-import { hmacSha256Hex } from '../crypto/hash';
-import { deriveKey } from '../crypto/keys';
 import { generateToken, type RandomSource } from '../crypto/random';
 import {
   createSessionCookie,
@@ -26,7 +24,7 @@ import type { CaptchaDoor } from '../ports/captcha';
 import type { Clock } from '../ports/clock';
 import type { Logger, Metrics } from '../ports/logger';
 import type { AuthMailEvent } from '../ports/mail';
-import type { AuthUser, StoredSession, UserStore } from '../ports/stores';
+import type { AuthUser, UserStore } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
 import type { MintInput, MintResult } from '../session/session-types';
 import { describeError } from '../shared/describe-error';
@@ -37,14 +35,6 @@ import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-
-/** Vias that re-issue a session the user already holds: they must pass it as `inherit`. */
-const REISSUE_VIAS: ReadonlySet<IssueVia> = new Set([
-  'password-change',
-  'reauthenticate',
-  'revoke-others',
-  'email-verified',
-]);
 
 export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   readonly users: UserStore<U>;
@@ -64,8 +54,6 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   // Native private fields: unreachable from plugins and from `auth.context` at runtime.
   readonly #deps: CoreDependencies<U, A>;
   readonly #manager: SessionManager<A>;
-  /** Sessions `confirmLiveSession` read live, each good for one re-issue. */
-  readonly #confirmed = new WeakSet<StoredSession<A>>();
 
   constructor(deps: CoreDependencies<U, A>) {
     this.#deps = deps;
@@ -82,16 +70,6 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     this.logger = deps.logger;
     this.metrics = deps.metrics;
     this.cookie = deps.cookie;
-  }
-
-  keyedHash(purpose: string, message: string): string {
-    return hmacSha256Hex(deriveKey(this.#deps.pluginKey, purpose), message);
-  }
-
-  requireFreshAuth(session: StoredSession<A>): AuthResult<void> {
-    return this.clock.now() - session.authenticatedAt <= this.#deps.freshAuthAgeMs
-      ? ok()
-      : fail('fresh_auth_required', 'stale_authentication');
   }
 
   async emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void> {
@@ -201,42 +179,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return ok(hash);
   }
 
-  /**
-   * Re-reads `session` from the store and returns the stored copy if it is
-   * live (unexpired, not idle, current epoch) and still the same user's; null
-   * otherwise. A re-issue flow calls this BEFORE it revokes anything and
-   * passes the returned object as `inherit`: only such an object, once, opens
-   * the re-issue vias of `issueSession`.
-   */
-  async confirmLiveSession(session: StoredSession<A>): Promise<StoredSession<A> | null> {
-    const live = await this.#manager.findActive(session.id);
-
-    if (!live || live.userId !== session.userId) return null;
-
-    this.#confirmed.add(live);
-
-    return live;
-  }
-
-  /** Whether `inherit` came from `confirmLiveSession` for this user; spends it either way. */
-  #takeConfirmed(inherit: StoredSession<A> | undefined, userId: string): boolean {
-    if (!inherit || !this.#confirmed.delete(inherit)) return false;
-
-    return inherit.userId === userId;
-  }
-
   async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
-    // A re-issue names the session it replaces, and that session was read live
-    // from the store, for this user, by `confirmLiveSession` before the flow
-    // revoked anything: hooks (a second factor's enforcement, say) let
-    // re-issues through on the strength of that, so a call that only claims the
-    // label, or hands over a revoked, expired or hand-built session, is refused.
-    if (REISSUE_VIAS.has(options.via) && !this.#takeConfirmed(options.inherit, user.id)) {
-      await this.#loginFailure(user, `reissue_without_session:${options.via}`, options);
-
-      return fail('session_expired', `reissue_without_session:${options.via}`);
-    }
-
     const resolved = await resolveSessionAttributes(
       { hooks: this.hooks, schema: this.#deps.attributeSchema, logger: this.logger },
       user,

@@ -1,10 +1,10 @@
 /**
- * @noctcore/auth-prisma: Prisma user, one-time token and two-factor stores for @noctcore/auth.
+ * @noctcore/auth-prisma: Prisma user and one-time token stores for @noctcore/auth.
  *
  * The stores take your client's model delegates (`prisma.user`,
  * `prisma.authToken`), not a client type, because Prisma 7 generates the client
- * into your app. Any model with the mapped fields works; the token model (and
- * the two-factor plugin's tables) to copy are in `prisma/auth.prisma`.
+ * into your app. Any model with the mapped fields works; the token model to
+ * copy is `prisma/auth.prisma` in this package.
  *
  * Every write that must not happen twice is a single conditional statement:
  * unique violations become `null` (never thrown), guarded updates use
@@ -16,13 +16,8 @@ import type { PrismaAuthTokenDelegate } from './delegates';
 import { PrismaTokenStore } from './token-store';
 import { PrismaUserStore, type PrismaUserStoreOptions } from './user-store';
 
-export type {
-  PrismaAuthTokenDelegate,
-  PrismaTwoFactorDelegates,
-  PrismaUserDelegate,
-} from './delegates';
+export type { PrismaAuthTokenDelegate, PrismaUserDelegate } from './delegates';
 export { PrismaTokenStore } from './token-store';
-export { PrismaTwoFactorStore } from './two-factor-store';
 export { PrismaUserStore, type PrismaUserStoreOptions, type UserFields } from './user-store';
 
 /** Both Prisma stores. */

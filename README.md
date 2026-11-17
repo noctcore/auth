@@ -69,9 +69,6 @@ the stricter value wins.
 - **Email verification:** 8-digit codes valid for 15 minutes. **Password reset:** single-use links
   valid for 1 hour, or codes exchanged for a short ticket.
 - **Fresh auth:** sensitive actions need a credential proof from the last 10 minutes.
-- **Two-factor (optional plugin):** TOTP with one step of drift and replay protection, 5 code
-  attempts per account in 15 minutes from every IP, ten single-use recovery codes stored as HMACs,
-  and a 10-minute step-up for sensitive actions. A reset of a two-factor account asks for the code.
 - **Registration:** enumeration safe by default. A taken address gets the same answer plus an
   "account exists" mail to its owner.
 
@@ -79,9 +76,9 @@ the stricter value wins.
 
 | Package | What it holds |
 |---|---|
-| [`@noctcore/auth`](packages/auth) | The framework-free core: primitives, sessions, tokens, throttle, flows and plugin seams. `@noctcore/auth/argon2` holds the Argon2id hasher (optional native peer `@node-rs/argon2`); `@noctcore/auth/two-factor` holds the two-factor plugin (TOTP, recovery codes, trusted devices, step-up); `@noctcore/auth/testing` holds in-memory stores, fakes and the store conformance suite |
-| [`@noctcore/auth-redis`](packages/auth-redis) | `SessionStore`, `CounterStore` and the two-factor plugin's store on ioredis |
-| [`@noctcore/auth-prisma`](packages/auth-prisma) | `UserStore`, `TokenStore` and the two-factor plugin's store on Prisma 7, plus the schema to merge into yours |
+| [`@noctcore/auth`](packages/auth) | The framework-free core: primitives, sessions, tokens, throttle, flows and plugin seams. `@noctcore/auth/argon2` holds the Argon2id hasher (optional native peer `@node-rs/argon2`); `@noctcore/auth/testing` holds in-memory stores, fakes and the store conformance suite |
+| [`@noctcore/auth-redis`](packages/auth-redis) | `SessionStore` and `CounterStore` on ioredis |
+| [`@noctcore/auth-prisma`](packages/auth-prisma) | `UserStore` and `TokenStore` on Prisma 7, plus the schema to merge into yours |
 | [`@noctcore/auth-nestjs`](packages/auth-nestjs) | A NestJS module: a closed-by-default session guard, CSRF middleware, decorators and trust-proxy setup |
 | [`@noctcore/auth-trpc`](packages/auth-trpc) | tRPC middlewares: a session context, guarded procedures, CSRF on mutations, safe error mapping and Zod schemas, for plain tRPC and nestjs-trpc |
 

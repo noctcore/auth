@@ -16,7 +16,6 @@ Each page covers one concept: what goes wrong, the attack, the rule the package 
 - [Email verification and account pre-hijacking](/auth/learn/email-verification/)
 - [Password reset](/auth/learn/password-reset/)
 - [CSRF](/auth/learn/csrf/)
-- [Second factors](/auth/learn/second-factors/)
 
 ## Planned
 

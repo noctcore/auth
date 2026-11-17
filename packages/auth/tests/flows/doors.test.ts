@@ -131,25 +131,6 @@ describe('login edges', () => {
 });
 
 describe('races between the check and the write', () => {
-  it('ends a live session whose account vanished before a password change or sign out of other devices', async () => {
-    const { auth, signedInUser, stores } = setup();
-    const { session } = await signedInUser(EMAIL);
-
-    await stores.users.softDelete(session.userId);
-
-    const changed = await auth.changePassword({
-      session,
-      currentPassword: PASSWORD,
-      newPassword: NEW_PASSWORD,
-      meta: meta(),
-    });
-
-    const others = await auth.sessions.revokeOthers({ session, meta: meta() });
-
-    for (const result of [changed, others])
-      expect(result).toMatchObject({ ok: false, code: 'session_expired', reason: 'user_missing' });
-  });
-
   it('ends the session when the account vanished before a password change', async () => {
     const { auth, signedInUser } = setup();
     const { session } = await signedInUser(EMAIL);
@@ -162,12 +143,7 @@ describe('races between the check and the write', () => {
       meta: meta(),
     });
 
-    // A session object naming another user is not a live session of that user.
-    expect(result).toMatchObject({
-      ok: false,
-      code: 'session_expired',
-      reason: 'session_not_active',
-    });
+    expect(result).toMatchObject({ ok: false, code: 'session_expired', reason: 'user_missing' });
   });
 
   it('ends the session when the password write is refused during a change', async () => {

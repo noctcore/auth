@@ -77,7 +77,6 @@ export function createAuth<
   // One secret, a separate key per use: a code HMAC can never double as a device token.
   const codeKey = deriveKey(secret, 'codes');
   const deviceKey = deriveKey(secret, 'device');
-  const pluginKey = deriveKey(secret, 'plugins');
 
   checkPlugins(plugins, { captcha: Boolean(config.captcha) });
 
@@ -120,8 +119,6 @@ export function createAuth<
     cookie,
     attributeSchema: config.session?.attributes,
     deviceKey,
-    pluginKey,
-    freshAuthAgeMs: settings.freshAuthAgeMs,
     clock,
     random,
     logger,
