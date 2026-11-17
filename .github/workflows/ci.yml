@@ -77,6 +77,29 @@ jobs:
       - run: bun run build
       - run: bun run test
 
+  # @noctcore/auth-nestjs declares NestJS >=11 <13 as peers. The test job runs
+  # the newest Nest (the dev dependencies); this one installs the oldest the
+  # range allows and runs the adapter's whole suite against it.
+  nestjs-floor:
+    name: nestjs · peer range floor (11.0.0)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Install the oldest NestJS the peer range allows
+        working-directory: packages/auth-nestjs
+        run: bun add --dev --exact @nestjs/common@11.0.0 @nestjs/core@11.0.0 @nestjs/platform-express@11.0.0 @nestjs/testing@11.0.0
+      - run: bun run --filter '@noctcore/auth' build
+      - name: Typecheck and test the adapter on NestJS 11.0.0
+        working-directory: packages/auth-nestjs
+        run: bun run typecheck && bun run test
+
   # The conformance suite and the example app's e2e test against real Redis and
   # Postgres. AUTH_REQUIRE_SERVICES makes a missing backend a failure: a suite
   # that silently skipped would be green while proving nothing.
