@@ -108,6 +108,15 @@ const codeDigits = Array.from({ length: 16 }, (_, digits) => digits).filter((dig
 const SETTINGS = 'auth/src/flows/resolve-settings.ts';
 const defaultDigits = Number(readAll(SETTINGS, /\.digits \?\? (\d+)/u, 3));
 const defaultAttempts = Number(readAll(SETTINGS, /\.maxAttempts \?\? (\d+)/u, 3));
+
+/** The code lengths createAuth accepts in config, which must match what the generator draws. */
+const configDigits = /digits < (\d+) \|\| digits > (\d+)\)/u.exec(source(SETTINGS));
+
+/** The random id beside the HMAC in the lockout device cookie and the CSRF token. */
+const signedIdBytes = Number(
+  read('auth/src/throttle/device-token.ts', /encodeHexLowerCase\(randomBytes\((\d+), random\)\)/u),
+);
+
 const codeTtlMinutes = minutes(readAll(SETTINGS, /Kind === 'code' \? '(\w+)'/u, 3));
 
 const TOTP = 'auth/src/plugins/two-factor/totp.ts';
@@ -170,12 +179,14 @@ const PAGES: Record<string, readonly string[]> = {
   'entropy-and-tokens': [
     `${TOKEN_BYTES} bytes from the platform's secure random source`,
     `fills ${TOKEN_BYTES} bytes`,
-    `${tokenHexLength} lowercase hex characters`,
-    `${TOKEN_BYTES * 8} bits`,
+    `writes them as ${tokenHexLength} lowercase hex characters`,
+    `exactly ${tokenHexLength} lowercase hex characters`,
+    `${TOKEN_BYTES * 8} bits, far beyond what any`,
+    `random id of ${signedIdBytes} bytes (${signedIdBytes * 8} bits)`,
     `${defaultDigits} digits by default (${codeDigits[0]} to ${codeDigits.at(-1)} allowed)`,
-    `${defaultAttempts} attempts`,
+    `each code gets ${defaultAttempts} attempts by default`,
     `lives ${codeTtlMinutes} minutes by default`,
-    `${totpSecretBytes} bytes (${totpSecretBytes * 8} bits)`,
+    `TOTP secrets are ${totpSecretBytes} bytes (${totpSecretBytes * 8} bits)`,
     `${recoveryCount} codes of ${recoveryLength} characters each from a ${recoveryAlphabet}-symbol alphabet, ${recoveryBits} bits per code`,
     `at least ${minSecretBytes} bytes`,
     `a ${minSecretBytes}-character sentence`,
@@ -212,27 +223,64 @@ const NOT_NUMBERS = [
   /\b(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}\b/gu, // documentation ranges (RFC 5737)
 ];
 
+/** The facts a page does not state. A fact listed twice must appear twice. */
+function missingFacts(text: string, facts: readonly string[]): string[] {
+  return facts.filter((fact, i) => {
+    const wanted = facts.slice(0, i + 1).filter((f) => f === fact).length;
+
+    return text.split(fact).length - 1 < wanted;
+  });
+}
+
+/**
+ * The lines that still hold a digit once each listed fact is taken out once
+ * (and only once, so a fact phrase repeated in another sentence leaves its
+ * number behind) and the allowed non-numbers are removed.
+ */
+function strayLines(text: string, facts: readonly string[]): string[] {
+  let rest = text;
+
+  // Longest first, so a fact inside a longer one does not leave pieces behind.
+  for (const fact of [...facts].sort((a, b) => b.length - a.length)) rest = rest.replace(fact, ' ');
+  for (const pattern of NOT_NUMBERS) rest = rest.replace(pattern, ' ');
+
+  return rest.split('\n').filter((line) => /\d/u.test(line));
+}
+
 describe('Learn page numbers', () => {
   for (const [slug, facts] of Object.entries(PAGES)) {
     it(`${slug} states the values the code uses`, () => {
-      const text = page(slug);
-
-      expect(facts.filter((fact) => !text.includes(fact))).toEqual([]);
+      expect(missingFacts(page(slug), facts)).toEqual([]);
     });
 
     it(`${slug} holds no number that is not checked here`, () => {
-      let rest = page(slug);
-
-      // Longest first, so a fact inside a longer one does not leave pieces behind.
-      for (const fact of [...facts].sort((a, b) => b.length - a.length))
-        rest = rest.replaceAll(fact, ' ');
-      for (const pattern of NOT_NUMBERS) rest = rest.replace(pattern, ' ');
-
-      const stray = rest.split('\n').filter((line) => /\d/u.test(line));
-
-      expect(stray).toEqual([]);
+      expect(strayLines(page(slug), facts)).toEqual([]);
     });
   }
+
+  it('catches a checked number reused in a sentence the facts do not cover', () => {
+    const slug = 'entropy-and-tokens';
+    const facts = PAGES[slug] ?? [];
+    const tampered = `${page(slug)}\nRecovery codes get 5 attempts, and a TOTP secret has 256 bits.\n`;
+
+    expect(strayLines(tampered, facts)).toEqual([
+      'Recovery codes get 5 attempts, and a TOTP secret has 256 bits.',
+    ]);
+  });
+
+  it('allows in config the code lengths the generator draws', () => {
+    expect(configDigits).not.toBeNull();
+    expect([Number(configDigits?.[1]), Number(configDigits?.[2])]).toEqual([
+      codeDigits[0] ?? -1,
+      codeDigits.at(-1) ?? -1,
+    ]);
+  });
+
+  it('gives the CSRF token the same random id length as the device cookie', () => {
+    expect(
+      Number(read('auth/src/http/csrf.ts', /encodeHexLowerCase\(randomBytes\((\d+), random\)\)/u)),
+    ).toBe(signedIdBytes);
+  });
 
   it('reads the hop limit the same in both adapters', () => {
     expect(
