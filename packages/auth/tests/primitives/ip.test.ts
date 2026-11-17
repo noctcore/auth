@@ -55,4 +55,36 @@ describe('maskIp', () => {
     expect(maskIp('2001:db8:abcd:12::1')).toBe('2001:db8:abcd::');
     expect(maskIp('garbage')).toBe('unknown');
   });
+
+  it('pads a compressed IPv6 address with fewer than three leading groups', () => {
+    expect(maskIp('2001:db8::1')).toBe('2001:db8:0::');
+    expect(maskIp('::1')).toBe('0:0:0::');
+  });
+});
+
+describe('clientIp edges', () => {
+  it('has no answer when there is neither a header nor a socket address', () => {
+    expect(clientIp({ remoteAddress: undefined, trustedHops: 1 })).toBeUndefined();
+
+    expect(
+      clientIp({ remoteAddress: undefined, forwardedFor: ' , ', trustedHops: 1 }),
+    ).toBeUndefined();
+  });
+
+  it('reads a repeated header the same as one joined header', () => {
+    const joined = clientIp({
+      remoteAddress: '10.0.0.1',
+      forwardedFor: '198.51.100.1, 203.0.113.2',
+      trustedHops: 1,
+    });
+
+    const repeated = clientIp({
+      remoteAddress: '10.0.0.1',
+      forwardedFor: ['198.51.100.1', '203.0.113.2'],
+      trustedHops: 1,
+    });
+
+    expect(joined).toBe('203.0.113.2');
+    expect(repeated).toBe(joined);
+  });
 });

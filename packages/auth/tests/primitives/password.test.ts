@@ -139,4 +139,24 @@ describe('pwnedPasswords', () => {
 
     expect(await pwnedPasswords({ fetch: throwing })('password')).toBe('unavailable');
   });
+
+  it('uses the global fetch and the public range API when nothing is given', async () => {
+    const fetch = respond(`${suffix}:3`);
+
+    vi.stubGlobal('fetch', fetch);
+
+    try {
+      expect(await pwnedPasswords()('password')).toBe('breached');
+
+      const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [
+        string,
+        RequestInit,
+      ];
+
+      expect(url).toBe('https://api.pwnedpasswords.com/range/5BAA6');
+      expect(init.headers).toMatchObject({ 'User-Agent': 'noctcore-auth' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

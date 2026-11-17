@@ -146,3 +146,34 @@ describe('codes', () => {
     expect(lookups).toEqual([NO_SUCH_USER_ID, 'user-1']);
   });
 });
+
+describe('edges', () => {
+  it('refuses a malformed link without asking the store', async () => {
+    let finds = 0;
+
+    const spy = Object.assign(Object.create(store) as MemoryTokenStore, {
+      find: async () => (finds++, null),
+    });
+
+    const spied = new OneTimeTokens(spy, clock, cryptoRandom, secret);
+
+    expect(await spied.redeemLink('verify', 'not-a-token')).toEqual({ status: 'unknown' });
+    expect(await spied.peekLink('verify', 42)).toEqual({ status: 'unknown' });
+    expect(finds).toBe(0);
+  });
+
+  it('answers consumed when a correct code loses the consume race', async () => {
+    const { code } = await tokens.issueCode('reset-code', 'u1', 60_000, 6);
+
+    const racing = Object.assign(Object.create(store) as MemoryTokenStore, {
+      consume: async () => null,
+    });
+
+    const spied = new OneTimeTokens(racing, clock, cryptoRandom, secret);
+
+    expect(await spied.redeemCode('reset-code', 'u1', code, 5)).toEqual({
+      status: 'consumed',
+      namedUserId: 'u1',
+    });
+  });
+});
