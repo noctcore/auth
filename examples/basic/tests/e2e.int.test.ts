@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import { Redis } from 'ioredis';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { recordingMailer } from '@noctcore/auth/testing';
 import { createApp } from '../src/app';
 import { createPrisma } from '../src/db';
@@ -118,9 +118,14 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
       json: { status: 'check-your-email' },
     });
 
-    const code = mailer.last('verify-email')?.code;
+    // Sign-up answers before it writes the code and hands the mail over.
+    const code = await vi.waitFor(() => {
+      const sent = mailer.last('verify-email')?.code;
 
-    expect(code).toMatch(/^\d{8}$/u);
+      expect(sent).toMatch(/^\d{8}$/u);
+
+      return sent;
+    });
 
     const login = await browser.request('POST', '/api/login', { email, password });
 

@@ -7,7 +7,7 @@ import { createAuth, type AuthConfig, type AuthPlugin } from '../../src';
 import type { Logger } from '../../src/ports/logger';
 import type { AuthUser } from '../../src/ports/stores';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '../../src/testing';
-import { meta, NEW_PASSWORD, PASSWORD, SECRET, setup } from './setup';
+import { meta, NEW_PASSWORD, PASSWORD, SECRET, settled, setup } from './setup';
 
 const EMAIL = 'ada@example.com';
 
@@ -62,6 +62,7 @@ describe('a failing audit sink, mailer or hook', () => {
     const result = await auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });
 
     expect(result.ok).toBe(true);
+    await settled();
     expect(lines.some((l) => l.message === 'Mailer failed')).toBe(true);
   });
 
