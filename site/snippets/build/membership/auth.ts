@@ -15,6 +15,15 @@ export const members = new PrismaMembershipStore({
   scope: prisma.authMemberScope,
 });
 
+/**
+ * The role ceiling, shared by every door that hands out or takes away a role
+ * (membership here, invitations too): owners may do anything, admins manage
+ * everyone but owners and never give the owner role, members manage nobody.
+ */
+export function mayManage(actorRole: string, from: string | undefined, to: string | undefined) {
+  return actorRole === 'owner' || (actorRole === 'admin' && from !== 'owner' && to !== 'owner');
+}
+
 export function buildAuth(mailer: Mailer) {
   return createAuth({
     stores: {
@@ -30,10 +39,7 @@ export function buildAuth(mailer: Mailer) {
         store: members,
         // The last owner or admin of an organisation can be neither demoted nor removed.
         adminRoles: ['owner', 'admin'],
-        // Only an owner may hand out or take away the owner role; admins manage the rest.
-        canManage: ({ actor, from, to }) =>
-          actor.role === 'owner' ||
-          (actor.role === 'admin' && from !== 'owner' && to !== 'owner'),
+        canManage: ({ actor, from, to }) => mayManage(actor.role, from, to),
         // Roles are read from the store on every call and not copied into
         // sessions, so there is nothing to revoke when one changes. Set
         // `revokeSessionsOnChange: true` if your session attributes carry roles.

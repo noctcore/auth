@@ -33,6 +33,8 @@ Your own store must pass `invitationStoreConformance` (see [Writing a store adap
 
 <Code code={authTs} lang="ts" title="src/auth.ts" />
 
+`authorize` reuses `mayManage`, the role ceiling from the [membership guards](/auth/build/membership/) guide, so an invitation can never hand out a role the inviter could not give by a role change.
+
 | Option | Default | |
 | --- | --- | --- |
 | `store` | required | |
@@ -65,4 +67,4 @@ Every outcome writes an audit row: `invitation.created`, `invitation.deduplicate
 
 ## When the inviter changes
 
-Revoking all of a user's sessions (sign out everywhere, a password reset or change, a role change or removal by the membership plugin with `revokeSessionsOnChange` on, any reason your app adds) deletes the invitations that user sent. A sign-out, ending one session, "sign out other sessions", an eviction and an email verification keep them. On accept, the inviter is read from the user store and asked `authorize` again with the invitation's scope, address and payload; a deleted inviter or a refusal withdraws the invitation and answers `invalid_token`.
+Revoking all of a user's sessions deletes the invitations that user sent, and where it reaches depends on the reason. A role change or removal by the membership plugin (only with `revokeSessionsOnChange` on) names its organisation, so only the invitations to that organisation go. Sign out everywhere, a password reset or change, and any reason your app adds name none, so the inviter's invitations to every organisation go. A sign-out, ending one session, "sign out other sessions", turning on two-factor (which signs out the other devices), an eviction and an email verification keep them all: the user still controls their account, and nothing about their right to invite changed. On accept, the inviter is read from the user store and asked `authorize` again with the invitation's scope, address and payload; a deleted inviter or a refusal withdraws the invitation and answers `invalid_token`.

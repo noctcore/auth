@@ -1,22 +1,16 @@
 import { createAuth, type Mailer } from '@noctcore/auth';
 import { argon2id } from '@noctcore/auth/argon2';
 import { invitations } from '@noctcore/auth/invitations';
-import { PrismaInvitationStore, PrismaMembershipStore, prismaStores } from '@noctcore/auth-prisma';
+import { PrismaInvitationStore, prismaStores } from '@noctcore/auth-prisma';
 import { redisStores } from '@noctcore/auth-redis';
 import { Redis } from 'ioredis';
 import { prisma } from '../node-server/db';
+import { mayManage, members } from '../membership/auth';
 
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 
-/** Who belongs to which organisation (see the membership guards guide). */
-export const members = new PrismaMembershipStore({
-  client: prisma,
-  member: prisma.authMember,
-  scope: prisma.authMemberScope,
-});
-
-/** The roles an invitation may hand out. */
-const ROLES = new Set(['member', 'admin']);
+/** The roles an invitation may hand out; `mayManage` decides who may give which. */
+const ROLES = new Set(['member', 'admin', 'owner']);
 
 export function buildAuth(mailer: Mailer) {
   return createAuth({
@@ -31,14 +25,16 @@ export function buildAuth(mailer: Mailer) {
     plugins: [
       invitations({
         store: new PrismaInvitationStore({ client: prisma, invitation: prisma.authInvitation }),
-        // Owners and admins of the organisation may invite, list and revoke, and
-        // only with a role the app knows. Read from the store on every call.
+        // The membership guide's role ceiling, read from the store on every
+        // call: owners and admins may invite, list and revoke, only with a role
+        // the app knows, and only an owner may invite an owner.
         authorize: async ({ user, scope, payload }) => {
           const actor = await members.findMember(scope, user.id);
+          const role = payload?.['role'];
 
-          if (actor?.role !== 'owner' && actor?.role !== 'admin') return false;
+          if (!actor || (payload !== undefined && !ROLES.has(role ?? ''))) return false;
 
-          return payload === undefined || ROLES.has(payload['role'] ?? '');
+          return mayManage(actor.role, undefined, role);
         },
         // What accepting means here: a seat with the invited role.
         onAccept: async ({ user, invitation }) => {
