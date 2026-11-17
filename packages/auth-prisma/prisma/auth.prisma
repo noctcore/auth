@@ -1,5 +1,6 @@
-// The one-time token table for @noctcore/auth-prisma. Copy this model into your
-// schema (or drop this file into a multi-file schema folder) and migrate.
+// The tables for @noctcore/auth-prisma: the one-time token table, then the
+// two-factor plugin's tables. Copy the models you use into your schema (or drop
+// this file into a multi-file schema folder) and migrate.
 //
 // Rows hold only a SHA-256 (links) or an HMAC (codes), never the token itself.
 // A consumed token is deleted; an expired one is deleted when it is next seen,
@@ -22,5 +23,50 @@ model AuthToken {
   // One live token per user and purpose, enforced by the database.
   @@unique([userId, purpose])
   @@unique([purpose, hash])
+  @@index([expiresAt])
+}
+
+// The two-factor plugin's tables (`@noctcore/auth/two-factor`). Leave them out
+// if you do not use the plugin. No column holds a secret in the clear: the TOTP
+// secret is the ciphertext your SecretCipher wrote, recovery codes and device
+// tokens are hashes.
+//
+// The factor and the recovery codes are account data: delete them with the
+// user (or add relations with onDelete: Cascade). Expired devices and step-up
+// proofs are deleted as they are next seen; `expiresAt` is indexed for a sweep.
+
+model AuthTwoFactor {
+  userId    String   @id
+  secret    String
+  confirmed Boolean  @default(false)
+  // The last accepted TOTP time step; -1 before any.
+  lastStep  Int      @default(-1)
+  createdAt DateTime
+}
+
+model AuthRecoveryCodes {
+  userId  String @id
+  // The HMACs of the unused codes, a JSON array of strings.
+  hashes  Json
+  // Bumped on every write: a code is spent by an update guarded on it.
+  version Int    @default(0)
+}
+
+model AuthTrustedDevice {
+  hash      String   @id
+  userId    String
+  epoch     Int
+  createdAt DateTime
+  expiresAt DateTime
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model AuthStepUp {
+  sessionId String   @id
+  userId    String
+  expiresAt DateTime
+
   @@index([expiresAt])
 }

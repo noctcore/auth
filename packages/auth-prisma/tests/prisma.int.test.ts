@@ -4,10 +4,11 @@ import type { AuthUser, NormalizedEmail } from '@noctcore/auth';
 import {
   runConformance,
   tokenStoreConformance,
+  twoFactorStoreConformance,
   uniqueId,
   userStoreConformance,
 } from '@noctcore/auth/testing';
-import { PrismaTokenStore, PrismaUserStore, prismaStores } from '../src';
+import { PrismaTokenStore, PrismaTwoFactorStore, PrismaUserStore, prismaStores } from '../src';
 import { PrismaClient } from './generated/prisma/client';
 
 const url = process.env['DATABASE_URL'];
@@ -39,6 +40,56 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     tokenStoreConformance(new PrismaTokenStore(prisma.authToken)),
     api,
   );
+
+  const twoFactor = new PrismaTwoFactorStore({
+    factor: prisma.authTwoFactor,
+    recoveryCodes: prisma.authRecoveryCodes,
+    trustedDevice: prisma.authTrustedDevice,
+    stepUp: prisma.authStepUp,
+  });
+
+  runConformance('prisma two-factor store', twoFactorStoreConformance(twoFactor), api);
+
+  it("deletes a user's expired trusted devices when it adds one", async () => {
+    const userId = uniqueId('user');
+    const now = Date.now();
+
+    const expired = {
+      userId,
+      hash: uniqueId('d'),
+      epoch: 0,
+      createdAt: now - 2000,
+      expiresAt: now - 1000,
+    };
+
+    const fresh = {
+      userId,
+      hash: uniqueId('d'),
+      epoch: 0,
+      createdAt: now,
+      expiresAt: now + 60_000,
+    };
+
+    await twoFactor.addTrustedDevice(expired, 5);
+    await twoFactor.addTrustedDevice(fresh, 5);
+
+    expect(await prisma.authTrustedDevice.findUnique({ where: { hash: expired.hash } })).toBeNull();
+    expect(await twoFactor.findTrustedDevice(userId, fresh.hash)).toEqual(fresh);
+  });
+
+  it('reads recovery codes stored as something other than a list as none', async () => {
+    const userId = uniqueId('user');
+
+    await prisma.authRecoveryCodes.create({ data: { userId, hashes: { not: 'a list' } } });
+    expect(await twoFactor.countRecoveryCodes(userId)).toBe(0);
+  });
+
+  it('skips stored recovery codes that are not strings', async () => {
+    const userId = uniqueId('user');
+
+    await prisma.authRecoveryCodes.create({ data: { userId, hashes: ['a', 1, 'b'] } });
+    expect(await twoFactor.countRecoveryCodes(userId)).toBe(2);
+  });
 
   it('maps extra columns into a richer user type', async () => {
     interface Member extends AuthUser {
