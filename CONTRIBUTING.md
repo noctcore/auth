@@ -15,6 +15,7 @@ packages/auth          core: primitives, flows, plugin seams, /argon2 and /testi
 packages/auth-redis    SessionStore and CounterStore on ioredis
 packages/auth-prisma   UserStore and TokenStore on Prisma, plus prisma/auth.prisma
 packages/auth-nestjs   the NestJS module: session guard, CSRF middleware, decorators
+packages/auth-trpc     tRPC context, guarded procedures, CSRF on mutations, error mapping, schemas
 ```
 
 `packages/auth/src` is split into folders that form layers. A folder may import only from the
