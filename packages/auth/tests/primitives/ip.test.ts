@@ -92,3 +92,24 @@ describe('clientIp edges', () => {
     expect(repeated).toBe(joined);
   });
 });
+
+describe('clientIp and maskIp boundaries', () => {
+  it('counts hops over the header alone when the socket address is missing', () => {
+    for (const remoteAddress of [undefined, ''])
+      expect(
+        clientIp({ remoteAddress, forwardedFor: '198.51.100.1, 10.0.0.1', trustedHops: 1 }),
+      ).toBe('198.51.100.1');
+  });
+
+  it('says why it refuses trust proxy "true"', () =>
+    expect(() => parseTrustProxy('true')).toThrow(
+      'trust proxy "true" lets any client choose its own IP; set the number of proxy hops',
+    ));
+
+  it('masks only a whole dotted quad as IPv4', () => {
+    expect(maskIp('1.22.3.4')).toBe('1.22.3.0');
+    expect(maskIp('x1.2.3.4')).toBe('unknown');
+    expect(maskIp('1.2.3.4.5')).toBe('unknown');
+    expect(maskIp('1.2.3::ffff:.4')).toBe('1.2.3:0:0::');
+  });
+});

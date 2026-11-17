@@ -247,6 +247,33 @@ describe('trusted devices', () => {
     expect((await counters.get(`devs:${victim}`))?.count).toBe(5);
   });
 
+  it('holds one device to its own budget across a reset of the shared window', async () => {
+    const t = new Throttle(counters, clock, {
+      perAccount: { limit: 1, window: '15m' },
+      baseLock: '2h',
+      maxLock: '2h',
+    });
+
+    await t.gateLogin(victim, 'a');
+    await t.gateLogin(victim, 'b');
+
+    // device-1 opens the shared window; device-2 starts its own window 14 minutes later.
+    expect((await t.gateLogin(victim, 'x', 'device-1')).allowed).toBe(true);
+    clock.advance(14 * MIN);
+
+    for (let i = 0; i < 4; i++)
+      expect((await t.gateLogin(victim, 'x', 'device-2')).allowed).toBe(true);
+
+    // The shared window starts over; device-2's own window still has one slot left.
+    clock.advance(2 * MIN);
+    expect((await t.gateLogin(victim, 'x', 'device-2')).allowed).toBe(true);
+
+    expect(await t.gateLogin(victim, 'x', 'device-2')).toEqual({
+      allowed: false,
+      reason: 'device_budget',
+    });
+  });
+
   it('counts a wrong password made under a lock with a device against the account-wide budget', async () => {
     const t = new Throttle(counters, clock, { perAccount: { limit: 3, window: '15m' } });
 

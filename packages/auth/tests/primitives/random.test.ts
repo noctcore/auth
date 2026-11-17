@@ -59,7 +59,21 @@ describe('generateNumericCode', () => {
     expect(draws).toHaveLength(0);
   });
 
+  it('rejects a draw exactly at the limit, the first value that would bias the codes', () => {
+    // For 6 digits the limit is floor(2^32 / 10^6) * 10^6 = 4_294_000_000 (0xFFF1_3D80).
+    const draws = [
+      [0xff, 0xf1, 0x3d, 0x80],
+      [0xff, 0xf1, 0x3d, 0x7f],
+    ];
+
+    const source = (bytes: Uint8Array) => bytes.set(draws.shift() ?? [0, 0, 0, 0]);
+
+    expect(generateNumericCode(6, source)).toBe('999999');
+    expect(draws).toHaveLength(0);
+  });
+
   it('refuses digit counts outside 6 to 9', () => {
+    expect(() => generateNumericCode(5)).toThrow('A numeric code has 6 to 9 digits');
     expect(() => generateNumericCode(5)).toThrow(RangeError);
     expect(() => generateNumericCode(10)).toThrow(RangeError);
   });

@@ -194,3 +194,12 @@ describe('csrf token hardening', () => {
     ).toBe(false);
   });
 });
+
+describe('verifyRequestOrigin with a malformed allowlist entry', () => {
+  it('never matches an origin it cannot parse against an entry it cannot parse', () => {
+    for (const origin of ['not a url', '::', 'https://'])
+      expect(
+        verifyRequestOrigin({ method: 'POST', origin, allowedOrigins: ['also not a url'] }),
+      ).toBe(false);
+  });
+});

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { cryptoRandom } from '../../src/crypto/random';
+import { NO_SUCH_USER_ID } from '../../src/ports/stores';
 import { manualClock, MemoryTokenStore, type ManualClock } from '../../src/testing';
 import { OneTimeTokens } from '../../src/tokens/one-time-tokens';
 
@@ -112,5 +113,114 @@ describe('edges', () => {
       status: 'consumed',
       namedUserId: 'u1',
     });
+  });
+});
+
+describe('code redemption edges', () => {
+  /** A code with no leading zero, so its number spells the same digits. */
+  async function codeWithoutLeadingZero(userId = 'u1') {
+    for (;;) {
+      const { code } = await tokens.issueCode('reset-code', userId, 60_000, 6);
+
+      if (!code.startsWith('0')) return code;
+    }
+  }
+
+  it('refuses a code that is not exactly 6 to 9 digits without spending an attempt', async () => {
+    const code = await codeWithoutLeadingZero();
+
+    for (const malformed of [`x${code}`, `${code}x`, `${code}0123`, ` ${code}`, `${code}\n`])
+      expect(await tokens.redeemCode('reset-code', 'u1', malformed, 5)).toEqual({
+        status: 'unknown',
+      });
+
+    expect((await store.findByUser('reset-code', 'u1'))?.attempts).toBe(0);
+    expect((await tokens.redeemCode('reset-code', 'u1', code, 5)).status).toBe('valid');
+  });
+
+  it('refuses the right digits passed as a number or any other non-string, and never throws', async () => {
+    const code = await codeWithoutLeadingZero();
+
+    for (const value of [Number(code), [code], { toString: () => code }, Symbol(code), null])
+      expect(await tokens.redeemCode('reset-code', 'u1', value, 5)).toEqual({ status: 'unknown' });
+
+    expect((await tokens.redeemCode('reset-code', 'u1', code, 5)).status).toBe('valid');
+  });
+
+  it('never matches an unknown user, even against a code stored under the placeholder id', async () => {
+    const { code } = await tokens.issueCode('reset-code', NO_SUCH_USER_ID, 60_000, 6);
+
+    expect(await tokens.redeemCode('reset-code', null, code, 5)).toEqual({ status: 'unknown' });
+  });
+
+  it('deletes an expired code and an exhausted one', async () => {
+    const { code } = await tokens.issueCode('reset-code', 'u1', 60_000, 6);
+
+    clock.advance(60_000);
+
+    expect(await tokens.redeemCode('reset-code', 'u1', code, 5)).toEqual({
+      status: 'expired',
+      namedUserId: 'u1',
+    });
+
+    expect(await store.findByUser('reset-code', 'u1')).toBeNull();
+
+    const fresh = await tokens.issueCode('reset-code', 'u2', 60_000, 6);
+    const wrong = fresh.code === '000000' ? '000001' : '000000';
+
+    await tokens.redeemCode('reset-code', 'u2', wrong, 5);
+    await tokens.redeemCode('reset-code', 'u2', wrong, 5);
+
+    // A caller with a lower cap than the attempts already spent finds it exhausted.
+    expect(await tokens.redeemCode('reset-code', 'u2', fresh.code, 2)).toEqual({
+      status: 'exhausted',
+      namedUserId: 'u2',
+    });
+
+    expect(await store.findByUser('reset-code', 'u2')).toBeNull();
+  });
+});
+
+describe('link classification and revocation', () => {
+  it('peeks an unknown link as exactly unknown, and a link that loses the consume race as consumed', async () => {
+    expect(await tokens.peekLink('verify', 'a'.repeat(64))).toEqual({ status: 'unknown' });
+
+    // An unknown link is answered from the lookup alone: nothing to consume.
+    let consumes = 0;
+
+    const counting = Object.assign(Object.create(store) as MemoryTokenStore, {
+      consume: async () => (consumes++, null),
+    });
+
+    expect(
+      await new OneTimeTokens(counting, clock, cryptoRandom, secret).redeemLink(
+        'verify',
+        'b'.repeat(64),
+      ),
+    ).toEqual({ status: 'unknown' });
+
+    expect(consumes).toBe(0);
+
+    const { token } = await tokens.issueLink('verify', 'u1', 60_000);
+
+    const racing = Object.assign(Object.create(store) as MemoryTokenStore, {
+      consume: async () => null,
+    });
+
+    const spied = new OneTimeTokens(racing, clock, cryptoRandom, secret);
+
+    expect(await spied.redeemLink('verify', token)).toEqual({
+      status: 'consumed',
+      namedUserId: 'u1',
+    });
+  });
+
+  it('revokes every token of the named purposes and leaves the rest', async () => {
+    const reset = await tokens.issueLink('reset', 'u1', 60_000);
+    const verify = await tokens.issueLink('verify', 'u1', 60_000);
+
+    await tokens.revokeAll('u1', ['reset']);
+    expect((await tokens.redeemLink('reset', reset.token)).status).toBe('unknown');
+    expect((await tokens.redeemLink('verify', verify.token)).status).toBe('valid');
   });
 });
