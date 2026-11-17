@@ -6,8 +6,9 @@
 //
 // Stopped by: plugins/two-factor/hooks.ts (`beforePasswordReset` demands a TOTP code or a
 //   recovery code before the password is written, and counts it in the factor budget),
-//   flows/password-reset.ts (the hook runs before the hash and the consume), and the
-//   factor is never touched by a reset.
+//   flows/password-reset.ts (the hook runs after the new password passed the policy, so a
+//   refused password spends no code, and before the consume), and the factor is never
+//   touched by a reset.
 // Learn: Second factors (/auth/learn/second-factors/), Password reset (/auth/learn/password-reset/)
 import { describe, expect, it } from 'vitest';
 
@@ -116,5 +117,31 @@ describe('A044: resetting the password of a two-factor account without the facto
     });
 
     expect(!reset.ok && reset.code).toBe('second_factor_required');
+  });
+
+  it('spends no recovery code when the new password is refused', async () => {
+    const t = twoFactorApp();
+    const { userId, recoveryCodes } = await t.enrolled();
+    const token = await resetLink(t);
+    const code = recoveryCodes[0] ?? '';
+
+    const weak = await t.auth.resetPassword({
+      token,
+      password: 'short',
+      secondFactor: code,
+      meta: meta(),
+    });
+
+    expect(weak).toMatchObject({ ok: false, code: 'weak_password' });
+    expect(await t.store.countRecoveryCodes(userId)).toBe(recoveryCodes.length);
+
+    const reset = await t.auth.resetPassword({
+      token,
+      password: NEW_PASSWORD,
+      secondFactor: code,
+      meta: meta(),
+    });
+
+    expect(reset.ok).toBe(true);
   });
 });

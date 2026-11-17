@@ -336,6 +336,28 @@ describe('the core flows with a factor on', () => {
     expect((await change(t.codeFor(secret))).ok).toBe(true);
   });
 
+  it('spends no recovery code on a password change whose new password is refused', async () => {
+    const t = twoFactorApp();
+    const { secret, recoveryCodes, userId } = await t.enrolled();
+    const session = (await t.passed(secret)).session;
+
+    t.clock.advance(10 * 60_000);
+
+    const change = (newPassword: string) =>
+      t.auth.changePassword({
+        session,
+        currentPassword: PASSWORD,
+        newPassword,
+        secondFactor: recoveryCodes[0] ?? '',
+        meta: meta(),
+      });
+
+    expect(await change('short')).toMatchObject({ ok: false, code: 'weak_password' });
+    expect(await t.store.countRecoveryCodes(userId)).toBe(recoveryCodes.length);
+    expect((await change(NEW_PASSWORD)).ok).toBe(true);
+    expect(await t.store.countRecoveryCodes(userId)).toBe(recoveryCodes.length - 1);
+  });
+
   it('changes the password of a user without a factor as before', async () => {
     const t = twoFactorApp();
     const { session } = await t.signedIn();
