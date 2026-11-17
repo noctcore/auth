@@ -254,3 +254,85 @@ describe('SessionManager revocation', () => {
     expect(await m.revoke('u1', [mine.session.id])).toEqual([mine.session.id]);
   });
 });
+
+describe('SessionManager options and edges', () => {
+  it('picks the idle timeout per session when it is a function, and checks a fixed one at startup', async () => {
+    const perSession = manager({
+      idleTimeout: ({ rememberMe }) => (rememberMe ? '2h' : '10m'),
+      touchInterval: '15m',
+    });
+
+    const short = await mintFor(perSession);
+    const long = await mintFor(perSession, 'u1', { rememberMe: true });
+
+    if (!short.ok || !long.ok) throw new Error('mint failed');
+
+    expect(short.session.idleTimeoutMs).toBe(10 * MIN);
+    expect(long.session.idleTimeoutMs).toBe(120 * MIN);
+
+    const fixed = await mintFor(manager({ idleTimeout: '5m', touchInterval: '1m' }), 'u2', {
+      rememberMe: true,
+    });
+
+    if (!fixed.ok) throw new Error('mint failed');
+
+    expect(fixed.session.idleTimeoutMs).toBe(5 * MIN);
+    expect(() => manager({ idleTimeout: '5m', touchInterval: '5m' })).toThrow(AuthConfigError);
+  });
+
+  it('keeps every session when the per-user cap is off, and refuses a cap below one', async () => {
+    const m = manager({ maxPerUser: null });
+
+    for (let i = 0; i < 12; i++) {
+      const minted = await mintFor(m);
+
+      if (!minted.ok) throw new Error('mint failed');
+
+      expect(minted.evicted).toEqual([]);
+    }
+
+    expect(await m.listActive('u1')).toHaveLength(12);
+    expect(() => manager({ maxPerUser: 0 })).toThrow(AuthConfigError);
+    expect(() => manager({ maxPerUser: 1.5 })).toThrow(AuthConfigError);
+  });
+
+  it('refuses and reaps a stored session past its absolute expiry even if the store still returns it', async () => {
+    const m = manager();
+    const minted = await mintFor(m);
+
+    if (!minted.ok) throw new Error('mint failed');
+
+    const deleted: string[] = [];
+
+    const stale = Object.assign(Object.create(store) as MemorySessionStore, {
+      get: async () => ({ ...minted.session, expiresAt: clock.now() }),
+      delete: async (_userId: string, ids: readonly string[]) => {
+        deleted.push(...ids);
+      },
+    });
+
+    const reading = new SessionManager<Attrs>(
+      stale,
+      { attributes },
+      clock,
+      cryptoRandom,
+      silentLogger,
+    );
+
+    expect(await reading.validate(minted.token)).toEqual({ ok: false, reason: 'expired' });
+    expect(deleted).toEqual([minted.session.id]);
+  });
+
+  it('logs out by token only for a well-formed token it knows', async () => {
+    const m = manager();
+    const minted = await mintFor(m);
+
+    if (!minted.ok) throw new Error('mint failed');
+
+    expect(await m.revokeToken('not a token')).toBeNull();
+    expect(await m.revokeToken('0'.repeat(64))).toBeNull();
+    expect((await m.validate(minted.token)).ok).toBe(true);
+    expect((await m.revokeToken(minted.token))?.id).toBe(minted.session.id);
+    expect(await store.get(minted.session.id)).toBeNull();
+  });
+});

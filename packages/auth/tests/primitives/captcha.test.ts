@@ -1,13 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { turnstile } from '../../src/http/turnstile';
 
 const reply = (body: unknown, status = 200) =>
   vi.fn(async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
 
-describe('turnstile', () => {
-  const ctx = { ip: '203.0.113.9', door: 'login' as const };
+const ctx = { ip: '203.0.113.9', door: 'login' as const };
 
+describe('turnstile', () => {
   it('passes a successful token from an expected hostname and action', async () => {
     const verifier = turnstile({
       secret: 's',
@@ -79,5 +79,50 @@ describe('turnstile', () => {
         fetch: reply({ success: false, 'error-codes': ['timeout-or-duplicate'] }),
       }).verify('t', ctx),
     ).toBe('reject');
+  });
+});
+
+describe('turnstile request', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('posts the secret and token, and the client IP only when there is one', async () => {
+    const fetch = reply({ success: true });
+
+    await turnstile({ secret: 'sec', fetch }).verify('tok', { ip: '', door: 'register' });
+    await turnstile({ secret: 'sec', fetch }).verify('tok', { ip: '203.0.113.9', door: 'login' });
+
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as [
+      string,
+      RequestInit,
+    ][];
+
+    const forms = calls.map(([, init]) => new URLSearchParams(init.body as URLSearchParams));
+
+    expect(calls[0]?.[0]).toBe('https://challenges.cloudflare.com/turnstile/v0/siteverify');
+    expect(calls[0]?.[1].method).toBe('POST');
+    expect(forms[0]?.get('secret')).toBe('sec');
+    expect(forms[0]?.get('response')).toBe('tok');
+    expect(forms[0]?.has('remoteip')).toBe(false);
+    expect(forms[1]?.get('remoteip')).toBe('203.0.113.9');
+  });
+
+  it('rejects a failure whose error codes are not a list', async () => {
+    expect(
+      await turnstile({
+        secret: 's',
+        fetch: reply({ success: false, 'error-codes': 'internal-error' }),
+      }).verify('t', ctx),
+    ).toBe('reject');
+  });
+
+  it('uses the global fetch when none is given', async () => {
+    const fetch = reply({ success: true });
+
+    vi.stubGlobal('fetch', fetch);
+
+    expect(await turnstile({ secret: 's' }).verify('t', ctx)).toBe('pass');
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });
