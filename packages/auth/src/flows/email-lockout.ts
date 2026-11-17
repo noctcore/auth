@@ -9,9 +9,12 @@
  * refusal answers like the account's ordinary failure (a wrong password, the
  * uniform reset answer, a dead link), so nothing shows the lockout.
  *
- * It ends when the owner's revert finishes (the link is kept alive as long as
- * the lockout), when support calls `auth.clearEmailRevertLockout`, or after
- * 90 days.
+ * It never lapses: the account names the intruder's address until someone
+ * moves it, so time alone must not hand that address a working reset. It ends
+ * only when the owner's revert finishes (the link is kept alive as long) or
+ * when support calls `auth.clearEmailRevertLockout`. The marker and the link
+ * are stored with the latest expiry every store can hold (LOCKOUT_EXPIRES_AT),
+ * not renewed: a renewal would rely on something running before it lapsed.
  *
  * Guide: Build, "Email change".
  */
@@ -22,10 +25,14 @@ import type { AuthUser } from '../ports/stores';
 import type { RequestMeta } from '../shared/meta';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
-/** How long a lockout lasts unless the revert finishes or support clears it first. */
-export const REVERT_LOCKOUT_MS = 90 * 24 * 60 * 60_000;
+/**
+ * The expiry of a lockout and of the revert link it keeps: the start of
+ * 9999-12-31 UTC, within every SQL date column (MySQL's DATETIME stops at
+ * year 9999) and a JavaScript Date, and as a Redis TTL far below its limit.
+ */
+export const LOCKOUT_EXPIRES_AT = Date.UTC(9999, 11, 31);
 
-/** Locks the account out; returns when the lockout ends. */
+/** Locks the account out; returns the expiry its marker is stored with. */
 export async function lockOut<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   userId: string,
@@ -33,7 +40,7 @@ export async function lockOut<U extends AuthUser, A>(
   const { expiresAt } = await core.tokens.issueLink(
     PURPOSE.emailRevertLockout,
     userId,
-    REVERT_LOCKOUT_MS,
+    LOCKOUT_EXPIRES_AT - core.clock.now(),
   );
 
   return expiresAt;
