@@ -224,3 +224,29 @@ describe('link classification and revocation', () => {
     expect((await tokens.redeemLink('verify', verify.token)).status).toBe('valid');
   });
 });
+
+describe('findLive', () => {
+  it('returns the data of an unexpired token without consuming it, and nothing from its expiry on', async () => {
+    const clock = manualClock();
+    const tokens = new OneTimeTokens(new MemoryTokenStore(), clock, cryptoRandom, secret);
+
+    const { token, expiresAt } = await tokens.issueLink('email-revert', 'u1', 60_000, {
+      email: 'old@example.com',
+    });
+
+    expect(await tokens.findLive('email-revert', 'u1')).toEqual({
+      data: { email: 'old@example.com' },
+      expiresAt,
+    });
+
+    expect(await tokens.findLive('email-revert', 'u2')).toBeNull();
+
+    clock.set(expiresAt - 1);
+    expect(await tokens.findLive('email-revert', 'u1')).not.toBeNull();
+    clock.set(expiresAt);
+    expect(await tokens.findLive('email-revert', 'u1')).toBeNull();
+
+    clock.set(expiresAt - 1);
+    expect((await tokens.redeemLink('email-revert', token)).status).toBe('valid');
+  });
+});
