@@ -10,7 +10,7 @@ Authentication code fails quietly: a missing check still returns 200. So the lib
 Every flow and primitive runs against in-memory fakes of the stores, the mailer and the clock, so a test can freeze time, race two requests or make a store fail on cue. `bun run test` runs them with coverage, and the run fails under the thresholds in `packages/auth/vitest.config.ts`:
 
 - the modules that decide who is signed in (crypto, tokens, session, throttle, password) are held at 100 percent of lines, branches and functions;
-- the HTTP helpers and the flows sit just under 100;
+- the HTTP helpers sit just under 100 (99 percent of branches), and the flows at 99 percent of lines and 95 percent of branches;
 - the Redis and Prisma adapters have their own thresholds, measured against the real servers.
 
 Nothing is excluded from coverage. One branch is left uncovered on purpose: a fallback the type checker requires after `split` in the client IP masking, which no input can reach. The config names it, and the thresholds for `http` sit just under 100 because of it.
@@ -29,7 +29,7 @@ A timing leak is checked by counting work, not by measuring the clock, so the ch
 
 `bun run bench:timing` also measures the wall clock with the real Argon2id hasher. It compares the same pairs over shuffled, seeded samples and reports medians and Welch's t. It is for reading, not gating.
 
-A lint rule keeps secret comparisons on the constant-time helpers in `crypto/hash.ts`. It goes by name, so it catches every comparison of a value named like a secret, and only those. In library code it refuses:
+A lint rule pushes secret comparisons onto the constant-time helpers in `crypto/hash.ts`. It matches by name and by the forms listed below, so it narrows the ways to slip rather than proving there are none: a secret under an unrelated name, or read some other way (a template-literal key, a computed method name, a `switch`, `startsWith` or `includes`), is not caught, and review still has to look. In library code it refuses:
 
 - `==`, `===`, `!=` or `!==` where either side is named like a hash, token, code, secret, digest, MAC or signature, however it is read: `tokenHash`, `row.tokenHash`, `row?.tokenHash`, `rec['passwordHash']`, or wrapped in `as`, `satisfies` or `!`. A comparison with a literal, `undefined` or a `typeof` is a shape check and is allowed;
 - `.equals()`, `Object.is()` and `localeCompare()` on such a value;
