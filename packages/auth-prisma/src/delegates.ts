@@ -55,3 +55,24 @@ export interface PrismaTwoFactorDelegates {
     upsert(args: any): PromiseLike<any>;
   };
 }
+
+/** The delegates of the membership tables in `prisma/auth.prisma`, and the client for its transactions. */
+export interface PrismaMembershipDelegates {
+  /** Your `PrismaClient`: guarded writes commit through `$transaction([...])`. */
+  readonly client: { $transaction(operations: any[]): PromiseLike<unknown> };
+  /** `prisma.authMember` */
+  readonly member: {
+    findUnique(args: any): PromiseLike<any>;
+    findMany(args: any): PromiseLike<any[]>;
+    count(args: any): PromiseLike<number>;
+    create(args: any): PromiseLike<any>;
+    update(args: any): PromiseLike<any>;
+    delete(args: any): PromiseLike<any>;
+  };
+  /** `prisma.authMemberScope` */
+  readonly scope: {
+    findUnique(args: any): PromiseLike<any>;
+    create(args: any): PromiseLike<any>;
+    update(args: any): PromiseLike<any>;
+  };
+}

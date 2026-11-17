@@ -3,7 +3,12 @@
 // as "no such token" or "address taken".
 import { describe, expect, it } from 'vitest';
 import type { NormalizedEmail } from '@noctcore/auth';
-import { PrismaTokenStore, PrismaTwoFactorStore, PrismaUserStore } from '../src';
+import {
+  PrismaMembershipStore,
+  PrismaTokenStore,
+  PrismaTwoFactorStore,
+  PrismaUserStore,
+} from '../src';
 
 const prismaError = (code: string) => Object.assign(new Error(code), { code });
 const outage = new Error('connection refused');
@@ -284,5 +289,65 @@ describe('PrismaTwoFactorStore errors', () => {
 
     await codes.replaceRecoveryCodes('u1', ['a']);
     expect(calls).toBe(2);
+  });
+});
+
+describe('PrismaMembershipStore errors', () => {
+  const member = { scope: 's1', userId: 'u1', role: 'admin' };
+  const input = { scope: 's1', userId: 'u1', from: 'admin', to: 'member', adminRoles: ['owner'] };
+
+  function store(transaction: () => Promise<unknown>, version: number | null = 3) {
+    return new PrismaMembershipStore({
+      client: { $transaction: transaction },
+      member: delegate({
+        create: async () => {
+          throw outage;
+        },
+        findUnique: async () => member,
+        count: async () => 1,
+        update: async () => ({}),
+        delete: async () => ({}),
+      }),
+      scope: delegate({
+        findUnique: async () => (version === null ? null : { version }),
+        create: async () => ({}),
+        update: async () => ({}),
+      }),
+    });
+  }
+
+  it('rethrows an outage from an add, and from a guarded write', async () => {
+    const failing = store(async () => {
+      throw outage;
+    });
+
+    await expect(failing.addMember(member)).rejects.toBe(outage);
+    await expect(failing.changeRole(input)).rejects.toBe(outage);
+  });
+
+  it('decides again when a concurrent first write created the scope row', async () => {
+    let calls = 0;
+
+    const racing = store(async () => {
+      if (calls++ === 0) throw prismaError('P2002');
+
+      return [];
+    }, null);
+
+    expect(await racing.removeMember(input)).toBe('done');
+    expect(calls).toBe(2);
+  });
+
+  it('gives up with an error after losing the race fifty times', async () => {
+    let calls = 0;
+
+    const losing = store(async () => {
+      calls++;
+
+      throw prismaError('P2025');
+    });
+
+    await expect(losing.changeRole(input)).rejects.toThrow('lost the race 50 times');
+    expect(calls).toBe(50);
   });
 });
