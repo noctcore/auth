@@ -79,9 +79,9 @@ the stricter value wins.
 
 | Package | What it holds |
 |---|---|
-| [`@noctcore/auth`](packages/auth) | The framework-free core: primitives, sessions, tokens, throttle, flows and plugin seams. `@noctcore/auth/argon2` holds the Argon2id hasher (optional native peer `@node-rs/argon2`); `@noctcore/auth/two-factor` holds the two-factor plugin (TOTP, recovery codes, trusted devices, step-up); `@noctcore/auth/membership` holds the membership guards (self-target, last admin, revocation on a role change); `@noctcore/auth/testing` holds in-memory stores, fakes and the store conformance suite |
-| [`@noctcore/auth-redis`](packages/auth-redis) | `SessionStore`, `CounterStore` and the two-factor and membership plugins' stores on ioredis |
-| [`@noctcore/auth-prisma`](packages/auth-prisma) | `UserStore`, `TokenStore` and the two-factor and membership plugins' stores on Prisma 7, plus the schema to merge into yours |
+| [`@noctcore/auth`](packages/auth) | The framework-free core: primitives, sessions, tokens, throttle, flows and plugin seams. `@noctcore/auth/argon2` holds the Argon2id hasher (optional native peer `@node-rs/argon2`); `@noctcore/auth/two-factor` holds the two-factor plugin (TOTP, recovery codes, trusted devices, step-up); `@noctcore/auth/membership` holds the membership guards (self-target, last admin, revocation on a role change); `@noctcore/auth/invitations` holds the invitations plugin (single-use tokens bound to a verified address); `@noctcore/auth/testing` holds in-memory stores, fakes and the store conformance suite |
+| [`@noctcore/auth-redis`](packages/auth-redis) | `SessionStore`, `CounterStore` and the two-factor, membership and invitations plugins' stores on ioredis |
+| [`@noctcore/auth-prisma`](packages/auth-prisma) | `UserStore`, `TokenStore` and the two-factor, membership and invitations plugins' stores on Prisma 7, plus the schema to merge into yours |
 | [`@noctcore/auth-nestjs`](packages/auth-nestjs) | A NestJS module: a closed-by-default session guard, CSRF middleware, decorators and trust-proxy setup |
 | [`@noctcore/auth-trpc`](packages/auth-trpc) | tRPC middlewares: a session context, guarded procedures, CSRF on mutations, safe error mapping and Zod schemas, for plain tRPC and nestjs-trpc |
 
