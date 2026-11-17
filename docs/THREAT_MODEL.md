@@ -132,5 +132,8 @@ The library defends against: guessing passwords and codes; locking the owner out
 | Leaving a scope without an admin by concurrent demotions or removals (membership plugin) | The store checks the other admins and writes in one atomic step | A060 |
 | Acting on yourself through the membership flows | User ids compared before any lookup; the actor's role read from the store | A061 |
 | Keeping a role or a scope after it was taken away | Every session revoked after the write; the epoch fence refuses a racing login | A062 |
+| Leaving a scope without an admin by concurrent demotions or removals (membership plugin) | The store checks the other admins and writes in one atomic step | A061 |
+| Acting on yourself through the membership flows | User ids compared before any lookup; the actor's role read from the store | A062 |
+| Keeping a role or a scope after it was taken away | Every session revoked after the write; the epoch fence refuses a racing login | A063 |
 
 A report that breaks one of these defenses, or shows an attack the table misses, is a vulnerability: see [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md).
