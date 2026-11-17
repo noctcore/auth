@@ -107,12 +107,15 @@ describe('membership changeRole', () => {
   });
 
   it('with revokeSessionsOnChange, revokes the member before and after the write and keeps the actor signed in', async () => {
-    const revoked: Array<{ userId: string; reason: string }> = [];
+    const revoked: Array<{ userId: string; reason: string; scope: string | undefined }> = [];
 
     const t = membershipApp(
       { revokeSessionsOnChange: true },
       {
-        hooks: { onSessionsRevoked: ({ userId, reason }) => void revoked.push({ userId, reason }) },
+        hooks: {
+          onSessionsRevoked: ({ userId, reason, scope }) =>
+            void revoked.push({ userId, reason, scope }),
+        },
       },
     );
 
@@ -130,8 +133,8 @@ describe('membership changeRole', () => {
     expect(await t.sessionOf(admin.token)).not.toBeNull();
 
     expect(revoked).toEqual([
-      { userId: target.userId, reason: 'membership-changed' },
-      { userId: target.userId, reason: 'membership-changed' },
+      { userId: target.userId, reason: 'membership-changed', scope: SCOPE },
+      { userId: target.userId, reason: 'membership-changed', scope: SCOPE },
     ]);
 
     expect(MEMBERSHIP_REVOCATION).toBe('membership-changed');

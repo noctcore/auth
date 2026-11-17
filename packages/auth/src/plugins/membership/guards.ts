@@ -105,7 +105,7 @@ export async function changeRole<A>(
   // The role the member already holds: nothing to write, nothing to revoke.
   if (from === input.role) return ok(member);
 
-  await revoke(r, input.userId);
+  await revoke(r, input.scope, input.userId);
 
   const write = await r.store.changeRole({
     scope: input.scope,
@@ -117,7 +117,7 @@ export async function changeRole<A>(
 
   if (write !== 'done') return refusedWrite(r, input, write, 'change-role');
 
-  await revoke(r, input.userId);
+  await revoke(r, input.scope, input.userId);
   await r.core.emit(event('membership.role_changed', input, { from, to: input.role }), input.meta);
 
   return ok(member);
@@ -135,7 +135,7 @@ export async function removeMember<A>(
   // authorize refuses a missing target for a removal.
   const from = (allowed.value as StoredMember).role;
 
-  await revoke(r, input.userId);
+  await revoke(r, input.scope, input.userId);
 
   const write = await r.store.removeMember({
     scope: input.scope,
@@ -146,7 +146,7 @@ export async function removeMember<A>(
 
   if (write !== 'done') return refusedWrite(r, input, write, 'remove');
 
-  await revoke(r, input.userId);
+  await revoke(r, input.scope, input.userId);
   await r.core.emit(event('membership.removed', input, { from }), input.meta);
 
   return ok();
@@ -206,9 +206,9 @@ async function authorize<A>(
 }
 
 /** Revokes every session of the member, when the app turned revocation on. */
-async function revoke(r: Runtime, userId: string): Promise<void> {
+async function revoke(r: Runtime, scope: string, userId: string): Promise<void> {
   if (r.settings.revokeSessionsOnChange)
-    await r.core.revokeAllSessions(userId, MEMBERSHIP_REVOCATION);
+    await r.core.revokeAllSessions(userId, MEMBERSHIP_REVOCATION, { scope });
 }
 
 /** The refusal of a guarded write that did not happen. */

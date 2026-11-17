@@ -72,7 +72,7 @@ AuthHooks [interface]<U extends AuthUser, A>
     beforeSessionCreate: (context: { user: U; via: IssueVia; attributes: A; meta: RequestMeta; }) => MaybePromise<HookResult>
     loginChallenge: (context: { user: U; rememberMe: boolean; epoch: number; meta: RequestMeta; }) => MaybePromise<{ challenge: string; methods: readonly string[]; } | null | undefined>
     onSessionValidate: (context: { session: StoredSession<A>; meta: RequestMeta | undefined; }) => MaybePromise<HookResult>
-    onSessionsRevoked: (context: { userId: string; sessionIds: readonly string[]; reason: RevocationReason; }) => MaybePromise<void>
+    onSessionsRevoked: (context: { userId: string; sessionIds: readonly string[]; reason: RevocationReason; /** The scope a scoped change concerns (a membership change in that scope); absent otherwise. */ scope?: string; }) => MaybePromise<void>
     sessionAttributes: (context: { user: U; via: IssueVia; inherited: A | undefined; }) => MaybePromise<Partial<A>>
 AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; } /** The two-factor plugin: a second factor was turned on for the account. */ | { readonly type: 'two-factor-enabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: the second factor was turned off. */ | { readonly type: 'two-factor-disabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */ | { readonly type: 'recovery-code-used'; readonly to: string; readonly userId: string; readonly remaining: number; readonly at: Date; readonly dedupeKey: string; } /** * The invitations plugin: an invitation to `scope`. No `userId`: the address * may have no account, and the mail is the same whether it has one or not. */ | { readonly type: 'invitation'; readonly to: string; readonly scope: string; readonly inviterId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; }
 AuthPlugin [interface]<Id extends string = string, F extends object = object>
@@ -189,7 +189,7 @@ PluginContext [interface]<U extends AuthUser, A>
     issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>
     keyedHash(purpose: string, message: string): string
     mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void
-    notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason): Promise<void>
+    notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason, options?: { scope?: string; }): Promise<void>
     rateLimit(door: Door, key: string, meta: RequestMeta | undefined): Promise<AuthFailure | null>
     readonly clock: Clock
     readonly cookie: SessionCookieConfig
@@ -205,7 +205,7 @@ PluginContext [interface]<U extends AuthUser, A>
     readonly users: UserStore<U>
     requireFreshAuth(session: StoredSession<A>): AuthResult<void>
     requireFreshLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>>
-    revokeAllSessions(userId: string, reason: RevocationReason): Promise<void>
+    revokeAllSessions(userId: string, reason: RevocationReason, options?: { scope?: string; }): Promise<void>
     verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>
 RandomSource [type] = (bytes: Uint8Array) => void
 RateLimitRule [interface]

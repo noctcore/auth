@@ -505,6 +505,32 @@ describe('invitations accept', () => {
     expect(t.onAccept).not.toHaveBeenCalled();
   });
 
+  it('compares the stored address normalised too', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+    const bob = await t.user({ email: 'bob@example.com' });
+    const raw = 'c'.repeat(64);
+
+    // A row written outside `create`, with the address as typed.
+    await t.store.create(
+      {
+        id: 'raw',
+        hash: t.auth.context.keyedHash('invitation', raw),
+        scope: SCOPE,
+        email: 'Bob@Example.com',
+        inviterId: inviter.userId,
+        payload: {},
+        createdAt: t.clock.now(),
+        expiresAt: t.clock.now() + DAY,
+      },
+      t.clock.now(),
+    );
+
+    expect(
+      (await t.auth.invitations.accept({ session: bob.session, token: raw, meta: meta() })).ok,
+    ).toBe(true);
+  });
+
   it('refuses another address and an unverified one, and keeps the invitation', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });
@@ -817,7 +843,13 @@ describe('invitations after revocation', () => {
     await t.auth.logout({ token: inviter.token, meta: meta() });
     expect(await t.store.listByScope(SCOPE, t.clock.now())).toHaveLength(1);
 
-    for (const reason of ['revoke-one', 'revoke-others', 'evicted', 'email-verified']) {
+    for (const reason of [
+      'revoke-one',
+      'revoke-others',
+      'evicted',
+      'email-verified',
+      'two-factor-enabled',
+    ]) {
       await t.auth.context.notifyRevoked(inviter.userId, [], reason);
     }
 
@@ -825,5 +857,26 @@ describe('invitations after revocation', () => {
 
     await t.auth.context.revokeAllSessions(inviter.userId, 'revoke-all');
     expect(await t.store.listByScope(SCOPE, t.clock.now())).toEqual([]);
+  });
+
+  it('deletes only the scope a scoped revocation names, and every scope otherwise', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+
+    await t.invite(inviter, 'bob@example.com');
+    await t.invite(inviter, 'bob@example.com', 'org_2');
+
+    await t.auth.context.revokeAllSessions(inviter.userId, 'membership-changed', {
+      scope: 'org_2',
+    });
+
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toHaveLength(1);
+    expect(await t.store.listByScope('org_2', t.clock.now())).toEqual([]);
+
+    await t.invite(inviter, 'bob@example.com', 'org_2');
+    await t.auth.context.revokeAllSessions(inviter.userId, 'password-change');
+
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toEqual([]);
+    expect(await t.store.listByScope('org_2', t.clock.now())).toEqual([]);
   });
 });

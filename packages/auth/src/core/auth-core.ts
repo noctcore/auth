@@ -370,21 +370,31 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     });
   }
 
-  async revokeAllSessions(userId: string, reason: RevocationReason): Promise<void> {
+  async revokeAllSessions(
+    userId: string,
+    reason: RevocationReason,
+    options: { scope?: string } = {},
+  ): Promise<void> {
     const ids = await this.sessions.revokeAll(userId);
 
     await this.emit({ type: 'sessions.revoked', userId, reason }, undefined);
-    await this.notifyRevoked(userId, ids, reason);
+    await this.notifyRevoked(userId, ids, reason, options);
   }
 
   async notifyRevoked(
     userId: string,
     sessionIds: readonly string[],
     reason: RevocationReason,
+    options: { scope?: string } = {},
   ): Promise<void> {
+    const context =
+      options.scope === undefined
+        ? { userId, sessionIds, reason }
+        : { userId, sessionIds, reason, scope: options.scope };
+
     for (const hook of this.hooks.onSessionsRevoked) {
       try {
-        await hook({ userId, sessionIds, reason });
+        await hook(context);
       } catch (error) {
         this.logger.error('onSessionsRevoked hook failed', {
           userId,

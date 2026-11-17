@@ -160,5 +160,28 @@ export function invitationStoreConformance(
         assert.equal(await store.create(again, again.createdAt), true);
       },
     },
+    {
+      name: "with a scope, deletes only the inviter's invitations to that scope",
+      async run() {
+        const inviterId = uniqueId('inviter');
+        const here = invitation({ inviterId });
+        const elsewhere = invitation({ inviterId, scope: uniqueId('scope') });
+        const theirs = invitation({ scope: here.scope });
+
+        for (const stored of [here, elsewhere, theirs])
+          await store.create(stored, stored.createdAt);
+
+        await store.deleteByInviter(inviterId, here.scope);
+
+        assert.equal(await store.findByHash(here.hash), null);
+        assert.deepEqual(await store.findByHash(elsewhere.hash), elsewhere);
+        assert.deepEqual(await store.findByHash(theirs.hash), theirs);
+
+        // The inviter's index still finds what is left.
+        await store.deleteByInviter(inviterId);
+
+        assert.equal(await store.findByHash(elsewhere.hash), null);
+      },
+    },
   ];
 }

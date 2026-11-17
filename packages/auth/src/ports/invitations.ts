@@ -50,6 +50,6 @@ export interface InvitationStore {
   listByScope(scope: string, now: number): Promise<StoredInvitation[]>;
   /** Deletes the invitation with this id if it belongs to `scope`; whether it did. */
   revoke(scope: string, id: string): Promise<boolean>;
-  /** Deletes every invitation `inviterId` sent. */
-  deleteByInviter(inviterId: string): Promise<void>;
+  /** Deletes every invitation `inviterId` sent, or with `scope` only those to that scope. */
+  deleteByInviter(inviterId: string, scope?: string): Promise<void>;
 }
