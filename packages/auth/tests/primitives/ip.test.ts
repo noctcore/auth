@@ -107,9 +107,9 @@ describe('clientIp and maskIp boundaries', () => {
     ));
 
   it('masks only a whole dotted quad as IPv4', () => {
-    expect(maskIp('1.22.3.4')).toBe('1.22.3.0');
-    expect(maskIp('x1.2.3.4')).toBe('unknown');
-    expect(maskIp('1.2.3.4.5')).toBe('unknown');
-    expect(maskIp('1.2.3::ffff:.4')).toBe('1.2.3:0:0::');
+    expect(maskIp('198.51.100.4')).toBe('198.51.100.0');
+    expect(maskIp('x192.0.2.4')).toBe('unknown');
+    expect(maskIp('192.0.2.4.5')).toBe('unknown');
+    expect(maskIp('192.0.2::ffff:.4')).toBe('192.0.2:0:0::');
   });
 });
