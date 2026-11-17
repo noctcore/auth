@@ -9,7 +9,7 @@ import type { AddressInfo } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Ctx, Input, Mutation, Query, Router, TRPCModule, UseMiddlewares } from 'nestjs-trpc';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   AuthGuardMiddleware,
@@ -22,7 +22,9 @@ import {
   RoleMiddleware,
   toTRPCError,
   userOutput,
+  WritesCookiesMiddleware,
   type AuthState,
+  type AuthWriter,
   type NodeContextInput,
   type Principal,
 } from '../src';
@@ -43,6 +45,7 @@ class AppContext {
 }
 
 type Ctx = { auth: AuthState } & Partial<Principal>;
+type WriterCtx = { auth: AuthWriter };
 
 @Router({ alias: 'account' })
 class AccountRouter {
@@ -51,14 +54,21 @@ class AccountRouter {
     return { ok: true };
   }
 
+  @UseMiddlewares(WritesCookiesMiddleware)
   @Mutation({ input: loginInput, output: loginOutput, meta: { auth: 'public' } })
-  async login(@Input() input: z.infer<typeof loginInput>, @Ctx() ctx: Ctx) {
+  async login(@Input() input: z.infer<typeof loginInput>, @Ctx() ctx: WriterCtx) {
     const result = await current.auth.login({ ...input, meta: ctx.auth.meta });
 
     if (!result.ok) throw toTRPCError(result);
     if (result.value.kind === 'challenge') return result.value;
 
     return { kind: 'session' as const, ...ctx.auth.setSession(result.value.session) };
+  }
+
+  /** Not marked writesCookies: the writer refuses before the core signs out. */
+  @Mutation({ output: z.object({ csrfToken: z.string() }) })
+  async logout(@Ctx() ctx: Ctx) {
+    return (ctx as unknown as WriterCtx).auth.signOut();
   }
 
   /** Nobody marked it: the global guard must close it. */
@@ -152,7 +162,15 @@ describe('nestjs-trpc', () => {
           logger: { log: () => undefined, error: () => undefined, warn: () => undefined },
         }),
       ],
-      providers: [AccountRouter, AppContext, AuthGuardMiddleware, AdminOnly, Fresh, Limited],
+      providers: [
+        AccountRouter,
+        AppContext,
+        AuthGuardMiddleware,
+        WritesCookiesMiddleware,
+        AdminOnly,
+        Fresh,
+        Limited,
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication({ logger: false });
@@ -249,6 +267,31 @@ describe('nestjs-trpc', () => {
 
     expect((await call(browser, url, 'account.ping')).status).toBe(200);
     expect((await call(browser, url, 'account.ping')).status).toBe(429);
+  });
+
+  it('refuses a cookie writer in a procedure not marked writesCookies, before the core runs', async () => {
+    const { url, browser } = await start();
+
+    await call(browser, url, 'account.health');
+
+    const signedIn = await call(
+      browser,
+      url,
+      'account.login',
+      { email: EMAIL, password: PASSWORD },
+      true,
+    );
+
+    // The marked procedure got the writers through the class.
+    expect(signedIn.status).toBe(200);
+
+    const logout = vi.spyOn(current.auth, 'logout');
+    const answer = await call(browser, url, 'account.logout', undefined, true);
+
+    expect(answer.status).toBe(500);
+    expect(answer.body.error?.message).toBe('internal');
+    expect(logout).not.toHaveBeenCalled();
+    expect((await call(browser, url, 'account.me')).status).toBe(200);
   });
 
   it('refuses a procedure marked public that also asks for a role', async () => {

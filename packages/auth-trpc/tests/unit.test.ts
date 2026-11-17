@@ -14,6 +14,7 @@ import {
   MAX_TRUSTED_HOPS,
   type AuthContextOptions,
   type AuthState,
+  type AuthWriter,
   WritesCookiesMiddleware,
 } from '../src';
 import { secretKeys } from '../src/secret-queries';
@@ -162,38 +163,68 @@ describe('the auth state', () => {
   });
 });
 
-describe('cookie writes on a streamed batch', () => {
-  it('throws a configuration error from every writer, before the core signs out', async () => {
+describe('the cookie writers', () => {
+  const issued = { cookie: {}, deviceCookie: {}, session: { id: 's' } } as never;
+
+  it('refuse on ctx.auth itself, before writing anything or signing out', async () => {
     const env = makeAuth();
     const logout = vi.spyOn(env.auth, 'logout');
     const resHeaders = new Headers();
 
     const { auth } = await createAuthContext(options({ auth: env.auth })).fetch({
-      req: new Request(ORIGIN, {
-        method: 'POST',
-        headers: { 'trpc-accept': 'application/jsonl' },
-      }),
+      req: new Request(ORIGIN, { method: 'POST' }),
       resHeaders,
     });
 
-    const issued = { cookie: {}, deviceCookie: {}, session: { id: 's' } } as never;
+    // Not on the type: untyped code (or a cast) reaches the refusals.
+    const untyped = auth as unknown as AuthWriter;
 
-    expect(() => auth.setSession(issued)).toThrow(AuthConfigError);
-    expect(() => auth.clearSession({} as never)).toThrow(/httpBatchLink or httpLink/u);
-    await expect(auth.signOut()).rejects.toThrow(AuthConfigError);
+    expect(() => untyped.setSession(issued)).toThrow(AuthConfigError);
+    expect(() => untyped.clearSession({} as never)).toThrow(/marked writesCookies/u);
+    expect(() => untyped.signOut()).toThrow(AuthConfigError);
     expect(logout).not.toHaveBeenCalled();
     expect(resHeaders.getSetCookie()).toEqual([]);
   });
 
-  it('refuses through the nestjs-trpc class too, and passes an ordinary request', async () => {
-    const make = (headers: Record<string, string>) =>
+  it('come only through writesCookies, as a view that leaves ctx.auth unchanged', async () => {
+    const make = (headers: Record<string, string>, resHeaders = new Headers()) =>
       createAuthContext(options()).fetch({
         req: new Request(ORIGIN, { method: 'POST', headers }),
-        resHeaders: new Headers(),
+        resHeaders,
       });
 
-    const next = vi.fn(async () => Promise.resolve('ran'));
     const middleware = new WritesCookiesMiddleware();
+    const resHeaders = new Headers();
+    const ctx = await make({}, resHeaders);
+    let handed: { auth: AuthWriter } | undefined;
+
+    await middleware.use({
+      ctx,
+      type: 'mutation',
+      next: async (opts) => {
+        handed = opts?.ctx as { auth: AuthWriter };
+
+        return Promise.resolve('ran');
+      },
+    });
+
+    expect(handed?.auth.meta).toBe(ctx.auth.meta);
+
+    const cleared = handed?.auth.clearSession({
+      name: 'session',
+      value: '',
+      attributes: { httpOnly: true, secure: false, sameSite: 'lax', path: '/', maxAge: 0 },
+    });
+
+    // The blank session cookie, a fresh pre-session and a CSRF cookie bound to it.
+    const written = resHeaders.getSetCookie().map((line) => line.split('=')[0]);
+
+    expect(written).toEqual(['session', 'presession', 'csrf']);
+    expect(resHeaders.getSetCookie()[2]).toContain(`csrf=${cleared?.csrfToken ?? 'missing'}`);
+    expect(() => (ctx.auth as unknown as AuthWriter).setSession(issued)).toThrow(AuthConfigError);
+
+    // On a streamed batch the procedure never runs.
+    const next = vi.fn(async () => Promise.resolve('ran'));
 
     await expect(
       middleware.use({
@@ -201,13 +232,9 @@ describe('cookie writes on a streamed batch', () => {
         type: 'mutation',
         next,
       }),
-    ).rejects.toThrow(AuthConfigError);
+    ).rejects.toThrow(/httpBatchLink or httpLink/u);
 
     expect(next).not.toHaveBeenCalled();
-
-    await expect(middleware.use({ ctx: await make({}), type: 'mutation', next })).resolves.toBe(
-      'ran',
-    );
   });
 });
 

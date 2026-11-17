@@ -14,7 +14,7 @@ import type {
   TRPCProcedureBuilder,
   TRPCUnsetMarker as Unset,
 } from '@trpc/server';
-import type { AuthState } from './context';
+import type { AuthState, AuthWriter } from './context';
 import type { TrpcAuth } from './options';
 import {
   authedBody,
@@ -39,6 +39,12 @@ export interface AuthContext<U extends AuthUser = AuthUser, A = unknown> {
  */
 export type AuthContextOf<TAuth> =
   TAuth extends TrpcAuth<infer U, infer A> ? AuthContext<U, A> : never;
+
+/** What `writesCookies` puts in place of `ctx.auth`: the same state, with the cookie writers. */
+type WriterOf<TContext> =
+  TContext extends AuthContext<infer U, infer A>
+    ? { auth: AuthWriter<U, A> }
+    : { auth: AuthWriter };
 
 /** What `authed` adds to a context: the user and session types of its `ctx.auth`. */
 type PrincipalOf<TContext> =
@@ -85,12 +91,14 @@ export interface AuthMiddlewares<TContext, TMeta, TErrorShape> {
     rule?: RateLimitRule,
   ): TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>;
   /**
-   * Put it on every procedure that writes cookies (`setSession`, `signOut`,
-   * `clearSession`): on a streamed batch (`httpBatchStreamLink`), whose
-   * headers are already sent, it refuses before the flow runs, so a sign-in
-   * or a rotation never happens without its cookie.
+   * The only way to the cookie writers: after it, `ctx.auth` is an
+   * `AuthWriter` with `setSession`, `signOut` and `clearSession`; without
+   * it they are not on the type and refuse at run time. On a streamed batch
+   * (`httpBatchStreamLink`), whose headers are already sent, it refuses
+   * before the procedure runs, so a sign-in or a rotation never happens
+   * without its cookie.
    */
-  readonly writesCookies: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>;
+  readonly writesCookies: TRPCMiddlewareBuilder<TContext, TMeta, WriterOf<TContext>, unknown>;
   /** Marked public: CSRF on mutations, no session needed (sign-in, sign-up, reset). */
   readonly publicProcedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>;
   /** CSRF on mutations and a valid session, with `ctx.user` and `ctx.session`. */

@@ -16,7 +16,12 @@
  * - Zod input and output schemas for the auth procedures, and
  *   `assertNoSecretQueries` to keep secrets out of URLs.
  */
-export { createAuthContext, type AuthContextFactory, type AuthState } from './context';
+export {
+  createAuthContext,
+  type AuthContextFactory,
+  type AuthState,
+  type AuthWriter,
+} from './context';
 export {
   createAuthMiddlewares,
   type AuthContext,
