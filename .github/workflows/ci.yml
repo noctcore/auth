@@ -79,13 +79,14 @@ jobs:
 
   # @noctcore/auth-nestjs declares NestJS >=11 <13 as peers. The test job runs
   # the newest Nest (the dev dependencies); this one installs the oldest the
-  # range allows and runs the adapter's whole suite against it.
+  # range allows and runs the adapter's whole suite against it, including the
+  # global-prefix CSRF cases that 11.0.0's middleware route mapping misses.
   nestjs-floor:
     name: nestjs · peer range floor (11.0.0)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
