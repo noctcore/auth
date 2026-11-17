@@ -122,6 +122,23 @@ export interface Internals {
 const STREAMED = 'application/jsonl';
 
 /**
+ * Whether tRPC will stream this request's response, decided exactly as
+ * tRPC's own `getAcceptHeader` does: the `trpc-accept` header when present
+ * (whatever its value), otherwise the standard `Accept` header when any of
+ * its comma-separated parts, trimmed, is `application/jsonl`. The comparison
+ * is case-sensitive, as tRPC's is.
+ */
+export function isStreamedRequest(header: (name: string) => string | undefined): boolean {
+  const accept = header('accept');
+
+  const chosen =
+    header('trpc-accept') ??
+    (accept?.split(',').some((part) => part.trim() === STREAMED) ? STREAMED : undefined);
+
+  return chosen === STREAMED;
+}
+
+/**
  * Refuses a cookie write on a streamed response, where it would be lost (the
  * fetch adapter) or throw after the flow ran (Node). Run by `writesCookies`
  * before the procedure.
@@ -234,7 +251,7 @@ async function resolveState(
   }
 
   const csrfOk = csrfVerdict(options, request, bound, cookieToken);
-  const streamed = request.header('trpc-accept') === STREAMED;
+  const streamed = isStreamedRequest((name) => request.header(name));
 
   if (isSafeMethod(request.method)) {
     if (bound === null) {
