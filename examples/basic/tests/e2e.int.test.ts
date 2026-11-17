@@ -78,6 +78,23 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
   const origin = 'http://app.test';
   const email = `ada-${Date.now()}@example.com`;
   const password = 'correct horse battery staple';
+  const teammates: string[] = [];
+  const orgs: string[] = [];
+
+  /** A new user, signed in, with its id. */
+  async function teammate(ip: string) {
+    const address = `team-${teammates.length}-${Date.now()}@example.com`;
+    const browser = new Browser(base, origin, ip);
+
+    teammates.push(address);
+    await browser.request('GET', '/api/csrf');
+    await browser.request('POST', '/api/register', { email: address, password });
+    await browser.request('POST', '/api/login', { email: address, password });
+
+    const me = await browser.request('GET', '/api/me');
+
+    return { browser, id: (me.json['user'] as { id: string }).id };
+  }
 
   beforeAll(async () => {
     const { server } = createApp({
@@ -102,7 +119,12 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
 
     if (keys.length) await redis.del(...keys);
 
-    await prisma.user.deleteMany({ where: { email } });
+    await prisma.$transaction([
+      prisma.user.deleteMany({ where: { email: { in: [email, ...teammates] } } }),
+      prisma.authMember.deleteMany({ where: { scope: { in: orgs } } }),
+      prisma.authMemberScope.deleteMany({ where: { scope: { in: orgs } } }),
+    ]);
+
     await redis.quit();
     await prisma.$disconnect();
   });
@@ -241,5 +263,67 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
     await browser.request('GET', '/api/csrf');
     expect((await browser.request('POST', '/api/login', { email, password })).status).toBe(200);
     expect(browser.cookies.get('device')).toMatch(/^[0-9a-f]{32}\.\d+\.\d+\.[0-9a-f]{64}$/u);
+  });
+
+  it('guards organisation roles: no self-target, no last admin, and revocation on change', async () => {
+    const owner = await teammate('203.0.113.30');
+    const bob = await teammate('203.0.113.31');
+    const created = await owner.browser.request('POST', '/api/orgs');
+    const orgId = String(created.json['orgId']);
+
+    orgs.push(orgId);
+    expect(created.status).toBe(201);
+
+    const members = `/api/orgs/${orgId}/members`;
+
+    expect(
+      await owner.browser.request('POST', members, { userId: bob.id, role: 'member' }),
+    ).toMatchObject({ status: 201 });
+
+    // Nobody acts on themselves, and the last owner stays.
+    expect(
+      await owner.browser.request('POST', `${members}/${owner.id}`, { role: 'member' }),
+    ).toEqual({ status: 403, json: { error: { code: 'self_target' } } });
+
+    expect(await bob.browser.request('POST', `${members}/${owner.id}`, { role: 'member' })).toEqual(
+      { status: 403, json: { error: { code: 'forbidden' } } },
+    );
+
+    // A promotion signs bob out everywhere; he signs in again under the new role.
+    expect(
+      await owner.browser.request('POST', `${members}/${bob.id}`, { role: 'admin' }),
+    ).toMatchObject({ status: 200, json: { member: { role: 'admin' } } });
+
+    expect((await bob.browser.request('GET', '/api/me')).status).toBe(401);
+
+    await bob.browser.request('GET', '/api/csrf');
+
+    expect(
+      (
+        await bob.browser.request('POST', '/api/login', {
+          email: teammates[1],
+          password,
+        })
+      ).status,
+    ).toBe(200);
+
+    // Two admins demoting each other at once, on Postgres: one wins, one is refused.
+    const results = await Promise.all([
+      owner.browser.request('POST', `${members}/${bob.id}`, { role: 'member' }),
+      bob.browser.request('POST', `${members}/${owner.id}`, { role: 'member' }),
+    ]);
+
+    // The loser is refused by the last-admin guard (409), or, when the winner's
+    // revocation lands first, already signed out when its request is validated (401).
+    const statuses = results.map((r) => r.status).sort();
+
+    expect(statuses[0]).toBe(200);
+    expect([401, 409]).toContain(statuses[1]);
+
+    const admins = await prisma.authMember.count({
+      where: { scope: orgId, role: { in: ['owner', 'admin'] } },
+    });
+
+    expect(admins).toBe(1);
   });
 });
