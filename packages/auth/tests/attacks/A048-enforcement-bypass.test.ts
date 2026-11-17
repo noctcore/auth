@@ -14,8 +14,16 @@
 // Learn: Second factors (/auth/learn/second-factors/)
 import { describe, expect, it } from 'vitest';
 
-import { definePlugin, type AuthResult, type AuthUser, type IssuedSession } from '../../src';
+import {
+  definePlugin,
+  type AuthResult,
+  type AuthUser,
+  type IssuedSession,
+  type StoredSession,
+} from '../../src';
 import { EMAIL, meta, NEW_PASSWORD, PASSWORD, twoFactorApp } from '../two-factor/setup';
+
+type Session = StoredSession<Record<string, never>>;
 
 /** A plugin with a sign-in of its own (a magic link, say) that issues sessions through the seam. */
 function magicLink() {
@@ -160,7 +168,7 @@ describe('A048: getting a session past the second factor through another flow', 
     expect(login.ok && login.value.kind).toBe('challenge');
   });
 
-  it('refuses a re-issue label without the session it re-issues', async () => {
+  it('refuses a re-issue label without a live session of that user, read by the core', async () => {
     const t = twoFactorApp();
     const { userId, session } = await t.enrolled();
     const other = await t.signedIn('grace@example.com');
@@ -168,25 +176,89 @@ describe('A048: getting a session past the second factor through another flow', 
 
     if (!user) throw new Error('user');
 
-    for (const via of ['password-change', 'reauthenticate', 'revoke-others', 'email-verified']) {
-      const bare = await t.auth.context.issueSession(user, { via, meta: meta() });
+    // `auth.context` is the core at runtime; `confirmLiveSession` is not on the plugin type.
+    const core = t.auth.context as typeof t.auth.context & {
+      confirmLiveSession: (s: Session) => Promise<Session | null>;
+    };
 
-      const foreign = await t.auth.context.issueSession(user, {
-        via,
-        meta: meta(),
-        inherit: other.session,
-      });
+    const [listed] = await t.auth.context.sessions.listActive(userId);
+    const forged = { ...session, id: 'f'.repeat(64) };
+    const vias = ['password-change', 'reauthenticate', 'revoke-others', 'email-verified'];
 
-      expect(bare).toMatchObject({ ok: false, reason: `reissue_without_session:${via}` });
-      expect(foreign).toMatchObject({ ok: false, reason: `reissue_without_session:${via}` });
+    for (const via of vias) {
+      // No session, another user's, one straight from listActive, a forged one,
+      // and the caller's own object that the core never confirmed.
+      for (const inherit of [undefined, other.session, listed, forged, session]) {
+        const issued = await core.issueSession(user, {
+          via,
+          meta: meta(),
+          ...(inherit ? { inherit } : {}),
+        });
+
+        expect(issued).toMatchObject({ ok: false, reason: `reissue_without_session:${via}` });
+      }
     }
 
-    const own = await t.auth.context.issueSession(user, {
+    // A forged session never confirms, and another user's session never confirms for this one.
+    expect(await core.confirmLiveSession(forged)).toBeNull();
+    expect(await core.confirmLiveSession({ ...other.session, userId })).toBeNull();
+
+    // Confirmed live, it opens one re-issue, once.
+    const live = await core.confirmLiveSession(session);
+
+    if (!live) throw new Error('live');
+
+    const once = await core.issueSession(user, {
       via: 'reauthenticate',
       meta: meta(),
-      inherit: session,
+      inherit: live,
     });
 
-    expect(own.ok).toBe(true);
+    const twice = await core.issueSession(user, {
+      via: 'reauthenticate',
+      meta: meta(),
+      inherit: live,
+    });
+
+    expect(once.ok).toBe(true);
+    expect(twice).toMatchObject({ ok: false, reason: 'reissue_without_session:reauthenticate' });
+  });
+
+  it('refuses the re-issue flows on a revoked or expired session, before revoking anything', async () => {
+    const t = twoFactorApp();
+    const { session, secret } = await t.enrolled();
+    const spare = (await t.passed(secret)).session;
+
+    // Revoked: the flows refuse and the user's other session stays.
+    await t.auth.context.sessions.revoke(session.userId, [session.id]);
+
+    const reauth = await t.auth.reauthenticate({ session, password: PASSWORD, meta: meta() });
+    const others = await t.auth.sessions.revokeOthers({ session, meta: meta() });
+
+    const changed = await t.auth.changePassword({
+      session,
+      currentPassword: PASSWORD,
+      newPassword: NEW_PASSWORD,
+      secondFactor: t.codeFor(secret),
+      meta: meta(),
+    });
+
+    for (const result of [reauth, others, changed])
+      expect(result).toMatchObject({ ok: false, reason: 'session_not_active' });
+
+    const stillThere = await t.auth.context.sessions.listActive(session.userId);
+
+    expect(stillThere.map((s) => s.id)).toContain(spare.id);
+
+    // Expired: past the absolute lifetime the same flows refuse.
+    t.clock.advance(400 * 24 * 60 * 60_000);
+
+    const late = await t.auth.reauthenticate({
+      session: spare,
+      password: PASSWORD,
+      meta: meta(),
+    });
+
+    expect(late).toMatchObject({ ok: false, reason: 'session_not_active' });
   });
 });

@@ -143,7 +143,12 @@ describe('races between the check and the write', () => {
       meta: meta(),
     });
 
-    expect(result).toMatchObject({ ok: false, code: 'session_expired', reason: 'user_missing' });
+    // A session object naming another user is not a live session of that user.
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'session_expired',
+      reason: 'session_not_active',
+    });
   });
 
   it('ends the session when the password write is refused during a change', async () => {

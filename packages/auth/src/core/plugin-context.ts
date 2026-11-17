@@ -42,8 +42,10 @@ export interface IssueOptions<A> {
   readonly epoch?: number;
   /**
    * The session this one replaces: its attributes, remember-me and cookie
-   * shape carry over. Required, and of the same user, for the re-issue vias
-   * (`password-change`, `reauthenticate`, `revoke-others`, `email-verified`).
+   * shape carry over. The re-issue vias (`password-change`, `reauthenticate`,
+   * `revoke-others`, `email-verified`) are for the core's own flows: they
+   * require an `inherit` the core itself read live from the store, for the
+   * same user, before the flow revoked anything, and refuse every other value.
    */
   readonly inherit?: StoredSession<A>;
   /** When the credential was proved. Default now; a re-issue that proved nothing passes the old value. */
