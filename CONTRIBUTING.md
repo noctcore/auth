@@ -68,6 +68,18 @@ bun run services:up && bun run test:integration
 - A lint exception goes in a scoped `files` override in `eslint.config.js` with the reason, never
   in an inline disable comment.
 
+## Attack tests
+
+`packages/auth/tests/attacks/` holds one numbered file per attack the library defends against
+(`A001-...test.ts`), indexed in [ATTACKS.md](packages/auth/tests/attacks/ATTACKS.md).
+
+- Attack tests are never deleted, and a number is never reused. An attack that stops applying keeps
+  its file, with a comment saying why.
+- Every security fix adds an attack test that fails before the fix: a new numbered file, or a test
+  in the file of the attack it closes. Add the row to ATTACKS.md in the same commit.
+- Each file starts with a header naming the attack, the module that stops it and its Learn page.
+  `tests/attacks/index.test.ts` fails when the files, the index or the numbering disagree.
+
 ## Changesets
 
 A pull request that changes a published package carries a changeset (`bun run changeset`). Changes
