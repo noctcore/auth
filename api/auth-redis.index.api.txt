@@ -39,7 +39,7 @@ RedisInvitationStore [class]
     (new) (redis: Redis, options?: Pick<RedisStoreOptions, "prefix">): RedisInvitationStore
     consume(hash: string): Promise<StoredInvitation | null>
     create(invitation: StoredInvitation, now: number): Promise<boolean>
-    deleteByInviter(inviterId: string): Promise<void>
+    deleteByInviter(inviterId: string, scope?: string): Promise<void>
     findByHash(hash: string): Promise<StoredInvitation | null>
     listByScope(scope: string, now: number): Promise<StoredInvitation[]>
     private readonly prefix

@@ -112,12 +112,13 @@ export class RedisInvitationStore implements InvitationStore {
     return result === 1;
   }
 
-  async deleteByInviter(inviterId: string): Promise<void> {
+  async deleteByInviter(inviterId: string, scope?: string): Promise<void> {
     await this.redis.eval(
       DELETE_INVITER_INVITATIONS,
       1,
       `${this.prefix}u:${inviterId}`,
       `${this.prefix}h:`,
+      ...(scope === undefined ? [] : [scope]),
     );
   }
 }
