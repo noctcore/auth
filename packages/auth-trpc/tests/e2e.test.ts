@@ -218,6 +218,39 @@ describe.each(['fetch', 'node'] as const)('tRPC on the %s adapter', (transport) 
     await expect(browser.client.me.query()).resolves.toMatchObject({ email: EMAIL });
   });
 
+  it.each(['application/jsonl', 'text/html, application/jsonl'])(
+    'refuses a sign-in streamed through the Accept header alone (%s)',
+    async (accept) => {
+      const browser = await start();
+
+      await browser.client.health.query();
+
+      const login = vi.spyOn(env.auth, 'login');
+
+      const batch = (headers: Record<string, string>) =>
+        browser.fetch(`${env.url}/login?batch=1`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...headers },
+          body: JSON.stringify({ 0: { email: EMAIL, password: PASSWORD } }),
+        });
+
+      const response = await batch({ accept });
+      const text = await response.text();
+
+      // tRPC's streamed (JSONL) form: a head line, then a chunk per call.
+      expect(text.split('\n').length).toBeGreaterThan(1);
+      expect(text).toContain('"internal"');
+      expect(login).not.toHaveBeenCalled();
+      expect(browser.cookies.has('session')).toBe(false);
+
+      // The same batch, not streamed, signs in.
+      await (await batch({ accept: 'application/json' })).text();
+
+      expect(login).toHaveBeenCalledTimes(1);
+      expect(browser.cookies.has('session')).toBe(true);
+    },
+  );
+
   it('answers a thrown error with internal and no message or stack', async () => {
     const browser = await start();
     const error = await failure(browser.client.boom.query());

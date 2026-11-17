@@ -17,6 +17,7 @@ import {
   type AuthWriter,
   WritesCookiesMiddleware,
 } from '../src';
+import { isStreamedRequest } from '../src/context';
 import { secretKeys } from '../src/secret-queries';
 import { CSRF_SECRET, EMAIL, makeAuth, ORIGIN, PASSWORD } from './support';
 
@@ -234,7 +235,37 @@ describe('the cookie writers', () => {
       }),
     ).rejects.toThrow(/httpBatchLink or httpLink/u);
 
+    // Nor on a subscription, whose response is a stream as well.
+    await expect(middleware.use({ ctx, type: 'subscription', next })).rejects.toThrow(
+      /cannot mark a subscription/u,
+    );
+
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('decides streaming exactly as tRPC does', () => {
+    const cases: [Record<string, string>, boolean][] = [
+      [{ 'trpc-accept': 'application/jsonl' }, true],
+      [{ accept: 'application/jsonl' }, true],
+      [{ accept: 'text/html, application/jsonl' }, true],
+      [{ accept: 'text/html,  application/jsonl ,*/*' }, true],
+      // trpc-accept wins whenever present, whatever its value.
+      [{ 'trpc-accept': 'application/json', accept: 'application/jsonl' }, false],
+      [{ 'trpc-accept': '', accept: 'application/jsonl' }, false],
+      // Case-sensitive, as in tRPC.
+      [{ 'trpc-accept': 'Application/JSONL' }, false],
+      [{ accept: 'Application/JSONL' }, false],
+      [{ accept: 'application/jsonl;q=0.9' }, false],
+      [{ accept: 'application/json' }, false],
+      [{}, false],
+    ];
+
+    for (const [headers, streamed] of cases) {
+      expect(
+        isStreamedRequest((name) => headers[name]),
+        JSON.stringify(headers),
+      ).toBe(streamed);
+    }
   });
 });
 

@@ -135,14 +135,22 @@ export const authedBody = tagged(
 
 /**
  * The only way to the cookie writers: hands the procedure `ctx.auth` with
- * `setSession`, `signOut` and `clearSession`. On a streamed batch it refuses
- * first, so the core flow (a sign-in, a rotation) never runs when its cookie
- * cannot be set.
+ * `setSession`, `signOut` and `clearSession`. On a streamed batch, and on a
+ * subscription, it refuses first, so the core flow (a sign-in, a rotation)
+ * never runs when its cookie cannot be set.
  */
 export const writesCookiesBody = tagged(
   'cookies',
   async <TResult>(call: MiddlewareCall<TResult>): Promise<TResult> => {
     const { state, internals } = stateOf(call.ctx);
+
+    // A subscription's response is a stream too (server-sent events).
+    if (call.type === 'subscription') {
+      throw new AuthConfigError(
+        'writesCookies cannot mark a subscription: its response is a stream, sent before any ' +
+          'cookie could be written. Write cookies from a mutation.',
+      );
+    }
 
     refuseStreamedWrite(internals.streamed);
 
