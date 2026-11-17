@@ -10,3 +10,4 @@ Each guide builds on [Getting started](/auth/start/getting-started/), and its co
 - [Use with NestJS](/auth/build/nestjs/): the module, the guard order, CSRF before any guard, the trust-proxy rule and a compile test that pins the open routes.
 - [Use with tRPC](/auth/build/trpc/): the session context on the Node and fetch adapters, guarded procedures, CSRF on mutations, cookies on rotation, safe error mapping and the checks to run in a test.
 - [Writing a store adapter](/auth/build/store-adapter/): what each store must guarantee, and how to run the conformance suite from `@noctcore/auth/testing` against yours.
+- [Two-factor](/auth/build/two-factor/): TOTP with recovery codes and trusted devices, a cipher for the secrets, the login challenge, step-up for your own sensitive actions, and moving existing TOTP users over.

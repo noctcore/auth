@@ -1,0 +1,72 @@
+---
+title: Two-factor
+description: Adding TOTP with recovery codes and trusted devices to an app, with a cipher for the secrets, the login challenge, step-up for your own sensitive actions, and moving existing TOTP users over.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import authTs from '../../../../snippets/build/two-factor/auth.ts?raw';
+import cipherTs from '../../../../snippets/build/two-factor/cipher.ts?raw';
+import loginTs from '../../../../snippets/build/two-factor/login.ts?raw';
+import migrateTs from '../../../../snippets/build/two-factor/migrate.ts?raw';
+import settingsTs from '../../../../snippets/build/two-factor/settings.ts?raw';
+
+The two-factor plugin, `@noctcore/auth/two-factor`, adds a TOTP second factor with recovery codes, trusted devices and step-up. Why each rule is there is in [Second factors](/auth/learn/second-factors/). Like the core, it has no HTTP endpoints: its flows live under `auth.twoFactor`, and your routes call them. This guide builds on [A Node server with Redis and Prisma](/auth/build/node-server/).
+
+## The store and the cipher
+
+The plugin needs a `TwoFactorStore` and a `SecretCipher`.
+
+- **Store.** `PrismaTwoFactorStore` from `@noctcore/auth-prisma` (copy the four two-factor models from its `prisma/auth.prisma` and migrate) or `RedisTwoFactorStore` from `@noctcore/auth-redis`. The factor and the recovery codes are account data, so on Redis keep them only with persistence on. `MemoryTwoFactorStore` from `@noctcore/auth/testing` is for tests. Your own store must pass `twoFactorStoreConformance` (see [Writing a store adapter](/auth/build/store-adapter/)).
+- **Cipher.** The plugin never sees a key. TOTP secrets are encrypted by the cipher you hand it, and only its output is stored. This one uses AES-256-GCM with the user id as associated data, and names its key in each ciphertext so you can rotate:
+
+<Code code={cipherTs} lang="ts" title="src/two-factor/cipher.ts" />
+
+Generate each key with `openssl rand -base64 32` and keep it with your other secrets, not in the database the ciphertexts live in. To rotate, add a key, make it current, and the old rows keep decrypting with the old one.
+
+## Wiring the plugin
+
+<Code code={authTs} lang="ts" title="src/auth.ts" />
+
+| Option | Default | |
+| --- | --- | --- |
+| `store`, `cipher` | required | |
+| `issuer` | required | The name the authenticator app shows. |
+| `required` | never | `({ user }) => boolean`: users who must have a factor. Without one they get an enrollment challenge at login, never a session. |
+| `stepUpWindow` | `'10m'` | How long a code proved in a session counts for sensitive actions. |
+| `trustedDevices` | `{ ttl: '30d', maxPerUser: 5 }` | `false` turns "remember this device" off (and stops honouring devices trusted before). |
+| `attempts` | 5 per `'15m'` | Code checks per user, from every IP together, before the factor locks. |
+| `perIp` | 10 per `'1m'` | Code checks per IP. |
+
+Turning a factor on or off and spending a recovery code each send a mail event (`two-factor-enabled`, `two-factor-disabled`, `recovery-code-used`), so add them to your templates ([Mail](/auth/build/mail/)).
+
+## Login
+
+With the plugin on, `auth.login` answers `{ kind: 'challenge', challenge, methods }` for a user with a factor, after a correct password and without a session. The challenge lasts 5 minutes and takes 5 codes; it is bound to the browser's user agent. The browser sends it back with a code, a recovery code, or nothing but the trusted-device cookie:
+
+<Code code={loginTs} lang="ts" title="src/routes/login.ts" />
+
+Every refusal answers `invalid_second_factor` (or `rate_limited`); the reason, such as `wrong_code`, `code_replayed` or `factor_locked`, is only in the audit row. Show the same message for all of them.
+
+When `methods` is `['enroll']`, the user is one you require a factor of and has none yet. Pass the challenge to `auth.twoFactor.enroll({ challenge, meta })` to get a secret, show it, and send the first code to `verifyChallenge` as a TOTP proof: it turns the factor on and returns the session with the recovery codes.
+
+## Settings and step-up
+
+Turning the factor on from the settings page needs a fresh password proof (`session.freshAuthAge`, 10 minutes by default; send the user through `auth.reauthenticate` if it is older). `enroll` returns the base32 `secret` and an `otpauth://` `uri` to show as a QR code. The secret becomes active only when a code from it comes back within 10 minutes.
+
+<Code code={settingsTs} lang="ts" title="src/routes/settings.ts" />
+
+`requireStepUp` is the guard for your own sensitive actions. Turning the factor off, new recovery codes and a password change without a code already use it. Pass `revokeOtherSessions: true` to `confirmEnrollment` to sign out every other session when the factor goes on; set the cookie of the session it returns.
+
+Other flows: `status(session)` (on, pending, required, recovery codes left), `regenerateRecoveryCodes`, `disable`, and `revokeTrustedDevices`. Password changes and resets of a user with a factor take the code in `secondFactor` (six digits are read as a TOTP code, anything else as a recovery code); a password change can skip it when the session holds a step-up.
+
+## Moving existing TOTP users over
+
+If your users already have TOTP seeds, move each one into the store already confirmed, so their authenticator apps keep working:
+
+<Code code={migrateTs} lang="ts" title="scripts/migrate-totp.ts" />
+
+Old recovery codes cannot be carried over: the plugin stores them as an HMAC keyed by your auth secret. Ask migrated users to generate a new set from the settings page after their next sign-in, where `status` shows `recoveryCodesRemaining: 0`.
+
+## Limits
+
+TOTP does not stop a phishing page that relays the code in real time, and it does not protect a session cookie that was already stolen. See [Second factors](/auth/learn/second-factors/) for what the plugin does and does not cover.
