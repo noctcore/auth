@@ -77,15 +77,16 @@ export async function revokeOtherSessions<U extends AuthUser, A>(
   settings: FlowSettings,
   input: { session: StoredSession<A>; meta: RequestMeta },
 ): Promise<AuthResult<IssuedSession<A>>> {
-  // High privilege, like revoking one device: a stolen session must not be
-  // able to sign the owner out everywhere.
-  const fresh = requireFreshAuth(core, settings, input.session);
-
-  if (!fresh.ok) return fresh;
-
   const live = await core.confirmLiveSession(input.session);
 
   if (!live) return fail('session_expired', 'session_not_active');
+
+  // High privilege, like revoking one device: a stolen session must not be
+  // able to sign the owner out everywhere. Freshness is read from the live
+  // copy, not from the object the caller passed in.
+  const fresh = requireFreshAuth(core, settings, live);
+
+  if (!fresh.ok) return fresh;
 
   const user = await core.users.findById(live.userId);
 

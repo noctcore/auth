@@ -247,6 +247,18 @@ describe('session management', () => {
     expect(await t.sessionOf(t.phone.token)).not.toBeNull();
   });
 
+  it('reads freshness from the live session, not from the object the caller passes', async () => {
+    const t = await twoDevices();
+
+    t.clock.advance(11 * 60_000);
+
+    const claimed = { ...t.laptop.session, authenticatedAt: t.clock.now() };
+    const result = await t.auth.sessions.revokeOthers({ session: claimed, meta: meta() });
+
+    expect(!result.ok && result.code).toBe('fresh_auth_required');
+    expect(await t.sessionOf(t.phone.token)).not.toBeNull();
+  });
+
   it('signs out every other device and keeps this one', async () => {
     const t = await twoDevices();
     const result = await t.auth.sessions.revokeOthers({ session: t.laptop.session, meta: meta() });
