@@ -99,9 +99,13 @@ export async function register<U extends AuthUser, A>(
 
   for (const hook of core.hooks.afterRegister) await hook({ user, meta });
 
+  // The audit write and the mail run side by side: a slow or hung audit sink
+  // must not hold back the verification mail (`emit` never throws).
   core.background('verification mail', async () => {
-    await core.emit({ type: 'register.created', userId: user.id }, meta);
-    await sendVerification(core, settings, user, meta);
+    await Promise.all([
+      core.emit({ type: 'register.created', userId: user.id }, meta),
+      sendVerification(core, settings, user, meta),
+    ]);
   });
 
   if (!settings.autoLogin) return ok({ session: null });
