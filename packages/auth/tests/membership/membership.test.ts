@@ -459,6 +459,20 @@ describe('membership acting session', () => {
 });
 
 describe('membership revocation order', () => {
+  it('signs the member out even when the store then refuses the change', async () => {
+    const t = membershipApp({ revokeSessionsOnChange: true, canManage: () => true });
+    const actor = await t.member('member');
+    const soleAdmin = await t.member('admin');
+
+    expect(await t.auth.membership.remove(acting(actor, soleAdmin))).toMatchObject({
+      ok: false,
+      code: 'last_admin',
+    });
+
+    expect((await t.store.findMember(SCOPE, soleAdmin.userId))?.role).toBe('admin');
+    expect(await t.sessionOf(soleAdmin.token)).toBeNull();
+  });
+
   it('writes nothing when the revocation before the write fails', async () => {
     const t = membershipApp({ revokeSessionsOnChange: true });
     const admin = await t.member('admin');
