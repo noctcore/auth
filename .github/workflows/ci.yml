@@ -101,6 +101,30 @@ jobs:
         working-directory: packages/auth-nestjs
         run: bun run typecheck && bun run test
 
+  # @noctcore/auth-trpc declares @trpc/server >=11.22.1 <12 and zod >=4.3.0 <5
+  # as peers. The test job runs the newest (the dev dependencies); this one
+  # installs the oldest the ranges allow and runs the adapter's whole suite
+  # against them, nestjs-trpc included.
+  trpc-floor:
+    name: trpc · peer range floor (11.22.1, zod 4.3.0)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Install the oldest tRPC and Zod the peer ranges allow
+        working-directory: packages/auth-trpc
+        run: bun add --dev --exact @trpc/server@11.22.1 @trpc/client@11.22.1 zod@4.3.0
+      - run: bun run --filter '@noctcore/auth' build
+      - name: Typecheck and test the adapter on the floor
+        working-directory: packages/auth-trpc
+        run: bun run typecheck && bun run test
+
   # The conformance suite and the example app's e2e test against real Redis and
   # Postgres. AUTH_REQUIRE_SERVICES makes a missing backend a failure: a suite
   # that silently skipped would be green while proving nothing.
