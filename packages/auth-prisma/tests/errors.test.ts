@@ -262,4 +262,27 @@ describe('PrismaTwoFactorStore errors', () => {
     await codes.replaceRecoveryCodes('u1', ['a']);
     expect(calls).toBe(2);
   });
+
+  it('answers taken for an email change to a taken address and rethrows anything else', async () => {
+    const change = { from: email, to: 'grace@example.com' as NormalizedEmail };
+
+    const taken = new PrismaUserStore({
+      delegate: delegate({
+        updateMany: async () => {
+          throw prismaError('P2002');
+        },
+      }),
+    });
+
+    const down = new PrismaUserStore({
+      delegate: delegate({
+        updateMany: async () => {
+          throw outage;
+        },
+      }),
+    });
+
+    expect(await taken.changeEmail('u1', change)).toBe('taken');
+    await expect(down.changeEmail('u1', change)).rejects.toBe(outage);
+  });
 });
