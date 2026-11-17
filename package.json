@@ -29,7 +29,8 @@
     "bench:timing": "bun packages/auth/tests/timing/benchmark.ts",
     "api:update": "bun scripts/api-snapshot.ts",
     "changeset": "changeset",
-    "version-packages": "changeset version && bun install --lockfile-only",
+    "version-packages": "changeset version && bun install --lockfile-only && bun install --lockfile-only",
+    "release": "bun run build && changeset publish",
     "release:dry-run": "bun scripts/release-dry-run.ts",
     "services:up": "docker compose up -d --wait",
     "services:down": "docker compose down"
