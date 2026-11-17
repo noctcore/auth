@@ -133,6 +133,7 @@ export default defineConfig({
             { label: 'Brute force and lockout', link: '/learn/brute-force-and-lockout/' },
             { label: 'Email verification', link: '/learn/email-verification/' },
             { label: 'Password reset', link: '/learn/password-reset/' },
+            { label: 'Email change', link: '/learn/email-change/' },
             { label: 'CSRF', link: '/learn/csrf/' },
             { label: 'Second factors', link: '/learn/second-factors/' },
           ],
@@ -147,6 +148,7 @@ export default defineConfig({
             { label: 'Use with tRPC', link: '/build/trpc/' },
             { label: 'Writing a store adapter', link: '/build/store-adapter/' },
             { label: 'Two-factor', link: '/build/two-factor/' },
+            { label: 'Email change', link: '/build/email-change/' },
           ],
         },
         {
