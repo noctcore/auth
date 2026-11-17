@@ -271,6 +271,7 @@ SessionCookieConfig [interface]
     readonly secure?: boolean
 SessionManager [class]<A>
     (new) <A>(store: SessionStore, options: SessionOptions<A>, clock: Clock, random: RandomSource, logger: Logger): SessionManager<A>
+    findActive(id: string): Promise<StoredSession<A> | null>
     listActive(userId: string): Promise<StoredSession<A>[]>
     mint(input: MintInput<A>): Promise<MintResult<A>>
     private evictOverCap
