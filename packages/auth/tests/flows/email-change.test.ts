@@ -876,11 +876,40 @@ describe('revertEmailChange', () => {
 
     const token = await t.auth.context.tokens.issueLink('email-revert', session.userId, 60_000, {
       email: 'ada@example.com',
+      to: 'ada@example.com',
     });
 
     expect((await t.auth.revertEmailChange({ token: token.token, meta: meta() })).ok).toBe(true);
     expect(await t.auth.context.tokens.findLive('email-change-block', session.userId)).toBeNull();
     expect((await t.stores.users.findCredentialById(session.userId))?.passwordHash).toBeNull();
+  });
+
+  it('refuses a link once the account no longer names the address it moved to, or names none', async () => {
+    const t = setup();
+    const { session } = await t.signedInUser();
+    const after = await changed(t, session, NEW);
+
+    await t.stores.users.setEmail(session.userId, 'settled@example.com' as never);
+
+    const moved = {
+      ok: false,
+      code: 'invalid_token',
+      reason: 'email_revert_address_moved',
+    };
+
+    expect(await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).toEqual(moved);
+
+    // One revert link per user: this replaces the one above.
+    const orphan = await t.auth.context.tokens.issueLink('email-revert', session.userId, 60_000, {
+      email: 'old@example.com',
+    });
+
+    expect(await t.auth.revertEmailChange({ token: orphan.token, meta: meta() })).toEqual(moved);
+
+    expect(await t.stores.users.findCredentialById(session.userId)).toMatchObject({
+      email: 'settled@example.com',
+      passwordHash: expect.stringMatching(/./u) as unknown,
+    });
   });
 
   it('is rate limited per IP', async () => {
