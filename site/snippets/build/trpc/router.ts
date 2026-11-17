@@ -20,13 +20,15 @@ import { z } from 'zod';
 // ctx.auth from createAuthContext, typed by your createAuth result.
 export type Context = AuthContextOf<AppAuth>;
 
-// The formatter keeps internal messages, stacks and submitted values out of
-// every error the client sees.
+// The formatter keeps stacks, submitted values and internal messages out of
+// the errors tRPC and the adapter raise. Messages you throw yourself go out
+// as you wrote them.
 const t = initTRPC.context<Context>().create({ errorFormatter: authErrorFormatter });
 
 // Build every procedure on these two: assertProceduresGuarded fails on one
 // that uses neither.
-const { publicProcedure, protectedProcedure, freshAuth, rateLimited } = createAuthMiddlewares(t);
+const { publicProcedure, protectedProcedure, freshAuth, rateLimited, writesCookies } =
+  createAuthMiddlewares(t);
 
 export function createAppRouter(auth: AppAuth) {
   return t.router({
@@ -45,7 +47,10 @@ export function createAppRouter(auth: AppAuth) {
         return { status: 'accepted' as const };
       }),
 
+    // writesCookies on every procedure that sets a cookie: on a streamed
+    // batch it refuses before the flow runs.
     login: publicProcedure
+      .use(writesCookies)
       .input(loginInput)
       .output(loginOutput)
       .mutation(async ({ ctx, input }) => {
@@ -72,7 +77,10 @@ export function createAppRouter(auth: AppAuth) {
         return { status: 'accepted' as const };
       }),
 
-    logout: publicProcedure.output(csrfTokenOutput).mutation(({ ctx }) => ctx.auth.signOut()),
+    logout: publicProcedure
+      .use(writesCookies)
+      .output(csrfTokenOutput)
+      .mutation(({ ctx }) => ctx.auth.signOut()),
 
     // The output schema strips everything but id, email and emailVerified.
     me: protectedProcedure.output(userOutput).query(({ ctx }) => ctx.user),
@@ -84,6 +92,7 @@ export function createAppRouter(auth: AppAuth) {
     // Re-entering the password rotates the session: setSession writes the new
     // cookie and a CSRF token bound to it.
     reauthenticate: protectedProcedure
+      .use(writesCookies)
       .input(reauthenticateInput)
       .output(csrfTokenOutput)
       .mutation(async ({ ctx, input }) => {
