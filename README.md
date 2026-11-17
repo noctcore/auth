@@ -80,6 +80,7 @@ the stricter value wins.
 | [`@noctcore/auth-redis`](packages/auth-redis) | `SessionStore` and `CounterStore` on ioredis |
 | [`@noctcore/auth-prisma`](packages/auth-prisma) | `UserStore` and `TokenStore` on Prisma 7, plus the schema to merge into yours |
 | [`@noctcore/auth-nestjs`](packages/auth-nestjs) | A NestJS module: a closed-by-default session guard, CSRF middleware, decorators and trust-proxy setup |
+| [`@noctcore/auth-trpc`](packages/auth-trpc) | tRPC middlewares: a session context, guarded procedures, CSRF on mutations, safe error mapping and Zod schemas, for plain tRPC and nestjs-trpc |
 
 Any store that passes the conformance suite in `@noctcore/auth/testing` works, so Redis and Prisma
 are a starting point, not a requirement. All packages share one version.
