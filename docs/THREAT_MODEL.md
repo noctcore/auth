@@ -2,7 +2,7 @@ The threat model of `@noctcore/auth`: what it protects, who it protects it from,
 
 ## What the library is
 
-A server-side library. A consuming app calls it from its own HTTP handlers to register, log in, validate a session, reset or change a password, and verify or change an email address. The library never handles HTTP itself: the app passes in the request metadata (client IP, user agent, origin) and turns results into responses. Everything it stores goes through four store ports (users, sessions, one-time tokens, counters), with adapters for Redis and Prisma, and every mail goes through a mailer port. The optional two-factor plugin (`@noctcore/auth/two-factor`) adds a fifth store (factors, recovery codes, trusted devices, step-up proofs) and a cipher port for TOTP secrets.
+A server-side library. A consuming app calls it from its own HTTP handlers to register, log in, validate a session, reset or change a password, and verify or change an email address. The library never handles HTTP itself: the app passes in the request metadata (client IP, user agent, origin) and turns results into responses. Everything it stores goes through four store ports (users, sessions, one-time tokens, counters), with adapters for Redis and Prisma, and every mail goes through a mailer port. The optional two-factor plugin (`@noctcore/auth/two-factor`) adds a fifth store (factors, recovery codes, trusted devices, step-up proofs) and a cipher port for TOTP secrets. The optional membership plugin (`@noctcore/auth/membership`) adds a membership store (who holds which role in which scope) and guards the changes to it.
 
 ## Assets
 
