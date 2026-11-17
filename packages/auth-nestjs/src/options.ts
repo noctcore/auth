@@ -27,6 +27,8 @@ export interface NestAuth<U extends AuthUser = AuthUser> {
     touch?: boolean;
   }): Promise<AuthResult<StoredSession<unknown>>>;
   requireFreshAuth(session: StoredSession<unknown>): AuthResult<void>;
+  /** Waits for background work (mail sends); the module calls it on shutdown. */
+  flush?(): Promise<void>;
   logout(input: { token: string | null | undefined; meta: RequestMeta }): Promise<{
     cookie: CookieSpec;
   }>;

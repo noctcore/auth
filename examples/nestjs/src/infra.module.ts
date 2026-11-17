@@ -57,6 +57,9 @@ export class InfraModule implements OnApplicationShutdown {
     };
   }
 
+  // AuthModule has already flushed the auth's background work (mail sends) in
+  // `beforeApplicationShutdown`, which Nest runs before this hook, so nothing
+  // still needs these connections when they close.
   async onApplicationShutdown(): Promise<void> {
     await this.prisma.$disconnect();
     this.redis.disconnect();

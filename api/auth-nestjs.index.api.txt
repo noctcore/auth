@@ -36,6 +36,7 @@ AUTH [const]: typeof AUTH
 AuthMeta [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
 AuthModule [class]
     (new) (discovery: DiscoveryService, reflector: Reflector, options: ResolvedOptions): AuthModule
+    beforeApplicationShutdown(): Promise<void>
     configure(consumer: MiddlewareConsumer): void
     onModuleInit(): void
     private readonly discovery
@@ -69,6 +70,7 @@ CurrentSession [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
 CurrentUser [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
 describeRoutes [function]: (app: INestApplication) => RouteAccess[]
 NestAuth [interface]<U extends AuthUser = AuthUser>
+    flush?(): Promise<void>
     logout(input: { token: string | null | undefined; meta: RequestMeta; }): Promise<{ cookie: CookieSpec; }>
     readSessionToken(cookieHeader: string | null | undefined): string | null
     readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; }

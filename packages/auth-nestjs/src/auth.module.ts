@@ -6,7 +6,11 @@
  * - `SessionGuard` as a global guard, so every route needs a session unless it
  *   carries `@Public()` (there is no switch to turn it off);
  * - `CsrfMiddleware` on every route, which runs before any guard;
- * - `SessionCookies` for the controllers that sign people in and out.
+ * - `SessionCookies` for the controllers that sign people in and out;
+ * - `auth.flush()` on shutdown (`beforeApplicationShutdown`), so mail sends
+ *   still in flight finish before your `onApplicationShutdown` hooks close the
+ *   database and Redis connections. Nest runs it on `app.close()`, and on
+ *   SIGTERM once you call `app.enableShutdownHooks()`.
  *
  * The module is global, so the guard, the decorators and `AUTH` work in every
  * feature module without importing it again.
@@ -14,6 +18,7 @@
 import {
   Inject,
   Module,
+  type BeforeApplicationShutdown,
   RequestMethod,
   type DynamicModule,
   type InjectionToken,
@@ -67,7 +72,7 @@ function misconfiguration(route: RouteAccess, options: ResolvedOptions): string 
 }
 
 @Module({})
-export class AuthModule implements NestModule, OnModuleInit {
+export class AuthModule implements NestModule, OnModuleInit, BeforeApplicationShutdown {
   constructor(
     @Inject(DiscoveryService) private readonly discovery: DiscoveryService,
     @Inject(Reflector) private readonly reflector: Reflector,
@@ -110,6 +115,10 @@ export class AuthModule implements NestModule, OnModuleInit {
    * as `@Public()` on a controller and `@RequireRole()` on one of its
    * handlers, instead of leaving it to the guard to pick one at request time.
    */
+  async beforeApplicationShutdown(): Promise<void> {
+    await this.options.auth.flush?.();
+  }
+
   onModuleInit(): void {
     const problems = collectRoutes(this.discovery, this.reflector)
       .map((route) => misconfiguration(route, this.options))

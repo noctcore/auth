@@ -289,3 +289,32 @@ describe('fresh authentication', () => {
     expect((await browser.send('POST', '/api/sensitive')).status).toBe(201);
   });
 });
+
+describe('shutting down', () => {
+  it('waits for background mail before the app finishes closing', async () => {
+    t = await boot();
+
+    let release: () => void = () => undefined;
+    let delivered = false;
+
+    t.mailer.send = async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      delivered = true;
+    };
+
+    await t.auth.requestPasswordReset({ email: EMAIL, meta: { ip: '203.0.113.9' } });
+
+    let closed = false;
+    const closing = t.app.close().then(() => (closed = true));
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+
+    release();
+    await closing;
+    expect(delivered).toBe(true);
+
+    // Already closed: the shared afterEach must not close it again.
+    t = { ...t, app: { close: async () => undefined } as never };
+  });
+});
