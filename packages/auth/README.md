@@ -30,6 +30,8 @@ A second factor is a plugin: `twoFactor` from `@noctcore/auth/two-factor` adds T
 
 Membership guards are a plugin too: `membership` from `@noctcore/auth/membership` refuses acting on yourself and demoting or removing the last admin of a scope (decided atomically by the store), reads the acting user's role from the store on every call, and, with `revokeSessionsOnChange` on, revokes a member's sessions on an attempted role change or removal (including one the store refuses), with its flows under `auth.membership`.
 
+Invitations are a plugin as well: `invitations` from `@noctcore/auth/invitations` mails a single-use link bound to an address, lets its verified owner accept into their account or create one, never issues a session that skips a second factor, and refuses to start without the app's `authorize` check, with its flows under `auth.invitations`.
+
 Flows return results instead of throwing HTTP errors, and your app keeps its own routes. The root README has a complete wiring example and the list of modules.
 
 - [Root README](https://github.com/noctcore/auth#readme)
