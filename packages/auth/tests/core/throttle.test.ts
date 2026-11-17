@@ -291,3 +291,73 @@ describe('trusted devices', () => {
     expect(await t.deviceFailed(victim)).toHaveProperty('newLock');
   });
 });
+
+describe('second-factor lockout', () => {
+  const factor = 'factor-account';
+  const rule = { limit: 3, window: '15m' } as const;
+
+  it('reserves an attempt per call, locks after the budget with capped backoff, and answers locked alike', async () => {
+    const gates = [];
+
+    for (let i = 0; i < 5; i++) gates.push(await throttle.gateFactor(factor, rule));
+
+    expect(gates.map((g) => g.allowed)).toEqual([true, true, true, false, false]);
+    expect(gates[3]).toEqual({ allowed: false, newLock: { until: clock.now() + 5 * MIN } });
+    expect(gates[4]).toEqual({ allowed: false });
+
+    // The lock lifts after 5 minutes; the next spent budget locks for 15 (the tier grew).
+    clock.advance(5 * MIN);
+
+    for (let i = 0; i < 3; i++)
+      expect((await throttle.gateFactor(factor, rule)).allowed).toBe(true);
+
+    expect(await throttle.gateFactor(factor, rule)).toEqual({
+      allowed: false,
+      newLock: { until: clock.now() + 15 * MIN },
+    });
+
+    clock.advance(15 * MIN);
+    expect((await throttle.gateFactor(factor, rule)).allowed).toBe(true);
+  });
+
+  it('caps the factor lock like the password lock', async () => {
+    const capped = new Throttle(counters, clock, { baseLock: '30m', maxLock: '45m' });
+
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < 3; i++) await capped.gateFactor(factor, rule);
+
+      const lock = await capped.gateFactor(factor, rule);
+
+      expect(!lock.allowed && lock.newLock?.until).toBe(
+        clock.now() + (round === 0 ? 30 : 45) * MIN,
+      );
+
+      clock.advance(45 * MIN);
+    }
+  });
+
+  it('counts per account, apart from the password lockout', async () => {
+    for (let i = 0; i < 4; i++) await throttle.gateFactor(factor, rule);
+
+    expect((await throttle.gateFactor(factor, rule)).allowed).toBe(false);
+    expect((await throttle.gateFactor('another-account', rule)).allowed).toBe(true);
+    expect((await throttle.gateLogin(factor, '192.0.2.1')).allowed).toBe(true);
+  });
+
+  it('starts the budget over after a correct code', async () => {
+    for (let i = 0; i < 3; i++) await throttle.gateFactor(factor, rule);
+
+    await throttle.factorSucceeded(factor);
+
+    for (let i = 0; i < 3; i++)
+      expect((await throttle.gateFactor(factor, rule)).allowed).toBe(true);
+  });
+
+  it('holds a parallel burst to the budget', async () => {
+    const gates = await Promise.all(
+      Array.from({ length: 20 }, () => throttle.gateFactor(factor, rule)),
+    );
+
+    expect(gates.filter((g) => g.allowed)).toHaveLength(3);
+  });
+});
