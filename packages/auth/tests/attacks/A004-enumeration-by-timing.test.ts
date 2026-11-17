@@ -7,7 +7,8 @@
 // Stopped by: flows/login.ts (same store calls for every address, a full verify against a
 //   dummy hash for unknown ones), password/verify.ts, tokens/one-time-tokens.ts
 //   (same HMAC and lookup for an unknown user), throttle/counter-keys.ts (keys from
-//   the address, never the user id). Checked by counting calls, not wall-clock
+//   the address, never the user id), core/auth-core.ts (mail is handed over, never
+//   awaited). Checked by counting calls, not wall-clock
 //   time, so CI cannot flake: tests/timing/benchmark.ts (`bun run bench:timing`)
 //   measures the clock.
 // Learn: Enumeration (/auth/learn/enumeration/)
@@ -21,6 +22,7 @@ import {
   countingHasher,
   EMAIL,
   meta,
+  onFakeClock,
   PASSWORD,
   queued,
   recordStoreCalls,
@@ -107,18 +109,11 @@ describe('A004: account enumeration by timing', () => {
       });
 
     // The eleventh attempt sets the lock; the mailer never resolves, the login must still answer.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const hung = new Promise<'hung'>((resolve) => {
-      timer = setTimeout(() => resolve('hung'), 500);
-    });
-
-    const answer = await Promise.race([
+    const answer = await onFakeClock(() =>
       env.auth.login({ email: EMAIL, password: 'wrong passphrase!', meta: meta('192.0.2.99') }),
-      hung,
-    ]).finally(() => clearTimeout(timer));
+    );
 
-    expect(answer !== 'hung' && !answer.ok && answer.reason).toBe('locked');
+    expect(answer !== 'held up' && !answer.ok && answer.reason).toBe('locked');
   });
 
   it('makes the same store calls on the request path of a reset for a known and an unknown address', async () => {
@@ -141,8 +136,10 @@ describe('A004: account enumeration by timing', () => {
 
   // Not the same sequence: a taken address looks the owner up where a new
   // account writes its verification token. Both are one indexed round trip;
-  // the test pins both sequences so any other drift fails.
-  it('hashes the password, makes the same number of store round trips and sends one mail at sign-up, taken address or new', async () => {
+  // the test pins both sequences so any other drift fails. Each path hands
+  // one mail to the mailer and does not wait for it (A023), so delivery time
+  // stays out of the answer whichever template it is.
+  it('hashes the password, makes the same number of store round trips and hands over one mail at sign-up, taken address or new', async () => {
     let hashes = 0;
     const base = plainHasher();
     const hasher = { ...base, hash: async (p: string) => (hashes++, base.hash(p)) };
