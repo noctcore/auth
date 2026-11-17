@@ -58,6 +58,16 @@
         "default": "./dist/membership.cjs"
       }
     },
+    "./invitations": {
+      "import": {
+        "types": "./dist/invitations.d.ts",
+        "default": "./dist/invitations.js"
+      },
+      "require": {
+        "types": "./dist/invitations.d.cts",
+        "default": "./dist/invitations.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [

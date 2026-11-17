@@ -61,7 +61,12 @@ export type AuthEventType =
   | 'membership.added'
   | 'membership.role_changed'
   | 'membership.removed'
-  | 'membership.refused';
+  | 'membership.refused'
+  | 'invitation.created'
+  | 'invitation.deduplicated'
+  | 'invitation.revoked'
+  | 'invitation.accepted'
+  | 'invitation.refused';
 
 export interface AuthEvent {
   readonly type: AuthEventType;

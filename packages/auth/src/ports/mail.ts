@@ -128,6 +128,19 @@ export type AuthMailEvent =
       readonly remaining: number;
       readonly at: Date;
       readonly dedupeKey: string;
+    }
+  /**
+   * The invitations plugin: an invitation to `scope`. No `userId`: the address
+   * may have no account, and the mail is the same whether it has one or not.
+   */
+  | {
+      readonly type: 'invitation';
+      readonly to: string;
+      readonly scope: string;
+      readonly inviterId: string;
+      readonly url: string;
+      readonly expiresAt: Date;
+      readonly dedupeKey: string;
     };
 
 export interface Mailer {

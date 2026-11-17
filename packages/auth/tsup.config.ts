@@ -16,6 +16,7 @@ export default defineConfig({
     testing: 'src/testing/index.ts',
     'two-factor': 'src/plugins/two-factor/index.ts',
     membership: 'src/plugins/membership/index.ts',
+    invitations: 'src/plugins/invitations/index.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,
