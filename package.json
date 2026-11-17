@@ -18,6 +18,7 @@
     "typecheck": "bun run --filter '*' typecheck && tsc -p scripts",
     "test": "bun run --filter '*' test",
     "test:integration": "bun run --filter '*' test:integration",
+    "test:mutation": "bun run --filter '@noctcore/auth' test:mutation",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
