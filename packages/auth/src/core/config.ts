@@ -107,7 +107,10 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
      * plus an "account exists" mail. Default false (enumeration safe).
      */
     readonly revealExisting?: boolean;
-    /** Issue a session on registration. Only allowed with `revealExisting`, or the session would reveal the account is new. */
+    /**
+     * Issue a session on registration. Only allowed with `revealExisting`, or the session would reveal the account is new.
+     * Issuing it is work only a new address does, so it shows in sign-up timing; the answer already says the same.
+     */
     readonly autoLogin?: boolean;
   };
   readonly emailVerification?: {

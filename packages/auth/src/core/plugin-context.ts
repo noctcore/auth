@@ -73,8 +73,14 @@ export interface PluginContext<U extends AuthUser, A> {
   readonly metrics: Metrics;
   /** Emits an audit event (and counts it). Never throws. */
   emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>;
-  /** Hands a mail event to the mailer with a fresh dedupe key. Errors are logged, never thrown. */
-  mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): Promise<void>;
+  /**
+   * Hands a mail event to the mailer with a fresh dedupe key, off the response
+   * path: `mailer.send` is called before this returns, but its promise is not
+   * awaited, so a slow or hung mailer never holds up the answer. At most once:
+   * a failure is logged, never thrown and never retried; retries belong to the
+   * app's mailer or queue.
+   */
+  mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void;
   /** One hit on a door's window; a failure result when over the limit. */
   rateLimit(door: Door, key: string, meta: RequestMeta | undefined): Promise<AuthFailure | null>;
   /** Verifies the captcha when one is configured; a failure result when it does not pass. */

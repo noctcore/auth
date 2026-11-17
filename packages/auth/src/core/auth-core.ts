@@ -88,19 +88,20 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     }
   }
 
-  async mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): Promise<void> {
-    try {
-      await this.#deps.mailer.send({
-        ...event,
-        dedupeKey: generateToken(this.random),
-      });
-    } catch (error) {
-      this.logger.error('Mailer failed', {
-        type: event.type,
-        userId: event.userId,
-        error: describeError(error),
-      });
-    }
+  mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void {
+    const dedupeKey = generateToken(this.random);
+
+    this.background(`mail ${event.type}`, async () => {
+      try {
+        await this.#deps.mailer.send({ ...event, dedupeKey });
+      } catch (error) {
+        this.logger.error('Mailer failed', {
+          type: event.type,
+          userId: event.userId,
+          error: describeError(error),
+        });
+      }
+    });
   }
 
   async rateLimit(

@@ -106,7 +106,7 @@ AuthConfig [interface]<U extends AuthUser, A, P extends readonly AuthPlugin[]>
     readonly passwordReset?: { /** Default `link`. `code` sends digits that are exchanged for a short ticket. */ readonly kind?: 'link' | 'code'; /** Default 1 h for links, 15 min for codes. */ readonly ttl?: Duration; readonly digits?: number; readonly maxAttempts?: number; /** Lifetime of the ticket a verified code becomes. Default 10 min. */ readonly ticketTtl?: Duration; /** * Put the request on your queue; your worker calls `auth.jobs.processPasswordReset(job)`. * Without it the job runs detached in-process, which keeps the response * time independent of the address but is lost if the process dies. */ readonly enqueue?: (job: PasswordResetJob) => Promise<void>; /** A completed reset proves the mailbox, so it marks the address verified. Default true. */ readonly markEmailVerified?: boolean; }
     readonly plugins?: P
     readonly random?: RandomSource
-    readonly registration?: { /** * Answer `email_in_use` for a taken address instead of the uniform answer * plus an "account exists" mail. Default false (enumeration safe). */ readonly revealExisting?: boolean; /** Issue a session on registration. Only allowed with `revealExisting`, or the session would reveal the account is new. */ readonly autoLogin?: boolean; }
+    readonly registration?: { /** * Answer `email_in_use` for a taken address instead of the uniform answer * plus an "account exists" mail. Default false (enumeration safe). */ readonly revealExisting?: boolean; /** * Issue a session on registration. Only allowed with `revealExisting`, or the session would reveal the account is new. * Issuing it is work only a new address does, so it shows in sign-up timing; the answer already says the same. */ readonly autoLogin?: boolean; }
     readonly secret: Uint8Array | string
     readonly session?: SessionOptions<A> & { readonly cookie?: SessionCookieConfig; /** How recent a credential proof must be for sensitive actions. Default 10 min. */ readonly freshAuthAge?: Duration; }
     readonly stores: { readonly users: UserStore<U>; readonly sessions: SessionStore; readonly tokens: TokenStore; readonly counters: CounterStore; }
@@ -299,7 +299,7 @@ PluginContext [interface]<U extends AuthUser, A>
     emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
     hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>
     issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>
-    mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): Promise<void>
+    mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void
     notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason): Promise<void>
     rateLimit(door: Door, key: string, meta: RequestMeta | undefined): Promise<AuthFailure | null>
     readonly clock: Clock

@@ -97,7 +97,12 @@ export interface AuthHooks<U extends AuthUser, A> {
     secondFactor: string | undefined;
     meta: RequestMeta;
   }) => MaybePromise<HookResult>;
-  /** After a new account is created, before its verification mail. */
+  /**
+   * After a new account is created, before its verification mail. Awaited on
+   * the response path and run only for a new address, so its duration shows in
+   * sign-up timing against a taken address: keep it fast, and hand slow work
+   * (a welcome mail, a CRM call) to your queue instead of awaiting it here.
+   */
   afterRegister: (context: { user: U; meta: RequestMeta }) => MaybePromise<void>;
   /** Sessions ended: close their sockets, drop caches. Errors are logged, never thrown into the flow. */
   onSessionsRevoked: (context: {

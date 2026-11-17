@@ -1,6 +1,7 @@
 /**
  * What happens when a failure locks an account: an audit row, then a mail to
- * the owner, so they learn someone is guessing their password.
+ * the owner (handed to the mailer, not awaited), so they learn someone is
+ * guessing their password.
  */
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
@@ -14,5 +15,5 @@ export async function sendLockNotice<U extends AuthUser, A>(
 ): Promise<void> {
   await core.emit({ type: 'account.locked', userId: owner.id, data: { until } }, meta);
 
-  await core.mail({ type: 'lockout', to: owner.email, userId: owner.id, until: new Date(until) });
+  core.mail({ type: 'lockout', to: owner.email, userId: owner.id, until: new Date(until) });
 }

@@ -2,10 +2,11 @@
  * The package never renders mail. It emits typed events and the app's Mailer
  * maps them to its own templates and queue.
  *
- * `Mailer.send` must ENQUEUE, not send over SMTP inline: flows do the same work
- * for known and unknown addresses up to the mail step, and an inline SMTP round
- * trip for known addresses only would put the account's existence back into
- * the response time.
+ * Flows never await `Mailer.send`: they call it and answer, so a slow or hung
+ * mailer does not reach the response time. Delivery is at most once: a send
+ * that throws or rejects is logged and not retried. `send` should ENQUEUE, not
+ * send over SMTP inline, so the app's queue retries failures and keeps mail a
+ * stopping process would otherwise lose.
  *
  * `dedupeKey` is a server-minted nonce per event, safe to use as a queue job id.
  */
