@@ -31,11 +31,15 @@ Give the enqueue a timeout. The library sets none and does not cap how many send
 | `password-changed` | a password was changed or reset | `at` |
 | `account-exists` | someone registered with an address that already has an account | none |
 | `lockout` | failed sign-ins locked the account | `until` |
+| `email-change-confirm` | an email change was requested for a free address; sent to the new address | `code` (code mode) or `url` (link mode), `expiresAt` |
+| `email-change-in-use` | an email change named an address that already has an account; sent to that address, `userId` is its account | none |
+| `email-changed` | an email change was confirmed; sent to the address it replaced | `newEmail`, `at`, and `revertUrl` with `revertExpiresAt` unless an earlier revert link is still live |
+| `email-change-reverted` | a revert link restored the address; every session ended and the password must be reset | `at` |
 | `two-factor-enabled` | the two-factor plugin: a second factor was turned on | `at` |
 | `two-factor-disabled` | the two-factor plugin: the second factor was turned off | `at` |
 | `recovery-code-used` | the two-factor plugin: a recovery code was spent | `remaining`, `at` |
 
-`account-exists` is the other half of the uniform registration answer: the caller sees "check your email" either way, and only the owner of the address learns the account exists. `lockout` tells the owner someone is guessing their password.
+`account-exists` is the other half of the uniform registration answer: the caller sees "check your email" either way, and only the owner of the address learns the account exists. `lockout` tells the owner someone is guessing their password. `email-change-in-use` plays the same part for an email change, and `email-changed` is the owner's way back when the change was not theirs ([Email change](/auth/build/email-change/)).
 
 `dedupeKey` is a server-minted nonce, unique per event and safe to use as a job id, so a retried enqueue stores one job.
 

@@ -48,6 +48,38 @@ export function renderAuthMail(event: AuthMailEvent): OutgoingMail {
         text: `After repeated wrong passwords, your account is locked until ${event.until.toISOString()}. A device you signed in from before can still sign in with your password.`,
       };
 
+    case 'email-change-confirm':
+      return {
+        to: event.to,
+        subject: 'Confirm your new email address',
+        text: event.code
+          ? `Your code is ${event.code}. It expires at ${event.expiresAt.toISOString()}. If you did not ask to use this address, ignore this mail.`
+          : `Confirm your new address: ${event.url ?? ''}`,
+      };
+
+    case 'email-change-in-use':
+      return {
+        to: event.to,
+        subject: 'Someone tried to move an account to your address',
+        text: 'An account asked to change its email to this address, which already has an account. Nothing changed. If this was you, sign in to that account instead.',
+      };
+
+    case 'email-changed':
+      return {
+        to: event.to,
+        subject: 'Your email address was changed',
+        text: event.revertUrl
+          ? `Your account now uses ${event.newEmail}. If this was not you, undo it before ${event.revertExpiresAt?.toISOString() ?? ''}: ${event.revertUrl}`
+          : `Your account now uses ${event.newEmail}. If this was not you, contact support.`,
+      };
+
+    case 'email-change-reverted':
+      return {
+        to: event.to,
+        subject: 'Your email address is back',
+        text: 'The email change was undone and every session was signed out. Reset your password to sign in again.',
+      };
+
     // The three below come from the two-factor plugin (@noctcore/auth/two-factor).
     case 'two-factor-enabled':
       return {
