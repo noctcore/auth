@@ -16,7 +16,7 @@ import { EMAIL, meta, registered } from './support';
 describe('A011: spoofing the client IP', () => {
   it('never lets entries the client wrote pick the IP behind one trusted proxy', () => {
     // The client sends its own X-Forwarded-For; the proxy appends the address it saw.
-    for (const spoofed of ['1.1.1.1', '10.0.0.1, 8.8.8.8', 'unknown, ::1, 127.0.0.1']) {
+    for (const spoofed of ['198.51.100.11', '10.0.0.1, 198.51.100.88', 'unknown, ::1, 127.0.0.1']) {
       expect(
         clientIp({
           remoteAddress: '10.0.0.2',
@@ -29,7 +29,7 @@ describe('A011: spoofing the client IP', () => {
 
   it('ignores the header entirely with no proxy, and refuses "trust every hop"', () => {
     expect(
-      clientIp({ remoteAddress: '203.0.113.50', forwardedFor: '1.1.1.1', trustedHops: 0 }),
+      clientIp({ remoteAddress: '203.0.113.50', forwardedFor: '198.51.100.11', trustedHops: 0 }),
     ).toBe('203.0.113.50');
 
     expect(() => parseTrustProxy('true')).toThrow(AuthConfigError);

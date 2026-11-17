@@ -21,24 +21,28 @@ describe('parseTrustProxy', () => {
 
 describe('clientIp', () => {
   it('ignores X-Forwarded-For with no trusted hops', () => {
-    expect(clientIp({ remoteAddress: '10.0.0.2', forwardedFor: '1.2.3.4', trustedHops: 0 })).toBe(
-      '10.0.0.2',
-    );
+    expect(
+      clientIp({ remoteAddress: '10.0.0.2', forwardedFor: '192.0.2.34', trustedHops: 0 }),
+    ).toBe('10.0.0.2');
   });
 
   it('takes the address one hop to the left of the trusted proxies', () => {
-    // A client spoofs 6.6.6.6; the real client 1.2.3.4 is what the one proxy appended.
+    // A client spoofs 198.51.100.66; the real client 192.0.2.34 is what the one proxy appended.
     expect(
-      clientIp({ remoteAddress: '10.0.0.2', forwardedFor: '6.6.6.6, 1.2.3.4', trustedHops: 1 }),
-    ).toBe('1.2.3.4');
+      clientIp({
+        remoteAddress: '10.0.0.2',
+        forwardedFor: '198.51.100.66, 192.0.2.34',
+        trustedHops: 1,
+      }),
+    ).toBe('192.0.2.34');
 
     expect(
       clientIp({
         remoteAddress: '10.0.0.3',
-        forwardedFor: ['6.6.6.6, 1.2.3.4', '10.0.0.2'],
+        forwardedFor: ['198.51.100.66, 192.0.2.34', '10.0.0.2'],
         trustedHops: 2,
       }),
-    ).toBe('1.2.3.4');
+    ).toBe('192.0.2.34');
   });
 
   it('clamps when there are fewer hops than configured', () => {
