@@ -22,6 +22,13 @@ export interface AuthUser {
 
 export type WithPasswordHash<U> = U & { readonly passwordHash: string | null };
 
+/**
+ * What `UserStore.changeEmail` did: `changed`; `taken` when another user, live
+ * or soft-deleted, holds the address (a unique violation is never thrown); or
+ * `stale` when the user is missing, soft-deleted or no longer has `from`.
+ */
+export type EmailChangeResult = 'changed' | 'taken' | 'stale';
+
 export interface UserStore<U extends AuthUser = AuthUser> {
   /** Live users only: a soft-deleted user is not found. */
   findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>;
@@ -42,6 +49,22 @@ export interface UserStore<U extends AuthUser = AuthUser> {
   ): Promise<boolean>;
   /** Guarded on the stored email still equalling `email`, so a stale link cannot verify a changed address. */
   markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>;
+  /**
+   * Moves the user to the address `to`, marks it verified and, with
+   * `clearPassword`, removes the password hash, in one statement, as a
+   * compare-and-set on the stored email still equalling `from`. The address
+   * stays unique: of two users changing to one address at once, exactly one
+   * gets `changed`. Optional, so stores written before it still compile; the
+   * email change flows need it and throw `AuthConfigError` without it.
+   */
+  changeEmail?(
+    id: string,
+    change: {
+      readonly from: NormalizedEmail;
+      readonly to: NormalizedEmail;
+      readonly clearPassword?: boolean;
+    },
+  ): Promise<EmailChangeResult>;
 }
 
 export interface StoredSession<A = unknown> {

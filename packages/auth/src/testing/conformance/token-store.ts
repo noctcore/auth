@@ -108,5 +108,34 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
         assert.equal(await store.find(c.purpose, c.hash), null);
       },
     },
+    {
+      name: 'keeps the email change purposes apart: a revert link lives for days beside a pending change and a block',
+      async run() {
+        // The email change flows keep three tokens per user at once: the
+        // pending change, the revert link (7 days or more) and a block, and
+        // void the change and reset purposes without touching the revert link.
+        const userId = uniqueId('user');
+        const week = 7 * 24 * 60 * 60 * 1000;
+        const change = sampleToken({ userId, purpose: 'email-change' });
+
+        const revert = sampleToken({
+          userId,
+          purpose: 'email-revert',
+          expiresAt: systemClock.now() + week + 60_000,
+          data: { email: 'old@example.com', to: 'new@example.com', changedAt: '1' },
+        });
+
+        const block = sampleToken({ userId, purpose: 'email-change-block' });
+
+        await Promise.all([store.put(change), store.put(revert), store.put(block)]);
+        assert.deepEqual(await store.findByUser('email-revert', userId), revert);
+        await store.deleteByUser(userId, ['email-change', 'password-reset']);
+        assert.equal(await store.find(change.purpose, change.hash), null);
+        assert.deepEqual(await store.find(revert.purpose, revert.hash), revert);
+        assert.deepEqual(await store.findByUser('email-change-block', userId), block);
+        assert.deepEqual(await store.consume(revert.purpose, revert.hash), revert);
+        assert.equal(await store.consume(revert.purpose, revert.hash), null);
+      },
+    },
   ];
 }
