@@ -102,9 +102,9 @@
     },
     "packages/auth-nestjs": {
       "name": "@noctcore/auth-nestjs",
-      "version": "0.0.0",
+      "version": "0.2.0",
       "dependencies": {
-        "@noctcore/auth": "0.0.0",
+        "@noctcore/auth": "0.2.0",
       },
       "devDependencies": {
         "@nestjs/common": "12.5.0",
