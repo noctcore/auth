@@ -26,10 +26,10 @@
  *   restores the old address and removes the password in one write (the next
  *   sign-in needs a reset), revokes every session (and with them the
  *   two-factor plugin's trusted devices), voids every outstanding reset,
- *   verification and change token, runs the `onEmailReverted` hooks (the
- *   two-factor plugin removes a factor enrolled since the session that asked
- *   for the change could act), blocks the lost address for this account for a
- *   while, and writes an audit row flagged for review. The link is spent only
+ *   verification and change token, blocks the lost address for this account
+ *   for a while, and writes an audit row flagged for review. Second factors
+ *   stay: a revert cannot tell the owner's factor from one an intruder added,
+ *   and whoever holds the old mailbox must not be able to strip the owner's. The link is spent only
  *   once the address is back: if the old address was taken meanwhile, the
  *   account is locked out (email-lockout.ts) and the link lives as long as the
  *   lockout. A password change or a reset does not void it.
@@ -148,7 +148,7 @@ export async function requestEmailChange<U extends AuthUser, A>(
   const account = await core.users.findCredentialByEmail(newEmail);
   const heldBy = await addressHolder(core, newEmail);
   const holder = account ?? heldFor(heldBy, user.id, newEmail);
-  const issued = await issueConfirmation(core, settings, user.id, user.email, newEmail, session);
+  const issued = await issueConfirmation(core, settings, user.id, user.email, newEmail);
 
   if (holder) {
     core.mail({ type: 'email-change-in-use', to: holder.email, userId: holder.id });
@@ -176,10 +176,9 @@ async function issueConfirmation<U extends AuthUser, A>(
   userId: string,
   from: string,
   to: NormalizedEmail,
-  session: StoredSession<A>,
 ): Promise<{ secret: { code: string } | { url: string }; expiresAt: number }> {
   const { emailChange } = settings;
-  const data = { email: to, from, since: String(sessionSince(session)) };
+  const data = { email: to, from };
 
   if (emailChange.kind === 'code') {
     const { code, expiresAt } = await core.tokens.issueCode(
@@ -323,11 +322,7 @@ async function finishChange<U extends AuthUser, A>(
   // mailed for an address that did not move, which pendingRevert ignores.
   await core.tokens.revokeAll(user.id, VOIDED_BY_CHANGE);
 
-  // The earliest moment either the requesting or the confirming session could
-  // act: a revert removes second factors enrolled since. An unreadable record
-  // stays unreadable (NaN), and the revert then fails closed.
-  const since = Math.min(Number(redemption.data['since']), sessionSince(live));
-  const revert = await issueRevert(core, settings, support, user.id, { from, to, since });
+  const revert = await issueRevert(core, settings, support, user.id, { from, to });
   const changed = await support.changeEmail(user.id, { from, to });
 
   if (changed !== 'changed') {
@@ -375,11 +370,6 @@ async function pendingRevert<U extends AuthUser, A>(
   return revert?.data['to'] === user.email;
 }
 
-/** When a session could first act for its user: created, or (for a re-issue) the older credential proof it carries. */
-function sessionSince(session: StoredSession<unknown>): number {
-  return Math.min(session.createdAt, session.authenticatedAt);
-}
-
 /** The account a hold keeps `email` for, as a holder, unless that is the requester. */
 function heldFor(
   holderId: string | null,
@@ -395,7 +385,7 @@ async function issueRevert<U extends AuthUser, A>(
   settings: FlowSettings,
   support: ReturnType<typeof requireSupport>,
   userId: string,
-  change: { from: NormalizedEmail; to: NormalizedEmail; since: number },
+  change: { from: NormalizedEmail; to: NormalizedEmail },
 ): Promise<{ url: string; expiresAt: number }> {
   const ttl = settings.emailChange.revertTtlMs;
 
@@ -404,7 +394,6 @@ async function issueRevert<U extends AuthUser, A>(
   const { token, expiresAt } = await core.tokens.issueLink(PURPOSE.emailRevert, userId, ttl, {
     email: change.from,
     to: change.to,
-    since: String(change.since),
   });
 
   return { url: support.revertUrl(token), expiresAt };
@@ -418,13 +407,11 @@ async function issueRevert<U extends AuthUser, A>(
  * The link is looked at, not spent, until the address is back. If the old
  * address has an account again (the hold should prevent that; see
  * email-reservation.ts), the account is locked out anyway: the password is
- * removed, sessions, trusted devices and pending tokens go, a late factor is
- * removed, and a lockout (email-lockout.ts) keeps any session or reset from
- * the address the account still names. The answer is `email_in_use`, and the
- * link stays usable for as long as the lockout, so the owner can finish once
- * the address is free. A link whose record of the change is unreadable
- * removes no factor and leaves the account locked out for support. Not
- * atomic: if a store call fails partway, what ran stays done, and the unspent
+ * removed, sessions, trusted devices and pending tokens go, and a lockout
+ * (email-lockout.ts) keeps any session or reset from the address the account
+ * still names. The answer is `email_in_use`, and the link stays usable for as
+ * long as the lockout, so the owner can finish once the address is free.
+ * Second factors stay, as on a revert that finishes. Not atomic: if a store call fails partway, what ran stays done, and the unspent
  * link runs it all again.
  */
 export async function revertEmailChange<U extends AuthUser, A>(
@@ -457,23 +444,16 @@ export async function revertEmailChange<U extends AuthUser, A>(
   if (!outcome.ok) return revertFailed(core, link.userId, outcome, meta);
 
   const { user, lost, restored } = outcome.value;
-  const since = Number(link.data['since']);
-  // Fail closed: without a readable `since`, no factor is judged late, and
-  // the account stays locked out for support instead.
-  const readable = Number.isFinite(since);
-  const lockedUntil = restored && readable ? null : await lockOut(core, user.id);
+  const lockedUntil = restored ? null : await lockOut(core, user.id);
 
   // Right after the write that removed the password (and the lockout): a
   // session signed in before it is ended here, and none can start after it.
   await core.revokeAllSessions(user.id, 'email-reverted');
   await core.tokens.revokeAll(user.id, VOIDED_BY_REVERT);
 
-  if (readable)
-    for (const hook of core.hooks.onEmailReverted) await hook({ userId: user.id, since, meta });
-
-  if (!restored) {
+  if (lockedUntil !== null) {
     // The owner's link lives as long as the lockout, to finish once the address is free.
-    await core.tokens.extendLink(PURPOSE.emailRevert, input.token, lockedUntil as number);
+    await core.tokens.extendLink(PURPOSE.emailRevert, input.token, lockedUntil);
 
     await core.emit(
       {
@@ -497,7 +477,7 @@ export async function revertEmailChange<U extends AuthUser, A>(
 
   await releaseAddress(core, user.id);
 
-  if (lockedUntil === null) await endLockout(core, user.id);
+  await endLockout(core, user.id);
 
   if (lost !== restore) {
     await core.tokens.issueLink(
@@ -512,7 +492,7 @@ export async function revertEmailChange<U extends AuthUser, A>(
     {
       type: 'email.change_reverted',
       userId: user.id,
-      data: { review: true, passwordCleared: true, lockedOut: lockedUntil !== null },
+      data: { review: true, passwordCleared: true },
     },
     meta,
   );
