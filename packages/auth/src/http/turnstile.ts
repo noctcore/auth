@@ -1,8 +1,10 @@
 /**
- * The Cloudflare Turnstile verifier. Besides the token, it checks the
- * `hostname` the token was solved on and the `action` it was solved for, so a
- * token from another site sharing the sitekey, or from another form, is
- * refused. A provider outage or timeout is `unavailable`, never `pass`.
+ * The Cloudflare Turnstile verifier. Besides the token, it can check the
+ * `hostname` the token was solved on (`expectedHostnames`) and the `action` it
+ * was solved for (`checkAction`), so a token from another site sharing the
+ * sitekey, or from another form, is refused. Both checks are opt-in: without
+ * them any successful token for the sitekey passes. A provider outage or
+ * timeout is `unavailable`, never `pass`.
  */
 import type { CaptchaVerifier } from '../ports/captcha';
 

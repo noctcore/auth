@@ -94,7 +94,9 @@ export function createAuth<
 
   const cookie = config.session?.cookie ?? {};
 
-  // Validates the cookie config now rather than on the first sign-in.
+  // Validates the cookie name now rather than on the first sign-in. SameSite
+  // is checked only when a cookie is built, so `'none'` without Secure throws
+  // at the first cookie, not here.
   sessionCookieName(cookie);
 
   const sessions = new SessionManager<A>(
