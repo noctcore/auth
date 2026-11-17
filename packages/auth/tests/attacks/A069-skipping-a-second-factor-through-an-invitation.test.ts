@@ -1,4 +1,4 @@
-// A068: getting a session past a second factor through an invitation.
+// A069: getting a session past a second factor through an invitation.
 //
 // An invitation flow that "logs the invitee in" after accepting mints a
 // session on the strength of the token alone: anyone who reads the victim's
@@ -50,7 +50,7 @@ function app(requiredFor: string | null) {
   return { ...t, auth, invite };
 }
 
-describe('A068: getting a session past a second factor through an invitation', () => {
+describe('A069: getting a session past a second factor through an invitation', () => {
   it('issues no session to an account with a factor that accepts', async () => {
     const t = app(null);
     const inviter = await t.signedIn('inviter@example.com');
