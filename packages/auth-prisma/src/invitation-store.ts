@@ -123,7 +123,9 @@ export class PrismaInvitationStore implements InvitationStore {
     return count > 0;
   }
 
-  async deleteByInviter(inviterId: string): Promise<void> {
-    await this.delegates.invitation.deleteMany({ where: { inviterId } });
+  async deleteByInviter(inviterId: string, scope?: string): Promise<void> {
+    await this.delegates.invitation.deleteMany({
+      where: scope === undefined ? { inviterId } : { inviterId, scope },
+    });
   }
 }
