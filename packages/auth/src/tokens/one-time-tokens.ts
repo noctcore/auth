@@ -194,6 +194,56 @@ export class OneTimeTokens {
     return { data: found.data, expiresAt: found.expiresAt };
   }
 
+  /**
+   * Stores a marker under `userId` that is found by `key` instead of by a
+   * secret: the row holds the SHA-256 of the key, so a lookup by key needs no
+   * user id. A marker of another user under the same key is removed first.
+   * Not for secrets: anyone who knows the key can find the marker.
+   */
+  async putKeyed(
+    purpose: string,
+    userId: string,
+    key: string,
+    ttlMs: number,
+    data: Record<string, string> = {},
+  ): Promise<void> {
+    const hash = sha256Hex(key);
+
+    await this.store.consume(purpose, hash);
+
+    await this.store.put({
+      purpose,
+      userId,
+      hash,
+      expiresAt: this.clock.now() + ttlMs,
+      attempts: 0,
+      data,
+    });
+  }
+
+  /** The owner and data of the unexpired marker filed under `key`, or null. */
+  async findKeyed(
+    purpose: string,
+    key: string,
+  ): Promise<{ readonly userId: string; readonly data: Readonly<Record<string, string>> } | null> {
+    const found = await this.store.find(purpose, sha256Hex(key));
+
+    if (!found || found.expiresAt <= this.clock.now()) return null;
+
+    return { userId: found.userId, data: found.data };
+  }
+
+  /** Moves a live link's expiry out to `expiresAt`; never shortens it. Unknown or expired links stay as they are. */
+  async extendLink(purpose: string, token: unknown, expiresAt: number): Promise<void> {
+    if (!isTokenShape(token)) return;
+
+    const found = await this.store.find(purpose, sha256Hex(token));
+
+    if (!found || found.expiresAt <= this.clock.now() || found.expiresAt >= expiresAt) return;
+
+    await this.store.put({ ...found, expiresAt });
+  }
+
   revokeAll(userId: string, purposes: readonly string[]): Promise<void> {
     return this.store.deleteByUser(userId, purposes);
   }
