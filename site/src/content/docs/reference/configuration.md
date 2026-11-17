@@ -65,7 +65,7 @@ Source: `http/cookie.ts`.
 | --- | --- | --- |
 | `session.cookie.name` | `'session'` | Base name. When the cookie is Secure it becomes `__Host-session`: the browser then requires Secure, `Path=/` and no `Domain`, so a sibling subdomain cannot set or overwrite it. Letters, digits, `_` and `-` only. |
 | `session.cookie.secure` | `true` | Turn it off only for plain-HTTP local development. Also drops the `__Host-` prefix, from the device cookie too (`device` instead of `__Host-device`). |
-| `session.cookie.sameSite` | `'lax'` | Keeps the cookie off cross-site subrequests and form posts while links into the site still work. Accepts a function of the request's `Origin` for an app that also serves a desktop shell; `'none'` without Secure is refused. |
+| `session.cookie.sameSite` | `'lax'` | Keeps the cookie off cross-site subrequests and form posts while links into the site still work. Accepts a function of the request's `Origin` for an app that also serves a desktop shell; `'none'` without Secure is refused when a cookie is built, not at startup. |
 
 The cookie is always HttpOnly. A session without "remember me" gets a browser-session cookie (no `Max-Age`).
 
@@ -192,7 +192,7 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 
 - a store, `password.hasher` or `mailer` is missing;
 - `password.policy.minLength` is below 8;
-- `session.cookie.name` has characters other than letters, digits, `_` and `-`, or `sameSite` is `'none'` on a cookie that is not Secure;
+- `session.cookie.name` has characters other than letters, digits, `_` and `-`;
 - `session.maxPerUser` is not a positive integer or `null`;
 - `session.touchInterval` is not shorter than a fixed `idleTimeout`;
 - `session.absoluteTtl` or `rememberMeTtl` is longer than the session store's `maxSessionTtlMs`;
