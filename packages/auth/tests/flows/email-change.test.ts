@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { changed, requestCode, tokenOf } from './email-change-support';
 import { meta, NEW_PASSWORD, PASSWORD, setup } from './setup';
+import { counterKeys } from '../../src/throttle/counter-keys';
 
 const holdKey = (email: string) => `email-reserved:${email}`;
 
@@ -47,6 +48,13 @@ describe('requestEmailChange', () => {
         reason: 'session_not_active',
       },
     );
+
+    // Refused before the request door and without an audit row of its own.
+    expect(t.audit.events.some((e) => e.type === 'email.change_failed')).toBe(false);
+
+    expect(
+      await t.stores.counters.get(counterKeys.rateLimit(`email-change-request:${session.userId}`)),
+    ).toBeNull();
   });
 
   it('refuses a stale credential proof, an invalid address and the current address', async () => {
@@ -658,7 +666,7 @@ describe('revertEmailChange', () => {
 
     expect(t.audit.events.find((e) => e.type === 'email.change_reverted')).toMatchObject({
       userId: session.userId,
-      data: { review: true, passwordCleared: true },
+      data: { review: true, passwordCleared: true, lockedOut: false },
     });
 
     expect(t.mailer.last('email-change-reverted')).toMatchObject({ to: 'ada@example.com' });
@@ -826,6 +834,58 @@ describe('revertEmailChange', () => {
     expect(
       await t.auth.context.tokens.findLive('email-revert-lockout', session.userId),
     ).not.toBeNull();
+  });
+
+  it('takes the older of creation and credential proof, from the asking and the confirming session', async () => {
+    const seen: number[] = [];
+
+    const t = setup({
+      emailChange: { kind: 'link' },
+      hooks: { onEmailReverted: ({ since }) => void seen.push(since) },
+    });
+
+    const first = await t.signedInUser();
+
+    t.clock.advance(60_000);
+
+    // A re-issue: created now, carrying the older credential proof.
+    const reissued = await t.auth.sessions.revokeOthers({ session: first.session, meta: meta() });
+
+    if (!reissued.ok) throw new Error(reissued.reason);
+
+    const asking = reissued.value.session;
+
+    expect(asking.createdAt).toBeGreaterThan(asking.authenticatedAt);
+
+    await t.auth.requestEmailChange({ session: asking, newEmail: NEW, meta: meta() });
+
+    const token = tokenOf(t.mailer.last('email-change-confirm')?.url);
+
+    t.clock.advance(60_000);
+
+    // Confirmed from a later, separate sign-in of the same account.
+    const later = await t.auth.login({
+      email: 'ada@example.com',
+      password: PASSWORD,
+      meta: meta(),
+    });
+
+    if (!later.ok || later.value.kind !== 'session') throw new Error('login failed');
+
+    const done = await t.auth.confirmEmailChangeLink({
+      token,
+      session: later.value.session.session,
+      meta: meta(),
+    });
+
+    if (!done.ok) throw new Error(done.reason);
+
+    await t.auth.revertEmailChange({
+      token: tokenOf(t.mailer.last('email-changed')?.revertUrl),
+      meta: meta(),
+    });
+
+    expect(seen).toEqual([first.session.authenticatedAt]);
   });
 
   it('passes the hooks when the requesting session could first act, and releases the hold on the restored address', async () => {
