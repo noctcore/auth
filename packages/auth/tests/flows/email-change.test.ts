@@ -368,6 +368,63 @@ describe('confirmEmailChangeCode', () => {
     expect((await requestCode(t, session, 'other@example.com')).length).toBeGreaterThan(0);
   });
 
+  it('refuses a confirm while a revert link for the address the account has is live', async () => {
+    const t = setup();
+    const { session } = await t.signedInUser();
+    const code = await requestCode(t, session, NEW);
+
+    await t.auth.context.tokens.issueLink('email-revert', session.userId, 60_000, {
+      email: 'old@example.com',
+      to: 'ada@example.com',
+      changedAt: '0',
+    });
+
+    expect(await t.auth.confirmEmailChangeCode({ session, code, meta: meta() })).toEqual({
+      ok: false,
+      code: 'forbidden',
+      reason: 'email_change_pending_revert',
+    });
+
+    expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
+  });
+
+  it('re-issues the session for the user at the new, verified address, after revoking with reason email-changed', async () => {
+    const created: { email: string; emailVerified: boolean; via: string }[] = [];
+    const revoked: string[] = [];
+
+    const t = setup({
+      hooks: {
+        beforeSessionCreate: ({ user, via }) =>
+          void created.push({ email: user.email, emailVerified: user.emailVerified, via }),
+        onSessionsRevoked: ({ reason }) => void revoked.push(reason),
+      },
+    });
+
+    const { session } = await t.signedInUser();
+    const after = await changed(t, session, NEW);
+
+    expect(created.at(-1)).toEqual({ email: NEW, emailVerified: true, via: 'email-changed' });
+    expect(revoked).toEqual(['email-changed']);
+
+    await t.auth.revertEmailChange({ token: after.revert, meta: meta() });
+
+    expect(revoked).toEqual(['email-changed', 'email-reverted']);
+  });
+
+  it('a hold is no obstacle to the account it is held for', async () => {
+    const t = setup();
+    const { session } = await t.signedInUser();
+
+    await t.auth.context.tokens.issueLink('email-reserved', holdKey(NEW), 60_000, {
+      userId: session.userId,
+    });
+
+    await t.auth.requestEmailChange({ session, newEmail: NEW, meta: meta() });
+
+    expect(t.mailer.last('email-change-confirm')).toMatchObject({ to: NEW });
+    expect(t.mailer.sent.some((m) => m.type === 'email-change-in-use')).toBe(false);
+  });
+
   it('refuses a new address held for another account, as taken', async () => {
     const t = setup();
     const { session } = await t.signedInUser();
@@ -526,7 +583,7 @@ describe('confirmEmailChangeLink', () => {
     const token = tokenOf(t.mailer.last('email-change-confirm')?.url);
     const confirmed = await t.auth.confirmEmailChangeLink({ token, session, meta: meta() });
 
-    expect(confirmed.ok && confirmed.value.session?.session.userId).toBe(session.userId);
+    expect(confirmed.ok && confirmed.value.session.session.userId).toBe(session.userId);
     expect((await t.stores.users.findById(session.userId))?.email).toBe(NEW);
   });
 
@@ -547,6 +604,14 @@ describe('confirmEmailChangeLink', () => {
         code: 'session_expired',
         reason: 'email_change_session_required',
       });
+
+      expect(t.audit.events.at(-1)).toEqual(
+        expect.objectContaining({
+          type: 'email.change_failed',
+          userId: session.userId,
+          reason: 'session_required',
+        }),
+      );
     }
 
     expect((await t.auth.confirmEmailChangeLink({ token, session, meta: meta() })).ok).toBe(true);
@@ -776,12 +841,17 @@ describe('revertEmailChange', () => {
     const signed = await u.signedInUser();
     const other = await changed(u, signed.session, NEW);
 
-    u.stores.users.changeEmail = async () => 'stale';
+    let writes = 0;
 
-    expect(await u.auth.revertEmailChange({ token: other.revert, meta: meta() })).toMatchObject({
+    u.stores.users.changeEmail = async () => (writes++, 'stale');
+
+    expect(await u.auth.revertEmailChange({ token: other.revert, meta: meta() })).toEqual({
       ok: false,
+      code: 'invalid_token',
       reason: 'email_revert_stale',
     });
+
+    expect(writes).toBe(3);
   });
 
   it('refuses a link whose user is gone or whose stored address is unreadable', async () => {
@@ -789,10 +859,29 @@ describe('revertEmailChange', () => {
     const { session } = await t.signedInUser();
     const after = await changed(t, session, NEW);
 
+    const other = await t.signedInUser('eve@example.com', '198.51.100.30');
+
+    const unreadable = await t.auth.context.tokens.issueLink(
+      'email-revert',
+      other.session.userId,
+      60_000,
+      {},
+    );
+
+    // A link for a live user but without an address to restore moves nothing.
+    expect(await t.auth.revertEmailChange({ token: unreadable.token, meta: meta() })).toEqual({
+      ok: false,
+      code: 'invalid_token',
+      reason: 'user_missing',
+    });
+
+    expect((await t.stores.users.findById(other.session.userId))?.email).toBe('eve@example.com');
+
     await t.stores.users.softDelete(session.userId);
 
-    expect(await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).toMatchObject({
+    expect(await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).toEqual({
       ok: false,
+      code: 'invalid_token',
       reason: 'user_missing',
     });
 
