@@ -1,7 +1,9 @@
 /**
- * What happens when a failure locks an account: an audit row, then a mail to
- * the owner (handed to the mailer, not awaited), so they learn someone is
- * guessing their password.
+ * What happens when a failure locks an account: an audit row and a mail to the
+ * owner, so they learn someone is guessing their password. On the response
+ * path the mail is handed to the mailer, not awaited; inside a background
+ * task (`inline`) it is sent beside the audit write and awaited, so a hung
+ * audit sink cannot hold it back and the task's slot covers the send.
  */
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
@@ -12,8 +14,23 @@ export async function sendLockNotice<U extends AuthUser, A>(
   owner: { readonly id: string; readonly email: string },
   until: number,
   meta: RequestMeta,
+  inline = false,
 ): Promise<void> {
-  await core.emit({ type: 'account.locked', userId: owner.id, data: { until } }, meta);
+  const event = {
+    type: 'lockout',
+    to: owner.email,
+    userId: owner.id,
+    until: new Date(until),
+  } as const;
 
-  core.mail({ type: 'lockout', to: owner.email, userId: owner.id, until: new Date(until) });
+  const audit = core.emit({ type: 'account.locked', userId: owner.id, data: { until } }, meta);
+
+  if (inline) {
+    await Promise.all([audit, core.deliver(event)]);
+
+    return;
+  }
+
+  await audit;
+  core.mail(event);
 }

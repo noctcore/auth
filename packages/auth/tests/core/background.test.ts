@@ -4,19 +4,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthConfigError, BACKGROUND_METRIC, createAuth, type Logger } from '../../src';
 import { BackgroundTasks } from '../../src/core/background';
-import { memoryStores, plainHasher, recordingMailer } from '../../src/testing';
+import { memoryStores, plainHasher, recordingAudit, recordingMailer } from '../../src/testing';
 
 function recorder() {
   const errors: string[] = [];
+  const contexts: (Record<string, unknown> | undefined)[] = [];
   const counts: string[] = [];
-  const logger: Logger = { warn: () => undefined, error: (message) => void errors.push(message) };
+
+  const logger: Logger = {
+    warn: () => undefined,
+    error: (message, context) => {
+      errors.push(message);
+      contexts.push(context);
+    },
+  };
 
   const metrics = {
     count: (name: string, labels?: Readonly<Record<string, string>>) =>
       void counts.push(`${name} ${labels?.['task'] ?? ''} ${labels?.['outcome'] ?? ''}`),
   };
 
-  return { errors, counts, logger, metrics };
+  return { errors, contexts, counts, logger, metrics };
 }
 
 /** A task that settles only when told to. */
@@ -104,6 +112,82 @@ describe('background tasks by default', () => {
   });
 });
 
+describe('flush and tasks started while it waits', () => {
+  it('waits for a task that another task starts after flush was called', async () => {
+    const r = recorder();
+    const tasks = new BackgroundTasks(r.logger, r.metrics);
+    const parent = deferred();
+    const child = deferred();
+    let childDone = false;
+
+    tasks.run('parent', async () => {
+      await parent.promise;
+
+      tasks.run('child', async () => {
+        await child.promise;
+        childDone = true;
+      });
+    });
+
+    const flushed = tasks.flush();
+
+    parent.resolve();
+    expect(await isSettled(flushed)).toBe(false);
+
+    child.resolve();
+    expect(await isSettled(flushed)).toBe(true);
+    expect(childDone).toBe(true);
+  });
+
+  it('resolves as soon as a task settles before its timeout, not at the timeout', async () => {
+    const r = recorder();
+    const tasks = new BackgroundTasks(r.logger, r.metrics, { timeout: '5s' });
+    const job = deferred();
+
+    tasks.run('mail', () => job.promise);
+
+    const flushed = tasks.flush();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    job.resolve();
+    expect(await isSettled(flushed)).toBe(true);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('puts the task details into every log line about it', async () => {
+    const r = recorder();
+    const tasks = new BackgroundTasks(r.logger, r.metrics, { maxPending: 1, timeout: '1s' });
+
+    tasks.run('hung', () => new Promise<void>(() => undefined), { userId: 'u1' });
+    tasks.run('mail lockout', async () => undefined, { userId: 'u2' });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const failing = new BackgroundTasks(r.logger, r.metrics);
+
+    failing.run(
+      'mail verify-email',
+      async () => {
+        throw new Error('down');
+      },
+      { userId: 'u3' },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(r.errors).toEqual([
+      'Background task dropped: mail lockout',
+      'Background task timed out: hung',
+      'Background task failed: mail verify-email',
+    ]);
+
+    expect(r.contexts).toEqual([
+      { userId: 'u2', pending: 1 },
+      { userId: 'u1', timeoutMs: 1000 },
+      { userId: 'u3', error: expect.any(String) as unknown },
+    ]);
+  });
+});
+
 describe('waitUntil', () => {
   it('is handed each task as it starts, as a promise that never rejects', async () => {
     const r = recorder();
@@ -133,6 +217,10 @@ describe('waitUntil', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(ran).toBe(true);
     expect(r.errors).toEqual(['Background waitUntil failed: mail']);
+
+    expect(r.contexts).toEqual([
+      { error: expect.stringContaining('no request context') as unknown },
+    ]);
   });
 });
 
@@ -226,6 +314,13 @@ describe('options', () => {
     const r = recorder();
     const build = (options: object) => () => new BackgroundTasks(r.logger, r.metrics, options);
 
+    expect(BACKGROUND_METRIC).toBe('auth_background_task');
+    expect(build({ timeout: 0 })).toThrow('background.timeout must be longer than zero');
+
+    expect(build({ maxPending: 0 })).toThrow(
+      'background.maxPending must be a whole number of at least 1',
+    );
+
     expect(build({ timeout: 0 })).toThrow(AuthConfigError);
     expect(build({ timeout: '0ms' })).toThrow(AuthConfigError);
     expect(build({ maxPending: 0 })).toThrow(AuthConfigError);
@@ -238,8 +333,9 @@ describe('options', () => {
 describe('through createAuth', () => {
   const PASSWORD = 'correct horse battery';
 
-  function app(background: object = {}) {
+  function app(background: object = {}, throttle?: Parameters<typeof createAuth>[0]['throttle']) {
     const mailer = recordingMailer();
+    const audit = recordingAudit();
     const r = recorder();
 
     const auth = createAuth({
@@ -250,10 +346,12 @@ describe('through createAuth', () => {
       mailer,
       logger: r.logger,
       metrics: r.metrics,
+      audit,
       background,
+      ...(throttle ? { throttle } : {}),
     });
 
-    return { auth, mailer, ...r };
+    return { auth, mailer, audit, ...r };
   }
 
   it('keeps a sign-up mail alive through waitUntil, and auth.flush waits for it', async () => {
@@ -279,20 +377,18 @@ describe('through createAuth', () => {
     expect(await isSettled(flushed)).toBe(true);
   });
 
-  it('runs a reset job without enqueue as a background task, so flush waits for it too', async () => {
+  it('runs a reset job without enqueue as one task, and flush waits until its send settled', async () => {
     const t = app();
-    const lookup = deferred();
 
     await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: { ip: '1' } });
     await t.auth.flush();
 
-    const users = t.auth.context.users;
-    const original = users.findCredentialByEmail.bind(users);
+    const send = deferred();
+    let delivered = false;
 
-    users.findCredentialByEmail = async (email) => {
-      await lookup.promise;
-
-      return original(email);
+    t.mailer.send = async () => {
+      await send.promise;
+      delivered = true;
     };
 
     await t.auth.requestPasswordReset({ email: 'ada@example.com', meta: { ip: '2' } });
@@ -300,9 +396,58 @@ describe('through createAuth', () => {
     const flushed = t.auth.flush();
 
     expect(await isSettled(flushed)).toBe(false);
-    lookup.resolve();
+    send.resolve();
     expect(await isSettled(flushed)).toBe(true);
-    expect(t.mailer.last('password-reset')).toBeDefined();
+    expect(delivered).toBe(true);
+  });
+
+  it('sends a detached reset mail and a lock notice under maxPending: 1, never dropping them', async () => {
+    const t = app({ maxPending: 1 }, { lockout: { perAccount: { limit: 2, window: '15m' } } });
+    const sent: string[] = [];
+
+    t.mailer.send = async (event) => void sent.push(event.type);
+
+    await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: { ip: '1' } });
+    await t.auth.flush();
+    await t.auth.requestPasswordReset({ email: 'ada@example.com', meta: { ip: '2' } });
+    await t.auth.flush();
+
+    for (let i = 0; i < 3; i++) {
+      await t.auth.login({
+        email: 'ada@example.com',
+        password: 'wrong passphrase!',
+        meta: { ip: '3' },
+      });
+
+      await t.auth.flush();
+    }
+
+    expect(sent).toEqual(['verify-email', 'password-reset', 'lockout']);
+    expect(t.errors.filter((e) => e.startsWith('Background task dropped'))).toEqual([]);
+  });
+
+  it('sends the lock notice even while the audit sink hangs', async () => {
+    const t = app({}, { lockout: { perAccount: { limit: 2, window: '15m' } } });
+    const sent: string[] = [];
+
+    await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: { ip: '1' } });
+    await t.auth.flush();
+    t.mailer.send = async (event) => void sent.push(event.type);
+    // Only the lock's own audit write hangs; the login's writes still land.
+    const emit = t.audit.emit.bind(t.audit);
+
+    t.audit.emit = async (event, meta) =>
+      event.type === 'account.locked' ? new Promise<never>(() => undefined) : emit(event, meta);
+
+    for (let i = 0; i < 3; i++)
+      await t.auth.login({
+        email: 'ada@example.com',
+        password: 'wrong passphrase!',
+        meta: { ip: '3' },
+      });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toEqual(['lockout']);
   });
 
   it('turns a hung mailer into logged drops once maxPending sends are waiting, and still answers', async () => {
