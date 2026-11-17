@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createSessionCookie, serializeCookie, sessionCookieName } from '../../src/http/cookie';
+import { AuthConfigError } from '../../src/shared/errors';
 
 describe('A018: cookie tossing and reading the session cookie from script', () => {
   it('uses the __Host- prefix whenever it is Secure', () => {
@@ -30,5 +31,22 @@ describe('A018: cookie tossing and reading the session cookie from script', () =
     expect(serializeCookie(spec)).toBe(
       '__Host-session=t; Path=/; Max-Age=61; HttpOnly; Secure; SameSite=Lax',
     );
+  });
+
+  it('refuses SameSite=None without Secure, fixed or chosen per origin', () => {
+    const at = { expiresAt: 61_000, persistent: true, now: 0 };
+
+    expect(() => createSessionCookie({ sameSite: 'none', secure: false }, 't', at)).toThrow(
+      AuthConfigError,
+    );
+
+    expect(() =>
+      createSessionCookie({ sameSite: () => 'none', secure: false }, 't', {
+        ...at,
+        origin: 'https://x.example',
+      }),
+    ).toThrow('SameSite=None requires a Secure cookie');
+
+    expect(createSessionCookie({ sameSite: 'none' }, 't', at).attributes.secure).toBe(true);
   });
 });
