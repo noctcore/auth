@@ -82,9 +82,11 @@ bun run services:up && bun run test:integration
 
 ## Production readiness
 
-Every gate below fails its run; none is `continue-on-error`. Run the local command before pushing.
 The site page [How this library is tested](https://noctcore.github.io/auth/security/testing/)
-explains what each one catches.
+explains what each gate catches. Run the local command before pushing.
+
+**Required on every pull request.** These jobs are required checks on `main`: a pull request cannot
+merge until each one passes, and none is `continue-on-error`.
 
 | Gate | CI job | Locally |
 |---|---|---|
@@ -92,19 +94,27 @@ explains what each one catches.
 | Types (strict, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`) | `build · lint · typecheck · package shape` | `bun run typecheck` |
 | Lint, including layering and the secret-comparison rule | `build · lint · typecheck · package shape` | `bun run lint` (after a build) |
 | Public API unchanged | `build · lint · typecheck · package shape` | `bun run check:api` (after a build) |
-| Package shape | `build · lint · typecheck · package shape` | `bun run check:package` |
+| Package shape | `build · lint · typecheck · package shape` | `bun run check:package` (after a build) |
 | Runtime dependency allowlist | `build · lint · typecheck · package shape` | `bun run check:deps` |
 | Actions pinned to SHAs, least-privilege permissions | `build · lint · typecheck · package shape` | `bun run check:workflows` |
 | Unit, attack and property tests with coverage thresholds | `test`, `test · windows` | `bun run test` |
-| Attack suite index (files, rows and numbering agree) | `test` | `bun run test` |
+| Attack suite index (files, rows and numbering agree) | `test`, `test · windows` | `bun run test` |
 | Conformance and end to end on Redis and Postgres | `integration · redis + postgres` | `bun run services:up && bun run test:integration` |
 | A changeset on every package change | `changeset status` | `bun run changeset` |
-| CodeQL (security-extended) | `codeql · javascript-typescript` | runs in CI only |
-| Dependency review (high severity, licence allowlist) | `dependency review` | runs in CI only |
+| CodeQL (security-extended) | `codeql · javascript-typescript` | CI only |
+| Dependency review (high severity, licence allowlist) | `dependency review` | CI only |
+
+**Scheduled, not required to merge.** These run on a schedule (and the first two on demand). A
+failure shows as a failed run on `main` to fix, not as a blocked pull request.
+
+| Check | CI job | Locally |
+|---|---|---|
 | Property tests with a new seed and 20000 cases | `fuzz · property tests (nightly)` | `FC_SEED=<n> FC_NUM_RUNS=20000 bunx vitest run tests/property` in `packages/auth` |
-| Mutation score at or above `break` | `mutation · stryker (weekly)` | `bun run test:mutation` |
-| OpenSSF Scorecard, target 7.5 | `scorecard` (weekly) | the badge in the README |
-| Timing, wall clock (not a gate) | none | `bun run bench:timing` |
+| Mutation score at or above `break` in `packages/auth/stryker.config.mjs` | `mutation · stryker (weekly)` | `bun run test:mutation` |
+| OpenSSF Scorecard, target 7.5 | `scorecard` (weekly and on every push to `main`) | the badge in the README |
+
+`bun run bench:timing` measures login, sign-up and reset timing on the wall clock. It is for
+reading, not a gate, and no job runs it.
 
 ## Changesets
 
