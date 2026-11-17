@@ -35,3 +35,18 @@ model AuthToken {
   @@unique([purpose, hash])
   @@index([expiresAt])
 }
+
+// Copied from @noctcore/auth-prisma/prisma/auth.prisma: the membership plugin's tables.
+model AuthMember {
+  scope  String
+  userId String
+  role   String
+
+  @@id([scope, userId])
+  @@index([userId])
+}
+
+model AuthMemberScope {
+  scope   String @id
+  version Int    @default(0)
+}

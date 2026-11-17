@@ -15,6 +15,12 @@
  *   GET  /api/me                                      signed in
  *   GET  /api/sessions                                signed in
  *   POST /api/logout
+ *
+ * Organisations, with the membership guards (`@noctcore/auth/membership`):
+ *   POST   /api/orgs                                  signed in; the caller becomes its owner
+ *   POST   /api/orgs/:org/members         { userId, role }   an owner or admin of :org
+ *   POST   /api/orgs/:org/members/:user   { role }           change a role; revokes :user's sessions
+ *   DELETE /api/orgs/:org/members/:user                     remove; revokes :user's sessions
  */
 import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -35,7 +41,8 @@ import {
   type StoredSession,
 } from '@noctcore/auth';
 import { argon2id } from '@noctcore/auth/argon2';
-import { prismaStores } from '@noctcore/auth-prisma';
+import { membership } from '@noctcore/auth/membership';
+import { PrismaMembershipStore, prismaStores } from '@noctcore/auth-prisma';
 import { redisStores } from '@noctcore/auth-redis';
 import type { Redis } from 'ioredis';
 import type { PrismaClient } from './generated/prisma/client';
@@ -62,8 +69,13 @@ const STATUS: Record<string, number> = {
   rate_limited: 429,
   fresh_auth_required: 403,
   forbidden: 403,
+  self_target: 403,
+  last_admin: 409,
   captcha_unavailable: 503,
 };
+
+/** /api/orgs/:org/members and /api/orgs/:org/members/:user */
+const MEMBERS = /^\/api\/orgs\/([0-9a-f]{16})\/members(?:\/([^/]+))?$/u;
 
 export function createApp(options: AppOptions) {
   if (options.secret === options.csrfSecret)
@@ -81,6 +93,13 @@ export function createApp(options: AppOptions) {
     prefix: options.redisPrefix ?? 'example:',
   });
 
+  // Who belongs to which organisation, written only through this store.
+  const members = new PrismaMembershipStore({
+    client: options.prisma,
+    member: options.prisma.authMember,
+    scope: options.prisma.authMemberScope,
+  });
+
   const auth = createAuth({
     stores: { users, tokens, sessions, counters },
     password: { hasher: argon2id(), breachCheck: false },
@@ -88,6 +107,8 @@ export function createApp(options: AppOptions) {
     secret,
     urls: { resetPassword: (token) => `${options.origin}/reset-password#${token}` },
     mailer: options.mailer,
+    // The last owner or admin of an organisation can be neither demoted nor removed.
+    plugins: [membership({ store: members, adminRoles: ['owner', 'admin'] })],
   });
 
   const csrfCookieName = options.secureCookies ? '__Host-csrf' : 'csrf';
@@ -288,9 +309,76 @@ export function createApp(options: AppOptions) {
         return send(res, 200, { csrfToken: csrf.token }, [cookie, fresh.spec, csrf.spec]);
       }
 
+      case 'POST /api/orgs': {
+        if (!session)
+          return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+
+        // A server-made id: nobody can claim an organisation that already exists.
+        const orgId = randomBytes(8).toString('hex');
+
+        await members.addMember({ scope: orgId, userId: session.userId, role: 'owner' });
+
+        return send(res, 201, { orgId });
+      }
+
       default:
-        return send(res, 404, { error: { code: 'not_found' } });
+        return handleMembers(res, url, method, body, session, meta);
     }
+  }
+
+  /** The member routes. The flows refuse self-targets and the last admin, and revoke on change. */
+  async function handleMembers(
+    res: ServerResponse,
+    url: URL,
+    method: string,
+    body: Record<string, unknown>,
+    session: StoredSession<Record<string, never>> | null,
+    meta: RequestMeta,
+  ): Promise<void> {
+    const match = MEMBERS.exec(url.pathname);
+
+    if (!match) return send(res, 404, { error: { code: 'not_found' } });
+    if (!session) return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+
+    const scope = match[1] ?? '';
+    const target = match[2];
+
+    if (method === 'POST' && target === undefined) {
+      const result = await auth.membership.add({
+        session,
+        scope,
+        userId: str(body['userId']),
+        role: str(body['role']),
+        meta,
+      });
+
+      return result.ok ? send(res, 201, { member: result.value }) : failure(res, result);
+    }
+
+    if (method === 'POST' && target !== undefined) {
+      const result = await auth.membership.changeRole({
+        session,
+        scope,
+        userId: decodeURIComponent(target),
+        role: str(body['role']),
+        meta,
+      });
+
+      return result.ok ? send(res, 200, { member: result.value }) : failure(res, result);
+    }
+
+    if (method === 'DELETE' && target !== undefined) {
+      const result = await auth.membership.remove({
+        session,
+        scope,
+        userId: decodeURIComponent(target),
+        meta,
+      });
+
+      return result.ok ? send(res, 200, { removed: true }) : failure(res, result);
+    }
+
+    return send(res, 404, { error: { code: 'not_found' } });
   }
 
   /** A new session means a new CSRF binding: hand out both. */
