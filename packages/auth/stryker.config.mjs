@@ -58,11 +58,12 @@ export default {
     'src/plugins/**/*.ts',
     'src/http/csrf.ts',
     'src/http/ip.ts',
+    'src/flows/email-change.ts',
   ],
   reporters: ['clear-text', 'progress', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
-  // Measured 98.29 on 2026-11-17, with the two-factor plugin in scope.
+  // Measured 98.61 on 2026-11-17, with the two-factor plugin and the email change flow in scope.
   thresholds: { high: 98, low: 90, break: 98 },
   concurrency: 4,
   timeoutMS: 10_000,

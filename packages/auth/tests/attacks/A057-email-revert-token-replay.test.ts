@@ -26,6 +26,13 @@ describe('A057: replaying an email revert link', () => {
     );
 
     expect(clicks.filter((c) => c.ok)).toHaveLength(1);
+
+    for (const lost of clicks.filter((c) => !c.ok && c.code !== 'rate_limited'))
+      expect(lost).toMatchObject({
+        code: 'invalid_token',
+        reason: expect.stringMatching(/^email_revert_(unknown|consumed)$/u) as string,
+      });
+
     expect(t.audit.events.filter((e) => e.type === 'email.change_reverted')).toHaveLength(1);
   });
 
