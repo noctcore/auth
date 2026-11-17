@@ -240,7 +240,8 @@ export class Throttle {
  * of those counts, so a parallel burst locks once per crossing, never twice.
  */
 function locksAt(count: number, limit: number): boolean {
-  return count > limit && (count - limit - 1) % (limit + 1) === 0;
+  // Counts start at 1, so the multiples of `limit + 1` are exactly those crossings.
+  return count % (limit + 1) === 0;
 }
 
 /**
