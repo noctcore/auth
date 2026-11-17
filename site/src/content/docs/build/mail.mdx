@@ -33,7 +33,7 @@ Give the enqueue a timeout. The library sets none and does not cap how many send
 | `lockout` | failed sign-ins locked the account | `until` |
 | `email-change-confirm` | an email change was requested for a free address; sent to the new address | `code` (code mode) or `url` (link mode), `expiresAt` |
 | `email-change-in-use` | an email change named an address that already has an account; sent to that address, `userId` is its account | none |
-| `email-changed` | an email change was confirmed; sent to the address it replaced | `newEmail`, `at`, and `revertUrl` with `revertExpiresAt` unless an earlier revert link is still live |
+| `email-changed` | an email change was confirmed; sent to the address it replaced | `newEmail`, `at`, `revertUrl`, `revertExpiresAt` |
 | `email-change-reverted` | a revert link restored the address; every session ended and the password must be reset | `at` |
 | `two-factor-enabled` | the two-factor plugin: a second factor was turned on | `at` |
 | `two-factor-disabled` | the two-factor plugin: the second factor was turned off | `at` |
