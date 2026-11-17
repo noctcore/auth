@@ -128,6 +128,26 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     }
   });
 
+  it('falls back to create when createData has a nested write, which a bulk insert refuses', async () => {
+    const users = new PrismaUserStore({
+      delegate: prisma.user,
+      createData: () => ({ profile: { create: { bio: 'hello' } } }),
+    });
+
+    const email = `${uniqueId('nested')}@example.com` as NormalizedEmail;
+    const created = await users.create({ email, passwordHash: 'h' });
+
+    expect(created).toMatchObject({ email });
+
+    expect(await prisma.profile.findUnique({ where: { userId: created?.id ?? '' } })).toMatchObject(
+      {
+        bio: 'hello',
+      },
+    );
+
+    expect(await users.create({ email, passwordHash: 'h2' })).toBeNull();
+  });
+
   it('falls back to create and a unique violation on a delegate without createManyAndReturn', async () => {
     const delegate = {
       findFirst: prisma.user.findFirst.bind(prisma.user),
