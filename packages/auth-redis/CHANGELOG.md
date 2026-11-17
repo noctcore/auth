@@ -1,5 +1,18 @@
 # @noctcore/auth-redis
 
+## 0.5.0
+
+### Minor Changes
+
+- [#71](https://github.com/noctcore/auth/pull/71) [`c09f611`](https://github.com/noctcore/auth/commit/c09f611bc86253f33220e6d6ace54743de5cc1af) Thanks [@Shironex](https://github.com/Shironex)! - Add stores for the invitations plugin: `RedisInvitationStore` in `@noctcore/auth-redis` (keys under `inv:`, each with a TTL at the invitation's expiry, create and consume each one Lua script) and `PrismaInvitationStore` in `@noctcore/auth-prisma`, which needs the new `AuthInvitation` model in `prisma/auth.prisma` and the client, for the transaction that replaces an expired invitation. Both pass `invitationStoreConformance`, including its concurrent consume and create cases, against Redis and PostgreSQL.
+
+- [#64](https://github.com/noctcore/auth/pull/64) [`2ab09b7`](https://github.com/noctcore/auth/commit/2ab09b7b3769e14fbd72259138592df55a8bb3bb) Thanks [@Shironex](https://github.com/Shironex)! - Add stores for the membership plugin: `RedisMembershipStore` in `@noctcore/auth-redis` (one hash per scope under `ms:<scope>`, guarded writes in one Lua script) and `PrismaMembershipStore` in `@noctcore/auth-prisma`, which needs the two new models in `prisma/auth.prisma` (`AuthMember`, `AuthMemberScope`) and the client, for the version-guarded transaction behind every role change and removal. Both pass `membershipStoreConformance`, including its concurrent last-admin cases, against Redis and PostgreSQL.
+
+### Patch Changes
+
+- Updated dependencies [[`fb9f5d8`](https://github.com/noctcore/auth/commit/fb9f5d80dcdc515ff0e09b453c18136adddbd6ca), [`76717de`](https://github.com/noctcore/auth/commit/76717de578fbd4f83973dcf544acafeb1d5c9dad), [`5b79f16`](https://github.com/noctcore/auth/commit/5b79f16f9a597db92131f6684114c9f872cac4f5), [`c09f611`](https://github.com/noctcore/auth/commit/c09f611bc86253f33220e6d6ace54743de5cc1af), [`57440a0`](https://github.com/noctcore/auth/commit/57440a046b8f63cbca56f273ac611a8d6d391ebb), [`2ab09b7`](https://github.com/noctcore/auth/commit/2ab09b7b3769e14fbd72259138592df55a8bb3bb), [`e73f7a0`](https://github.com/noctcore/auth/commit/e73f7a0096808eb2fa9f705fe6c32983fb752e08)]:
+  - @noctcore/auth@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes

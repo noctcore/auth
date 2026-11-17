@@ -1,6 +1,6 @@
 {
   "name": "@noctcore/auth-trpc",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "tRPC middlewares for @noctcore/auth: a session context, closed procedures, CSRF on mutations, safe error mapping and Zod schemas for the auth procedures.",
   "license": "MIT",
   "type": "module",
@@ -53,7 +53,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
-    "@noctcore/auth": "0.4.0"
+    "@noctcore/auth": "0.5.0"
   },
   "devDependencies": {
     "@nestjs/common": "12.5.0",
