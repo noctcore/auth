@@ -138,7 +138,14 @@ export default defineConfig({
             prismaApiGroup,
           ],
         },
-        { label: 'Security', items: [{ label: 'Security defaults', link: '/security/' }] },
+        {
+          label: 'Security',
+          items: [
+            { label: 'Security defaults', link: '/security/' },
+            { label: 'Threat model', link: '/security/threat-model/' },
+            { label: 'How this library is tested', link: '/security/testing/' },
+          ],
+        },
       ],
     }),
   ],
