@@ -19,7 +19,7 @@ This guide builds on [A Node server with Redis and Prisma](/auth/build/node-serv
 bun add @noctcore/auth-nestjs @noctcore/auth @nestjs/common @nestjs/core @nestjs/platform-express
 ```
 
-NestJS 11 and 12 are supported, on the Express platform. The package uses Nest's legacy decorators, so set `experimentalDecorators` in your `tsconfig.json`, as every Nest project already does.
+NestJS 11 and 12 are supported, on the Express platform, for HTTP controllers. GraphQL resolvers, WebSocket gateways and microservice handlers are not supported yet: the guard refuses them unless they are `@Public()`, so they never get through without a session check by accident. The package uses Nest's legacy decorators, so set `experimentalDecorators` in your `tsconfig.json`, as every Nest project already does.
 
 ## The module
 
@@ -34,16 +34,18 @@ NestJS 11 and 12 are supported, on the Express platform. The package uses Nest's
 - applies `CsrfMiddleware` to every route;
 - provides `SessionCookies`, which writes a new or ended session onto the response.
 
-The module is global, so feature modules get the guard, the decorators and `AUTH` without importing it again. Boot fails on a CSRF secret shorter than 32 bytes, an empty origin allowlist, or a hop count that is not a whole number.
+The module is global, so feature modules get the guard, the decorators and `AUTH` without importing it again. Boot fails on a CSRF secret shorter than 32 bytes, an empty origin allowlist, or a hop count that is not a whole number from 0 to 16. It also fails on a route whose decorators contradict each other: `@Public()` (on the route or its controller) together with `@RequireRole()` or `@RequireFreshAuth()`, or `@RequireRole()` without the `roles` option. The error names each route.
 
 ## The guard order
 
 Nest runs middleware before guards, and the module uses that order on every request:
 
 1. **`CsrfMiddleware`** reads the session cookie through the core (`readSessionToken`, then `validateRequest`) and keeps the result for the rest of the request, so the session is validated once. On an unsafe method it runs the three checks from [CSRF](/auth/learn/csrf/): the `Origin` must be on `allowedOrigins`, `Sec-Fetch-Site` must say `same-origin` whenever the browser sends it, and the `X-CSRF-Token` header must match the `csrf` cookie and be signed for this session, or before sign-in for this browser's pre-session id. A refusal is answered by the middleware itself, with `403` and the body `{"error":{"code":"forbidden"}}`, whichever check failed. It never calls `next(err)`, so no exception filter can turn the refusal into a message that says more.
-2. **`SessionGuard`** refuses a route without a valid session with `401` and `{"error":{"code":"session_expired"}}`, unless the route or its controller carries `@Public()`. It loads the user from your user store on every request, so a deleted user is out at once.
+2. **`SessionGuard`** first refuses, with the same `403`, any unsafe request the middleware never saw. Which routes Nest hands to a middleware depends on its version and on the global prefix (Nest 11.0 to 11.2.7 and 12.0.0 skip the prefix root, such as `POST /api` under `setGlobalPrefix('api')`, and 11.0.0 also skips prefix-excluded routes), so the guard does not rely on that mapping: on those versions an unsafe request to such a route is refused even when it is legitimate, until you upgrade Nest. Then it refuses a route without a valid session with `401` and `{"error":{"code":"session_expired"}}`, unless the route or its controller carries `@Public()`. It loads the user from your user store on every request, so a deleted user is out at once.
 3. **`@RequireRole()`** runs only after the session and the user are known. The module's `roles` function is called with the user just loaded, on every request, so a role taken away stops working on the next request. No role is ever copied into the cookie or the session.
 4. **`@RequireFreshAuth()`** asks the core's `requireFreshAuth` whether the session's last password proof is within `freshAuthAge`. A route can pass a shorter `maxAge`, never a longer one.
+
+`@Public()` skips steps 2 to 4 only on a route with no role or fresh-auth requirement. A store failure in the middleware or the guard is answered with a fixed `500` and logged by its error name only, so no message with a session key reaches your logs.
 
 Safe methods (`GET`, `HEAD`, `OPTIONS`) skip the CSRF check, never the session check. On a safe request the middleware also hands out what the page needs for its next unsafe one: a pre-session id when the browser has neither a session nor an id, and a `csrf` cookie when the one it holds is missing or bound to something else. A session cookie the core refused is cleared on the same response.
 
@@ -70,7 +72,7 @@ Safe methods (`GET`, `HEAD`, `OPTIONS`) skip the CSRF check, never the session c
 
 `TRUST_PROXY` is the number of reverse proxies in front of the app. `X-Forwarded-For` is written by the client up to the first proxy you run, so the module trusts exactly that many hops, counted from the right, the same rule as the core's `clientIp`. Trusting everything lets a client choose its own IP and its own rate-limit bucket; trusting nothing behind a proxy puts every client in one bucket, where one attacker blocks logins for everyone.
 
-- `trustedHopsFromEnv(process.env)` reads it for the module. Unset is `0` in development and **refused in production**, so a deploy that forgot it fails at boot instead of quietly trusting the wrong hops. `true` is refused anywhere, and so is anything that is not a hop count.
+- `trustedHopsFromEnv(process.env)` reads it for the module. Unset is `0` in development and **refused in production**, so a deploy that forgot it fails at boot instead of quietly trusting the wrong hops. `true` is refused anywhere, and so is anything that is not a hop count or is above 16.
 - `configureTrustProxy(app, process.env)` sets Express's `trust proxy` to the same count, so `req.ip` in your own code agrees with what the flows see. The module itself never reads `req.ip`.
 
 ## The compile test
@@ -85,3 +87,4 @@ Boot the whole `AppModule` in a test. A provider Nest cannot resolve fails there
 - Set `TRUST_PROXY` to the number of proxies you actually run.
 - Keep the CSRF secret separate from the auth secret; during a rollover, list the new one first and the old one after it.
 - Fastify is not supported yet. The middleware and the cookies work on the raw Node request and response, but only Express is tested.
+- If you use a global prefix, run Nest 11.2.8 or later (or 12.0.1 or later), so the middleware reaches the prefix root and excluded routes and the guard's safety net never has to refuse a legitimate request.
