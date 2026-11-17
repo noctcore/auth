@@ -18,7 +18,6 @@
 ## runtime exports
 RedisCounterStore
 RedisSessionStore
-RedisTwoFactorStore
 redisStores
 
 ## declarations
@@ -60,29 +59,5 @@ RedisStoreOptions [interface]
     readonly clock?: Clock
     readonly prefix?: string
 redisStores [function]: (redis: Redis, options?: RedisSessionStoreOptions) => { sessions: RedisSessionStore; counters: RedisCounterStore; }
-RedisTwoFactorStore [class]
-    (new) (redis: Redis, options?: RedisStoreOptions): RedisTwoFactorStore
-    addTrustedDevice(device: StoredTrustedDevice, maxPerUser: number): Promise<void>
-    advanceStep(userId: string, step: number): Promise<boolean>
-    confirmFactor(userId: string, secret: string, step: number): Promise<boolean>
-    consumeRecoveryCode(userId: string, hash: string): Promise<boolean>
-    countRecoveryCodes(userId: string): Promise<number>
-    deleteFactor(userId: string): Promise<void>
-    deleteTrustedDevices(userId: string): Promise<void>
-    findFactor(userId: string): Promise<StoredTotpFactor | null>
-    findStepUp(sessionId: string): Promise<StoredStepUp | null>
-    findTrustedDevice(userId: string, hash: string): Promise<StoredTrustedDevice | null>
-    private codesKey
-    private devicesKey
-    private factorKey
-    private readonly clock
-    private readonly devicePrefix
-    private readonly prefix
-    private readonly redis
-    private stepUpKey
-    private ttl
-    putPendingFactor(factor: { readonly userId: string; readonly secret: string; readonly createdAt: number; }): Promise<boolean>
-    putStepUp(stepUp: StoredStepUp): Promise<void>
-    replaceRecoveryCodes(userId: string, hashes: readonly string[]): Promise<void>
 
 ## types reached through the exports (not exported by name)

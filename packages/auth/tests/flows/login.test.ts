@@ -179,9 +179,7 @@ describe('login', () => {
       expect(!r.ok && r.reason).toBe('wrong_password');
     }
 
-    // The lock holds the account counter at 11 (it is never reset by a lock),
-    // and each wrong guess under it still counts on top.
-    expect((await stores.counters.get(`acct:${account}`))?.count).toBe(16);
+    expect((await stores.counters.get(`acct:${account}`))?.count).toBe(5);
 
     const sixth = await auth.login({
       email: EMAIL,

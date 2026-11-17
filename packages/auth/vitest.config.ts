@@ -6,7 +6,7 @@ import { defineConfig } from 'vitest/config';
 // when coverage drops. They sit at or just under what the suite reaches today:
 // raise them when tests are added, and never lower one without saying why in
 // the pull request. The modules that decide who is signed in (crypto, tokens,
-// session, throttle, password) and the plugins (two-factor) are held at 100 percent; http and the flows just
+// session, throttle, password) are held at 100 percent; http and the flows just
 // under it. A focused run (`bunx vitest run tests/core`) skips coverage.
 //
 // Nothing is excluded. The one branch no test can reach is the `?? ''` after
@@ -32,7 +32,6 @@ export default defineConfig({
         'src/session/**': FULL,
         'src/throttle/**': FULL,
         'src/password/**': FULL,
-        'src/plugins/**': FULL,
         'src/http/**': { lines: 100, branches: 99, functions: 100, statements: 99 },
         'src/flows/**': { lines: 99, branches: 95, functions: 97, statements: 98 },
       },

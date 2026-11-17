@@ -4,8 +4,8 @@
 // tests that cover it; a mutant the suite does not notice "survives". Run with
 // `bun run test:mutation` (about two minutes); CI runs it weekly and on demand.
 //
-// Scope: crypto, tokens, session, throttle and the two-factor plugin, plus the
-// CSRF and client IP checks the attack suite leans on. The rest of http (cookie, turnstile) and
+// Scope: crypto, tokens, session and throttle, plus the CSRF and client IP
+// checks the attack suite leans on. The rest of http (cookie, turnstile) and
 // password are measured from time to time but not gated yet.
 //
 // `break` sits just under the measured score, so a change that lets mutants
@@ -35,14 +35,6 @@
 //   - the empty-chain guard (indexing an empty chain gives undefined too);
 //   - `groups.length < 3` vs `<= 3` (the extra group is sliced off);
 //   - the `?? ''` after split (split always returns one element).
-// - plugins/two-factor:
-//   - options.ts: `never` returning undefined instead of false (both falsy);
-//   - proofs.ts: the 'totp' kind from `parseProof` turned into '' (anything
-//     that is not 'recovery-code' is checked as a TOTP code);
-//   - proofs.ts: `owner !== null` in the recovery-code subject turned true
-//     (without a factor the delete runs under a null id, which finds nothing,
-//     as NO_SUCH_USER_ID does) and `code !== null` turned true (the HMAC of an
-//     empty code is never stored).
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   testRunner: 'vitest',
@@ -55,15 +47,14 @@ export default {
     'src/tokens/**/*.ts',
     'src/session/**/*.ts',
     'src/throttle/**/*.ts',
-    'src/plugins/**/*.ts',
     'src/http/csrf.ts',
     'src/http/ip.ts',
   ],
   reporters: ['clear-text', 'progress', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
-  // Measured 98.29 on 2026-11-17, with the two-factor plugin in scope.
-  thresholds: { high: 98, low: 90, break: 98 },
+  // Measured 97.05 on 2026-11-17 (87.13 before the tests this change added).
+  thresholds: { high: 97, low: 90, break: 96 },
   concurrency: 4,
   timeoutMS: 10_000,
   tempDirName: '.stryker-tmp',

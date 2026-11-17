@@ -44,7 +44,6 @@
 import { counterKeys as keys } from './counter-keys';
 import {
   windowRule,
-  type FactorGate,
   type Hit,
   type LockoutOptions,
   type LoginGate,
@@ -123,57 +122,19 @@ export class Throttle {
     const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
 
     if (all.count > this.perAccount.limit) {
-      // Only the attempt that crossed the limit locks; a parallel one that also
-      // got past the lock check above is refused here without a second lock.
-      if (!locksAt(all.count, this.perAccount.limit)) return { allowed: false, reason: 'locked' };
-
-      return {
-        allowed: false,
-        reason: 'locked',
-        newLock: await this.lock(account, all.count),
-      };
+      return { allowed: false, reason: 'locked', newLock: await this.lock(account) };
     }
 
     return { allowed: true };
-  }
-
-  /**
-   * Call BEFORE checking a second-factor code: checks the factor's lock and
-   * reserves one attempt in `account`'s budget, counted per account across
-   * every IP. Spending the budget locks the factor with the same capped
-   * backoff as the password lockout (`baseLock`, `maxLock`, `quietPeriod`).
-   * Its keys live under their own prefix, so a factor lock never locks the
-   * password and back, whatever `account` is.
-   */
-  async gateFactor(account: string, rule: RateLimitRule): Promise<FactorGate> {
-    const scope = keys.factor(account);
-    const lock = await this.counters.get(keys.lock(scope));
-
-    if (lock !== null) return { allowed: false };
-
-    const all = await this.counters.increment(keys.account(scope), toMilliseconds(rule.window));
-
-    if (all.count > rule.limit) {
-      if (!locksAt(all.count, rule.limit)) return { allowed: false };
-
-      return { allowed: false, newLock: await this.lock(scope, all.count) };
-    }
-
-    return { allowed: true };
-  }
-
-  /** A correct second-factor code: the account's attempt budget starts over. */
-  async factorSucceeded(account: string): Promise<void> {
-    await this.counters.reset(keys.account(keys.factor(account)));
   }
 
   /** A failed proof outside login (a wrong current password) still spends the account-wide budget. */
   async recordFailure(account: string): Promise<{ newLock?: { until: number } }> {
     const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
 
-    if (!locksAt(all.count, this.perAccount.limit)) return {};
+    if (all.count <= this.perAccount.limit) return {};
 
-    return { newLock: await this.lock(account, all.count) };
+    return { newLock: await this.lock(account) };
   }
 
   /**
@@ -184,14 +145,7 @@ export class Throttle {
     return this.recordFailure(account);
   }
 
-  /**
-   * Locks `account`. The attempt counter is NOT reset: it is held at `count`
-   * (already over the limit) for exactly as long as the lock lasts, so a
-   * request that read "no lock" a moment before still counts above the limit
-   * and is refused. Resetting it here let such requests through, one fresh
-   * budget at a time, under a parallel burst.
-   */
-  private async lock(account: string, count: number): Promise<{ until: number }> {
+  private async lock(account: string): Promise<{ until: number }> {
     // The tier's TTL is renewed on every lock, so it only decays after a full
     // quiet period without one.
     const previous = await this.counters.get(keys.tier(account));
@@ -203,11 +157,7 @@ export class Throttle {
     const duration = Math.min(backoffMs, this.maxLockMs);
     const lock = await this.counters.increment(keys.lock(account), duration);
 
-    await this.counters.set(
-      keys.account(account),
-      count,
-      Math.max(1, lock.resetAt - this.clock.now()),
-    );
+    await this.counters.reset(keys.account(account));
 
     return { until: lock.resetAt };
   }
@@ -230,21 +180,6 @@ export class Throttle {
     await this.counters.reset(keys.tier(account));
     await this.counters.reset(keys.account(account));
   }
-}
-
-/**
- * Whether the attempt that brought the counter to `count` locks. The counter is
- * never reset by a lock (see `lock`), so the first lock comes at `limit + 1`
- * and, while it lasts, every further `limit + 1` failures (a wrong password
- * let through by a device token, or requests that read "no lock" just before
- * it was set) cross again. Each crossing raises the backoff tier; the running
- * lock keeps its end time. Exactly one attempt sees each crossing count, so no
- * extra guesses get through, but a large parallel burst can cross several times
- * and raise the tier by more than one step.
- */
-function locksAt(count: number, limit: number): boolean {
-  // Counts start at 1, so the multiples of `limit + 1` are exactly those crossings.
-  return count % (limit + 1) === 0;
 }
 
 /**

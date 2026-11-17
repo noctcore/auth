@@ -1,4 +1,4 @@
-// Test schema: a minimal user model plus the shipped models.
+// Test schema: a minimal user model plus the shipped AuthToken model.
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -29,42 +29,5 @@ model AuthToken {
 
   @@unique([userId, purpose])
   @@unique([purpose, hash])
-  @@index([expiresAt])
-}
-
-
-model AuthTwoFactor {
-  userId    String   @id
-  secret    String
-  confirmed Boolean  @default(false)
-  // The last accepted TOTP time step; -1 before any.
-  lastStep  Int      @default(-1)
-  createdAt DateTime
-}
-
-model AuthRecoveryCodes {
-  userId  String @id
-  // The HMACs of the unused codes, a JSON array of strings.
-  hashes  Json
-  // Bumped on every write: a code is spent by an update guarded on it.
-  version Int    @default(0)
-}
-
-model AuthTrustedDevice {
-  hash      String   @id
-  userId    String
-  epoch     Int
-  createdAt DateTime
-  expiresAt DateTime
-
-  @@index([userId, createdAt])
-  @@index([expiresAt])
-}
-
-model AuthStepUp {
-  sessionId String   @id
-  userId    String
-  expiresAt DateTime
-
   @@index([expiresAt])
 }

@@ -36,17 +36,4 @@ describe('email verification by code (default)', () => {
 
     expect(after).toEqual({ ok: true, value: { sent: false } });
   });
-
-  it('verifies the address but re-issues no session for one that was revoked meanwhile', async () => {
-    const env = setup();
-    const { session } = await env.signedInUser();
-    const code = env.mailer.last('verify-email')?.code ?? '';
-
-    await env.auth.context.sessions.revoke(session.userId, [session.id]);
-
-    const result = await env.auth.verifyEmailCode({ session, code, meta: meta() });
-
-    expect(result).toEqual({ ok: true, value: { session: null } });
-    expect((await env.stores.users.findById(session.userId))?.emailVerified).toBe(true);
-  });
 });

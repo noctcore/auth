@@ -3,7 +3,7 @@
 // as "no such token" or "address taken".
 import { describe, expect, it } from 'vitest';
 import type { NormalizedEmail } from '@noctcore/auth';
-import { PrismaTokenStore, PrismaTwoFactorStore, PrismaUserStore } from '../src';
+import { PrismaTokenStore, PrismaUserStore } from '../src';
 
 const prismaError = (code: string) => Object.assign(new Error(code), { code });
 const outage = new Error('connection refused');
@@ -96,77 +96,5 @@ describe('PrismaUserStore errors', () => {
 
     expect(await taken.create({ email, passwordHash: 'x' })).toBeNull();
     await expect(down.create({ email, passwordHash: 'x' })).rejects.toBe(outage);
-  });
-});
-
-describe('PrismaTwoFactorStore errors', () => {
-  const unused = delegate({});
-
-  const store = (
-    overrides: Partial<
-      Record<'factor' | 'recoveryCodes', Record<string, (...args: unknown[]) => Promise<unknown>>>
-    >,
-  ) =>
-    new PrismaTwoFactorStore({
-      factor: delegate(overrides.factor ?? {}),
-      recoveryCodes: delegate(overrides.recoveryCodes ?? {}),
-      trustedDevice: unused,
-      stepUp: unused,
-    });
-
-  it('tries the guarded update again when a concurrent insert of a pending factor won', async () => {
-    let updates = 0;
-
-    const pending = store({
-      factor: {
-        updateMany: async () => ({ count: updates++ === 0 ? 0 : 1 }),
-        create: async () => {
-          throw prismaError('P2002');
-        },
-        findUnique: async () => ({ confirmed: false }),
-      },
-    });
-
-    expect(await pending.putPendingFactor({ userId: 'u1', secret: 's', createdAt: 0 })).toBe(true);
-    expect(updates).toBe(2);
-  });
-
-  it('rethrows any other error on a pending factor or a recovery code write', async () => {
-    const failing = store({
-      factor: {
-        updateMany: async () => ({ count: 0 }),
-        create: async () => {
-          throw outage;
-        },
-      },
-      recoveryCodes: {
-        upsert: async () => {
-          throw outage;
-        },
-      },
-    });
-
-    await expect(
-      failing.putPendingFactor({ userId: 'u1', secret: 's', createdAt: 0 }),
-    ).rejects.toBe(outage);
-
-    await expect(failing.replaceRecoveryCodes('u1', ['a'])).rejects.toBe(outage);
-  });
-
-  it('writes the recovery codes again when a concurrent first write won the insert', async () => {
-    let calls = 0;
-
-    const codes = store({
-      recoveryCodes: {
-        upsert: async () => {
-          if (calls++ === 0) throw prismaError('P2002');
-
-          return {};
-        },
-      },
-    });
-
-    await codes.replaceRecoveryCodes('u1', ['a']);
-    expect(calls).toBe(2);
   });
 });

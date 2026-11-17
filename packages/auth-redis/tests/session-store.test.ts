@@ -3,7 +3,7 @@
 // read as no session rather than thrown.
 import { describe, expect, it } from 'vitest';
 import { AuthConfigError, type StoredSession } from '@noctcore/auth';
-import { RedisSessionStore, RedisTwoFactorStore } from '../src';
+import { RedisSessionStore } from '../src';
 
 const DAY = 86_400_000;
 
@@ -38,18 +38,5 @@ describe('RedisSessionStore guards', () => {
     const store = new RedisSessionStore({ get: async () => '{not json' } as never);
 
     expect(await store.get(session.id)).toBeNull();
-  });
-});
-
-describe('RedisTwoFactorStore without a server', () => {
-  it('reads a device or step-up value that is not JSON as none, and a missing factor as null', async () => {
-    const store = new RedisTwoFactorStore({
-      get: async () => '{not json',
-      hgetall: async () => ({}),
-    } as never);
-
-    expect(await store.findTrustedDevice('u1', 'h')).toBeNull();
-    expect(await store.findStepUp('s')).toBeNull();
-    expect(await store.findFactor('u1')).toBeNull();
   });
 });

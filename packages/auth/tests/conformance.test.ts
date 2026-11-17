@@ -7,8 +7,6 @@ import {
   runConformance,
   sessionStoreConformance,
   tokenStoreConformance,
-  twoFactorStoreConformance,
-  MemoryTwoFactorStore,
   userStoreConformance,
 } from '../src/testing';
 
@@ -27,11 +25,5 @@ runConformance('memory counter store', counterStoreConformance(stores.counters, 
 runConformance(
   'memory user store',
   userStoreConformance(stores.users, { softDelete: (id) => stores.users.softDelete(id) }),
-  api,
-);
-
-runConformance(
-  'memory two-factor store',
-  twoFactorStoreConformance(new MemoryTwoFactorStore()),
   api,
 );

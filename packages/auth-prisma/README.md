@@ -2,7 +2,7 @@
 
 # @noctcore/auth-prisma
 
-Prisma 7 user, one-time token and two-factor stores for [`@noctcore/auth`](https://github.com/noctcore/auth).
+Prisma 7 user and one-time token stores for [`@noctcore/auth`](https://github.com/noctcore/auth).
 
 1. Copy the `AuthToken` model from `node_modules/@noctcore/auth-prisma/prisma/auth.prisma` into your schema and migrate.
 2. Hand the stores your client's delegates:
@@ -22,23 +22,4 @@ const { users, tokens } = prismaStores({
 - `select`, `toUser` and `createData` let the store return your own user type and fill your required columns on sign-up.
 - A unique violation on sign-up returns `null`; guarded writes are single `updateMany` statements; consuming a token is a delete that returns the row; the attempt cap is enforced in the update's `where`.
 
-## Two-factor store
-
-For the two-factor plugin (`@noctcore/auth/two-factor`), copy the `AuthTwoFactor`, `AuthRecoveryCodes`, `AuthTrustedDevice` and `AuthStepUp` models from the same file, migrate, and hand the store their delegates:
-
-```ts
-import { PrismaTwoFactorStore } from '@noctcore/auth-prisma';
-
-const store = new PrismaTwoFactorStore({
-  factor: prisma.authTwoFactor,
-  recoveryCodes: prisma.authRecoveryCodes,
-  trustedDevice: prisma.authTrustedDevice,
-  stepUp: prisma.authStepUp,
-});
-```
-
-- No column holds a secret in the clear: `secret` is what your `SecretCipher` wrote, recovery codes and device tokens are hashes.
-- Moving the last accepted TOTP step and confirming an enrollment are single `updateMany` statements with the guard in `where`. A user's recovery codes are one row; a code is spent by an update guarded on the row's `version`.
-- Delete a user's factor and recovery codes with the user (or add relations with `onDelete: Cascade`). Expired devices are deleted when the user adds one; sweep expired step-up proofs with `deleteMany({ where: { expiresAt: { lt: new Date() } } })`.
-
-All three stores pass the conformance suite from `@noctcore/auth/testing` on PostgreSQL in CI.
+Both stores pass the conformance suite from `@noctcore/auth/testing` on PostgreSQL in CI.

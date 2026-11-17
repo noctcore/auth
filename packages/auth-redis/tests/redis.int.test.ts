@@ -4,10 +4,9 @@ import {
   counterStoreConformance,
   runConformance,
   sessionStoreConformance,
-  twoFactorStoreConformance,
   uniqueId,
 } from '@noctcore/auth/testing';
-import { RedisCounterStore, RedisSessionStore, RedisTwoFactorStore, redisStores } from '../src';
+import { RedisCounterStore, RedisSessionStore, redisStores } from '../src';
 
 const url = process.env['REDIS_URL'];
 const required = process.env['AUTH_REQUIRE_SERVICES'] === '1';
@@ -88,62 +87,6 @@ describe.skipIf(!url)('redis stores', () => {
     counterStoreConformance(new RedisCounterStore(redis, { prefix })),
     api,
   );
-
-  runConformance(
-    'redis two-factor store',
-    twoFactorStoreConformance(new RedisTwoFactorStore(redis, { prefix })),
-    api,
-  );
-
-  it('keeps trusted devices and step-up proofs under a TTL at their expiry', async () => {
-    const store = new RedisTwoFactorStore(redis, { prefix: `${prefix}tf-ttl:` });
-    const now = Date.now();
-    const userId = uniqueId('user');
-
-    await store.addTrustedDevice(
-      { userId, hash: uniqueId('d'), epoch: 0, createdAt: now, expiresAt: now + 60_000 },
-      5,
-    );
-
-    await store.putStepUp({ sessionId: uniqueId('s'), userId, expiresAt: now + 30_000 });
-
-    const keys = await redis.keys(`${prefix}tf-ttl:*`);
-
-    expect(keys.length).toBe(3);
-
-    for (const key of keys) {
-      const ttl = await redis.pttl(key);
-
-      expect(ttl).toBeGreaterThan(0);
-      expect(ttl).toBeLessThanOrEqual(60_000);
-    }
-  });
-
-  it('drops a trusted device whose key expired from the user index on the next add', async () => {
-    const store = new RedisTwoFactorStore(redis, { prefix: `${prefix}tf-gone:` });
-    const now = Date.now();
-    const userId = uniqueId('user');
-
-    const first = {
-      userId,
-      hash: uniqueId('d'),
-      epoch: 0,
-      createdAt: now,
-      expiresAt: now + 60_000,
-    };
-
-    const second = { ...first, hash: uniqueId('d'), createdAt: now + 1 };
-    const third = { ...first, hash: uniqueId('d'), createdAt: now + 2 };
-
-    await store.addTrustedDevice(first, 2);
-    await redis.del(`${prefix}tf-gone:tf:d:${first.hash}`);
-    await store.addTrustedDevice(second, 2);
-    await store.addTrustedDevice(third, 2);
-
-    expect(await store.findTrustedDevice(userId, second.hash)).toEqual(second);
-    expect(await store.findTrustedDevice(userId, third.hash)).toEqual(third);
-    expect(await redis.zcard(`${prefix}tf-gone:tf:du:${userId}`)).toBe(2);
-  });
 
   it('keeps every key it writes under a TTL', async () => {
     const { sessions, counters } = redisStores(redis, { prefix: `${prefix}ttl:` });

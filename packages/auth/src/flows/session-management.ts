@@ -83,11 +83,7 @@ export async function revokeOtherSessions<U extends AuthUser, A>(
 
   if (!fresh.ok) return fresh;
 
-  const live = await core.confirmLiveSession(input.session);
-
-  if (!live) return fail('session_expired', 'session_not_active');
-
-  const user = await core.users.findById(live.userId);
+  const user = await core.users.findById(input.session.userId);
 
   if (!user) return fail('session_expired', 'user_missing');
 
@@ -96,8 +92,8 @@ export async function revokeOtherSessions<U extends AuthUser, A>(
   return core.issueSession(user, {
     via: 'revoke-others',
     meta: input.meta,
-    inherit: live,
-    authenticatedAt: live.authenticatedAt,
+    inherit: input.session,
+    authenticatedAt: input.session.authenticatedAt,
   });
 }
 

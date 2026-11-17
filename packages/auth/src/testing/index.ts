@@ -8,7 +8,6 @@ export {
   type SessionStoreConformanceOptions,
 } from './conformance/session-store';
 export { tokenStoreConformance } from './conformance/token-store';
-export { twoFactorStoreConformance } from './conformance/two-factor-store';
 export { userStoreConformance, type UserStoreConformanceOptions } from './conformance/user-store';
 export {
   runConformance,
@@ -22,7 +21,6 @@ export { MemoryCounterStore } from './memory/counter-store';
 export { memoryStores, type MemoryStores } from './memory/memory-stores';
 export { MemorySessionStore } from './memory/session-store';
 export { MemoryTokenStore } from './memory/token-store';
-export { MemoryTwoFactorStore } from './memory/two-factor-store';
 export { MemoryUserStore } from './memory/user-store';
 export {
   manualClock,

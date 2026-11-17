@@ -35,19 +35,7 @@ export type AuthEventType =
   /** The breached-password check could not answer; the password was accepted unchecked. */
   | 'password.breach_check_unavailable'
   | 'account.locked'
-  | 'rate_limit.exceeded'
-  /** The two-factor plugin's events. */
-  | 'two_factor.enrollment_started'
-  | 'two_factor.enabled'
-  | 'two_factor.disabled'
-  | 'two_factor.verified'
-  | 'two_factor.failed'
-  | 'two_factor.refused'
-  | 'two_factor.step_up'
-  | 'two_factor.recovery_code_used'
-  | 'two_factor.recovery_codes_generated'
-  | 'two_factor.trusted_device_added'
-  | 'two_factor.trusted_devices_revoked';
+  | 'rate_limit.exceeded';
 
 export interface AuthEvent {
   readonly type: AuthEventType;
