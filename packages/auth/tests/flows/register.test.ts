@@ -21,6 +21,17 @@ describe('register', () => {
     expect(audit.types()).toContain('register.created');
   });
 
+  it('sends the verification mail even while the audit sink hangs', async () => {
+    const { auth, mailer, audit } = setup();
+
+    audit.emit = () => new Promise<never>(() => undefined);
+
+    await auth.register({ email: 'ada@example.com', password: PASSWORD, meta: meta() });
+    await settled();
+
+    expect(mailer.last('verify-email')?.to).toBe('ada@example.com');
+  });
+
   it('says email_in_use only when the app opts into revealing it', async () => {
     const { auth } = setup({ registration: { revealExisting: true } });
 
