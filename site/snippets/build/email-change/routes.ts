@@ -29,15 +29,18 @@ export async function requestChange(
 }
 
 /** Step 2: the code from the new address, typed in the same signed-in session. */
-export async function confirmChange(auth: AppAuth, session: Session, code: string, meta: RequestMeta) {
+export async function confirmChange(
+  auth: AppAuth,
+  session: Session,
+  code: string,
+  meta: RequestMeta,
+) {
   const confirmed = await auth.confirmEmailChangeCode({ session, code, meta });
 
   if (!confirmed.ok) return { status: 400, body: { error: confirmed.code } };
 
   // Every other session was signed out; this one was re-issued under a new cookie.
-  const cookies = confirmed.value.session ? [confirmed.value.session.cookie] : [];
-
-  return { status: 200, cookies, body: { changed: true } };
+  return { status: 200, cookies: [confirmed.value.session.cookie], body: { changed: true } };
 }
 
 /**

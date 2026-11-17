@@ -205,7 +205,7 @@ async function issueConfirmation<U extends AuthUser, A>(
 
 export interface ChangedEmail<A> {
   /** The caller's session, re-issued after every session of the account was revoked. */
-  readonly session: IssuedSession<A> | null;
+  readonly session: IssuedSession<A>;
 }
 
 /** Confirms a change with the code from the new address, typed by the signed-in user. */
@@ -259,7 +259,15 @@ export async function confirmEmailChangeLink<U extends AuthUser, A>(
   const live = input.session ? await core.confirmLiveSession(input.session) : null;
   const peek = await core.tokens.peekLink(PURPOSE.emailChange, input.token);
 
-  if (peek.status === 'valid' && live?.userId !== peek.userId) {
+  if (peek.status !== 'valid')
+    return changeFailed(
+      core,
+      namedUserOf(peek),
+      fail('invalid_token', `email_change_${peek.status}`),
+      input.meta,
+    );
+
+  if (live?.userId !== peek.userId) {
     await core.emit(
       { type: 'email.change_failed', userId: peek.userId, reason: 'session_required' },
       input.meta,
@@ -278,13 +286,13 @@ async function finishChange<U extends AuthUser, A>(
   settings: FlowSettings,
   support: ReturnType<typeof requireSupport>,
   redemption: TokenRedemption,
-  live: StoredSession<A> | null,
+  live: StoredSession<A>,
   meta: RequestMeta,
 ): Promise<AuthResult<ChangedEmail<A>>> {
   if (redemption.status !== 'valid')
     return changeFailed(
       core,
-      redemption.status === 'unknown' ? undefined : redemption.namedUserId,
+      namedUserOf(redemption),
       fail('invalid_token', `email_change_${redemption.status}`),
       meta,
     );
@@ -335,10 +343,8 @@ async function finishChange<U extends AuthUser, A>(
     revertExpiresAt: new Date(revert.expiresAt),
   });
 
-  // Only a live session of this user is re-issued (the code path guarantees
-  // one; a link confirmed in another account's session was refused above).
-  if (live?.userId !== user.id) return ok({ session: null });
-
+  // `live` is this user's: the code was looked up under its user, and a link
+  // for another account was refused before it was spent.
   const issued = await core.issueSession(
     { ...user, email: to, emailVerified: true },
     { via: 'email-changed', meta, inherit: live, authenticatedAt: live.authenticatedAt },
@@ -422,7 +428,7 @@ export async function revertEmailChange<U extends AuthUser, A>(
   if (link.status !== 'valid')
     return revertFailed(
       core,
-      link.status === 'unknown' ? undefined : link.namedUserId,
+      namedUserOf(link),
       fail('invalid_token', `email_revert_${link.status}`),
       meta,
     );
@@ -532,6 +538,15 @@ async function restoreAddress<U extends AuthUser, A>(
   }
 
   return fail('invalid_token', 'email_revert_stale');
+}
+
+/** The account a refused redemption names, for the audit row; an unknown token names none. */
+function namedUserOf(
+  redemption: Exclude<TokenRedemption, { status: 'valid' }>,
+): string | undefined {
+  const { namedUserId } = redemption as { readonly namedUserId?: string };
+
+  return namedUserId;
 }
 
 function writeRefusal(result: Exclude<EmailChangeResult, 'changed'>): AuthFailure {

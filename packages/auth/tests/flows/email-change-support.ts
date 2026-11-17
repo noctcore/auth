@@ -31,8 +31,7 @@ export async function changed(
   const code = await requestCode(env, session, newEmail);
   const confirmed = await env.auth.confirmEmailChangeCode({ session, code, meta: meta() });
 
-  if (!confirmed.ok || !confirmed.value.session)
-    throw new Error(`confirm failed: ${confirmed.ok ? 'no session' : confirmed.reason}`);
+  if (!confirmed.ok) throw new Error(`confirm failed: ${confirmed.reason}`);
 
   return {
     session: confirmed.value.session.session,
