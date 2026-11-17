@@ -55,7 +55,7 @@ Turning the factor on from the settings page needs a fresh password proof (`sess
 
 <Code code={settingsTs} lang="ts" title="src/routes/settings.ts" />
 
-`requireStepUp` is the guard for your own sensitive actions. Turning the factor off, new recovery codes and a password change without a code already use it. Pass `revokeOtherSessions: true` to `confirmEnrollment` to sign out every other session when the factor goes on; set the cookie of the session it returns.
+`requireStepUp` is the guard for your own sensitive actions. Turning the factor off and new recovery codes already use it, and a password change without a code accepts the step-up held by the session. Pass `revokeOtherSessions: true` to `confirmEnrollment` to sign out every other session when the factor goes on; set the cookie of the session it returns.
 
 Other flows: `status(session)` (on, pending, required, recovery codes left), `regenerateRecoveryCodes`, `disable`, and `revokeTrustedDevices`. Password changes and resets of a user with a factor take the code in `secondFactor` (six digits are read as a TOTP code, anything else as a recovery code); a password change can skip it when the session holds a step-up.
 
