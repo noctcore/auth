@@ -24,6 +24,7 @@
     "check:package": "bun scripts/check-package-shape.ts",
     "check:api": "bun scripts/api-snapshot.ts --check",
     "check:deps": "bun scripts/check-runtime-deps.ts",
+    "check:workflows": "bun scripts/check-workflows.ts",
     "api:update": "bun scripts/api-snapshot.ts",
     "changeset": "changeset",
     "version-packages": "changeset version && bun install --lockfile-only",
