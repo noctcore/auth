@@ -66,6 +66,7 @@ PrismaUserDelegate [interface]
     updateMany(args: any): PromiseLike<{ count: number; }>
 PrismaUserStore [class]<U extends AuthUser = AuthUser>
     (new) <U extends AuthUser = AuthUser>(options: PrismaUserStoreOptions<U>): PrismaUserStore<U>
+    changeEmail(id: string, change: { readonly from: NormalizedEmail; readonly to: NormalizedEmail; readonly clearPassword?: boolean; }): Promise<EmailChangeResult>
     create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<U | null>
     findById(id: string): Promise<U | null>
     findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
