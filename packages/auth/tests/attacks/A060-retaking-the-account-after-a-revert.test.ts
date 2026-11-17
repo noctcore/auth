@@ -9,11 +9,20 @@
 //   lives; a revert voids reset, verification and change tokens, revokes
 //   every session, and blocks the lost address for the account for 30 days by
 //   default), plugins/two-factor/hooks.ts (the revocation also deletes trusted
-//   devices, and the revert removes a factor enrolled since the change).
+//   devices). A second factor survives a revert, the intruder's too: the
+//   owner who cannot pass it goes to support (A063 for why it must stay).
 // Learn: Email change (/auth/learn/email-change/)
 import { describe, expect, it } from 'vitest';
 
-import { meta, PASSWORD, queued, requestAndDrain, setup, tokenOf } from './support';
+import {
+  meta,
+  PASSWORD,
+  queued,
+  queuedTwoFactor,
+  requestAndDrain,
+  setup,
+  tokenOf,
+} from './support';
 import { sha256Hex } from '../../src/crypto/hash';
 import { changed } from '../flows/email-change-support';
 import { twoFactorApp } from '../two-factor/setup';
@@ -137,81 +146,30 @@ describe('A060: taking the account back after the owner reverted the change', ()
     expect(await t.store.findTrustedDevice(userId, sha256Hex(device))).toBeNull();
   });
 
-  it('a revert removes a factor the intruder enrolled since the change, with its recovery codes', async () => {
-    const t = twoFactorApp();
+  it('a factor the intruder enrolled survives the revert, so the owner needs support to remove it', async () => {
+    const t = queuedTwoFactor();
     const { session } = await t.signedIn();
     const taken = await changed(t, session, 'mallory@example.com');
-
-    // Same millisecond as the change: enrolled at or after it counts.
     const started = await t.auth.twoFactor.enroll({ session: taken.session, meta: meta() });
 
     if (!started.ok) throw new Error(started.reason);
 
-    const confirmed = await t.auth.twoFactor.confirmEnrollment({
+    await t.auth.twoFactor.confirmEnrollment({
       session: taken.session,
       code: t.codeFor(started.value.secret),
       meta: meta(),
     });
 
-    expect(confirmed.ok).toBe(true);
     expect((await t.auth.revertEmailChange({ token: taken.revert, meta: meta() })).ok).toBe(true);
-    expect(await t.store.findFactor(session.userId)).toBeNull();
-    expect(await t.store.countRecoveryCodes(session.userId)).toBe(0);
+    expect(await t.store.findFactor(session.userId)).toMatchObject({ confirmed: true });
+    expect(t.audit.events.some((e) => e.type === 'two_factor.disabled')).toBe(false);
 
-    expect(t.audit.events).toContainEqual(
-      expect.objectContaining({
-        type: 'two_factor.disabled',
-        userId: session.userId,
-        data: { reason: 'email_reverted' },
-      }),
-    );
-  });
+    const reset = await t.resetLinkFor(OWNER);
 
-  it('a revert removes a factor the intruder session enrolled before it asked for the change', async () => {
-    const t = twoFactorApp();
-    const { session } = await t.signedIn();
+    expect(reset).not.toBe('');
 
-    t.clock.advance(30_000);
-
-    const started = await t.auth.twoFactor.enroll({ session, meta: meta() });
-
-    if (!started.ok) throw new Error(started.reason);
-
-    await t.auth.twoFactor.confirmEnrollment({
-      session,
-      code: t.codeFor(started.value.secret),
-      meta: meta(),
-    });
-
-    t.clock.advance(30_000);
-
-    const taken = await changed(t, session, 'mallory@example.com');
-
-    expect((await t.auth.revertEmailChange({ token: taken.revert, meta: meta() })).ok).toBe(true);
-    expect(await t.store.findFactor(session.userId)).toBeNull();
-  });
-
-  it("a revert keeps the owner's factor from before the session that asked, and a pending one that session started is dropped silently", async () => {
-    const t = twoFactorApp();
-    const { secret, userId } = await t.enrolled();
-
-    t.clock.advance(60_000);
-
-    const later = await t.passed(secret);
-    const taken = await changed(t, later.session, 'mallory@example.com');
-
-    expect((await t.auth.revertEmailChange({ token: taken.revert, meta: meta() })).ok).toBe(true);
-    expect(await t.store.findFactor(userId)).toMatchObject({ confirmed: true });
-    expect(await t.store.countRecoveryCodes(userId)).toBeGreaterThan(0);
-
-    const u = twoFactorApp();
-    const fresh = await u.signedIn();
-    const second = await changed(u, fresh.session, 'mallory@example.com');
-
-    await u.auth.twoFactor.enroll({ session: second.session, meta: meta() });
-
-    expect((await u.auth.revertEmailChange({ token: second.revert, meta: meta() })).ok).toBe(true);
-    expect(await u.store.findFactor(fresh.session.userId)).toBeNull();
-    expect(u.audit.events.some((e) => e.type === 'two_factor.disabled')).toBe(false);
+    expect(
+      await t.auth.resetPassword({ token: reset, password: 'the owner again!', meta: meta() }),
+    ).toMatchObject({ ok: false, code: 'second_factor_required' });
   });
 });

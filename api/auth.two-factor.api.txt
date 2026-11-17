@@ -116,7 +116,6 @@ AuthHooks [interface]<U extends AuthUser, A>
     beforePasswordResetRequest: (context: { user: U; }) => MaybePromise<HookResult>
     beforeSessionCreate: (context: { user: U; via: IssueVia; attributes: A; meta: RequestMeta; }) => MaybePromise<HookResult>
     loginChallenge: (context: { user: U; rememberMe: boolean; epoch: number; meta: RequestMeta; }) => MaybePromise<{ challenge: string; methods: readonly string[]; } | null | undefined>
-    onEmailReverted: (context: { userId: string; since: number; meta: RequestMeta; }) => MaybePromise<void>
     onSessionValidate: (context: { session: StoredSession<A>; meta: RequestMeta | undefined; }) => MaybePromise<HookResult>
     onSessionsRevoked: (context: { userId: string; sessionIds: readonly string[]; reason: RevocationReason; }) => MaybePromise<void>
     sessionAttributes: (context: { user: U; via: IssueVia; inherited: A | undefined; }) => MaybePromise<Partial<A>>

@@ -120,22 +120,6 @@ export interface AuthHooks<U extends AuthUser, A> {
    * (a welcome mail, a CRM call) to your queue instead of awaiting it here.
    */
   afterRegister: (context: { user: U; meta: RequestMeta }) => MaybePromise<void>;
-  /**
-   * After an email change was reverted (or its revert was refused because the
-   * old address has an account again, with the account locked out anyway),
-   * once the password is removed and every session revoked. `since` is the
-   * earliest moment the session that asked for the change could act (it was
-   * created or last proved a credential): a second-factor plugin removes a
-   * factor enrolled since then. Not called when the revert link's record of
-   * it is unreadable; the account is locked out for review instead. Awaited,
-   * and an error fails the revert with the link still unspent, so the owner
-   * can click it again.
-   */
-  onEmailReverted: (context: {
-    userId: string;
-    since: number;
-    meta: RequestMeta;
-  }) => MaybePromise<void>;
   /** Sessions ended: close their sockets, drop caches. Errors are logged, never thrown into the flow. */
   onSessionsRevoked: (context: {
     userId: string;
@@ -165,7 +149,6 @@ const HOOK_NAMES: readonly HookName[] = [
   'beforePasswordChange',
   'beforeEmailChange',
   'afterRegister',
-  'onEmailReverted',
   'onSessionsRevoked',
 ];
 

@@ -383,7 +383,6 @@ describe('confirmEmailChangeCode', () => {
     await t.auth.context.tokens.issueLink('email-revert', session.userId, 60_000, {
       email: 'old@example.com',
       to: 'ada@example.com',
-      since: '0',
     });
 
     expect(await t.auth.confirmEmailChangeCode({ session, code, meta: meta() })).toEqual({
@@ -666,7 +665,7 @@ describe('revertEmailChange', () => {
 
     expect(t.audit.events.find((e) => e.type === 'email.change_reverted')).toMatchObject({
       userId: session.userId,
-      data: { review: true, passwordCleared: true, lockedOut: false },
+      data: { review: true, passwordCleared: true },
     });
 
     expect(t.mailer.last('email-change-reverted')).toMatchObject({ to: 'ada@example.com' });
@@ -786,122 +785,16 @@ describe('revertEmailChange', () => {
     expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
   });
 
-  it('leaves the link unspent when an onEmailReverted hook fails, so a second click finishes', async () => {
-    let fail = true;
-
-    const t = setup({
-      hooks: {
-        onEmailReverted: () => {
-          if (fail) throw new Error('hook down');
-        },
-      },
-    });
-
+  it('releases the hold on the restored address', async () => {
+    const t = setup();
     const { session } = await t.signedInUser();
     const after = await changed(t, session, NEW);
-
-    await expect(t.auth.revertEmailChange({ token: after.revert, meta: meta() })).rejects.toThrow(
-      'hook down',
-    );
-
-    fail = false;
-
-    expect((await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).ok).toBe(true);
-    expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
-  });
-
-  it('fails closed on an unreadable record of when the change began: no factor judged, the account left locked for support', async () => {
-    const seen: number[] = [];
-    const t = setup({ hooks: { onEmailReverted: ({ since }) => void seen.push(since) } });
-    const { session } = await t.signedInUser();
-
-    await t.stores.users.setEmail(session.userId, NEW as never);
-
-    const forged = await t.auth.context.tokens.issueLink('email-revert', session.userId, 60_000, {
-      email: 'ada@example.com',
-      to: NEW,
-    });
-
-    expect((await t.auth.revertEmailChange({ token: forged.token, meta: meta() })).ok).toBe(true);
-    expect(seen).toEqual([]);
-    expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
-
-    expect(t.audit.events.at(-1)).toMatchObject({
-      type: 'email.change_reverted',
-      data: { review: true, passwordCleared: true, lockedOut: true },
-    });
 
     expect(
-      await t.auth.context.tokens.findLive('email-revert-lockout', session.userId),
+      await t.auth.context.tokens.findKeyed('email-reserved', holdKey('ada@example.com')),
     ).not.toBeNull();
-  });
 
-  it('takes the older of creation and credential proof, from the asking and the confirming session', async () => {
-    const seen: number[] = [];
-
-    const t = setup({
-      emailChange: { kind: 'link' },
-      hooks: { onEmailReverted: ({ since }) => void seen.push(since) },
-    });
-
-    const first = await t.signedInUser();
-
-    t.clock.advance(60_000);
-
-    // A re-issue: created now, carrying the older credential proof.
-    const reissued = await t.auth.sessions.revokeOthers({ session: first.session, meta: meta() });
-
-    if (!reissued.ok) throw new Error(reissued.reason);
-
-    const asking = reissued.value.session;
-
-    expect(asking.createdAt).toBeGreaterThan(asking.authenticatedAt);
-
-    await t.auth.requestEmailChange({ session: asking, newEmail: NEW, meta: meta() });
-
-    const token = tokenOf(t.mailer.last('email-change-confirm')?.url);
-
-    t.clock.advance(60_000);
-
-    // Confirmed from a later, separate sign-in of the same account.
-    const later = await t.auth.login({
-      email: 'ada@example.com',
-      password: PASSWORD,
-      meta: meta(),
-    });
-
-    if (!later.ok || later.value.kind !== 'session') throw new Error('login failed');
-
-    const done = await t.auth.confirmEmailChangeLink({
-      token,
-      session: later.value.session.session,
-      meta: meta(),
-    });
-
-    if (!done.ok) throw new Error(done.reason);
-
-    await t.auth.revertEmailChange({
-      token: tokenOf(t.mailer.last('email-changed')?.revertUrl),
-      meta: meta(),
-    });
-
-    expect(seen).toEqual([first.session.authenticatedAt]);
-  });
-
-  it('passes the hooks when the requesting session could first act, and releases the hold on the restored address', async () => {
-    const seen: number[] = [];
-    const t = setup({ hooks: { onEmailReverted: ({ since }) => void seen.push(since) } });
-    const { session } = await t.signedInUser();
-    const at = session.createdAt;
-
-    t.clock.advance(60_000);
-
-    const after = await changed(t, session, NEW);
-
-    t.clock.advance(5_000);
     await t.auth.revertEmailChange({ token: after.revert, meta: meta() });
-
-    expect(seen).toEqual([at]);
 
     expect(
       await t.auth.context.tokens.findKeyed('email-reserved', holdKey('ada@example.com')),

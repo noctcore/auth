@@ -7,6 +7,7 @@ import type { AuthMailEvent, PasswordResetJob } from '../../src';
 import type { PasswordHasher } from '../../src/password/hasher';
 import { plainHasher } from '../../src/testing';
 import { meta, PASSWORD, settled, setup } from '../flows/setup';
+import { twoFactorApp } from '../two-factor/setup';
 
 export { meta, NEW_PASSWORD, PASSWORD, SECRET, settled, setup } from '../flows/setup';
 
@@ -41,6 +42,23 @@ export function queued(overrides: Parameters<typeof setup>[0] = {}) {
 }
 
 export type Queued = ReturnType<typeof queued>;
+
+/** A two-factor app whose password reset jobs wait until `resetLinkFor` drains them. */
+export function queuedTwoFactor() {
+  const jobs: PasswordResetJob[] = [];
+  const t = twoFactorApp({}, { passwordReset: { enqueue: async (job) => void jobs.push(job) } });
+
+  /** Requests a reset for `email` from `ip`, drains the queue and returns the link's token. */
+  async function resetLinkFor(email: string, ip?: string) {
+    await t.auth.requestPasswordReset({ email, meta: meta(ip) });
+
+    while (jobs.length) await t.auth.jobs.processPasswordReset(jobs.shift() as PasswordResetJob);
+
+    return tokenOf(t.mailer.last('password-reset')?.url);
+  }
+
+  return { ...t, resetLinkFor };
+}
 
 export async function requestAndDrain(t: Queued, email = EMAIL) {
   await t.auth.requestPasswordReset({ email, meta: meta() });
