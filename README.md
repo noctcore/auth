@@ -167,7 +167,9 @@ the layout, the checks, the conventions and changesets. Everyone taking part fol
 
 This is authentication code, so most bugs in it are security bugs. Please do not open a public
 issue for a vulnerability; [SECURITY.md](SECURITY.md) explains how to report it privately and what
-counts.
+counts. The [threat model](docs/THREAT_MODEL.md) says what the library defends against and what it
+leaves to the app, and [How this library is tested](https://noctcore.github.io/auth/security/testing/)
+lists every gate a change has to pass.
 
 ## License
 
