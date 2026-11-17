@@ -34,6 +34,7 @@ MEMBERSHIP_REVOCATION [const]: "membership-changed"
 MembershipOptions [interface]
     readonly adminRoles: readonly string[]
     readonly canManage?: (context: ManageContext) => boolean | Promise<boolean>
+    readonly revokeSessionsOnChange?: boolean
     readonly store: MembershipStore
 MembershipStore [interface]
     addMember(member: StoredMember): Promise<boolean>
@@ -219,7 +220,7 @@ RequestMeta [interface]
     readonly userAgent?: string | undefined
 RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'evicted' | (string & {})
 SameSite [type] = 'lax' | 'strict' | 'none'
-SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
+SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
 SessionCookieConfig [interface]
     readonly name?: string
     readonly sameSite?: SameSite | ((origin: string | undefined) => SameSite)

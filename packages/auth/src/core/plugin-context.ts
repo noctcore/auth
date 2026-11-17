@@ -59,6 +59,7 @@ export type SessionAccess<A> = Pick<
   | 'rememberMeTtlMs'
   | 'readEpoch'
   | 'validate'
+  | 'findActive'
   | 'listActive'
   | 'revoke'
   | 'revokeToken'

@@ -5,19 +5,38 @@
 // signed in to a scope it no longer belongs to. Or a login racing the change
 // reads the old role and mints a fresh session with it just after the change.
 //
-// Stopped by: plugins/membership/guards.ts (a role change or a removal is followed by
-//   `revokeAllSessions`, which bumps the epoch; the write comes first, so a login that
-//   starts later reads the new role), session/session-manager.ts (the epoch fence:
-//   a login that read the old epoch is refused at mint, and a session stamped with it
-//   fails validation).
+// Stopped by: plugins/membership/guards.ts (the guards read the actor's role from the
+//   store on every call, never from the session, so a demoted admin's session acts as
+//   the new role at once; with `revokeSessionsOnChange`, for apps that copy roles into
+//   sessions, a real role change or a removal also bumps the epoch through
+//   `revokeAllSessions` before and after the write), session/session-manager.ts (the
+//   epoch fence: a login that read the old epoch is refused at mint, and a session
+//   stamped with it fails validation).
 // Learn: Revocation races and the epoch fence (/auth/learn/revocation-races/); core A006
 import { describe, expect, it } from 'vitest';
 
 import { acting, membershipApp, meta, PASSWORD } from '../membership/setup';
 
 describe('A063: keeping a role, or a scope, after it was taken away', () => {
-  it('ends the session of a demoted admin, on every device', async () => {
+  it("refuses a demoted admin's next action, though the session stays signed in", async () => {
     const t = membershipApp();
+    const owner = await t.member('owner');
+    const demoted = await t.member('admin');
+    const other = await t.member('member');
+
+    await t.auth.membership.changeRole({ ...acting(owner, demoted), role: 'member' });
+
+    expect(await t.sessionOf(demoted.token)).not.toBeNull();
+
+    expect(await t.auth.membership.remove(acting(demoted, other))).toMatchObject({
+      ok: false,
+      code: 'forbidden',
+      reason: 'not_allowed',
+    });
+  });
+
+  it('with revokeSessionsOnChange, ends the session of a demoted admin, on every device', async () => {
+    const t = membershipApp({ revokeSessionsOnChange: true });
     const admin = await t.member('admin');
     const target = await t.member('admin');
     const second = await t.auth.login({ email: target.email, password: PASSWORD, meta: meta() });
@@ -30,8 +49,8 @@ describe('A063: keeping a role, or a scope, after it was taken away', () => {
     expect(await t.sessionOf(second.value.session.token)).toBeNull();
   });
 
-  it('ends the session of a removed member', async () => {
-    const t = membershipApp();
+  it('with revokeSessionsOnChange, ends the session of a removed member', async () => {
+    const t = membershipApp({ revokeSessionsOnChange: true });
     const admin = await t.member('admin');
     const target = await t.member('member');
 
@@ -39,11 +58,11 @@ describe('A063: keeping a role, or a scope, after it was taken away', () => {
     expect(await t.sessionOf(target.token)).toBeNull();
   });
 
-  it('refuses a login that read the old role while the change landed', async () => {
+  it('with revokeSessionsOnChange, refuses a login that read the old role while the change landed', async () => {
     let race: (() => Promise<unknown>) | null = null;
 
     const t = membershipApp(
-      {},
+      { revokeSessionsOnChange: true },
       {
         // The app's attribute hook reads the role; the demotion lands right after.
         hooks: {

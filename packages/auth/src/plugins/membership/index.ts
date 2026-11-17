@@ -2,8 +2,10 @@
  * @noctcore/auth/membership: the guards every multi-user app needs around
  * roles and usually gets wrong. Nobody acts on themselves, the last admin of a
  * scope can be neither demoted nor removed (decided atomically by the store, so
- * two admins demoting each other at once cannot leave none), and a role change
- * or a removal revokes the member's sessions through the epoch fence.
+ * two admins demoting each other at once cannot leave none), and the acting
+ * user's role is read from the store on every call. Apps that copy roles into
+ * sessions turn on `revokeSessionsOnChange`, so a real role change or a removal
+ * revokes the member's sessions through the epoch fence.
  *
  * It is a plugin: flows under `auth.membership`, never HTTP endpoints. It does
  * not scope data: filtering every query by tenant stays in the app.
@@ -61,9 +63,9 @@ export function membership<A = Record<string, never>>(options: MembershipOptions
       return {
         /** Adds a user to a scope with a role. */
         add: (input: AddMemberInput<A>) => addMember(r, input),
-        /** Gives a member another role and revokes the member's sessions. */
+        /** Gives a member another role; revokes the member's sessions only with `revokeSessionsOnChange`. */
         changeRole: (input: ChangeRoleInput<A>) => changeRole(r, input),
-        /** Removes a member from a scope and revokes the member's sessions. */
+        /** Removes a member from a scope; revokes the member's sessions only with `revokeSessionsOnChange`. */
         remove: (input: RemoveMemberInput<A>) => removeMember(r, input),
       };
     },
