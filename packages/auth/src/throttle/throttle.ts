@@ -44,6 +44,7 @@
 import { counterKeys as keys } from './counter-keys';
 import {
   windowRule,
+  type FactorGate,
   type Hit,
   type LockoutOptions,
   type LoginGate,
@@ -126,6 +127,32 @@ export class Throttle {
     }
 
     return { allowed: true };
+  }
+
+  /**
+   * Call BEFORE checking a second-factor code: checks the factor's lock and
+   * reserves one attempt in `account`'s budget, counted per account across
+   * every IP. Spending the budget locks the factor with the same capped
+   * backoff as the password lockout (`baseLock`, `maxLock`, `quietPeriod`).
+   * Its keys live under their own prefix, so a factor lock never locks the
+   * password and back, whatever `account` is.
+   */
+  async gateFactor(account: string, rule: RateLimitRule): Promise<FactorGate> {
+    const scope = keys.factor(account);
+    const lock = await this.counters.get(keys.lock(scope));
+
+    if (lock !== null) return { allowed: false };
+
+    const all = await this.counters.increment(keys.account(scope), toMilliseconds(rule.window));
+
+    if (all.count > rule.limit) return { allowed: false, newLock: await this.lock(scope) };
+
+    return { allowed: true };
+  }
+
+  /** A correct second-factor code: the account's attempt budget starts over. */
+  async factorSucceeded(account: string): Promise<void> {
+    await this.counters.reset(keys.account(keys.factor(account)));
   }
 
   /** A failed proof outside login (a wrong current password) still spends the account-wide budget. */
