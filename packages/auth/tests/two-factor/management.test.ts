@@ -100,16 +100,14 @@ describe('step-up', () => {
   });
 
   it('rate limits step-up per IP', async () => {
-    const t = twoFactorApp({ perIp: { limit: 0, window: '1m' } });
+    const t = twoFactorApp({ perIp: { limit: 1, window: '1m' } });
     const { session } = await t.signedIn();
 
-    const step = await t.auth.twoFactor.stepUp({
-      session,
-      proof: { kind: 'totp', code: '000000' },
-      meta: meta(),
-    });
+    const step = () =>
+      t.auth.twoFactor.stepUp({ session, proof: { kind: 'totp', code: '000000' }, meta: meta() });
 
-    expect(!step.ok && step.code).toBe('rate_limited');
+    expect(await step()).toMatchObject({ ok: false, code: 'invalid_second_factor' });
+    expect(await step()).toMatchObject({ ok: false, code: 'rate_limited' });
   });
 });
 
@@ -456,6 +454,13 @@ describe('configuration', () => {
     expect(make({ trustedDevices: { maxPerUser: 0 } })).toThrow(/maxPerUser/u);
     expect(make({ trustedDevices: { maxPerUser: 1.5 } })).toThrow(/maxPerUser/u);
     expect(make({ trustedDevices: { maxPerUser: 1 } })).not.toThrow();
+
+    for (const name of ['attempts', 'perIp']) {
+      expect(make({ [name]: { limit: 0, window: '1m' } })).toThrow(`${name}.limit`);
+      expect(make({ [name]: { limit: 2.5, window: '1m' } })).toThrow(`${name}.limit`);
+      expect(make({ [name]: { limit: 1, window: 0 } })).toThrow(`${name}.window`);
+      expect(make({ [name]: { limit: 1, window: '1m' } })).not.toThrow();
+    }
   });
 
   it('belongs to one createAuth', () => {
