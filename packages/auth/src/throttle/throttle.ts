@@ -123,7 +123,15 @@ export class Throttle {
     const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
 
     if (all.count > this.perAccount.limit) {
-      return { allowed: false, reason: 'locked', newLock: await this.lock(account) };
+      // Only the attempt that crossed the limit locks; a parallel one that also
+      // got past the lock check above is refused here without a second lock.
+      if (!locksAt(all.count, this.perAccount.limit)) return { allowed: false, reason: 'locked' };
+
+      return {
+        allowed: false,
+        reason: 'locked',
+        newLock: await this.lock(account, all.count),
+      };
     }
 
     return { allowed: true };
@@ -145,7 +153,11 @@ export class Throttle {
 
     const all = await this.counters.increment(keys.account(scope), toMilliseconds(rule.window));
 
-    if (all.count > rule.limit) return { allowed: false, newLock: await this.lock(scope) };
+    if (all.count > rule.limit) {
+      if (!locksAt(all.count, rule.limit)) return { allowed: false };
+
+      return { allowed: false, newLock: await this.lock(scope, all.count) };
+    }
 
     return { allowed: true };
   }
@@ -159,9 +171,9 @@ export class Throttle {
   async recordFailure(account: string): Promise<{ newLock?: { until: number } }> {
     const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
 
-    if (all.count <= this.perAccount.limit) return {};
+    if (!locksAt(all.count, this.perAccount.limit)) return {};
 
-    return { newLock: await this.lock(account) };
+    return { newLock: await this.lock(account, all.count) };
   }
 
   /**
@@ -172,7 +184,14 @@ export class Throttle {
     return this.recordFailure(account);
   }
 
-  private async lock(account: string): Promise<{ until: number }> {
+  /**
+   * Locks `account`. The attempt counter is NOT reset: it is held at `count`
+   * (already over the limit) for exactly as long as the lock lasts, so a
+   * request that read "no lock" a moment before still counts above the limit
+   * and is refused. Resetting it here let such requests through, one fresh
+   * budget at a time, under a parallel burst.
+   */
+  private async lock(account: string, count: number): Promise<{ until: number }> {
     // The tier's TTL is renewed on every lock, so it only decays after a full
     // quiet period without one.
     const previous = await this.counters.get(keys.tier(account));
@@ -184,7 +203,11 @@ export class Throttle {
     const duration = Math.min(backoffMs, this.maxLockMs);
     const lock = await this.counters.increment(keys.lock(account), duration);
 
-    await this.counters.reset(keys.account(account));
+    await this.counters.set(
+      keys.account(account),
+      count,
+      Math.max(1, lock.resetAt - this.clock.now()),
+    );
 
     return { until: lock.resetAt };
   }
@@ -207,6 +230,17 @@ export class Throttle {
     await this.counters.reset(keys.tier(account));
     await this.counters.reset(keys.account(account));
   }
+}
+
+/**
+ * Whether the attempt that brought the counter to `count` locks. The counter is
+ * never reset by a lock (see `lock`), so the first lock comes at `limit + 1`
+ * and, while it lasts, every further `limit + 1` failures (a wrong password
+ * let through by a device token, say) renew it. Exactly one attempt sees each
+ * of those counts, so a parallel burst locks once per crossing, never twice.
+ */
+function locksAt(count: number, limit: number): boolean {
+  return count > limit && (count - limit - 1) % (limit + 1) === 0;
 }
 
 /**
