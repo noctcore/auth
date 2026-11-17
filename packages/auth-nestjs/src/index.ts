@@ -11,7 +11,8 @@
  *   to start in production without it.
  * - `describeRoutes` lists every route with its access rule, for a test.
  *
- * Express is the supported platform.
+ * Express is the supported platform, for HTTP controllers. GraphQL, WebSocket
+ * and microservice handlers are refused unless `@Public()`.
  */
 export { AuthModule, type AuthModuleAsyncOptions } from './auth.module';
 export { CsrfMiddleware } from './csrf.middleware';

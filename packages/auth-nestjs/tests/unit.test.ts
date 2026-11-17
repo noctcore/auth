@@ -12,7 +12,13 @@ import { resolveOptions, type AuthModuleOptions } from '../src/options';
 import { appendCookie, header, rawRequest, rawResponse, type RawResponse } from '../src/request';
 import { SessionCookies } from '../src/session-cookies';
 import { SessionGuard } from '../src/session.guard';
-import { configureTrustProxy, trustedHopsFromEnv } from '../src';
+import {
+  configureTrustProxy,
+  Public,
+  RequireFreshAuth,
+  RequireRole,
+  trustedHopsFromEnv,
+} from '../src';
 import { boot, CSRF_SECRET, makeAuth, ORIGIN, type Booted } from './support';
 
 function options(overrides: Partial<AuthModuleOptions> = {}): AuthModuleOptions {
@@ -275,12 +281,160 @@ describe('CsrfMiddleware', () => {
   });
 });
 
-describe('SessionGuard outside HTTP', () => {
-  it('leaves other transports to the app', async () => {
-    const guard = new SessionGuard(new Reflector(), resolveOptions(options()));
-    const context = { getType: () => 'rpc' } as unknown as ExecutionContext;
+/** A handler and class carrying the given decorators, and a context for them. */
+function contextFor(
+  type: string,
+  decorate: { handler?: MethodDecorator[]; controller?: ClassDecorator[] } = {},
+  request: object = { method: 'GET', headers: {} },
+): ExecutionContext {
+  class Target {
+    handle() {
+      return undefined;
+    }
+  }
 
-    await expect(guard.canActivate(context)).resolves.toBe(true);
+  for (const decorator of decorate.controller ?? []) decorator(Target);
+
+  const descriptor = Object.getOwnPropertyDescriptor(
+    Target.prototype,
+    'handle',
+  ) as PropertyDescriptor;
+
+  for (const decorator of decorate.handler ?? []) decorator(Target.prototype, 'handle', descriptor);
+
+  return {
+    getType: () => type,
+    getHandler: () => Target.prototype.handle,
+    getClass: () => Target,
+    switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({}) }),
+  } as unknown as ExecutionContext;
+}
+
+describe('SessionGuard outside HTTP', () => {
+  const guard = () => new SessionGuard(new Reflector(), resolveOptions(options()));
+
+  it('refuses a GraphQL, WebSocket or microservice handler that is not public', async () => {
+    for (const type of ['rpc', 'ws', 'graphql']) {
+      await expect(guard().canActivate(contextFor(type))).resolves.toBe(false);
+    }
+  });
+
+  it('lets a public one through, unless it also asks for a role or fresh auth', async () => {
+    await expect(guard().canActivate(contextFor('rpc', { handler: [Public()] }))).resolves.toBe(
+      true,
+    );
+
+    await expect(
+      guard().canActivate(
+        contextFor('graphql', { controller: [Public()], handler: [RequireRole('admin')] }),
+      ),
+    ).resolves.toBe(false);
+
+    await expect(
+      guard().canActivate(contextFor('ws', { handler: [Public(), RequireFreshAuth()] })),
+    ).resolves.toBe(false);
+  });
+});
+
+describe('SessionGuard on HTTP, without the module around it', () => {
+  it('refuses an unsafe request the CSRF middleware never saw, even on a public route', async () => {
+    const guard = new SessionGuard(new Reflector(), resolveOptions(options()));
+    const context = contextFor('http', { handler: [Public()] }, { method: 'POST', headers: {} });
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      status: 403,
+      response: { error: { code: 'forbidden' } },
+    });
+  });
+
+  it('never lets @Public() skip a role check it carries, and has no roles to give without the option', async () => {
+    const guard = new SessionGuard(new Reflector(), resolveOptions(options()));
+
+    const context = contextFor('http', {
+      controller: [Public()],
+      handler: [RequireRole('admin')],
+    });
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('answers 403, not 500, when a role is required and there is no roles function', async () => {
+    const { auth } = makeAuth();
+
+    await auth.register({
+      email: 'c@example.com',
+      password: 'correct horse battery',
+      meta: { ip: '192.0.2.1' },
+    });
+
+    const login = await auth.login({
+      email: 'c@example.com',
+      password: 'correct horse battery',
+      meta: { ip: '192.0.2.1' },
+    });
+
+    const token = login.ok && login.value.kind === 'session' ? login.value.session.token : '';
+
+    expect(token).not.toBe('');
+
+    const guard = new SessionGuard(new Reflector(), resolveOptions(options({ auth })));
+
+    const context = contextFor(
+      'http',
+      { handler: [RequireRole('admin')] },
+      {
+        method: 'GET',
+        headers: { cookie: `${auth.cookieName}=${token}` },
+      },
+    );
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      status: 403,
+      response: { error: { code: 'forbidden' } },
+    });
+  });
+
+  it('answers a fixed 500 and logs only the error name when the store fails', async () => {
+    const { auth } = makeAuth();
+    const error = vi.fn();
+
+    const failing = {
+      ...auth,
+      validateRequest: () => Promise.reject(new RangeError('s:secret-session-id gone')),
+      context: { ...auth.context, logger: { error, warn: vi.fn() } },
+    };
+
+    const guard = new SessionGuard(new Reflector(), resolveOptions(options({ auth: failing })));
+    // No method at all reads as a GET.
+    const context = contextFor('http', {}, { headers: { cookie: `${auth.cookieName}=t` } });
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      status: 500,
+      response: { error: { code: 'internal' } },
+    });
+
+    expect(error).toHaveBeenCalledWith(expect.any(String), { error: 'RangeError' });
+    expect(JSON.stringify(error.mock.calls)).not.toContain('secret-session-id');
+  });
+
+  it('logs the type of a thrown value that is not an Error', async () => {
+    const { auth } = makeAuth();
+    const error = vi.fn();
+
+    const failing = {
+      ...auth,
+      readSessionToken: () => {
+        const notAnError: unknown = 42;
+
+        throw notAnError;
+      },
+      context: { ...auth.context, logger: { error, warn: vi.fn() } },
+    };
+
+    const guard = new SessionGuard(new Reflector(), resolveOptions(options({ auth: failing })));
+
+    await expect(guard.canActivate(contextFor('http'))).rejects.toMatchObject({ status: 500 });
+    expect(error).toHaveBeenCalledWith(expect.any(String), { error: 'number' });
   });
 });
 

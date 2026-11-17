@@ -23,6 +23,7 @@ import { Inject, Injectable, type NestMiddleware } from '@nestjs/common';
 import { parseCookieHeader, verifyFetchSite, verifyRequestOrigin } from '@noctcore/auth';
 import {
   binding,
+  isSafeMethod,
   csrfCookie,
   csrfTokenValid,
   newPreSession,
@@ -34,6 +35,7 @@ import {
   appendCookie,
   blankSessionCookie,
   header,
+  markCsrfPassed,
   rawRequest,
   rawResponse,
   sessionState,
@@ -44,15 +46,6 @@ import { AUTH_OPTIONS } from './tokens';
 
 const FORBIDDEN = JSON.stringify({ error: { code: 'forbidden' } });
 const INTERNAL = JSON.stringify({ error: { code: 'internal' } });
-
-/**
- * The core's own notion of a safe method (GET, HEAD, OPTIONS, with ASCII-only
- * case folding): `verifyRequestOrigin` passes a safe method whatever the
- * Origin, and refuses an unsafe one with none.
- */
-function isSafeMethod(method: string): boolean {
-  return verifyRequestOrigin({ method, origin: undefined, allowedOrigins: [] });
-}
 
 function pathOf(req: RawRequest): string {
   const url = req.originalUrl ?? req.url ?? '/';
@@ -76,11 +69,17 @@ export class CsrfMiddleware implements NestMiddleware {
     const req = rawRequest(request);
     const res = rawResponse(response);
 
-    if (this.isExempt(pathOf(req))) return next();
+    if (this.isExempt(pathOf(req))) {
+      markCsrfPassed(req);
+
+      return next();
+    }
 
     try {
-      if (await this.check(req, res)) next();
-      else send(res, 403, FORBIDDEN);
+      if (!(await this.check(req, res))) return send(res, 403, FORBIDDEN);
+
+      markCsrfPassed(req);
+      next();
     } catch (error) {
       // Only the error's name: a store error can carry the session key.
       this.options.auth.context.logger.error('CSRF middleware could not check the request', {

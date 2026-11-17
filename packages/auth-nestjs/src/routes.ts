@@ -40,8 +40,10 @@ function joinPath(...parts: readonly unknown[]): string {
 
 /** Lists the routes of every controller in an initialised app (call after `app.init()`). */
 export function describeRoutes(app: INestApplication): RouteAccess[] {
-  const discovery = app.get(DiscoveryService);
-  const reflector = app.get(Reflector);
+  return collectRoutes(app.get(DiscoveryService), app.get(Reflector));
+}
+
+export function collectRoutes(discovery: DiscoveryService, reflector: Reflector): RouteAccess[] {
   const routes: RouteAccess[] = [];
 
   for (const wrapper of discovery.getControllers()) {
