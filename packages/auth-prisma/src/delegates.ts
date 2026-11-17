@@ -17,3 +17,33 @@ export interface PrismaAuthTokenDelegate {
   update(args: any): PromiseLike<any>;
   deleteMany(args: any): PromiseLike<{ count: number }>;
 }
+
+/** The delegates of the two-factor tables in `prisma/auth.prisma`. */
+export interface PrismaTwoFactorDelegates {
+  /** `prisma.authTwoFactor` */
+  readonly factor: {
+    findUnique(args: any): PromiseLike<any>;
+    create(args: any): PromiseLike<any>;
+    updateMany(args: any): PromiseLike<{ count: number }>;
+    deleteMany(args: any): PromiseLike<{ count: number }>;
+  };
+  /** `prisma.authRecoveryCodes` */
+  readonly recoveryCodes: {
+    findUnique(args: any): PromiseLike<any>;
+    upsert(args: any): PromiseLike<any>;
+    updateMany(args: any): PromiseLike<{ count: number }>;
+    deleteMany(args: any): PromiseLike<{ count: number }>;
+  };
+  /** `prisma.authTrustedDevice` */
+  readonly trustedDevice: {
+    findUnique(args: any): PromiseLike<any>;
+    findMany(args: any): PromiseLike<any[]>;
+    create(args: any): PromiseLike<any>;
+    deleteMany(args: any): PromiseLike<{ count: number }>;
+  };
+  /** `prisma.authStepUp` */
+  readonly stepUp: {
+    findUnique(args: any): PromiseLike<any>;
+    upsert(args: any): PromiseLike<any>;
+  };
+}

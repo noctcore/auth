@@ -1,8 +1,8 @@
 // The schema behind the docs' code samples. `bun run typecheck` generates a
 // client from it for each sample folder that talks to the database, so the
 // samples compile against real Prisma delegate types. Nothing connects to a
-// database. scripts/snippets.test.ts checks that AuthToken still matches
-// packages/auth-prisma/prisma/auth.prisma.
+// database. scripts/snippets.test.ts checks that AuthToken and the two-factor
+// models still match packages/auth-prisma/prisma/auth.prisma.
 
 generator start {
   provider = "prisma-client"
@@ -43,5 +43,42 @@ model AuthToken {
   // One live token per user and purpose, enforced by the database.
   @@unique([userId, purpose])
   @@unique([purpose, hash])
+  @@index([expiresAt])
+}
+
+// Copied from @noctcore/auth-prisma/prisma/auth.prisma, for the two-factor guide.
+model AuthTwoFactor {
+  userId    String   @id
+  secret    String
+  confirmed Boolean  @default(false)
+  // The last accepted TOTP time step; -1 before any.
+  lastStep  Int      @default(-1)
+  createdAt DateTime
+}
+
+model AuthRecoveryCodes {
+  userId  String @id
+  // The HMACs of the unused codes, a JSON array of strings.
+  hashes  Json
+  // Bumped on every write: a code is spent by an update guarded on it.
+  version Int    @default(0)
+}
+
+model AuthTrustedDevice {
+  hash      String   @id
+  userId    String
+  epoch     Int
+  createdAt DateTime
+  expiresAt DateTime
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model AuthStepUp {
+  sessionId String   @id
+  userId    String
+  expiresAt DateTime
+
   @@index([expiresAt])
 }
