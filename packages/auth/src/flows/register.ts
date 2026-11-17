@@ -96,38 +96,38 @@ export async function register<U extends AuthUser, A>(
 
     // Everything after the insert that differs from a new address runs off
     // the response path, like the new address's verification below.
-    core.background('existing address notice', async () => {
-      const existing = (await core.users.findCredentialByEmail(email)) ?? held;
+    // The lookup feeds the audit row, so it runs outside `maxPending` with
+    // it; only the mail it starts can be dropped under the cap.
+    core.background(
+      'existing address notice',
+      async () => {
+        const existing = (await core.users.findCredentialByEmail(email)) ?? held;
 
-      const audit = core.emit(
-        { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },
-        meta,
-      );
+        if (existing)
+          core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
 
-      await Promise.all([
-        audit,
-        existing &&
-          core.deliver({ type: 'account-exists', to: existing.email, userId: existing.id }),
-      ]);
-    });
+        await core.emit(
+          { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },
+          meta,
+        );
+      },
+      undefined,
+      { uncapped: true },
+    );
 
     return ok({ session: null });
   }
 
   for (const hook of core.hooks.afterRegister) await hook({ user, meta });
 
-  // The audit write and the mail run side by side: a slow or hung audit sink
-  // must not hold back the verification mail (`emit` never throws).
-  core.background(
-    'verification mail',
-    async () => {
-      await Promise.all([
-        core.emit({ type: 'register.created', userId: user.id }, meta),
-        sendVerification(core, settings, user, meta, true),
-      ]);
-    },
-    { userId: user.id },
-  );
+  // The audit row and the mail are separate tasks: a slow or hung audit sink
+  // cannot hold back the mail, and `maxPending` can drop the mail but never
+  // the audit row.
+  core.auditInBackground({ type: 'register.created', userId: user.id }, meta);
+
+  core.background('verification mail', () => sendVerification(core, settings, user, meta, true), {
+    userId: user.id,
+  });
 
   if (!settings.autoLogin) return ok({ session: null });
 

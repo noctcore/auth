@@ -164,9 +164,5 @@ function notifyLock<U extends AuthUser, A>(
 ): void {
   if (!newLock || !credential) return;
 
-  core.background(
-    'lockout notice',
-    () => sendLockNotice(core, credential, newLock.until, meta, true),
-    { userId: credential.id },
-  );
+  void sendLockNotice(core, credential, newLock.until, meta, true);
 }

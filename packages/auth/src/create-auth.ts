@@ -6,6 +6,7 @@
  */
 import { AuthCore } from './core/auth-core';
 import { BackgroundTasks } from './core/background';
+import type { Duration } from './shared/duration';
 import type { AuthConfig, AuthPlugin, PasswordResetJob } from './core/config';
 import { mergeHooks } from './core/hooks';
 import type { PluginContext } from './core/plugin-context';
@@ -233,11 +234,13 @@ export function createAuth<
         revokeAllSessions(core, input),
     },
     /**
-     * Resolves once every background task started before the call (mail
-     * hand-offs, lock notices, detached reset jobs) has settled or timed out.
-     * Never rejects. Await it on graceful shutdown.
+     * Resolves once no background task (mail, audit writes off the response
+     * path, detached reset jobs) is left running, tasks started while it waits
+     * included. Never rejects. Await it on graceful shutdown. With `timeout`
+     * it gives up after that long and logs what it left running, so a send
+     * that never settles cannot hold shutdown forever.
      */
-    flush: () => background.flush(),
+    flush: (options?: { readonly timeout?: Duration }) => background.flush(options),
     /** Entry points for your queue workers. */
     jobs: {
       processPasswordReset: (job: PasswordResetJob) => processPasswordReset(core, settings, job),

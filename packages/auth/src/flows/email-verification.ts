@@ -29,9 +29,12 @@ export async function sendVerification<U extends AuthUser, A>(
   const data = { email: user.email };
 
   // Inside a background task (`inline`) the send belongs to that task and is
-  // awaited; on the response path it is handed over and not awaited.
+  // awaited; on the response path it is handed over and not awaited. Either
+  // way the audit row is written at the hand-over, not after delivery.
   const send = (event: Parameters<typeof core.deliver>[0]) =>
     inline ? core.deliver(event) : core.mail(event);
+
+  let sent: Promise<void> | void;
 
   if (settings.verification.kind === 'code') {
     const { code, expiresAt } = await core.tokens.issueCode(
@@ -42,7 +45,7 @@ export async function sendVerification<U extends AuthUser, A>(
       data,
     );
 
-    await send({
+    sent = send({
       type: 'verify-email',
       to: user.email,
       userId: user.id,
@@ -61,7 +64,7 @@ export async function sendVerification<U extends AuthUser, A>(
       data,
     );
 
-    await send({
+    sent = send({
       type: 'verify-email',
       to: user.email,
       userId: user.id,
@@ -70,14 +73,17 @@ export async function sendVerification<U extends AuthUser, A>(
     });
   }
 
-  await core.emit(
-    {
-      type: 'email.verification_sent',
-      userId: user.id,
-      data: { kind: settings.verification.kind },
-    },
-    meta,
-  );
+  await Promise.all([
+    sent,
+    core.emit(
+      {
+        type: 'email.verification_sent',
+        userId: user.id,
+        data: { kind: settings.verification.kind },
+      },
+      meta,
+    ),
+  ]);
 }
 
 /** A signed-in user asks for a new verification mail. Already verified: nothing is sent. */
