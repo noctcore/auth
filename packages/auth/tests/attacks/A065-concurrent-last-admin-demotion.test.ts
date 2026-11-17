@@ -1,4 +1,4 @@
-// A061: leaving a scope without an admin by demoting or removing the last two at once.
+// A065: leaving a scope without an admin by demoting or removing the last two at once.
 //
 // Two admins demote each other at the same moment, or remove each other, or a
 // script fires every demotion of a scope in parallel. Each request checks
@@ -21,7 +21,7 @@ async function admins(t: ReturnType<typeof membershipApp>) {
   return members.filter((m) => m.role === 'owner' || m.role === 'admin').length;
 }
 
-describe('A061: leaving a scope without an admin by demoting or removing the last two at once', () => {
+describe('A065: leaving a scope without an admin by demoting or removing the last two at once', () => {
   it('lets one of two admins demoting each other at the same moment through, never both', async () => {
     const t = membershipApp();
     const a = await t.member('admin');
