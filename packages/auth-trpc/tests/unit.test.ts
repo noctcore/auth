@@ -243,6 +243,53 @@ describe('the cookie writers', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('let one procedure per request write, and only once', async () => {
+    const resHeaders = new Headers();
+
+    const ctx = await createAuthContext(options()).fetch({
+      req: new Request(ORIGIN, { method: 'POST' }),
+      resHeaders,
+    });
+
+    const middleware = new WritesCookiesMiddleware();
+    let writer: AuthWriter | undefined;
+
+    await middleware.use({
+      ctx,
+      type: 'mutation',
+      next: async (opts) => {
+        writer = (opts?.ctx as { auth: AuthWriter }).auth;
+
+        return Promise.resolve('ran');
+      },
+    });
+
+    // A second marked procedure in the same request is refused before it runs.
+    const next = vi.fn(async () => Promise.resolve('ran'));
+
+    await expect(middleware.use({ ctx, type: 'mutation', next })).rejects.toThrow(
+      /already has one/u,
+    );
+
+    expect(next).not.toHaveBeenCalled();
+
+    // And the writers themselves write once: a second call throws before writing.
+    const blank = {
+      name: 'session',
+      value: '',
+      attributes: { httpOnly: true, secure: false, sameSite: 'lax', path: '/', maxAge: 0 },
+    } as const;
+
+    writer?.clearSession(blank);
+
+    const written = resHeaders.getSetCookie().length;
+
+    expect(() => writer?.clearSession(blank)).toThrow(/already wrote/u);
+    expect(() => writer?.setSession(issued)).toThrow(AuthConfigError);
+    await expect(writer?.signOut()).rejects.toThrow(AuthConfigError);
+    expect(resHeaders.getSetCookie()).toHaveLength(written);
+  });
+
   it('decides streaming exactly as tRPC does', () => {
     const cases: [Record<string, string>, boolean][] = [
       [{ 'trpc-accept': 'application/jsonl' }, true],

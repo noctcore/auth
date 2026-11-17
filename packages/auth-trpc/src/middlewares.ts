@@ -37,6 +37,7 @@ import {
   type StoredSession,
 } from '@noctcore/auth';
 import {
+  claimCookieWriter,
   internalsOf,
   refuseStreamedWrite,
   writerView,
@@ -137,7 +138,9 @@ export const authedBody = tagged(
  * The only way to the cookie writers: hands the procedure `ctx.auth` with
  * `setSession`, `signOut` and `clearSession`. On a streamed batch, and on a
  * subscription, it refuses first, so the core flow (a sign-in, a rotation)
- * never runs when its cookie cannot be set.
+ * never runs when its cookie cannot be set. It also claims the request's one
+ * cookie-writer slot: a second marked procedure in the same batch is refused
+ * before it runs, so a batch cannot mint a session no browser holds.
  */
 export const writesCookiesBody = tagged(
   'cookies',
@@ -153,6 +156,7 @@ export const writesCookiesBody = tagged(
     }
 
     refuseStreamedWrite(internals.streamed);
+    claimCookieWriter(internals);
 
     return call.next({ ctx: { auth: writerView(state, internals) } });
   },

@@ -7,7 +7,13 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createAuth, type AuthUser } from '@noctcore/auth';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '@noctcore/auth/testing';
-import { createTRPCClient, httpBatchStreamLink, httpLink, TRPCClientError } from '@trpc/client';
+import {
+  createTRPCClient,
+  httpBatchLink,
+  httpBatchStreamLink,
+  httpLink,
+  TRPCClientError,
+} from '@trpc/client';
 import { initTRPC } from '@trpc/server';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { createHTTPHandler } from '@trpc/server/adapters/standalone';
@@ -233,7 +239,7 @@ export class Browser {
   constructor(
     private readonly env: { readonly url: string; readonly transport: typeof fetch },
     private readonly ip = '198.51.100.7',
-    link: 'plain' | 'stream' = 'plain',
+    link: 'plain' | 'stream' | 'batch' = 'plain',
   ) {
     const options = {
       url: env.url,
@@ -241,7 +247,13 @@ export class Browser {
     };
 
     this.client = createTRPCClient<AppRouter>({
-      links: [link === 'stream' ? httpBatchStreamLink(options) : httpLink(options)],
+      links: [
+        link === 'stream'
+          ? httpBatchStreamLink(options)
+          : link === 'batch'
+            ? httpBatchLink(options)
+            : httpLink(options),
+      ],
     });
   }
 
