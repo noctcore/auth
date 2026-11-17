@@ -57,7 +57,7 @@ Turning the factor on from the settings page needs a fresh password proof (`sess
 
 `requireStepUp` is the guard for your own sensitive actions, such as deleting a project. Turning the factor off and new recovery codes already use it. A password change and an email change request accept the step-up held by the session, or a code with the request; you do not need to guard [email change](/auth/build/email-change/) yourself. Pass `revokeOtherSessions: true` to `confirmEnrollment` to sign out every other session when the factor goes on; set the cookie of the session it returns.
 
-When an email change is reverted, the plugin removes a factor enrolled since the change (and its recovery codes) through the core's `onEmailReverted` hook, and keeps an older one; see [Email change](/auth/build/email-change/).
+When an email change is reverted, the plugin removes a factor enrolled since the session that asked for the change was created or last proved a credential (and its recovery codes) through the core's `onEmailReverted` hook, and keeps an older one; see [Email change](/auth/build/email-change/).
 
 Other flows: `status(session)` (on, pending, required, recovery codes left), `regenerateRecoveryCodes`, `disable`, and `revokeTrustedDevices`. Password changes, resets and email change requests of a user with a factor take the code in `secondFactor` (six digits are read as a TOTP code, anything else as a recovery code); a password change or an email change request can skip it when the session holds a step-up.
 
