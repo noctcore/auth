@@ -223,6 +223,33 @@ describe('uncapped tasks and a bounded flush', () => {
     expect(r.contexts).toEqual([{ pending: 2, tasks: 'mail verify-email, mail lockout' }]);
   });
 
+  it('logs a timeout that is not a duration and waits with no bound, never rejecting', async () => {
+    const r = recorder();
+    const tasks = new BackgroundTasks(r.logger, r.metrics);
+
+    // Nothing pending: resolves, and leaves no rejected promise behind.
+    await expect(tasks.flush({ timeout: 'soon' as never })).resolves.toBeUndefined();
+
+    const task = deferred();
+
+    tasks.run('mail verify-email', () => task.promise);
+
+    const flushed = tasks.flush({ timeout: -1 });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await isSettled(flushed)).toBe(false);
+    task.resolve();
+    expect(await isSettled(flushed)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+
+    expect(r.errors).toEqual([
+      'Background flush timeout is invalid',
+      'Background flush timeout is invalid',
+    ]);
+
+    expect(r.contexts).toEqual([{ timeout: 'soon' }, { timeout: '-1' }]);
+  });
+
   it('with a timeout, still resolves as soon as everything settles, and logs nothing', async () => {
     const r = recorder();
     const tasks = new BackgroundTasks(r.logger, r.metrics);

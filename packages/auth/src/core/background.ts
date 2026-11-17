@@ -149,7 +149,9 @@ export class BackgroundTasks {
    * settles must not hold the process forever.
    */
   async flush(options: { readonly timeout?: Duration } = {}): Promise<void> {
-    if (options.timeout === undefined) {
+    const timeoutMs = this.#flushTimeout(options.timeout);
+
+    if (timeoutMs === undefined) {
       while (this.#tracked.size > 0) await Promise.all([...this.#tracked.keys()]);
 
       return;
@@ -158,7 +160,7 @@ export class BackgroundTasks {
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const expired = new Promise<typeof EXPIRED>((resolve) => {
-      timer = setTimeout(() => resolve(EXPIRED), toMilliseconds(options.timeout ?? 0));
+      timer = setTimeout(() => resolve(EXPIRED), timeoutMs);
       (timer as { unref?: () => void }).unref?.();
     });
 
@@ -177,6 +179,23 @@ export class BackgroundTasks {
       }
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * `flush` never rejects, since it runs on shutdown paths: a timeout that is
+   * not a valid duration is logged and the flush waits with no bound, rather
+   * than dropping work over a typo.
+   */
+  #flushTimeout(timeout: Duration | undefined): number | undefined {
+    if (timeout === undefined) return undefined;
+
+    try {
+      return toMilliseconds(timeout);
+    } catch {
+      this.#logger.error('Background flush timeout is invalid', { timeout: String(timeout) });
+
+      return undefined;
     }
   }
 
