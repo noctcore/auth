@@ -2,11 +2,15 @@
  * The package never renders mail. It emits typed events and the app's Mailer
  * maps them to its own templates and queue.
  *
- * Flows never await `Mailer.send`: they call it and answer, so a slow or hung
- * mailer does not reach the response time. Delivery is at most once: a send
- * that throws or rejects is logged and not retried. `send` should ENQUEUE, not
- * send over SMTP inline, so the app's queue retries failures and keeps mail a
- * stopping process would otherwise lose.
+ * `Mailer.send` must ENQUEUE and return, with templates built and SMTP spoken
+ * in a worker. Flows call `send` and answer without awaiting its promise, but
+ * the call itself is on the response path: whatever `send` does before it
+ * returns that promise (rendering a template, for example) adds to the response
+ * time, and since a taken address and a new one get different templates, that
+ * difference can tell them apart. Delivery is at most once: a send that throws
+ * or rejects is logged and not retried, so retries belong to the queue. Give
+ * the enqueue a timeout: the library sets none, and a `send` that never settles
+ * stays pending in memory.
  *
  * `dedupeKey` is a server-minted nonce per event, safe to use as a queue job id.
  */
