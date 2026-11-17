@@ -35,4 +35,4 @@ Invitations are a plugin as well: `invitations` from `@noctcore/auth/invitations
 Flows return results instead of throwing HTTP errors, and your app keeps its own routes. The root README has a complete wiring example and the list of modules.
 
 - [Root README](https://github.com/noctcore/auth#readme)
-- [Docs](https://noctcore.github.io/auth/) (coming soon)
+- [Docs](https://noctcore.github.io/auth/)

@@ -16,7 +16,7 @@
   </p>
 
   <p>
-    <a href="https://noctcore.github.io/auth/"><strong>Docs</strong></a> (coming soon)
+    <a href="https://noctcore.github.io/auth/"><strong>Docs</strong></a>
     &nbsp;·&nbsp;
     <a href="examples/basic"><strong>Example app</strong></a>
     &nbsp;·&nbsp;
@@ -151,10 +151,9 @@ test that boots the whole app and pins the routes open without a session.
 
 ## Docs
 
-The docs site, with a Learn guide that explains every defense in plain terms, will live at
-[noctcore.github.io/auth](https://noctcore.github.io/auth/) (coming soon). Until then, every source
-module starts with a comment that says what it defends against, and the package READMEs cover the
-adapters.
+The docs site, with a Learn guide that explains every defense in plain terms, lives at
+[noctcore.github.io/auth](https://noctcore.github.io/auth/). Every source module also starts with a
+comment that says what it defends against, and the package READMEs cover the adapters.
 
 ## Development
 
