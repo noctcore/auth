@@ -4,8 +4,8 @@
 // tests that cover it; a mutant the suite does not notice "survives". Run with
 // `bun run test:mutation` (about two minutes); CI runs it weekly and on demand.
 //
-// Scope: crypto, tokens, session, throttle and the two-factor plugin, plus the
-// CSRF and client IP checks the attack suite leans on. The rest of http (cookie, turnstile) and
+// Scope: crypto, tokens, session, throttle, the two-factor plugin and the email
+// change flow, plus the CSRF and client IP checks the attack suite leans on. The rest of http (cookie, turnstile) and
 // password are measured from time to time but not gated yet.
 //
 // `break` sits just under the measured score, so a change that lets mutants
@@ -20,6 +20,10 @@
 //   increment (count >= 1) and is deleted to unlock, so `lock !== null` decides.
 // - tokens/one-time-tokens.ts: the '000000' stand-in code. It only keeps the
 //   HMAC work the same for malformed input; the result is decided afterwards.
+// - tokens/one-time-tokens.ts, `extendLink`: the `isTokenShape` guard (a value
+//   of another shape hashes to a row that does not exist, so nothing changes)
+//   and `>=` vs `>` on the expiry (moving a link to the expiry it already has
+//   writes the same row).
 // - http/csrf.ts:
 //   - the regex `/[a-z]+/` vs `/[a-z]/` (same result);
 //   - `toLowerCase()` turned into `toUpperCase()` on the origin: both sides go
@@ -63,7 +67,7 @@ export default {
   reporters: ['clear-text', 'progress', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
-  // Measured 98.61 on 2026-11-17, with the two-factor plugin and the email change flow in scope.
+  // Measured 98.59 on 2026-11-17, with the two-factor plugin and the email change flow in scope.
   thresholds: { high: 98, low: 90, break: 98 },
   concurrency: 4,
   timeoutMS: 10_000,
