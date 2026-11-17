@@ -265,7 +265,7 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
     expect(browser.cookies.get('device')).toMatch(/^[0-9a-f]{32}\.\d+\.\d+\.[0-9a-f]{64}$/u);
   });
 
-  it('guards organisation roles: no self-target, no last admin, and revocation on change', async () => {
+  it('guards organisation roles: no self-target, owners above admins, and one admin left', async () => {
     const owner = await teammate('203.0.113.30');
     const bob = await teammate('203.0.113.31');
     const created = await owner.browser.request('POST', '/api/orgs');
@@ -274,52 +274,54 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
     orgs.push(orgId);
     expect(created.status).toBe(201);
 
+    // Bob is already a member (a full app would add him when he accepts an invitation).
+    await prisma.authMember.create({ data: { scope: orgId, userId: bob.id, role: 'member' } });
+
     const members = `/api/orgs/${orgId}/members`;
 
+    // Nobody is added by user id: there is no such route.
     expect(
-      await owner.browser.request('POST', members, { userId: bob.id, role: 'member' }),
-    ).toMatchObject({ status: 201 });
+      (await owner.browser.request('POST', members, { userId: 'someone', role: 'member' })).status,
+    ).toBe(404);
 
-    // Nobody acts on themselves, and the last owner stays.
+    // Nobody acts on themselves, and a malformed id is a bad request.
     expect(
       await owner.browser.request('POST', `${members}/${owner.id}`, { role: 'member' }),
     ).toEqual({ status: 403, json: { error: { code: 'self_target' } } });
 
-    expect(await bob.browser.request('POST', `${members}/${owner.id}`, { role: 'member' })).toEqual(
-      { status: 403, json: { error: { code: 'forbidden' } } },
-    );
+    expect((await owner.browser.request('DELETE', `${members}/%`)).status).toBe(400);
 
-    // A promotion signs bob out everywhere; he signs in again under the new role.
+    // A promotion keeps bob signed in: roles are read from the store, not the session.
     expect(
       await owner.browser.request('POST', `${members}/${bob.id}`, { role: 'admin' }),
     ).toMatchObject({ status: 200, json: { member: { role: 'admin' } } });
 
-    expect((await bob.browser.request('GET', '/api/me')).status).toBe(401);
+    expect((await bob.browser.request('GET', '/api/me')).status).toBe(200);
 
-    await bob.browser.request('GET', '/api/csrf');
+    // An admin can neither demote nor remove an owner, nor promote to owner.
+    for (const attempt of [
+      bob.browser.request('POST', `${members}/${owner.id}`, { role: 'member' }),
+      bob.browser.request('DELETE', `${members}/${owner.id}`),
+    ]) {
+      expect(await attempt).toEqual({ status: 403, json: { error: { code: 'forbidden' } } });
+    }
 
     expect(
-      (
-        await bob.browser.request('POST', '/api/login', {
-          email: teammates[1],
-          password,
-        })
-      ).status,
-    ).toBe(200);
+      await owner.browser.request('POST', `${members}/${bob.id}`, { role: 'owner' }),
+    ).toMatchObject({ status: 200 });
 
-    // Two admins demoting each other at once, on Postgres: one wins, one is refused.
+    // Two owners demoting each other at once, on Postgres: one wins, one is refused.
     const results = await Promise.all([
       owner.browser.request('POST', `${members}/${bob.id}`, { role: 'member' }),
       bob.browser.request('POST', `${members}/${owner.id}`, { role: 'member' }),
     ]);
 
-    // The loser is refused whichever step the winner's change reaches first: the
-    // last-admin guard (409), its own actor check after the winner demoted it
-    // (403), or session validation after the winner's revocation (401).
+    // The loser is refused by the last-admin guard (409), or by its own actor
+    // check after the winner demoted it (403).
     const statuses = results.map((r) => r.status).sort();
 
     expect(statuses[0]).toBe(200);
-    expect([401, 403, 409]).toContain(statuses[1]);
+    expect([403, 409]).toContain(statuses[1]);
 
     const admins = await prisma.authMember.count({
       where: { scope: orgId, role: { in: ['owner', 'admin'] } },
