@@ -68,7 +68,10 @@ describe('A058: learning whether an address has an account through the email cha
     expect(mails).toHaveLength(1);
     expect(mails[0]).toMatchObject({ type: 'email-change-in-use', to: 'ada@example.com' });
     expect(JSON.stringify(mails)).not.toMatch(/"code"|"url"/u);
-    expect(mails[0]?.userId).not.toBe(session.userId);
+    // An invitation mail carries no user id, so narrow before reading it.
+    const first = mails[0];
+
+    expect(first && 'userId' in first ? first.userId : undefined).not.toBe(session.userId);
 
     // The token issued on the taken path is never shown to anyone, so no code confirms it.
     for (let i = 0; i < 3; i++) {
