@@ -137,6 +137,59 @@ describe('PrismaUserStore errors', () => {
 
     await expect(down.create({ email, passwordHash: 'x' })).rejects.toBe(outage);
   });
+
+  it('falls back to create for good once Prisma refuses the bulk insert as invalid', async () => {
+    const refusal = Object.assign(new Error('Unknown argument `skipDuplicates`.'), {
+      name: 'PrismaClientValidationError',
+    });
+
+    const row = { id: 'u1', email, emailVerified: false };
+    let bulk = 0;
+    let creates = 0;
+    let taken = false;
+
+    const store = new PrismaUserStore({
+      delegate: delegate({
+        createManyAndReturn: async () => {
+          bulk++;
+
+          throw refusal;
+        },
+        create: async () => {
+          creates++;
+
+          if (taken) throw prismaError('P2002');
+
+          return row;
+        },
+      }),
+    });
+
+    expect(await store.create({ email, passwordHash: 'x' })).toEqual(row);
+    taken = true;
+    expect(await store.create({ email, passwordHash: 'x' })).toBeNull();
+
+    // Refused once, remembered: the second sign-up went straight to create.
+    expect(bulk).toBe(1);
+    expect(creates).toBe(2);
+
+    // Any other error from the bulk insert is an outage, not a refusal.
+    const named = Object.assign(new Error('down'), { name: 'PrismaClientKnownRequestError' });
+
+    const down = new PrismaUserStore({
+      delegate: delegate({
+        createManyAndReturn: async () => {
+          throw named;
+        },
+        create: async () => {
+          throw new Error('create must not be called');
+        },
+      }),
+    });
+
+    await expect(down.create({ email, passwordHash: 'x' })).rejects.toBe(named);
+    await expect(down.create({ email, passwordHash: 'x' })).rejects.toBe(named);
+  });
 });
 
 describe('PrismaTwoFactorStore errors', () => {

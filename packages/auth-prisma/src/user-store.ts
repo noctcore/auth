@@ -4,7 +4,7 @@
  */
 import type { AuthUser, NormalizedEmail, UserStore, WithPasswordHash } from '@noctcore/auth';
 import type { PrismaUserDelegate } from './delegates';
-import { P2002, prismaCode } from './prisma-errors';
+import { isValidationError, P2002, prismaCode } from './prisma-errors';
 
 /** Column names on your user model. */
 export interface UserFields {
@@ -35,6 +35,8 @@ type UserRow = Record<string, unknown>;
 export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore<U> {
   private readonly f: Required<Omit<UserFields, 'deletedAt'>> & { deletedAt: string | null };
   private readonly selectWithHash: Record<string, true>;
+  /** False once Prisma refused the bulk insert (SQLite, nested `createData`). */
+  private bulkInsert = true;
   private readonly selectUser: Record<string, true>;
 
   constructor(private readonly options: PrismaUserStoreOptions<U>) {
@@ -109,14 +111,22 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
 
   /**
    * Inserts the user, or answers null when the address (or another unique
-   * column) is taken. With `createManyAndReturn` on the delegate (Prisma on
-   * PostgreSQL, CockroachDB and SQLite), a taken address is an insert that
-   * skips the duplicate and returns no row, not a failed statement. A failed
-   * statement makes the driver's next query on that pool slower (about 3 ms
-   * measured on PostgreSQL through `@prisma/adapter-pg`), and at sign-up that
-   * next query is the owner lookup, so a taken address answered slower than a
-   * new one. Without it (MySQL, SQL Server), a unique violation (P2002) still
-   * answers null.
+   * column) is taken.
+   *
+   * Where Prisma accepts `createManyAndReturn` with `skipDuplicates`
+   * (PostgreSQL and CockroachDB), a taken address is an insert that skips the
+   * duplicate and returns no row, not a failed statement. A failed statement
+   * makes the driver's next query on that pool slower (about 3 ms measured on
+   * PostgreSQL through `@prisma/adapter-pg`), and at sign-up that next query
+   * would tell a taken address from a new one.
+   *
+   * Everywhere else it uses `create` and reads a unique violation (P2002) as
+   * taken: on a delegate without `createManyAndReturn` (MySQL, SQL Server),
+   * and when Prisma refuses the bulk insert with a validation error, which it
+   * does on SQLite (no `skipDuplicates`) and for a `createData` with nested
+   * writes or relation fields (a bulk insert takes plain columns only). That
+   * refusal happens in the client, before any statement, and the store
+   * remembers it, so later sign-ups go straight to `create`.
    */
   async create(input: { email: NormalizedEmail; passwordHash: string }): Promise<U | null> {
     const data = {
@@ -125,16 +135,22 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
       [this.f.passwordHash]: input.passwordHash,
     };
 
-    if (this.options.delegate.createManyAndReturn) {
-      const rows = (await this.options.delegate.createManyAndReturn({
-        data: [data],
-        skipDuplicates: true,
-        select: this.selectUser,
-      })) as UserRow[];
+    if (this.bulkInsert && this.options.delegate.createManyAndReturn) {
+      try {
+        const rows = (await this.options.delegate.createManyAndReturn({
+          data: [data],
+          skipDuplicates: true,
+          select: this.selectUser,
+        })) as UserRow[];
 
-      const [row] = rows;
+        const [row] = rows;
 
-      return row ? this.toUser(row) : null;
+        return row ? this.toUser(row) : null;
+      } catch (error) {
+        if (!isValidationError(error)) throw error;
+
+        this.bulkInsert = false;
+      }
     }
 
     try {

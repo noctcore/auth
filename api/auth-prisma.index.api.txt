@@ -71,6 +71,7 @@ PrismaUserStore [class]<U extends AuthUser = AuthUser>
     findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
     findCredentialById(id: string): Promise<WithPasswordHash<U> | null>
     markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>
+    private bulkInsert
     private live
     private readonly f
     private readonly options

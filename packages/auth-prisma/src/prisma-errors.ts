@@ -10,3 +10,12 @@ export function prismaCode(error: unknown): string | undefined {
     ? String(error.code)
     : undefined;
 }
+
+/**
+ * A `PrismaClientValidationError`: the client refused the arguments before
+ * sending any statement (an argument the provider does not support, say).
+ * Matched by name, so the store needs no runtime import of `@prisma/client`.
+ */
+export function isValidationError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'PrismaClientValidationError';
+}
