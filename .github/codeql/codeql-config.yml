@@ -1,0 +1,10 @@
+# What CodeQL reads: the packages, their tests, the example app and the repo
+# scripts. Generated code and build output are not ours to fix, and findings in
+# them would bury the ones that are.
+name: noctcore-auth
+paths-ignore:
+  - '**/dist/**'
+  - '**/node_modules/**'
+  - '**/generated/**'
+  - 'site/dist/**'
+  - 'site/.astro/**'
