@@ -1,0 +1,38 @@
+name: mutation
+
+# Mutation testing for crypto, tokens, session, throttle and the CSRF and
+# client IP checks (packages/auth/stryker.config.mjs). It takes about two
+# minutes locally, too long to add to every push, so it runs weekly and on
+# demand. The run fails when the score drops under the config's `break`
+# threshold. It is deterministic: Stryker's mutants are fixed by the source,
+# and the property tests it reruns use the fast-check seed printed below.
+on:
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: mutation · stryker (weekly)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      FC_SEED: '20261117'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '^22.18'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Print the fast-check seed
+        run: echo "fast-check seed for the property tests is $FC_SEED"
+      - run: bun run test:mutation
