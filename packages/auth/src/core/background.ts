@@ -49,6 +49,9 @@ export interface BackgroundOptions {
 /** The metric every timed-out or dropped task is counted under, with `task` and `outcome` labels. */
 export const BACKGROUND_METRIC = 'auth_background_task';
 
+/** What a bounded `flush` round resolves to when its time is up. */
+const EXPIRED = Symbol('expired');
+
 export class BackgroundTasks {
   readonly #logger: Logger;
   readonly #metrics: Metrics;
@@ -154,19 +157,16 @@ export class BackgroundTasks {
 
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const expired = new Promise<'expired'>((resolve) => {
-      timer = setTimeout(() => resolve('expired'), toMilliseconds(options.timeout ?? 0));
+    const expired = new Promise<typeof EXPIRED>((resolve) => {
+      timer = setTimeout(() => resolve(EXPIRED), toMilliseconds(options.timeout ?? 0));
       (timer as { unref?: () => void }).unref?.();
     });
 
     try {
       while (this.#tracked.size > 0) {
-        const round = await Promise.race([
-          Promise.all([...this.#tracked.keys()]).then(() => 'done' as const),
-          expired,
-        ]);
+        const round = await Promise.race([Promise.all([...this.#tracked.keys()]), expired]);
 
-        if (round === 'expired') {
+        if (round === EXPIRED) {
           this.#logger.error('Background flush stopped waiting', {
             pending: this.#tracked.size,
             tasks: [...this.#tracked.values()].join(', '),

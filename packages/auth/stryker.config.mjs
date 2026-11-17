@@ -49,9 +49,10 @@
 //     (without a factor the delete runs under a null id, which finds nothing,
 //     as NO_SUCH_USER_ID does) and `code !== null` turned true (the HMAC of an
 //     empty code is never stored).
-// - core/background.ts: `timer.unref?.()` made non-optional. Node timers
-//   always have `unref`; the `?.` is for runtimes whose setTimeout returns a
-//   number, which the Node test run cannot reach.
+// - core/background.ts: `timer.unref?.()` made non-optional (both timers, the
+//   task timeout and the flush limit). Node timers always have `unref`; the
+//   `?.` is for runtimes whose setTimeout returns a number, which the Node
+//   test run cannot reach.
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   testRunner: 'vitest',

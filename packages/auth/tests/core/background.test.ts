@@ -211,6 +211,7 @@ describe('uncapped tasks and a bounded flush', () => {
 
     tasks.run('mail verify-email', () => new Promise<void>(() => undefined));
     tasks.run('audit account.locked', async () => undefined);
+    tasks.run('mail lockout', () => new Promise<void>(() => undefined));
 
     const flushed = tasks.flush({ timeout: '10s' });
 
@@ -219,7 +220,7 @@ describe('uncapped tasks and a bounded flush', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(await isSettled(flushed)).toBe(true);
     expect(r.errors).toEqual(['Background flush stopped waiting']);
-    expect(r.contexts).toEqual([{ pending: 1, tasks: 'mail verify-email' }]);
+    expect(r.contexts).toEqual([{ pending: 2, tasks: 'mail verify-email, mail lockout' }]);
   });
 
   it('with a timeout, still resolves as soon as everything settles, and logs nothing', async () => {
@@ -233,6 +234,8 @@ describe('uncapped tasks and a bounded flush', () => {
 
     job.resolve();
     expect(await isSettled(flushed)).toBe(true);
+    // Its own timer is cleared, not left to fire.
+    expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(20_000);
     expect(r.errors).toEqual([]);
     await expect(tasks.flush({ timeout: '1s' })).resolves.toBeUndefined();
