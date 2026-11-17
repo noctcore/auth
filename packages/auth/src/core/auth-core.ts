@@ -89,11 +89,12 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   }
 
   mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void {
-    const dedupeKey = generateToken(this.random);
-
+    // Everything inside the task, the dedupe key included, so nothing here can
+    // throw into the flow. `send` itself is still called before `mail`
+    // returns: its synchronous part runs on the response path.
     this.background(`mail ${event.type}`, async () => {
       try {
-        await this.#deps.mailer.send({ ...event, dedupeKey });
+        await this.#deps.mailer.send({ ...event, dedupeKey: generateToken(this.random) });
       } catch (error) {
         this.logger.error('Mailer failed', {
           type: event.type,
