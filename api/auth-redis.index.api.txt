@@ -17,6 +17,7 @@
 
 ## runtime exports
 RedisCounterStore
+RedisMembershipStore
 RedisSessionStore
 RedisTwoFactorStore
 redisStores
@@ -33,6 +34,17 @@ RedisCounterStore [class]
     private readonly redis
     reset(key: string): Promise<void>
     set(key: string, count: number, windowMs: number): Promise<void>
+RedisMembershipStore [class]
+    (new) (redis: Redis, options?: Pick<RedisStoreOptions, "prefix">): RedisMembershipStore
+    addMember(member: StoredMember): Promise<boolean>
+    changeRole(input: { readonly scope: string; readonly userId: string; readonly from: string; readonly to: string; readonly adminRoles: readonly string[]; }): Promise<MemberWrite>
+    findMember(scope: string, userId: string): Promise<StoredMember | null>
+    listMembers(scope: string): Promise<StoredMember[]>
+    private key
+    private readonly prefix
+    private readonly redis
+    private write
+    removeMember(input: { readonly scope: string; readonly userId: string; readonly from: string; readonly adminRoles: readonly string[]; }): Promise<MemberWrite>
 RedisSessionStore [class]
     (new) (redis: Redis, options?: RedisSessionStoreOptions): RedisSessionStore
     bumpEpoch(userId: string): Promise<number>

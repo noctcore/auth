@@ -2,12 +2,19 @@ import { Redis } from 'ioredis';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   counterStoreConformance,
+  membershipStoreConformance,
   runConformance,
   sessionStoreConformance,
   twoFactorStoreConformance,
   uniqueId,
 } from '@noctcore/auth/testing';
-import { RedisCounterStore, RedisSessionStore, RedisTwoFactorStore, redisStores } from '../src';
+import {
+  RedisCounterStore,
+  RedisMembershipStore,
+  RedisSessionStore,
+  RedisTwoFactorStore,
+  redisStores,
+} from '../src';
 
 const url = process.env['REDIS_URL'];
 const required = process.env['AUTH_REQUIRE_SERVICES'] === '1';
@@ -94,6 +101,42 @@ describe.skipIf(!url)('redis stores', () => {
     twoFactorStoreConformance(new RedisTwoFactorStore(redis, { prefix })),
     api,
   );
+
+  runConformance(
+    'redis membership store',
+    membershipStoreConformance(new RedisMembershipStore(redis, { prefix })),
+    api,
+  );
+
+  it('leaves one admin when two connections demote the last two admins at once', async () => {
+    const one = new RedisMembershipStore(redis, { prefix });
+    const two = new RedisMembershipStore(second, { prefix });
+    const adminRoles = ['admin'];
+
+    for (let round = 0; round < 20; round++) {
+      const scope = uniqueId('scope');
+      const [a, b] = [uniqueId('user'), uniqueId('user')];
+
+      await one.addMember({ scope, userId: a, role: 'admin' });
+      await one.addMember({ scope, userId: b, role: 'admin' });
+
+      const results = await Promise.all([
+        one.changeRole({ scope, userId: a, from: 'admin', to: 'member', adminRoles }),
+        two.removeMember({ scope, userId: b, from: 'admin', adminRoles }),
+      ]);
+
+      expect([...results].sort()).toEqual(['done', 'last_admin']);
+      expect((await one.listMembers(scope)).filter((m) => m.role === 'admin')).toHaveLength(1);
+    }
+  });
+
+  it('keeps members without a TTL, under the ms: prefix', async () => {
+    const store = new RedisMembershipStore(redis, { prefix });
+    const scope = uniqueId('scope');
+
+    await store.addMember({ scope, userId: 'u1', role: 'admin' });
+    expect(await redis.pttl(`${prefix}ms:${scope}`)).toBe(-1);
+  });
 
   it('keeps trusted devices and step-up proofs under a TTL at their expiry', async () => {
     const store = new RedisTwoFactorStore(redis, { prefix: `${prefix}tf-ttl:` });
