@@ -8,7 +8,8 @@
 //   dummy hash for unknown ones), password/verify.ts, tokens/one-time-tokens.ts
 //   (same HMAC and lookup for an unknown user), throttle/counter-keys.ts (keys from
 //   the address, never the user id). Checked by counting calls, not wall-clock
-//   time, so CI cannot flake: scripts/timing-benchmark.ts measures the clock.
+//   time, so CI cannot flake: tests/timing/benchmark.ts (`bun run bench:timing`)
+//   measures the clock.
 // Learn: Enumeration (/auth/learn/enumeration/)
 import { describe, expect, it } from 'vitest';
 

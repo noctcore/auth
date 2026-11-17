@@ -203,9 +203,10 @@ export default tseslint.config(
     rules: { 'noctcore-contracts/no-direct-process-env': 'off' },
   },
   {
-    // Command-line scripts print for a person reading a terminal, not for a
-    // log pipeline, so a sentence with the value in it is the right output.
-    files: ['scripts/**/*.ts'],
+    // Command-line scripts (and the timing benchmark) print for a person
+    // reading a terminal, not for a log pipeline, so a sentence with the value
+    // in it is the right output.
+    files: ['scripts/**/*.ts', 'packages/auth/tests/timing/**/*.ts'],
     rules: { 'noctcore-observability/structured-log-arguments': 'off' },
   },
   {
