@@ -5,10 +5,10 @@ import { recordingMailer } from '@noctcore/auth/testing';
 import { createApp } from '../src/app';
 import { createPrisma } from '../src/db';
 
-const databaseUrl = process.env.DATABASE_URL;
-const redisUrl = process.env.REDIS_URL;
+const databaseUrl = process.env['DATABASE_URL'];
+const redisUrl = process.env['REDIS_URL'];
 
-if ((!databaseUrl || !redisUrl) && process.env.AUTH_REQUIRE_SERVICES === '1') {
+if ((!databaseUrl || !redisUrl) && process.env['AUTH_REQUIRE_SERVICES'] === '1') {
   throw new Error('DATABASE_URL and REDIS_URL are required when AUTH_REQUIRE_SERVICES=1');
 }
 
@@ -62,7 +62,7 @@ class Browser {
 
     const json = (await response.json()) as Record<string, unknown>;
 
-    if (typeof json.csrfToken === 'string') this.csrf = json.csrfToken;
+    if (typeof json['csrfToken'] === 'string') this.csrf = json['csrfToken'];
 
     return { status: response.status, json };
   }
@@ -130,7 +130,7 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
 
     const before = await browser.request('GET', '/api/me');
 
-    expect(before.json.user).toMatchObject({ email, emailVerified: false });
+    expect(before.json['user']).toMatchObject({ email, emailVerified: false });
 
     const verified = await browser.request('POST', '/api/verify-email', { code });
 
@@ -139,8 +139,8 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
 
     const after = await browser.request('GET', '/api/me');
 
-    expect(after.json.user).toMatchObject({ email, emailVerified: true });
-    expect((await browser.request('GET', '/api/sessions')).json.sessions).toHaveLength(1);
+    expect(after.json['user']).toMatchObject({ email, emailVerified: true });
+    expect((await browser.request('GET', '/api/sessions')).json['sessions']).toHaveLength(1);
 
     expect((await browser.request('POST', '/api/logout')).status).toBe(200);
     expect(browser.cookies.has('session')).toBe(false);

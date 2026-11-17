@@ -167,7 +167,7 @@ describe('plugins', () => {
     for (const context of [seen, auth.context as unknown as Record<string, unknown>]) {
       if (!context) throw new Error('plugin context not captured');
 
-      const sessions = context.sessions as Record<string, unknown>;
+      const sessions = context['sessions'] as Record<string, unknown>;
 
       expect('mint' in sessions).toBe(false);
       expect(Object.isFrozen(sessions)).toBe(true);

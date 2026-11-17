@@ -8,8 +8,8 @@ import {
 } from '@noctcore/auth/testing';
 import { RedisCounterStore, RedisSessionStore, redisStores } from '../src';
 
-const url = process.env.REDIS_URL;
-const required = process.env.AUTH_REQUIRE_SERVICES === '1';
+const url = process.env['REDIS_URL'];
+const required = process.env['AUTH_REQUIRE_SERVICES'] === '1';
 
 if (!url && required) throw new Error('REDIS_URL is required when AUTH_REQUIRE_SERVICES=1');
 

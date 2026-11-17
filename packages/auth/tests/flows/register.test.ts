@@ -116,7 +116,7 @@ describe('register', () => {
         hasher: (await import('../../src/testing')).plainHasher(),
         breachCheck: async () => 'unavailable',
       },
-      metrics: { count: (name, labels) => counted.push(`${name}:${labels?.verdict ?? ''}`) },
+      metrics: { count: (name, labels) => counted.push(`${name}:${labels?.['verdict'] ?? ''}`) },
     });
 
     const result = await auth.register({
