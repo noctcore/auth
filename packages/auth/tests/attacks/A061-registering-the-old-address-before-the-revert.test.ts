@@ -6,16 +6,17 @@
 // intruder keeps the account on B.
 //
 // Stopped by: flows/email-reservation.ts (A is held for the owner while the
-//   revert link lives), flows/register.ts (a held address reads as taken: the
-//   same answer, one "account exists" mail to A for its owner, the same number
-//   of store round trips), flows/email-change.ts (other accounts' requests and
-//   confirms treat a held address as taken; if A has an account anyway, the
-//   revert still removes the password, revokes every session and pending
-//   token, and keeps the link usable).
+//   revert link lives), flows/register.ts (a held address is answered as
+//   taken: the same answer, one "account exists" mail to A for its owner, the
+//   same number of store round trips before the answer, with a read of the
+//   holder in the insert's place), flows/email-change.ts (other accounts'
+//   requests and confirms treat a held address as taken; if A has an account
+//   anyway, the revert still removes the password, revokes every session and
+//   pending token, and keeps the link usable).
 // Learn: Email change (/auth/learn/email-change/)
 import { describe, expect, it } from 'vitest';
 
-import { meta, PASSWORD, recordStoreCalls, setup } from './support';
+import { meta, onFakeClock, PASSWORD, recordStoreCalls, settled, setup } from './support';
 import { plainHasher } from '../../src/testing';
 import { changed } from '../flows/email-change-support';
 
@@ -69,6 +70,7 @@ describe('A061: registering the old address so the revert has nowhere to go', ()
 
     await changed(t, session, INTRUDER);
     await t.auth.register({ email: 'eve@example.com', password: PASSWORD, meta: meta() });
+    await settled();
 
     const { calls } = recordStoreCalls(t.stores);
 
@@ -79,6 +81,8 @@ describe('A061: registering the old address so the revert has nowhere to go', ()
       const mailsBefore = t.mailer.sent.length;
       const answer = await t.auth.register({ email, password: PASSWORD, meta: meta() });
 
+      await settled();
+
       return { answer, count: calls.length, hashes, mails: t.mailer.sent.length - mailsBefore };
     };
 
@@ -87,6 +91,24 @@ describe('A061: registering the old address so the revert has nowhere to go', ()
 
     expect(held).toEqual(existing);
     expect(held.count).toBe(4);
+  });
+
+  it('a held address answers after a read of the holder in the insert place, without waiting on the owner lookup', async () => {
+    const t = setup();
+    const { session } = await t.signedInUser(OWNER);
+
+    await changed(t, session, INTRUDER);
+
+    t.stores.users.findCredentialByEmail = () => new Promise<never>(() => undefined);
+
+    const { calls } = recordStoreCalls(t.stores);
+
+    const answer = await onFakeClock(() =>
+      t.auth.register({ email: OWNER, password: PASSWORD, meta: meta() }),
+    );
+
+    expect(answer).toEqual({ ok: true, value: { session: null } });
+    expect(calls.slice(0, 3)).toEqual(['counters.increment', 'tokens.find', 'users.findById']);
   });
 
   it("another account's change request to the old address answers as taken and mails the owner", async () => {
