@@ -188,13 +188,17 @@ end
 return 0
 `;
 
-// KEYS[1] inviter set; ARGV[1] row key prefix.
+// KEYS[1] inviter set; ARGV[1] row key prefix, ARGV[2] the scope, or absent for every scope.
 export const DELETE_INVITER_INVITATIONS = `${DROP_INVITATION}
+local scope = ARGV[2]
 for _, hash in ipairs(redis.call('SMEMBERS', KEYS[1])) do
   local key = ARGV[1] .. hash
   local row = redis.call('GET', key)
-  if row then drop(key, row) end
+  if not row then
+    redis.call('SREM', KEYS[1], hash)
+  elseif scope == nil or cjson.decode(row).scope == scope then
+    drop(key, row)
+  end
 end
-redis.call('DEL', KEYS[1])
 return 1
 `;
