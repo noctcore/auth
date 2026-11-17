@@ -250,3 +250,53 @@ describe('findLive', () => {
     expect((await tokens.redeemLink('email-revert', token)).status).toBe('valid');
   });
 });
+
+describe('keyed markers', () => {
+  it('finds a marker by its key until it expires, and moves it off another user', async () => {
+    await tokens.putKeyed('email-reserved', 'u1', 'key-a', 60_000, { note: 'one' });
+
+    expect(await tokens.findKeyed('email-reserved', 'key-a')).toEqual({
+      userId: 'u1',
+      data: { note: 'one' },
+    });
+
+    expect(await tokens.findKeyed('email-reserved', 'key-b')).toBeNull();
+    expect(await tokens.findKeyed('other', 'key-a')).toBeNull();
+
+    await tokens.putKeyed('email-reserved', 'u2', 'key-a', 120_000);
+
+    expect(await tokens.findKeyed('email-reserved', 'key-a')).toEqual({ userId: 'u2', data: {} });
+    expect(await store.findByUser('email-reserved', 'u1')).toBeNull();
+
+    clock.advance(120_000 - 1);
+    expect(await tokens.findKeyed('email-reserved', 'key-a')).not.toBeNull();
+    clock.advance(1);
+    expect(await tokens.findKeyed('email-reserved', 'key-a')).toBeNull();
+  });
+});
+
+describe('extendLink', () => {
+  it('moves a live link out, never in, and leaves unknown, malformed and expired links alone', async () => {
+    const { token, expiresAt } = await tokens.issueLink('email-revert', 'u1', 60_000);
+
+    await tokens.extendLink('email-revert', token, expiresAt - 1);
+    expect((await store.findByUser('email-revert', 'u1'))?.expiresAt).toBe(expiresAt);
+
+    await tokens.extendLink('email-revert', token, expiresAt);
+    expect((await store.findByUser('email-revert', 'u1'))?.expiresAt).toBe(expiresAt);
+
+    await tokens.extendLink('email-revert', token, expiresAt + 1);
+    expect((await store.findByUser('email-revert', 'u1'))?.expiresAt).toBe(expiresAt + 1);
+
+    await tokens.extendLink('email-revert', 42, expiresAt + 5);
+    await tokens.extendLink('other', token, expiresAt + 5);
+    expect((await store.findByUser('email-revert', 'u1'))?.expiresAt).toBe(expiresAt + 1);
+
+    clock.set(expiresAt + 1);
+    await tokens.extendLink('email-revert', token, expiresAt + 10);
+    expect((await store.findByUser('email-revert', 'u1'))?.expiresAt).toBe(expiresAt + 1);
+
+    clock.set(expiresAt);
+    expect((await tokens.redeemLink('email-revert', token)).status).toBe('valid');
+  });
+});
