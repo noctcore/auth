@@ -100,28 +100,6 @@ describe('fresh authentication', () => {
 });
 
 describe('changePassword', () => {
-  it('changes the password, ends every other session, re-issues this one and mails the owner', async () => {
-    const t = await twoDevices();
-
-    const result = await t.auth.changePassword({
-      session: t.laptop.session,
-      currentPassword: PASSWORD,
-      newPassword: NEW_PASSWORD,
-      meta: meta(),
-    });
-
-    if (!result.ok) throw new Error(result.reason);
-
-    expect(await t.sessionOf(t.laptop.token)).toBeNull();
-    expect(await t.sessionOf(t.phone.token)).toBeNull();
-    expect(await t.sessionOf(result.value.token)).not.toBeNull();
-    expect(t.mailer.last('password-changed')?.to).toBe(EMAIL);
-
-    expect((await t.auth.login({ email: EMAIL, password: NEW_PASSWORD, meta: meta() })).ok).toBe(
-      true,
-    );
-  });
-
   it('refuses a wrong current password and counts it toward the lockout', async () => {
     const t = setup({ throttle: { lockout: { perAccount: { limit: 2, window: '15m' } } } });
     const { session } = await t.signedInUser();

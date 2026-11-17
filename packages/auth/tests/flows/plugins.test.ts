@@ -149,36 +149,6 @@ describe('plugins', () => {
       setup({ plugins: [definePlugin({ id: 'needsCaptcha', requires: ['captcha'] })] }),
     ).toThrow(AuthConfigError);
   });
-
-  it('probe F: plugins and auth.context cannot mint a session outside issueSession', async () => {
-    let seen: Record<string, unknown> | null = null;
-
-    const spy = definePlugin({
-      id: 'spy',
-      flows: (context) => {
-        seen = context as unknown as Record<string, unknown>;
-
-        return {};
-      },
-    });
-
-    const { auth } = setup({ plugins: [spy] });
-
-    for (const context of [seen, auth.context as unknown as Record<string, unknown>]) {
-      if (!context) throw new Error('plugin context not captured');
-
-      const sessions = context['sessions'] as Record<string, unknown>;
-
-      expect('mint' in sessions).toBe(false);
-      expect(Object.isFrozen(sessions)).toBe(true);
-
-      // Nothing reachable from the context's own properties exposes a mint.
-      for (const value of Object.values(context)) {
-        if (value && typeof value === 'object')
-          expect(typeof (value as { mint?: unknown }).mint).not.toBe('function');
-      }
-    }
-  });
 });
 
 describe('createAuth configuration', () => {

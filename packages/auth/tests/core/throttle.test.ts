@@ -53,63 +53,6 @@ describe('login lockout', () => {
     expect((await throttle.gateLogin(victim, '198.51.100.1')).allowed).toBe(true);
   });
 
-  it('locks the account after the account-wide budget with a capped, growing lock', async () => {
-    const lockFor = async () => {
-      let gate;
-
-      for (let ip = 1; ; ip++) {
-        gate = await throttle.gateLogin(victim, `10.0.0.${ip}`);
-
-        if (!gate.allowed) break;
-      }
-
-      return gate;
-    };
-
-    const first = await lockFor();
-
-    expect(first).toEqual({
-      allowed: false,
-      reason: 'locked',
-      newLock: { until: clock.now() + 5 * MIN },
-    });
-
-    expect(await throttle.gateLogin(victim, '198.51.100.1')).toEqual({
-      allowed: false,
-      reason: 'locked',
-    });
-
-    clock.advance(5 * MIN);
-    const second = await lockFor();
-
-    expect(second).toEqual({
-      allowed: false,
-      reason: 'locked',
-      newLock: { until: clock.now() + 15 * MIN },
-    });
-
-    clock.advance(15 * MIN);
-    const third = await lockFor();
-
-    expect(third).toEqual({
-      allowed: false,
-      reason: 'locked',
-      newLock: { until: clock.now() + 45 * MIN },
-    });
-
-    clock.advance(45 * MIN);
-    const fourth = await lockFor();
-
-    expect(fourth).toEqual({
-      allowed: false,
-      reason: 'locked',
-      newLock: { until: clock.now() + 60 * MIN },
-    });
-
-    clock.advance(60 * MIN);
-    expect((await throttle.gateLogin(victim, '198.51.100.1')).allowed).toBe(true);
-  });
-
   it('decays the backoff tier after the quiet period', async () => {
     const t = new Throttle(counters, clock, { perAccount: { limit: 1, window: '15m' } });
 
@@ -319,22 +262,5 @@ describe('trusted devices', () => {
     // The fourth device failure spends the account budget again and renews the lock.
     await t.gateLogin(victim, 'owner', 'device-1');
     expect(await t.deviceFailed(victim)).toHaveProperty('newLock');
-  });
-
-  it('probe A: the owner signs in every hour while an attacker spreads failures across IPs', async () => {
-    let ip = 0;
-
-    for (let hour = 0; hour < 48; hour++) {
-      // Thirty failures an hour from thirty fresh IPs keep the account locked for everyone else.
-      for (let i = 0; i < 30; i++)
-        await throttle.gateLogin(victim, `192.0.2.${ip++ % 250}-${hour}`);
-
-      expect((await throttle.gateLogin(victim, `198.51.100.${hour}`)).allowed).toBe(false);
-      const owner = await throttle.gateLogin(victim, '203.0.113.5', 'owner-device');
-
-      expect(owner.allowed).toBe(true);
-      await throttle.loginSucceeded(victim, '203.0.113.5', 'owner-device');
-      clock.advance(60 * MIN);
-    }
   });
 });

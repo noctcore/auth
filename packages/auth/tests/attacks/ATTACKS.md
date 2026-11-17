@@ -1,0 +1,28 @@
+# Attack regression suite
+
+One test file per attack, numbered in the order the attacks were added. A number is never reused and a file is never deleted: an attack that stops applying keeps its file and says why. Every security fix adds a test here, in the file of the attack it closes or in a new numbered file.
+
+Learn pages are under <https://noctcore.github.io/auth/learn/>. Module paths are relative to `packages/auth/src/`. `tests/attacks/index.test.ts` checks that this table and the files agree and that the numbers have no gaps.
+
+| ID | Attack | Learn page | Stopped by | Test | Also covered by |
+|---|---|---|---|---|---|
+| A001 | Brute force by parallel guesses | Brute force and lockout | `throttle/throttle.ts` | [A001-brute-force-parallel-guesses](A001-brute-force-parallel-guesses.test.ts) | `tests/core/throttle.test.ts` (device budgets under a parallel burst) |
+| A002 | Locking the victim out | Brute force and lockout | `throttle/throttle.ts`, `flows/password-reset.ts` | [A002-victim-lockout](A002-victim-lockout.test.ts) | `tests/core/throttle.test.ts` (backoff tier decay) |
+| A003 | Account enumeration by the answer | Enumeration | `shared/errors.ts`, `flows/login.ts`, `flows/register.ts`, `flows/password-reset-request.ts` | [A003-enumeration-by-response](A003-enumeration-by-response.test.ts) | |
+| A004 | Account enumeration by timing | Enumeration | `flows/login.ts`, `password/verify.ts`, `password/hasher.ts`, `tokens/one-time-tokens.ts`, `throttle/counter-keys.ts` | [A004-enumeration-by-timing](A004-enumeration-by-timing.test.ts) | `scripts/timing-benchmark.ts` (wall clock, not gated) |
+| A005 | The locked-account oracle | Enumeration; Brute force and lockout | `throttle/throttle.ts`, `flows/login.ts`, `flows/lock-notice.ts` | [A005-locked-account-oracle](A005-locked-account-oracle.test.ts) | |
+| A006 | Replaying a revoked session | Revocation races and the epoch fence | `session/session-manager.ts` | [A006-revoked-session-replay-epoch](A006-revoked-session-replay-epoch.test.ts) | `tests/flows/plugins.test.ts` (epoch carried through a second-factor challenge) |
+| A007 | Reusing a password reset token | Password reset | `tokens/one-time-tokens.ts`, `flows/password-reset.ts` | [A007-reset-token-reuse](A007-reset-token-reuse.test.ts) | |
+| A008 | Cross-site request forgery | CSRF | `http/csrf.ts`, `http/cookie.ts` | [A008-csrf-cross-site-post](A008-csrf-cross-site-post.test.ts) | `tests/primitives/csrf.test.ts`, `tests/property/csrf.property.test.ts` |
+| A009 | Forging or hoarding trusted-device cookies | Brute force and lockout | `throttle/device-token.ts`, `throttle/throttle.ts`, `session/session-manager.ts` | [A009-device-cookie-forgery](A009-device-cookie-forgery.test.ts) | `tests/core/throttle.test.ts`, `tests/property/device-token.property.test.ts` |
+| A010 | A stolen session cookie outliving a password change | Password reset; Sessions and expiry | `flows/password-change.ts`, `flows/password-reset.ts`, `session/session-manager.ts` | [A010-stolen-cookie-after-password-change](A010-stolen-cookie-after-password-change.test.ts) | |
+| A011 | Spoofing the client IP | Trust proxy and client IPs (planned) | `http/ip.ts` | [A011-spoofed-forwarded-ip](A011-spoofed-forwarded-ip.test.ts) | `tests/primitives/ip.test.ts`, `tests/property/ip.property.test.ts` |
+| A012 | Account pre-hijacking | Email verification and account pre-hijacking | `flows/password-reset.ts`, `flows/email-verification.ts`, `flows/register.ts` | [A012-account-pre-hijacking](A012-account-pre-hijacking.test.ts) | |
+| A013 | Guessing a short code | Password reset; Email verification | `tokens/one-time-tokens.ts`, `flows/password-reset.ts` | [A013-code-guessing](A013-code-guessing.test.ts) | |
+| A014 | Verifying an address with a proof meant for another account or address | Email verification and account pre-hijacking | `flows/email-verification.ts` | [A014-verification-proof-for-another-account](A014-verification-proof-for-another-account.test.ts) | |
+| A015 | A login rehash bringing back an old password | Passwords | `flows/rehash.ts` | [A015-rehash-restores-old-password](A015-rehash-restores-old-password.test.ts) | |
+| A016 | A plugin minting a session outside the seam | Design choices | `core/plugin-context.ts`, `core/auth-core.ts` | [A016-plugin-mints-session](A016-plugin-mints-session.test.ts) | |
+| A017 | Replaying secrets from a leaked store | Sessions and expiry | `session/session-manager.ts`, `tokens/one-time-tokens.ts`, `crypto/hash.ts` | [A017-leaked-store-replay](A017-leaked-store-replay.test.ts) | |
+| A018 | Cookie tossing and reading the session cookie from script | Sessions and expiry | `http/cookie.ts` | [A018-cookie-tossing-and-script-theft](A018-cookie-tossing-and-script-theft.test.ts) | `tests/property/cookie.property.test.ts` |
+| A019 | Two spellings of one address, or one spelling of two | Enumeration; Security defaults | `shared/email.ts` | [A019-email-alias-account-merge](A019-email-alias-account-merge.test.ts) | `tests/property/email.property.test.ts` |
+| A020 | Exhausting the server with oversized passwords | Passwords | `password/policy.ts`, `password/verify.ts`, `flows/register.ts` | [A020-oversized-password-dos](A020-oversized-password-dos.test.ts) | `tests/property/policy.property.test.ts` |
