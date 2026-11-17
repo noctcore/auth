@@ -17,9 +17,13 @@
   - changed-files:
       - any-glob-to-any-file: ['packages/auth-nestjs/**']
 
+'pkg: auth-trpc':
+  - changed-files:
+      - any-glob-to-any-file: ['packages/auth-trpc/**']
+
 'area: integrations':
   - changed-files:
-      - any-glob-to-any-file: ['packages/auth-nestjs/**', 'examples/nestjs/**']
+      - any-glob-to-any-file: ['packages/auth-nestjs/**', 'examples/nestjs/**', 'packages/auth-trpc/**']
 
 'area: core':
   - changed-files:
