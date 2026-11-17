@@ -1,4 +1,4 @@
-// A066: accepting an invitation with an account at another address.
+// A070: accepting an invitation with an account at another address.
 //
 // The link leaks (a forwarded mail, a shared screen, a proxy log) and someone
 // signed in as themselves opens it. An invitation that trusts whoever holds
@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { invitationApp, meta, SCOPE } from '../invitations/setup';
 
-describe('A066: accepting an invitation with an account at another address', () => {
+describe('A070: accepting an invitation with an account at another address', () => {
   it('refuses a holder of the link signed in under another address, and keeps the invitation', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });

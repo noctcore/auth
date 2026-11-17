@@ -1,4 +1,4 @@
-// A071: mail bombing someone through repeated invitations.
+// A075: mail bombing someone through repeated invitations.
 //
 // Invitations send mail to any address an inviter types. A script that creates
 // invitations in a loop, from one scope or many, turns the app into a mailer
@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import { invitationApp, meta } from '../invitations/setup';
 
-describe('A071: mail bombing someone through repeated invitations', () => {
+describe('A075: mail bombing someone through repeated invitations', () => {
   it('sends one mail for a repeated invitation to one scope', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });
