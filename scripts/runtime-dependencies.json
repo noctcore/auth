@@ -1,0 +1,17 @@
+{
+  "@noctcore/auth": {
+    "dependencies": [],
+    "optionalDependencies": [],
+    "peerDependencies": ["@node-rs/argon2"]
+  },
+  "@noctcore/auth-prisma": {
+    "dependencies": ["@noctcore/auth"],
+    "optionalDependencies": [],
+    "peerDependencies": ["@prisma/client"]
+  },
+  "@noctcore/auth-redis": {
+    "dependencies": ["@noctcore/auth"],
+    "optionalDependencies": [],
+    "peerDependencies": ["ioredis"]
+  }
+}
