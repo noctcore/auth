@@ -5,6 +5,7 @@
 import type {
   AuthUser,
   EmailChangeResult,
+  Logger,
   NormalizedEmail,
   UserStore,
   WithPasswordHash,
@@ -32,6 +33,12 @@ export interface PrismaUserStoreOptions<U extends AuthUser> {
   readonly toUser?: (row: Record<string, unknown>) => U;
   /** Extra values for required columns of a new user (a tenant, a display name). */
   readonly createData?: (input: { email: NormalizedEmail }) => Record<string, unknown>;
+  /**
+   * Told once, as a warning, when Prisma refuses the skipped insert and the
+   * store switches to `create` for good (SQLite, a nested `createData`). Pass
+   * the logger you give `createAuth`. Default: silent.
+   */
+  readonly logger?: Pick<Logger, 'warn'>;
 }
 
 /** A user row as selected: the mapped auth columns plus your `select`. */
@@ -156,6 +163,12 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
         if (!isValidationError(error)) throw error;
 
         this.bulkInsert = false;
+
+        // No error text: a Prisma validation message prints the whole call,
+        // the new user's password hash included.
+        this.options.logger?.warn(
+          'Prisma user store: the skipped insert was refused, so sign-up uses create from now on',
+        );
       }
     }
 

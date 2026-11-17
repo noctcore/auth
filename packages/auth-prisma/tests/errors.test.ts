@@ -154,7 +154,10 @@ describe('PrismaUserStore errors', () => {
     let creates = 0;
     let taken = false;
 
+    const warnings: string[] = [];
+
     const store = new PrismaUserStore({
+      logger: { warn: (message) => void warnings.push(message) },
       delegate: delegate({
         createManyAndReturn: async () => {
           bulk++;
@@ -178,6 +181,10 @@ describe('PrismaUserStore errors', () => {
     // Refused once, remembered: the second sign-up went straight to create.
     expect(bulk).toBe(1);
     expect(creates).toBe(2);
+
+    expect(warnings).toEqual([
+      'Prisma user store: the skipped insert was refused, so sign-up uses create from now on',
+    ]);
 
     // Any other error from the bulk insert is an outage, not a refusal.
     const named = Object.assign(new Error('down'), { name: 'PrismaClientKnownRequestError' });
