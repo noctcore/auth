@@ -34,6 +34,9 @@ export function buildAuth(mailer: Mailer) {
         canManage: ({ actor, from, to }) =>
           actor.role === 'owner' ||
           (actor.role === 'admin' && from !== 'owner' && to !== 'owner'),
+        // Roles are read from the store on every call and not copied into
+        // sessions, so there is nothing to revoke when one changes. Set
+        // `revokeSessionsOnChange: true` if your session attributes carry roles.
       }),
     ],
   });
