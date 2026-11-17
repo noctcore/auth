@@ -64,6 +64,8 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   // Native private fields: unreachable from plugins and from `auth.context` at runtime.
   readonly #deps: CoreDependencies<U, A>;
   readonly #manager: SessionManager<A>;
+  /** Sessions `confirmLiveSession` read live, each good for one re-issue. */
+  readonly #confirmed = new WeakSet<StoredSession<A>>();
 
   constructor(deps: CoreDependencies<U, A>) {
     this.#deps = deps;
@@ -199,11 +201,37 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return ok(hash);
   }
 
+  /**
+   * Re-reads `session` from the store and returns the stored copy if it is
+   * live (unexpired, not idle, current epoch) and still the same user's; null
+   * otherwise. A re-issue flow calls this BEFORE it revokes anything and
+   * passes the returned object as `inherit`: only such an object, once, opens
+   * the re-issue vias of `issueSession`.
+   */
+  async confirmLiveSession(session: StoredSession<A>): Promise<StoredSession<A> | null> {
+    const live = await this.#manager.findActive(session.id);
+
+    if (!live || live.userId !== session.userId) return null;
+
+    this.#confirmed.add(live);
+
+    return live;
+  }
+
+  /** Whether `inherit` came from `confirmLiveSession` for this user; spends it either way. */
+  #takeConfirmed(inherit: StoredSession<A> | undefined, userId: string): boolean {
+    if (!inherit || !this.#confirmed.delete(inherit)) return false;
+
+    return inherit.userId === userId;
+  }
+
   async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
-    // A re-issue names the session it replaces, and that session is this
-    // user's: hooks (a second factor's enforcement, say) let re-issues through
-    // on the strength of that, so a call that only claims the label is refused.
-    if (REISSUE_VIAS.has(options.via) && options.inherit?.userId !== user.id) {
+    // A re-issue names the session it replaces, and that session was read live
+    // from the store, for this user, by `confirmLiveSession` before the flow
+    // revoked anything: hooks (a second factor's enforcement, say) let
+    // re-issues through on the strength of that, so a call that only claims the
+    // label, or hands over a revoked, expired or hand-built session, is refused.
+    if (REISSUE_VIAS.has(options.via) && !this.#takeConfirmed(options.inherit, user.id)) {
       await this.#loginFailure(user, `reissue_without_session:${options.via}`, options);
 
       return fail('session_expired', `reissue_without_session:${options.via}`);

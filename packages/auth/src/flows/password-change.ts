@@ -21,9 +21,13 @@ export async function reauthenticate<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   input: { session: StoredSession<A>; password: string; meta: RequestMeta },
 ): Promise<AuthResult<IssuedSession<A>>> {
+  const live = await core.confirmLiveSession(input.session);
+
+  if (!live) return fail('session_expired', 'session_not_active');
+
   const proved = await proveCurrentPassword(
     core,
-    input.session,
+    live,
     input.password,
     input.meta,
     'reauthenticate',
@@ -31,13 +35,13 @@ export async function reauthenticate<U extends AuthUser, A>(
 
   if (!proved.ok) return proved;
 
-  await core.sessions.revoke(input.session.userId, [input.session.id]);
+  await core.sessions.revoke(live.userId, [live.id]);
 
   return core.issueSession(proved.value, {
     via: 'reauthenticate',
     meta: input.meta,
-    inherit: input.session,
-    epoch: input.session.epoch,
+    inherit: live,
+    epoch: live.epoch,
   });
 }
 
@@ -51,7 +55,12 @@ export async function changePassword<U extends AuthUser, A>(
     meta: RequestMeta;
   },
 ): Promise<AuthResult<IssuedSession<A>>> {
-  const { session, meta } = input;
+  const { meta } = input;
+  // Read live before anything is written or revoked: only a session that is
+  // still active can be the one this change re-issues.
+  const session = await core.confirmLiveSession(input.session);
+
+  if (!session) return fail('session_expired', 'session_not_active');
 
   const proved = await proveCurrentPassword(
     core,

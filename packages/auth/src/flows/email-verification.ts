@@ -189,18 +189,22 @@ async function finish<U extends AuthUser, A>(
 
   if (!marked) return fail('invalid_token', 'verification_write_refused');
 
+  // Read live before the revocation: only a session still active, and this
+  // user's, is re-issued; anything else gets no session back.
+  const live = current?.userId === user.id ? await core.confirmLiveSession(current) : null;
+
   await core.revokeAllSessions(user.id, 'email-verified');
   await core.emit({ type: 'email.verified', userId: user.id }, meta);
 
-  if (!current || current.userId !== user.id) return ok({ session: null });
+  if (!live) return ok({ session: null });
 
   const issued = await core.issueSession(
     { ...user, emailVerified: true },
     {
       via: 'email-verified',
       meta,
-      inherit: current,
-      authenticatedAt: current.authenticatedAt,
+      inherit: live,
+      authenticatedAt: live.authenticatedAt,
     },
   );
 

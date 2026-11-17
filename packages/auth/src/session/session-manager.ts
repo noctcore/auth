@@ -193,6 +193,19 @@ export class SessionManager<A> {
     }
   }
 
+  /**
+   * The session stored under `id` if it is live: unexpired, not idle, on its
+   * user's current epoch, with valid attributes. Null otherwise. Never touches
+   * or reaps; a read for a decision, not a validation.
+   */
+  async findActive(id: string): Promise<StoredSession<A> | null> {
+    const stored = await this.store.get(id);
+
+    if (!stored || (await this.refusalFor(stored, this.clock.now()))) return null;
+
+    return this.parse(stored);
+  }
+
   /** The user's live sessions: unexpired, not idle, on the current epoch, valid attributes. Reaps the rest. */
   async listActive(userId: string): Promise<StoredSession<A>[]> {
     const sessions = await this.store.listByUser(userId);
