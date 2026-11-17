@@ -505,6 +505,41 @@ describe('invitations accept', () => {
     expect(t.onAccept).not.toHaveBeenCalled();
   });
 
+  it('refuses when both the account address and the stored one are invalid', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+    const broken = await t.user();
+    const raw = 'd'.repeat(64);
+    const real = t.stores.users.findById.bind(t.stores.users);
+
+    // An account whose stored address is not an address (written outside the core).
+    vi.spyOn(t.stores.users, 'findById').mockImplementation(async (id) => {
+      const found = await real(id);
+
+      return found && id === broken.userId ? { ...found, email: 'not an address' } : found;
+    });
+
+    await t.store.create(
+      {
+        id: 'broken',
+        hash: t.auth.context.keyedHash('invitation', raw),
+        scope: SCOPE,
+        email: 'also not an address',
+        inviterId: inviter.userId,
+        payload: {},
+        createdAt: t.clock.now(),
+        expiresAt: t.clock.now() + DAY,
+      },
+      t.clock.now(),
+    );
+
+    expect(
+      await t.auth.invitations.accept({ session: broken.session, token: raw, meta: meta() }),
+    ).toMatchObject({ ok: false, code: 'forbidden', reason: 'email_mismatch' });
+
+    expect(t.onAccept).not.toHaveBeenCalled();
+  });
+
   it('compares the stored address normalised too', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });
