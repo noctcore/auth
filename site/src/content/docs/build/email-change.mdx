@@ -1,0 +1,59 @@
+---
+title: Email change
+description: Letting a signed-in user move the account to a new address, with fresh authentication, a code to the new address, a revert link to the old one, and what the routes must do with each answer.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import routesTs from '../../../../snippets/build/email-change/routes.ts?raw';
+
+The core has four flows for changing the account's email: `requestEmailChange`, `confirmEmailChangeCode` (or `confirmEmailChangeLink`), and `revertEmailChange`. Why each rule is there is in [Email change](/auth/learn/email-change/). This guide builds on [A Node server with Redis and Prisma](/auth/build/node-server/).
+
+## What it needs
+
+- **A user store with `changeEmail`.** `PrismaUserStore` and `MemoryUserStore` have it. The method is optional on the `UserStore` port so older adapters still compile, and the email change flows throw an `AuthConfigError` without it. A store of your own must keep the email column unique and pass the `changeEmail` cases of `userStoreConformance` (see [Writing a store adapter](/auth/build/store-adapter/)).
+- **`urls.revertEmailChange`.** The link mailed to the old address. The flows throw an `AuthConfigError` without it. Put the token in the fragment, as the node-server sample does, and send `Referrer-Policy: no-referrer`.
+- **Templates** for four mail events: `email-change-confirm`, `email-change-in-use`, `email-changed` and `email-change-reverted` ([Mail](/auth/build/mail/)).
+
+No new table: the code, the revert link and the block after a revert are rows of the one-time token table you already have, under their own purposes.
+
+## The routes
+
+<Code code={routesTs} lang="ts" title="src/routes/email.ts" />
+
+**Request.** The session must be live and its last credential proof younger than `session.freshAuthAge` (10 minutes by default), or the answer is `fresh_auth_required`: send the user through `auth.reauthenticate` and retry. With the [two-factor plugin](/auth/build/two-factor/) on and a factor confirmed, the request also needs a step-up held by the session or a code in `secondFactor`, or it answers `second_factor_required`. A new address that already has an account gets the same success answer and the same `expiresAt` as a free one, and its owner gets `email-change-in-use` instead of a code, so show "check the new address" either way. A new request replaces a pending one. Requests are limited per account (3 an hour) and per new address (3 an hour, from every account).
+
+**Confirm.** The code is typed in a signed-in session of the same account; in link mode (`emailChange.kind: 'link'`, with `urls.confirmEmailChange`) the link works only in such a session too, and is left unspent anywhere else. On success the account moves to the new address, which is marked verified; every session of the account is revoked and the caller's is re-issued, so set the cookie of the session it returns. Reset and verification tokens mailed to the old address die, and the old address gets `email-changed` at once. If another account took the new address after the request, the answer is `email_in_use`; the confirmer has just proved that mailbox, so the answer tells them nothing about anyone else.
+
+**Revert.** The old address's mail carries a link valid for 7 days (`emailChange.revertTtl`, which cannot be shorter). It needs no session. It moves the account back to the old address, removes the password, revokes every session, and voids every reset, verification and pending change token. The next sign-in therefore fails until the user resets the password, and the reset goes to the restored address: tell them so on the page. The address the account lost is blocked for this account for 30 days (`emailChange.blockAfterRevert`), and the audit row `email.change_reverted` carries `review: true`. Route it to whoever looks at suspicious accounts.
+
+## Answers
+
+| Code | From | Show |
+| --- | --- | --- |
+| `fresh_auth_required` | request | the password prompt, then retry |
+| `second_factor_required`, `invalid_second_factor` | request | the code prompt, then retry |
+| `invalid_email` | request | "enter a valid address" (also for the account's current address) |
+| `forbidden` | request | the address was blocked after a revert, or one of your hooks refused |
+| `invalid_token` | confirm, revert | "the code or link is wrong or expired" |
+| `email_in_use` | confirm, revert | the address was taken meanwhile |
+| `session_expired` | any | sign in again |
+| `rate_limited` | any | "try again later", with `retryAfterSeconds` |
+
+## Options
+
+| Option | Default | |
+| --- | --- | --- |
+| `emailChange.kind` | `'code'` | `'link'` needs `urls.confirmEmailChange`. |
+| `emailChange.ttl` | `'15m'` for codes, `'1h'` for links | |
+| `emailChange.digits` | `8` | 6 to 9. |
+| `emailChange.maxAttempts` | `5` | Wrong guesses per code, counted before each comparison. |
+| `emailChange.revertTtl` | `'7d'` | The minimum; a shorter value is refused at startup. |
+| `emailChange.blockAfterRevert` | `'30d'` | |
+
+Your own `beforeEmailChange` hook runs after the fresh-auth check and before anything is issued. It is given the normalised new address; refuse with a code that does not reveal whether that address is taken.
+
+## Limits
+
+- **One revert link at a time.** While a revert link is live, a later change gets none, so the earliest address keeps the only way back. A second change within those 7 days mails its old address a notice without a link.
+- **An old address registered by someone else.** If another account takes the old address after the change, the revert answers `email_in_use` and changes nothing; the `email.change_revert_failed` audit row carries `review: true`.
+- **A factor the intruder enrolled stays.** The revert ends trusted devices but leaves a second factor in place, so the owner's reset asks for it. If an intruder enrolled their own, the owner needs your support process.

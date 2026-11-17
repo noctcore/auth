@@ -43,6 +43,8 @@ export function buildAuth(mailer: Mailer) {
     secret: config.authSecret,
     urls: {
       resetPassword: (token) => `${config.origin}/reset-password#${token}`,
+      // The link the old address gets after an email change, to undo it.
+      revertEmailChange: (token) => `${config.origin}/email/revert#${token}`,
     },
     mailer,
     logger,

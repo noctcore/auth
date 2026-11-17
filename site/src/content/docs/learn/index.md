@@ -15,6 +15,7 @@ Each page covers one concept: what goes wrong, the attack, the rule the package 
 - [Brute force and lockout](/auth/learn/brute-force-and-lockout/)
 - [Email verification and account pre-hijacking](/auth/learn/email-verification/)
 - [Password reset](/auth/learn/password-reset/)
+- [Email change](/auth/learn/email-change/)
 - [CSRF](/auth/learn/csrf/)
 - [Second factors](/auth/learn/second-factors/)
 
