@@ -16,10 +16,11 @@
  *   refused is cleared, so the browser stops sending it.
  * - A new session (sign-in and every rotation) is written with
  *   `ctx.auth.setSession(issued)`, which also binds a fresh CSRF token to it.
+ *   Only a procedure marked `writesCookies` gets the writers: anywhere else
+ *   they are missing from the type and refuse at run time.
  * - On a streamed batch (`httpBatchStreamLink`) the response headers are sent
- *   before any procedure runs. `setSession`, `signOut` and `clearSession`
- *   throw an `AuthConfigError` there instead of losing the cookie, and the
- *   `writesCookies` middleware refuses the call before the flow runs.
+ *   before any procedure runs, so `writesCookies` refuses the call there
+ *   before the flow runs.
  *
  * A failure to resolve (a store down) answers `internal`, logging only the
  * error's name: a store error can carry the session key.
@@ -56,7 +57,11 @@ import {
   type NodeContextInput,
 } from './request';
 
-/** `ctx.auth`: what the adapter knows about the request. */
+/**
+ * `ctx.auth`: what the adapter knows about the request. It cannot write
+ * cookies: only a procedure marked `writesCookies` gets `ctx.auth` as an
+ * `AuthWriter`, with `setSession`, `signOut` and `clearSession`.
+ */
 export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
   /** The session the core accepted, or null when there is none or it was refused. */
   readonly session: StoredSession<A> | null;
@@ -66,6 +71,15 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
   readonly deviceToken: string | null;
   /** The session's user, loaded from the store once per request; null when signed out or deleted. */
   user(): Promise<U | null>;
+}
+
+/**
+ * `ctx.auth` in a procedure marked `writesCookies` (`WritesCookiesMiddleware`
+ * on nestjs-trpc). In any other procedure these three do not exist on the
+ * type, and at run time they throw an `AuthConfigError` before writing
+ * anything (`signOut` before the core signs out).
+ */
+export interface AuthWriter<U extends AuthUser = AuthUser, A = unknown> extends AuthState<U, A> {
   /**
    * Writes an issued session's cookie and its trusted-device cookie, plus a
    * CSRF cookie bound to the new session. Call it on sign-in and on every
@@ -87,6 +101,8 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
   clearSession(cookie: CookieSpec): { csrfToken: string };
 }
 
+type Writers = Pick<AuthWriter, 'setSession' | 'signOut' | 'clearSession'>;
+
 /** What the middlewares read about a request; never on the context itself. */
 export interface Internals {
   readonly options: ResolvedOptions;
@@ -98,6 +114,8 @@ export interface Internals {
    * any procedure runs, so no procedure can set a cookie.
    */
   readonly streamed: boolean;
+  /** The real cookie writers, handed out by `writesCookies` only. */
+  readonly writers: Writers;
 }
 
 /** The header value `httpBatchStreamLink` sends; tRPC answers it with a streamed body. */
@@ -106,7 +124,7 @@ const STREAMED = 'application/jsonl';
 /**
  * Refuses a cookie write on a streamed response, where it would be lost (the
  * fetch adapter) or throw after the flow ran (Node). Run by `writesCookies`
- * before the procedure, and by the writers themselves as a backstop.
+ * before the procedure.
  */
 export function refuseStreamedWrite(streamed: boolean): void {
   if (streamed) {
@@ -122,6 +140,33 @@ const internals = new WeakMap<object, Internals>();
 
 export function internalsOf(state: unknown): Internals | undefined {
   return typeof state === 'object' && state !== null ? internals.get(state) : undefined;
+}
+
+function unmarked(): never {
+  throw new AuthConfigError(
+    'Only a procedure marked writesCookies (WritesCookiesMiddleware on nestjs-trpc) can call ' +
+      'setSession, signOut or clearSession: add it in front of the procedure.',
+  );
+}
+
+/** What an unmarked procedure finds in place of the writers: refusals, before anything runs. */
+const refusingWriters: Writers = {
+  setSession: unmarked,
+  signOut: unmarked,
+  clearSession: unmarked,
+};
+
+/**
+ * `ctx.auth` for a procedure marked `writesCookies`: the same request state,
+ * with the writers. A view per procedure, so marking one procedure of a
+ * batch never lets another write.
+ */
+export function writerView(state: AuthState, found: Internals): AuthWriter {
+  const view: AuthWriter = { ...state, ...found.writers };
+
+  internals.set(view, found);
+
+  return view;
 }
 
 /**
@@ -216,18 +261,8 @@ async function resolveState(
     return { csrfToken: next.token };
   };
 
-  const state: AuthState = {
-    session,
-    meta,
-    deviceToken: auth.readDeviceToken(cookieHeader),
-    user: () => {
-      user ??= session ? auth.context.users.findById(session.userId) : Promise.resolve(null);
-
-      return user;
-    },
+  const writers: Writers = {
     setSession: (issued) => {
-      refuseStreamedWrite(streamed);
-
       const next = csrfCookie(options, sessionBinding(issued.session));
 
       write(issued.cookie);
@@ -237,9 +272,6 @@ async function resolveState(
       return { csrfToken: next.token };
     },
     signOut: async () => {
-      // Before the core signs the session out, not after.
-      refuseStreamedWrite(streamed);
-
       const { cookie } = await auth.logout({ token, meta });
 
       write(cookie);
@@ -247,14 +279,28 @@ async function resolveState(
       return startPreSession();
     },
     clearSession: (cookie) => {
-      refuseStreamedWrite(streamed);
       write(cookie);
 
       return startPreSession();
     },
   };
 
-  internals.set(state, { options, csrfOk, streamed });
+  const base = {
+    session,
+    meta,
+    deviceToken: auth.readDeviceToken(cookieHeader),
+    user: () => {
+      user ??= session ? auth.context.users.findById(session.userId) : Promise.resolve(null);
+
+      return user;
+    },
+    // Not on the type; here so a call from untyped code gets the reason.
+    ...refusingWriters,
+  };
+
+  const state: AuthState = base;
+
+  internals.set(state, { options, csrfOk, streamed, writers });
 
   return state;
 }

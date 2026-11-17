@@ -36,7 +36,13 @@ import {
   type RateLimitRule,
   type StoredSession,
 } from '@noctcore/auth';
-import { internalsOf, refuseStreamedWrite, type AuthState, type Internals } from './context';
+import {
+  internalsOf,
+  refuseStreamedWrite,
+  writerView,
+  type AuthState,
+  type Internals,
+} from './context';
 import { internalError, toTRPCError } from './errors';
 
 /** The options of a tRPC middleware call, as far as these bodies read them. */
@@ -128,16 +134,19 @@ export const authedBody = tagged(
 );
 
 /**
- * Marks a procedure that writes cookies (`setSession`, `signOut`,
- * `clearSession`) and refuses it on a streamed batch before it runs, so the
- * core flow (a sign-in, a rotation) never runs when its cookie cannot be set.
+ * The only way to the cookie writers: hands the procedure `ctx.auth` with
+ * `setSession`, `signOut` and `clearSession`. On a streamed batch it refuses
+ * first, so the core flow (a sign-in, a rotation) never runs when its cookie
+ * cannot be set.
  */
 export const writesCookiesBody = tagged(
   'cookies',
   async <TResult>(call: MiddlewareCall<TResult>): Promise<TResult> => {
-    refuseStreamedWrite(stateOf(call.ctx).internals.streamed);
+    const { state, internals } = stateOf(call.ctx);
 
-    return call.next();
+    refuseStreamedWrite(internals.streamed);
+
+    return call.next({ ctx: { auth: writerView(state, internals) } });
   },
 );
 

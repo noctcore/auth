@@ -82,13 +82,21 @@ AuthMiddlewares [interface]<TContext, TMeta, TErrorShape>
     readonly csrf: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
     readonly protectedProcedure: AuthProcedureBuilder<TContext, TMeta, PrincipalOf<TContext>, TErrorShape>
     readonly publicProcedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>
-    readonly writesCookies: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
+    readonly writesCookies: TRPCMiddlewareBuilder<TContext, TMeta, WriterOf<TContext>, unknown>
     role(...roles: readonly string[]): TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
 AuthProcedureBuilder [type]<TContext, TMeta, TOverrides, TErrorShape> = TRPCProcedureBuilder<TContext, TMeta, TOverrides, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, false, TErrorShape>
 AuthRoot [interface]<TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>
     readonly middleware: (fn: never) => unknown
     readonly procedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>
 AuthState [interface]<U extends AuthUser = AuthUser, A = unknown>
+    readonly deviceToken: string | null
+    readonly meta: RequestMeta
+    readonly session: StoredSession<A> | null
+    user(): Promise<U | null>
+AuthTRPCError [class]
+    (new) (auth: PublicAuthError): AuthTRPCError
+    readonly auth: PublicAuthError
+AuthWriter [interface]<U extends AuthUser = AuthUser, A = unknown>
     clearSession(cookie: CookieSpec): { csrfToken: string; }
     readonly deviceToken: string | null
     readonly meta: RequestMeta
@@ -96,9 +104,6 @@ AuthState [interface]<U extends AuthUser = AuthUser, A = unknown>
     setSession(issued: Pick<IssuedSession<unknown>, 'cookie' | 'deviceCookie' | 'session'>): { csrfToken: string; }
     signOut(): Promise<{ csrfToken: string; }>
     user(): Promise<U | null>
-AuthTRPCError [class]
-    (new) (auth: PublicAuthError): AuthTRPCError
-    readonly auth: PublicAuthError
 changePasswordInput [const]: z.ZodObject<{ currentPassword: z.ZodString; newPassword: z.ZodString; secondFactor: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 createAuthContext [function]: <U extends AuthUser, A = unknown>(options: AuthContextOptions<U, A>) => AuthContextFactory<U, A>
 createAuthMiddlewares [function]: <TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>(t: AuthRoot<TContext, TMeta, TErrorShape>) => AuthMiddlewares<TContext, TMeta, TErrorShape>
@@ -179,3 +184,4 @@ PrincipalOf [type]<TContext> = TContext extends AuthContext<infer U, infer A> ? 
 ShapeLike [interface]
     readonly data: { readonly stack?: string | undefined; }
     readonly message: string
+WriterOf [type]<TContext> = TContext extends AuthContext<infer U, infer A> ? { auth: AuthWriter<U, A>; } : { auth: AuthWriter; }

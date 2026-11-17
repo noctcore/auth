@@ -82,6 +82,30 @@ describe('inferred types', () => {
     protectedProcedure.query(({ ctx }) => auth.sessions.list(ctx.session));
   });
 
+  it('gives the cookie writers only to a procedure marked writesCookies', () => {
+    type Auth = ReturnType<typeof makeAuth>['auth'];
+
+    const t = initTRPC.context<AuthContextOf<Auth>>().create();
+    const { publicProcedure, protectedProcedure, writesCookies } = createAuthMiddlewares(t);
+
+    for (const procedure of [publicProcedure, protectedProcedure]) {
+      procedure.mutation(({ ctx }) => {
+        expectTypeOf(ctx.auth).not.toHaveProperty('setSession');
+        expectTypeOf(ctx.auth).not.toHaveProperty('signOut');
+        expectTypeOf(ctx.auth).not.toHaveProperty('clearSession');
+      });
+    }
+
+    protectedProcedure.use(writesCookies).mutation(({ ctx }) => {
+      expectTypeOf(ctx.auth).toHaveProperty('setSession');
+      expectTypeOf(ctx.auth).toHaveProperty('signOut');
+      expectTypeOf(ctx.auth).toHaveProperty('clearSession');
+      // The session attributes and the principal survive the marker.
+      expectTypeOf(ctx.auth.session).toEqualTypeOf<StoredSession<Record<string, never>> | null>();
+      expectTypeOf(ctx.user.email).toBeString();
+    });
+  });
+
   it('types the outputs of the documented router by their schemas', () => {
     type Outputs = inferRouterOutputs<AppRouter>;
 
