@@ -7,3 +7,4 @@ Add the invitations plugin, `@noctcore/auth/invitations`, with flows under `auth
 - New store port `InvitationStore`, with `invitationStoreConformance` and `MemoryInvitationStore` in `@noctcore/auth/testing`.
 - New mail event `invitation`, the first without a `userId`. A mailer that switches over every type with a `never` check needs a case for it.
 - New audit event types `invitation.created`, `invitation.deduplicated`, `invitation.revoked`, `invitation.accepted` and `invitation.refused`. An audit sink that switches over every type with a `never` check needs cases for them.
+- `revokeAllSessions` on the plugin context takes an optional `{ scope }`, passed to `onSessionsRevoked` as `scope`; the membership plugin names the scope of the change. Revoking every session deletes the inviter's invitations, only in that scope when one is named and in every scope otherwise; `two-factor-enabled` keeps them, like `revoke-others`.
