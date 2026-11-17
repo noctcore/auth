@@ -126,3 +126,75 @@ end
 if remove then redis.call('HDEL', KEYS[1], ARGV[1]) else redis.call('HSET', KEYS[1], ARGV[1], ARGV[4]) end
 return 'done'
 `;
+
+// The invitation store. Each row is JSON at <prefix>h:<hash> and names its own
+// index keys (pair, scope set, inviter set), so every script can clean up
+// after it without recomputing a key.
+//
+// KEYS[1] pair, KEYS[2] row, KEYS[3] scope set, KEYS[4] inviter set;
+// ARGV[1] hash, ARGV[2] row JSON, ARGV[3] ttl ms, ARGV[4] now ms, ARGV[5] row key prefix.
+// 0 while a live invitation holds the pair; an expired one is replaced.
+export const CREATE_INVITATION = `
+local old = redis.call('GET', KEYS[1])
+if old then
+  local row = redis.call('GET', ARGV[5] .. old)
+  if row then
+    if tonumber(cjson.decode(row).expiresAt) > tonumber(ARGV[4]) then return 0 end
+    redis.call('DEL', ARGV[5] .. old)
+  end
+  redis.call('SREM', KEYS[3], old)
+end
+local ttl = tonumber(ARGV[3])
+redis.call('SET', KEYS[2], ARGV[2], 'PX', ttl)
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ttl)
+for i = 3, 4 do
+  redis.call('SADD', KEYS[i], ARGV[1])
+  if redis.call('PTTL', KEYS[i]) < ttl then redis.call('PEXPIRE', KEYS[i], ttl) end
+end
+return 1
+`;
+
+// Deletes one row and its index entries. Shared by the scripts below.
+const DROP_INVITATION = `
+local function drop(key, row)
+  local data = cjson.decode(row)
+  redis.call('DEL', key)
+  if redis.call('GET', data.pair) == data.hash then redis.call('DEL', data.pair) end
+  redis.call('SREM', data.scopeSet, data.hash)
+  redis.call('SREM', data.inviterSet, data.hash)
+end
+`;
+
+// KEYS[1] row. The row's JSON, removed in the same step, or false.
+export const CONSUME_INVITATION = `${DROP_INVITATION}
+local row = redis.call('GET', KEYS[1])
+if not row then return false end
+drop(KEYS[1], row)
+return row
+`;
+
+// KEYS[1] scope set; ARGV[1] id, ARGV[2] row key prefix. 1 when a row went.
+export const REVOKE_INVITATION = `${DROP_INVITATION}
+for _, hash in ipairs(redis.call('SMEMBERS', KEYS[1])) do
+  local key = ARGV[2] .. hash
+  local row = redis.call('GET', key)
+  if not row then
+    redis.call('SREM', KEYS[1], hash)
+  elseif cjson.decode(row).id == ARGV[1] then
+    drop(key, row)
+    return 1
+  end
+end
+return 0
+`;
+
+// KEYS[1] inviter set; ARGV[1] row key prefix.
+export const DELETE_INVITER_INVITATIONS = `${DROP_INVITATION}
+for _, hash in ipairs(redis.call('SMEMBERS', KEYS[1])) do
+  local key = ARGV[1] .. hash
+  local row = redis.call('GET', key)
+  if row then drop(key, row) end
+end
+redis.call('DEL', KEYS[1])
+return 1
+`;
