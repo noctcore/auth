@@ -3,6 +3,7 @@
  * in-memory stores that pass it, and fakes for unit tests.
  */
 export { counterStoreConformance } from './conformance/counter-store';
+export { membershipStoreConformance } from './conformance/membership-store';
 export {
   sessionStoreConformance,
   type SessionStoreConformanceOptions,
@@ -19,6 +20,7 @@ export {
   type TestApi,
 } from './harness';
 export { MemoryCounterStore } from './memory/counter-store';
+export { MemoryMembershipStore } from './memory/membership-store';
 export { memoryStores, type MemoryStores } from './memory/memory-stores';
 export { MemorySessionStore } from './memory/session-store';
 export { MemoryTokenStore } from './memory/token-store';

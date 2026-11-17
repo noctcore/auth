@@ -89,6 +89,7 @@ export type {
   StoredTrustedDevice,
   TwoFactorStore,
 } from './ports/two-factor';
+export type { MembershipStore, MemberWrite, StoredMember } from './ports/membership';
 export { SessionManager } from './session/session-manager';
 export type {
   AttributeSchema,

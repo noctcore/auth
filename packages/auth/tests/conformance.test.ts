@@ -4,6 +4,8 @@ import {
   counterStoreConformance,
   manualClock,
   memoryStores,
+  membershipStoreConformance,
+  MemoryMembershipStore,
   runConformance,
   sessionStoreConformance,
   tokenStoreConformance,
@@ -33,5 +35,11 @@ runConformance(
 runConformance(
   'memory two-factor store',
   twoFactorStoreConformance(new MemoryTwoFactorStore()),
+  api,
+);
+
+runConformance(
+  'memory membership store',
+  membershipStoreConformance(new MemoryMembershipStore()),
   api,
 );
