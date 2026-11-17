@@ -9,6 +9,8 @@ import { firstRefusal, type HookLists, type RevocationReason } from './hooks';
 import type { IssuedSession, IssueOptions, PluginContext, SessionAccess } from './plugin-context';
 import { narrowSessions } from './session-access';
 import { resolveSessionAttributes } from './session-attributes';
+import { hmacSha256Hex } from '../crypto/hash';
+import { deriveKey } from '../crypto/keys';
 import { generateToken, type RandomSource } from '../crypto/random';
 import {
   createSessionCookie,
@@ -24,7 +26,7 @@ import type { CaptchaDoor } from '../ports/captcha';
 import type { Clock } from '../ports/clock';
 import type { Logger, Metrics } from '../ports/logger';
 import type { AuthMailEvent } from '../ports/mail';
-import type { AuthUser, UserStore } from '../ports/stores';
+import type { AuthUser, StoredSession, UserStore } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
 import type { MintInput, MintResult } from '../session/session-types';
 import { describeError } from '../shared/describe-error';
@@ -70,6 +72,16 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     this.logger = deps.logger;
     this.metrics = deps.metrics;
     this.cookie = deps.cookie;
+  }
+
+  keyedHash(purpose: string, message: string): string {
+    return hmacSha256Hex(deriveKey(this.#deps.pluginKey, purpose), message);
+  }
+
+  requireFreshAuth(session: StoredSession<A>): AuthResult<void> {
+    return this.clock.now() - session.authenticatedAt <= this.#deps.freshAuthAgeMs
+      ? ok()
+      : fail('fresh_auth_required', 'stale_authentication');
   }
 
   async emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void> {

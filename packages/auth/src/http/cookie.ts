@@ -91,9 +91,29 @@ export function createBlankSessionCookie(config: SessionCookieConfig, origin?: s
   return { name: sessionCookieName(config), value: '', attributes: attributes(config, origin, 0) };
 }
 
+/** A fixed cookie name, with `__Host-` prepended when the session cookie is secure. */
+export function prefixedCookieName(config: SessionCookieConfig, base: string): string {
+  return (config.secure ?? true) ? `__Host-${base}` : base;
+}
+
 /** Name of the trusted-device cookie: `__Host-device` when secure. */
 export function deviceCookieName(config: SessionCookieConfig = {}): string {
-  return (config.secure ?? true) ? '__Host-device' : 'device';
+  return prefixedCookieName(config, 'device');
+}
+
+/** A long-lived HttpOnly cookie named `base`, with the session cookie's other attributes. */
+export function longLivedCookie(
+  config: SessionCookieConfig,
+  base: string,
+  token: string,
+  maxAge: number,
+  origin?: string,
+): CookieSpec {
+  return {
+    name: prefixedCookieName(config, base),
+    value: token,
+    attributes: attributes(config, origin, maxAge),
+  };
 }
 
 /** The trusted-device cookie: HttpOnly, long-lived, same attributes as the session cookie otherwise. */
@@ -103,11 +123,7 @@ export function deviceCookie(
   maxAge: number,
   origin?: string,
 ): CookieSpec {
-  return {
-    name: deviceCookieName(config),
-    value: token,
-    attributes: attributes(config, origin, maxAge),
-  };
+  return longLivedCookie(config, 'device', token, maxAge, origin);
 }
 
 /** `Set-Cookie` header value, for servers without a cookie helper of their own. */

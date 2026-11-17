@@ -8,7 +8,7 @@
 import type { Door } from './config';
 import type { HookLists, IssueVia, RevocationReason } from './hooks';
 import type { RandomSource } from '../crypto/random';
-import type { CookieSpec } from '../http/cookie';
+import type { CookieSpec, SessionCookieConfig } from '../http/cookie';
 import type { PasswordHasher } from '../password/hasher';
 import type { PasswordPolicy } from '../password/policy';
 import type { AuthEvent } from '../ports/audit';
@@ -71,6 +71,17 @@ export interface PluginContext<U extends AuthUser, A> {
   readonly random: RandomSource;
   readonly logger: Logger;
   readonly metrics: Metrics;
+  /** The session cookie config, so a plugin's own cookies get the same Secure, prefix and SameSite. */
+  readonly cookie: SessionCookieConfig;
+  /**
+   * HMAC-SHA-256 (lowercase hex) of `message` under a key derived from the
+   * server secret for `purpose`. For storing short secrets (recovery codes)
+   * so that a leaked table cannot be searched offline. The key never leaves
+   * the core; two purposes never share one.
+   */
+  keyedHash(purpose: string, message: string): string;
+  /** Refuses (`fresh_auth_required`) when the session's last credential proof is older than `session.freshAuthAge`. */
+  requireFreshAuth(session: StoredSession<A>): AuthResult<void>;
   /** Emits an audit event (and counts it). Never throws. */
   emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>;
   /**
