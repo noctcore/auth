@@ -30,7 +30,7 @@ Read every setting once, at startup, and fail before the server listens. The two
 <Code code={authTs} lang="ts" title="src/auth.ts" />
 
 - **One TTL in two places.** The Redis store guards a user's revocation epoch for `maxSessionTtl`, and `createAuth` refuses a session that could outlive it. Keeping `rememberMeTtl` and `maxSessionTtl` in one constant makes the pair impossible to get out of step.
-- **`noeviction`.** Run this Redis with `maxmemory-policy noeviction`. Under an evicting policy Redis may drop an epoch, which signs users out, or a lockout counter, which hands an attacker a fresh budget. With `noeviction` a full Redis refuses writes and the flows fail closed.
+- **`noeviction`.** Run this Redis with `maxmemory-policy noeviction`. Under an evicting policy Redis may drop an epoch, which signs users out, a lockout counter, which hands an attacker a fresh budget, or a lock key, which ends a lock early. With `noeviction` a full Redis refuses writes and the flows fail closed.
 - **A logger.** Without one, the package's warnings (a breach check that could not run, a mailer that threw) go nowhere.
 - **The mailer is a parameter** so the server can pass a development mailer and production a queue; see [Mail into your templates and queue](/auth/build/mail/).
 
