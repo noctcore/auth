@@ -2,7 +2,7 @@
 
 # @noctcore/auth-prisma
 
-Prisma 7 user, one-time token and two-factor stores for [`@noctcore/auth`](https://github.com/noctcore/auth).
+Prisma 7 user, one-time token, two-factor and membership stores for [`@noctcore/auth`](https://github.com/noctcore/auth).
 
 1. Copy the `AuthToken` model from `node_modules/@noctcore/auth-prisma/prisma/auth.prisma` into your schema and migrate.
 2. Hand the stores your client's delegates:
@@ -41,4 +41,21 @@ const store = new PrismaTwoFactorStore({
 - Moving the last accepted TOTP step and confirming an enrollment are single `updateMany` statements with the guard in `where`. A user's recovery codes are one row; a code is spent by an update guarded on the row's `version`.
 - Delete a user's factor and recovery codes with the user (or add relations with `onDelete: Cascade`). Expired devices are deleted when the user adds one; sweep expired step-up proofs with `deleteMany({ where: { expiresAt: { lt: new Date() } } })`.
 
-All three stores pass the conformance suite from `@noctcore/auth/testing` on PostgreSQL in CI.
+## Membership store
+
+For the membership plugin (`@noctcore/auth/membership`), copy the `AuthMember` and `AuthMemberScope` models, migrate, and hand the store the client and their delegates:
+
+```ts
+import { PrismaMembershipStore } from '@noctcore/auth-prisma';
+
+const store = new PrismaMembershipStore({
+  client: prisma,
+  member: prisma.authMember,
+  scope: prisma.authMemberScope,
+});
+```
+
+- A role change or a removal reads the scope's version, the member and the other admins, then commits a version-guarded update of the scope row and the member write in one `$transaction`. If another write of the scope committed in between, the transaction rolls back and the store decides again on fresh rows, so two admins demoting each other at once leave one admin.
+- Write memberships only through the store, or bump `AuthMemberScope.version` in the same transaction as your own write.
+
+Every store passes the conformance suite from `@noctcore/auth/testing` on PostgreSQL in CI.

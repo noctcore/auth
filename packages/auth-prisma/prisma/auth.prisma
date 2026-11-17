@@ -72,3 +72,25 @@ model AuthStepUp {
 
   @@index([expiresAt])
 }
+
+// The membership plugin's tables (`@noctcore/auth/membership`). Leave them out
+// if you do not use the plugin. Roles are your own strings. Every guarded write
+// (a role change or a removal) bumps its scope's version in the same
+// transaction, so two writes decided on the same rows cannot both commit.
+// Write memberships only through the store, or bump the version yourself.
+
+model AuthMember {
+  // Your scope id: a tenant, organisation or team.
+  scope  String
+  userId String
+  role   String
+
+  @@id([scope, userId])
+  @@index([userId])
+}
+
+model AuthMemberScope {
+  scope   String @id
+  // Bumped by every guarded write of the scope.
+  version Int    @default(0)
+}

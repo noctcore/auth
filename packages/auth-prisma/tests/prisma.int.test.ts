@@ -2,13 +2,20 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { AuthUser, NormalizedEmail } from '@noctcore/auth';
 import {
+  membershipStoreConformance,
   runConformance,
   tokenStoreConformance,
   twoFactorStoreConformance,
   uniqueId,
   userStoreConformance,
 } from '@noctcore/auth/testing';
-import { PrismaTokenStore, PrismaTwoFactorStore, PrismaUserStore, prismaStores } from '../src';
+import {
+  PrismaMembershipStore,
+  PrismaTokenStore,
+  PrismaTwoFactorStore,
+  PrismaUserStore,
+  prismaStores,
+} from '../src';
 import { PrismaClient } from './generated/prisma/client';
 
 const url = process.env['DATABASE_URL'];
@@ -49,6 +56,76 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
   });
 
   runConformance('prisma two-factor store', twoFactorStoreConformance(twoFactor), api);
+
+  const members = new PrismaMembershipStore({
+    client: prisma,
+    member: prisma.authMember,
+    scope: prisma.authMemberScope,
+  });
+
+  runConformance('prisma membership store', membershipStoreConformance(members), api);
+
+  it('bumps the scope version with every guarded write, and decides again after a lost race', async () => {
+    const scope = uniqueId('scope');
+    const [a, b] = [uniqueId('user'), uniqueId('user')];
+
+    await members.addMember({ scope, userId: a, role: 'admin' });
+    await members.addMember({ scope, userId: b, role: 'admin' });
+    expect(await prisma.authMemberScope.findUnique({ where: { scope } })).toBeNull();
+
+    const admins = ['admin'];
+
+    expect(
+      await members.changeRole({
+        scope,
+        userId: a,
+        from: 'admin',
+        to: 'member',
+        adminRoles: admins,
+      }),
+    ).toBe('done');
+
+    expect((await prisma.authMemberScope.findUnique({ where: { scope } }))?.version).toBe(1);
+
+    // A write that bypassed the store but bumped the version: the next guarded
+    // write loses its first attempt and decides again on the fresh rows.
+    const realFind = prisma.authMemberScope.findUnique.bind(prisma.authMemberScope);
+    let first = true;
+
+    const racing = new PrismaMembershipStore({
+      client: prisma,
+      member: prisma.authMember,
+      scope: {
+        ...prisma.authMemberScope,
+        findUnique: async (args: { where: { scope: string } }) => {
+          const row = await realFind(args);
+
+          if (first) {
+            first = false;
+
+            await prisma.$transaction([
+              prisma.authMember.update({
+                where: { scope_userId: { scope, userId: a } },
+                data: { role: 'admin' },
+              }),
+              prisma.authMemberScope.update({ where: { scope }, data: { version: 2 } }),
+            ]);
+          }
+
+          return row;
+        },
+        create: prisma.authMemberScope.create.bind(prisma.authMemberScope),
+        update: prisma.authMemberScope.update.bind(prisma.authMemberScope),
+      },
+    });
+
+    expect(await racing.removeMember({ scope, userId: b, from: 'admin', adminRoles: admins })).toBe(
+      'done',
+    );
+
+    expect(await members.findMember(scope, a)).toEqual({ scope, userId: a, role: 'admin' });
+    expect((await prisma.authMemberScope.findUnique({ where: { scope } }))?.version).toBe(3);
+  });
 
   it("deletes a user's expired trusted devices when it adds one", async () => {
     const userId = uniqueId('user');
