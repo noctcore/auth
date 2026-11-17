@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "noEmit": true,
+    // Nest's decorators are the legacy (experimental) kind. Every injection
+    // names its token with @Inject, so no design-time type metadata is needed
+    // and the build does not depend on emitDecoratorMetadata.
+    "experimentalDecorators": true
+  },
+  "include": ["src", "tests", "*.ts"]
+}

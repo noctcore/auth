@@ -1,0 +1,154 @@
+/**
+ * Cross-site request forgery, checked before any guard or handler runs.
+ *
+ * For every unsafe method on a route that is not exempt, all three of the
+ * core's checks must pass: the `Origin` is on the allowlist
+ * (`verifyRequestOrigin`), `Sec-Fetch-Site` says `same-origin` whenever the
+ * browser sends it (`verifyFetchSite`), and the double-submit token matches
+ * its cookie and is bound to this session or pre-session (`verifyCsrfToken`).
+ *
+ * A refusal is answered here, with 403 and one fixed body, instead of
+ * `next(err)`: an error handed on could reach a filter that echoes its
+ * message, and the answer must not say which check failed.
+ *
+ * Safe methods skip the CSRF check but never the session check (that is the
+ * guard's job). On a safe request the middleware hands out what the page
+ * needs to make unsafe ones: a pre-session id when the browser has no session
+ * and no id yet, and a CSRF cookie bound to the current binding. Both happen
+ * only after the exempt check, so an exempt route never mints anything.
+ *
+ * Guide: Learn, "CSRF".
+ */
+import { Inject, Injectable, type NestMiddleware } from '@nestjs/common';
+import { parseCookieHeader, verifyFetchSite, verifyRequestOrigin } from '@noctcore/auth';
+import {
+  binding,
+  csrfCookie,
+  csrfTokenValid,
+  newPreSession,
+  preSessionBinding,
+  readPreSession,
+} from './csrf-tokens';
+import type { ResolvedOptions } from './options';
+import {
+  appendCookie,
+  blankSessionCookie,
+  header,
+  rawRequest,
+  rawResponse,
+  sessionState,
+  type RawRequest,
+  type RawResponse,
+} from './request';
+import { AUTH_OPTIONS } from './tokens';
+
+const FORBIDDEN = JSON.stringify({ error: { code: 'forbidden' } });
+const INTERNAL = JSON.stringify({ error: { code: 'internal' } });
+
+/**
+ * The core's own notion of a safe method (GET, HEAD, OPTIONS, with ASCII-only
+ * case folding): `verifyRequestOrigin` passes a safe method whatever the
+ * Origin, and refuses an unsafe one with none.
+ */
+function isSafeMethod(method: string): boolean {
+  return verifyRequestOrigin({ method, origin: undefined, allowedOrigins: [] });
+}
+
+function pathOf(req: RawRequest): string {
+  const url = req.originalUrl ?? req.url ?? '/';
+  const query = url.indexOf('?');
+
+  return query === -1 ? url : url.slice(0, query);
+}
+
+function send(res: RawResponse, status: number, body: string): void {
+  res.statusCode = status;
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('cache-control', 'no-store');
+  res.end(body);
+}
+
+@Injectable()
+export class CsrfMiddleware implements NestMiddleware {
+  constructor(@Inject(AUTH_OPTIONS) private readonly options: ResolvedOptions) {}
+
+  async use(request: unknown, response: unknown, next: (error?: unknown) => void): Promise<void> {
+    const req = rawRequest(request);
+    const res = rawResponse(response);
+
+    if (this.isExempt(pathOf(req))) return next();
+
+    try {
+      if (await this.check(req, res)) next();
+      else send(res, 403, FORBIDDEN);
+    } catch (error) {
+      // Only the error's name: a store error can carry the session key.
+      this.options.auth.context.logger.error('CSRF middleware could not check the request', {
+        error: error instanceof Error ? error.name : typeof error,
+      });
+
+      send(res, 500, INTERNAL);
+    }
+  }
+
+  private isExempt(path: string): boolean {
+    return this.options.csrf.exempt.some((rule) =>
+      typeof rule === 'string' ? rule === path : rule.test(path),
+    );
+  }
+
+  /** True when the request may go on. Sets the cookies a safe request should carry back. */
+  private async check(req: RawRequest, res: RawResponse): Promise<boolean> {
+    const { csrf } = this.options;
+    const method = req.method ?? 'GET';
+    const state = await sessionState(req, this.options);
+    const cookies = parseCookieHeader(header(req, 'cookie'));
+    const preSession = readPreSession(cookies.get(csrf.preSessionCookieName));
+    const cookieToken = cookies.get(csrf.cookieName);
+
+    // A token the core refused is cleared, so the browser stops sending it.
+    if (state.token !== null && state.session === null)
+      appendCookie(res, blankSessionCookie(this.options));
+
+    if (!isSafeMethod(method)) {
+      const secFetchSite = header(req, 'sec-fetch-site');
+
+      const originOk = verifyRequestOrigin({
+        method,
+        origin: header(req, 'origin'),
+        allowedOrigins: csrf.allowedOrigins,
+      });
+
+      const siteOk =
+        secFetchSite === undefined ||
+        verifyFetchSite({ method, secFetchSite, allowSameSite: csrf.allowSameSite });
+
+      const tokenOk = csrfTokenValid(this.options, {
+        cookieToken,
+        headerToken: header(req, csrf.headerName),
+        bound: binding(state.session, preSession),
+      });
+
+      return originOk && siteOk && tokenOk;
+    }
+
+    let bound = binding(state.session, preSession);
+
+    if (bound === null) {
+      const fresh = newPreSession(this.options);
+
+      appendCookie(res, fresh.cookie);
+      bound = preSessionBinding(fresh.id);
+    }
+
+    const current = csrfTokenValid(this.options, {
+      cookieToken,
+      headerToken: cookieToken,
+      bound,
+    });
+
+    if (!current) appendCookie(res, csrfCookie(this.options, bound).cookie);
+
+    return true;
+  }
+}

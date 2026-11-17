@@ -79,6 +79,7 @@ the stricter value wins.
 | [`@noctcore/auth`](packages/auth) | The framework-free core: primitives, sessions, tokens, throttle, flows and plugin seams. `@noctcore/auth/argon2` holds the Argon2id hasher (optional native peer `@node-rs/argon2`); `@noctcore/auth/testing` holds in-memory stores, fakes and the store conformance suite |
 | [`@noctcore/auth-redis`](packages/auth-redis) | `SessionStore` and `CounterStore` on ioredis |
 | [`@noctcore/auth-prisma`](packages/auth-prisma) | `UserStore` and `TokenStore` on Prisma 7, plus the schema to merge into yours |
+| [`@noctcore/auth-nestjs`](packages/auth-nestjs) | A NestJS module: a closed-by-default session guard, CSRF middleware, decorators and trust-proxy setup |
 
 Any store that passes the conformance suite in `@noctcore/auth/testing` works, so Redis and Prisma
 are a starting point, not a requirement. All packages share one version.
@@ -141,7 +142,8 @@ const session = await auth.validateRequest({ token: auth.readSessionToken(req.he
 
 [`examples/basic`](examples/basic) is a complete JSON API on `node:http` with register, login,
 email verification, sessions, logout and CSRF protection, plus an end-to-end test against real
-Redis and PostgreSQL.
+Redis and PostgreSQL. [`examples/nestjs`](examples/nestjs) is the same on NestJS, with a compile
+test that boots the whole app and pins the routes open without a session.
 
 ## Docs
 

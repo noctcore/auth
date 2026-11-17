@@ -196,7 +196,12 @@ export default tseslint.config(
     // The in-memory stores and fakes implement the Promise-returning store
     // contracts without doing any I/O. They stay `async` so a thrown error
     // reaches the caller as a rejection, exactly like a real adapter.
-    files: ['packages/auth/src/testing/**/*.ts', '**/tests/**/*.ts', 'examples/basic/src/main.ts'],
+    files: [
+      'packages/auth/src/testing/**/*.ts',
+      '**/tests/**/*.ts',
+      'examples/basic/src/main.ts',
+      'examples/nestjs/src/infra.module.ts',
+    ],
     rules: { '@typescript-eslint/require-await': 'off' },
   },
   {

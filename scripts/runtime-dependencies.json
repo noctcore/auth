@@ -13,5 +13,10 @@
     "dependencies": ["@noctcore/auth"],
     "optionalDependencies": [],
     "peerDependencies": ["ioredis"]
+  },
+  "@noctcore/auth-nestjs": {
+    "dependencies": ["@noctcore/auth"],
+    "optionalDependencies": [],
+    "peerDependencies": ["@nestjs/common", "@nestjs/core"]
   }
 }

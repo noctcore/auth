@@ -2,7 +2,7 @@
 
 One test file per attack, numbered in the order the attacks were added. A number is never reused and a file is never deleted: an attack that stops applying keeps its file and says why. Every security fix adds a test here, in the file of the attack it closes or in a new numbered file.
 
-Learn pages are under <https://noctcore.github.io/auth/learn/>. Module paths are relative to `packages/auth/src/`. `tests/attacks/index.test.ts` checks that this table and the files agree and that the numbers have no gaps.
+Learn pages are under <https://noctcore.github.io/auth/learn/>. Module paths are relative to `packages/auth/src/`, or to the named package's `src/`. The numbers run across the repository: an adapter that adds attack surface keeps its attack tests in its own `tests/attacks/` folder, linked from here. `tests/attacks/index.test.ts` checks that this table and the files agree and that the numbers have no gaps.
 
 | ID | Attack | Learn page | Stopped by | Test | Also covered by |
 |---|---|---|---|---|---|
@@ -29,3 +29,8 @@ Learn pages are under <https://noctcore.github.io/auth/learn/>. Module paths are
 | A021 | Passing an unsafe request as a safe method through Unicode case folding | CSRF | `http/csrf.ts` | [A021-non-ascii-method-case-folding](A021-non-ascii-method-case-folding.test.ts) | `tests/property/csrf.property.test.ts` |
 | A022 | Turning a malformed breach-check response into a verdict through Unicode case folding | Passwords | `password/breach.ts` | [A022-breach-response-case-folding](A022-breach-response-case-folding.test.ts) | `tests/primitives/password.test.ts` |
 | A023 | Holding responses up through a slow or hung mailer | Enumeration | `core/auth-core.ts`, `core/background.ts`, `flows/register.ts`, `flows/email-verification.ts`, `flows/password-change.ts`, `flows/password-reset.ts`, `flows/password-reset-request.ts`, `flows/lock-notice.ts` | [A023-hung-mailer-holds-the-response](A023-hung-mailer-holds-the-response.test.ts) | `tests/flows/failure-paths.test.ts` (a throwing mailer) |
+| A024 | A route left open because nobody marked it | Build: Use with NestJS | auth-nestjs: `session.guard.ts`, `auth.module.ts`, `routes.ts` | [A024-unannotated-route-left-open](../../../auth-nestjs/tests/attacks/A024-unannotated-route-left-open.test.ts) |  |
+| A025 | Choosing your own client IP through the Nest adapter | Build: Use with NestJS | auth-nestjs: `request.ts`, `trust-proxy.ts` | [A025-forged-forwarded-for-through-nest](../../../auth-nestjs/tests/attacks/A025-forged-forwarded-for-through-nest.test.ts) | core A011 |
+| A026 | Cross-site request forgery against a Nest app | CSRF | auth-nestjs: `csrf.middleware.ts`, `csrf-tokens.ts` | [A026-csrf-origin-through-nest](../../../auth-nestjs/tests/attacks/A026-csrf-origin-through-nest.test.ts) | core A008, A021 |
+| A027 | Keeping a role after it was taken away | Build: Use with NestJS | auth-nestjs: `session.guard.ts` | [A027-role-change-mid-session](../../../auth-nestjs/tests/attacks/A027-role-change-mid-session.test.ts) |  |
+| A028 | Passing a fresh-auth check with a stale proof | Sessions and expiry | auth-nestjs: `session.guard.ts` | [A028-fresh-auth-stale-proof](../../../auth-nestjs/tests/attacks/A028-fresh-auth-stale-proof.test.ts) |  |
