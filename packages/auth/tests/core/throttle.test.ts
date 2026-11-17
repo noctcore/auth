@@ -22,13 +22,13 @@ describe('fixed-window rate limit', () => {
     const rule = { limit: 2, window: '1m' } as const;
     const hits = [];
 
-    for (let i = 0; i < 4; i++) hits.push(await throttle.hit('login:1.2.3.4', rule));
+    for (let i = 0; i < 4; i++) hits.push(await throttle.hit('login:192.0.2.34', rule));
 
     expect(hits.map((h) => h.allowed)).toEqual([true, true, false, false]);
     expect(hits.map((h) => h.firstRefusal)).toEqual([false, false, true, false]);
     expect(hits[2]?.retryAfterSeconds).toBe(60);
     clock.advance(MIN);
-    expect((await throttle.hit('login:1.2.3.4', rule)).allowed).toBe(true);
+    expect((await throttle.hit('login:192.0.2.34', rule)).allowed).toBe(true);
   });
 
   it('fails closed when the store throws', async () => {
@@ -43,9 +43,9 @@ describe('fixed-window rate limit', () => {
 describe('login lockout', () => {
   it('stops one source after 5 attempts without locking the owner on another network', async () => {
     for (let i = 0; i < 5; i++)
-      expect((await throttle.gateLogin(victim, '6.6.6.6')).allowed).toBe(true);
+      expect((await throttle.gateLogin(victim, '198.51.100.66')).allowed).toBe(true);
 
-    expect(await throttle.gateLogin(victim, '6.6.6.6')).toEqual({
+    expect(await throttle.gateLogin(victim, '198.51.100.66')).toEqual({
       allowed: false,
       reason: 'account_ip_budget',
     });
@@ -69,12 +69,12 @@ describe('login lockout', () => {
   });
 
   it('returns only the proving source budget on success and lifts everything on a password reset', async () => {
-    for (let i = 0; i < 4; i++) await throttle.gateLogin(victim, '1.1.1.1');
+    for (let i = 0; i < 4; i++) await throttle.gateLogin(victim, '198.51.100.11');
 
-    await throttle.loginSucceeded(victim, '1.1.1.1');
+    await throttle.loginSucceeded(victim, '198.51.100.11');
 
     for (let i = 0; i < 5; i++)
-      expect((await throttle.gateLogin(victim, '1.1.1.1')).allowed).toBe(true);
+      expect((await throttle.gateLogin(victim, '198.51.100.11')).allowed).toBe(true);
 
     const t = new Throttle(counters, clock, { perAccount: { limit: 1, window: '15m' } });
     const other = accountKey('other@example.com');
