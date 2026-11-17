@@ -313,12 +313,13 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
       bob.browser.request('POST', `${members}/${owner.id}`, { role: 'member' }),
     ]);
 
-    // The loser is refused by the last-admin guard (409), or, when the winner's
-    // revocation lands first, already signed out when its request is validated (401).
+    // The loser is refused whichever step the winner's change reaches first: the
+    // last-admin guard (409), its own actor check after the winner demoted it
+    // (403), or session validation after the winner's revocation (401).
     const statuses = results.map((r) => r.status).sort();
 
     expect(statuses[0]).toBe(200);
-    expect([401, 409]).toContain(statuses[1]);
+    expect([401, 403, 409]).toContain(statuses[1]);
 
     const admins = await prisma.authMember.count({
       where: { scope: orgId, role: { in: ['owner', 'admin'] } },
