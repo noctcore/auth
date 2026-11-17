@@ -21,6 +21,10 @@
  * - On a streamed batch (`httpBatchStreamLink`) the response headers are sent
  *   before any procedure runs, so `writesCookies` refuses the call there
  *   before the flow runs.
+ * - One procedure per request writes cookies: the first `writesCookies` of a
+ *   batch claims the slot and a second is refused before it runs. As a
+ *   backstop, a second `setSession`, `signOut` or `clearSession` in one
+ *   request throws before writing.
  *
  * A failure to resolve (a store down) answers `internal`, logging only the
  * error's name: a store error can carry the session key.
@@ -116,6 +120,11 @@ export interface Internals {
   readonly streamed: boolean;
   /** The real cookie writers, handed out by `writesCookies` only. */
   readonly writers: Writers;
+  /**
+   * The request's one cookie-writer slot, shared by every procedure of a
+   * batch: `writesCookies` claims it, and a second claim is refused.
+   */
+  readonly slot: { claimed: boolean };
 }
 
 /** The header value `httpBatchStreamLink` sends; tRPC answers it with a streamed body. */
@@ -151,6 +160,24 @@ export function refuseStreamedWrite(streamed: boolean): void {
         'example with splitLink.',
     );
   }
+}
+
+/**
+ * Claims the request's one cookie-writer slot for a procedure marked
+ * `writesCookies`, before it runs. Every procedure of a batch shares
+ * `ctx.auth`, so two session writers in one batch (two sign-ins, a sign-in
+ * and a rotation) would both run, the browser would keep the last cookie, and
+ * the other session would stay live in the store with no browser holding it.
+ */
+export function claimCookieWriter(found: Internals): void {
+  if (found.slot.claimed) {
+    throw new AuthConfigError(
+      'Only one procedure per request can write cookies, and this batch already has one. ' +
+        'Send session-writing mutations one per request (httpLink, for example with splitLink).',
+    );
+  }
+
+  found.slot.claimed = true;
 }
 
 const internals = new WeakMap<object, Internals>();
@@ -278,8 +305,24 @@ async function resolveState(
     return { csrfToken: next.token };
   };
 
+  // The backstop behind the slot: one write per request, whoever calls it.
+  let written = false;
+
+  const once = (): void => {
+    if (written) {
+      throw new AuthConfigError(
+        'This request already wrote its session cookie: setSession, signOut and clearSession ' +
+          'run at most once per request, together.',
+      );
+    }
+
+    written = true;
+  };
+
   const writers: Writers = {
     setSession: (issued) => {
+      once();
+
       const next = csrfCookie(options, sessionBinding(issued.session));
 
       write(issued.cookie);
@@ -289,6 +332,8 @@ async function resolveState(
       return { csrfToken: next.token };
     },
     signOut: async () => {
+      once();
+
       const { cookie } = await auth.logout({ token, meta });
 
       write(cookie);
@@ -296,6 +341,7 @@ async function resolveState(
       return startPreSession();
     },
     clearSession: (cookie) => {
+      once();
       write(cookie);
 
       return startPreSession();
@@ -317,7 +363,7 @@ async function resolveState(
 
   const state: AuthState = base;
 
-  internals.set(state, { options, csrfOk, streamed, writers });
+  internals.set(state, { options, csrfOk, streamed, writers, slot: { claimed: false } });
 
   return state;
 }

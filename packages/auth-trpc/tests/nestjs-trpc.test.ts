@@ -294,6 +294,35 @@ describe('nestjs-trpc', () => {
     expect((await call(browser, url, 'account.me')).status).toBe(200);
   });
 
+  it('runs one sign-in of a batch and refuses the second before its flow runs', async () => {
+    const { url, browser } = await start();
+
+    await call(browser, url, 'account.health');
+
+    const login = vi.spyOn(current.auth, 'login');
+    const input = { email: EMAIL, password: PASSWORD };
+
+    const response = await browser.fetch(`${url}/account.login,account.login?batch=1`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ 0: input, 1: input }),
+    });
+
+    const answers = (await response.json()) as Answer['body'][];
+
+    expect(answers.map((a) => (a.error ? a.error.message : 'ok')).sort()).toEqual([
+      'internal',
+      'ok',
+    ]);
+
+    expect(login).toHaveBeenCalledTimes(1);
+
+    const user = await current.stores.users.findCredentialByEmail(EMAIL as never);
+
+    expect(await current.stores.sessions.listByUser(user?.id ?? '')).toHaveLength(1);
+    expect((await call(browser, url, 'account.me')).status).toBe(200);
+  });
+
   it('refuses a procedure marked public that also asks for a role', async () => {
     const { url, browser } = await start();
     const answer = await call(browser, url, 'account.confused');
