@@ -1,6 +1,7 @@
 /**
- * UserStore conformance: unique violations returned as null and guarded writes
- * refusing deleted users.
+ * UserStore conformance: unique violations returned as null, guarded writes
+ * refusing deleted users and, for a store with `changeEmail`, an address
+ * change that is a compare-and-set and keeps the address unique.
  *
  * Guide: Build, "Writing a store adapter".
  */
@@ -92,6 +93,79 @@ export function userStoreConformance(
     },
   ];
 
+  const changeEmail = store.changeEmail?.bind(store);
+
+  if (changeEmail) {
+    cases.push(
+      {
+        name: 'changes the email only from the expected address, marks it verified and can clear the password',
+        async run() {
+          const from = email();
+          const user = await store.create({ email: from, passwordHash: 'h' });
+
+          assert.ok(user);
+          assert.equal(await changeEmail(user.id, { from: email(), to: email() }), 'stale');
+          assert.equal(await changeEmail(uniqueId('missing'), { from, to: email() }), 'stale');
+
+          const to = email();
+
+          assert.equal(await changeEmail(user.id, { from, to }), 'changed');
+
+          assert.deepEqual(await store.findById(user.id), {
+            ...user,
+            email: to,
+            emailVerified: true,
+          });
+
+          assert.equal(await store.findCredentialByEmail(from), null);
+          assert.equal((await store.findCredentialByEmail(to))?.passwordHash, 'h');
+          assert.equal(await changeEmail(user.id, { from, to: email() }), 'stale');
+
+          const back = email();
+
+          assert.equal(
+            await changeEmail(user.id, { from: to, to: back, clearPassword: true }),
+            'changed',
+          );
+
+          assert.equal((await store.findCredentialById(user.id))?.passwordHash, null);
+        },
+      },
+      {
+        name: 'refuses a taken address as taken, and of 10 users racing for one address exactly one gets it',
+        async run() {
+          const taken = email();
+
+          assert.ok(await store.create({ email: taken, passwordHash: 'h' }));
+          const from = email();
+          const user = await store.create({ email: from, passwordHash: 'h' });
+
+          assert.ok(user);
+          assert.equal(await changeEmail(user.id, { from, to: taken }), 'taken');
+          assert.equal((await store.findById(user.id))?.email, from);
+
+          const racers = await times(10, async () => {
+            const address = email();
+            const racer = await store.create({ email: address, passwordHash: 'h' });
+
+            assert.ok(racer);
+
+            return { id: racer.id, address };
+          });
+
+          const target = email();
+
+          const results = await Promise.all(
+            racers.map((r) => changeEmail(r.id, { from: r.address, to: target })),
+          );
+
+          assert.equal(results.filter((r) => r === 'changed').length, 1, 'exactly one may win');
+          assert.equal(results.filter((r) => r === 'taken').length, 9);
+        },
+      },
+    );
+  }
+
   const softDelete = options.softDelete;
 
   if (softDelete) {
@@ -107,6 +181,9 @@ export function userStoreConformance(
         assert.equal(await store.findById(user.id), null);
         assert.equal(await store.setPasswordHash(user.id, 'new'), false);
         assert.equal(await store.markEmailVerified(user.id, address), false);
+
+        if (changeEmail)
+          assert.equal(await changeEmail(user.id, { from: address, to: email() }), 'stale');
       },
     });
   }

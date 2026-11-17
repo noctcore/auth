@@ -3,7 +3,7 @@
  * adapters. For unit tests and prototypes only.
  */
 import { systemClock, type Clock } from '../../ports/clock';
-import type { AuthUser, UserStore, WithPasswordHash } from '../../ports/stores';
+import type { AuthUser, EmailChangeResult, UserStore, WithPasswordHash } from '../../ports/stores';
 import type { NormalizedEmail } from '../../shared/email';
 
 interface UserRecord {
@@ -89,6 +89,30 @@ export class MemoryUserStore implements UserStore<AuthUser> {
     record.emailVerified = true;
 
     return true;
+  }
+
+  async changeEmail(
+    id: string,
+    change: {
+      readonly from: NormalizedEmail;
+      readonly to: NormalizedEmail;
+      readonly clearPassword?: boolean;
+    },
+  ): Promise<EmailChangeResult> {
+    const record = this.byId.get(id);
+
+    if (!this.live(record) || record.email !== change.from) return 'stale';
+
+    // Unique across soft-deleted rows too, like the constraint `create` mimics.
+    for (const other of this.byId.values())
+      if (other !== record && other.email === change.to) return 'taken';
+
+    record.email = change.to;
+    record.emailVerified = true;
+
+    if (change.clearPassword) record.passwordHash = null;
+
+    return 'changed';
   }
 
   /** Test helper: soft-delete a user. */
