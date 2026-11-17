@@ -6,9 +6,9 @@ import { vi } from 'vitest';
 import type { AuthMailEvent, PasswordResetJob } from '../../src';
 import type { PasswordHasher } from '../../src/password/hasher';
 import { plainHasher } from '../../src/testing';
-import { meta, PASSWORD, setup } from '../flows/setup';
+import { meta, PASSWORD, settled, setup } from '../flows/setup';
 
-export { meta, NEW_PASSWORD, PASSWORD, SECRET, setup } from '../flows/setup';
+export { meta, NEW_PASSWORD, PASSWORD, SECRET, settled, setup } from '../flows/setup';
 
 export const EMAIL = 'ada@example.com';
 
@@ -19,6 +19,7 @@ export async function registered(overrides: Parameters<typeof setup>[0] = {}) {
   const env = setup(overrides);
 
   await env.auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });
+  await settled();
 
   return env;
 }

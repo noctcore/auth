@@ -12,7 +12,8 @@
 //   flows/password-reset-request.ts, flows/lock-notice.ts. Bounded by Vitest's
 //   fake timers, not the wall clock. Not stopped: whatever `send` does before it
 //   returns its promise runs on the response path, which is why `send` must
-//   only enqueue (the last case pins that).
+//   only enqueue (the last case pins that). Sign-up hands its mail over after
+//   a store call made off the response path, so there it runs later.
 // Learn: Enumeration (/auth/learn/enumeration/)
 import { describe, expect, it } from 'vitest';
 
@@ -26,6 +27,7 @@ import {
   PASSWORD,
   queued,
   registered,
+  settled,
   setup,
 } from './support';
 import type { Logger } from '../../src';
@@ -174,6 +176,7 @@ describe('A023: holding responses up through a slow or hung mailer', () => {
     const answer = await env.auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });
 
     expect(answer.ok).toBe(true);
+    await settled();
     expect(sends).toBe(1);
     expect(failures).toEqual(['Mailer failed']);
   });
@@ -183,18 +186,34 @@ describe('A023: holding responses up through a slow or hung mailer', () => {
   // request, before the audit row and the answer. Hence: `send` must only enqueue.
   it('runs the synchronous part of send on the response path, before the flow answers', async () => {
     const env = setup();
+    const { session } = await env.signedInUser(EMAIL);
+    let answered = false;
     const order: string[] = [];
-    const emit = env.audit.emit.bind(env.audit);
 
     env.mailer.send = (event) => (
-      order.push(`send ${event.type}`),
+      order.push(`send ${event.type} ${answered ? 'after' : 'before'} the answer`),
       new Promise<void>(() => undefined)
     );
 
-    env.audit.emit = async (event, meta) => (order.push(event.type), emit(event, meta));
+    await onFakeClock(() =>
+      env.auth.changePassword({
+        session,
+        currentPassword: PASSWORD,
+        newPassword: NEW_PASSWORD,
+        meta: meta(),
+      }),
+    );
 
-    await onFakeClock(() => env.auth.register({ email: EMAIL, password: PASSWORD, meta: meta() }));
+    answered = true;
 
-    expect(order).toEqual(['send verify-email', 'email.verification_sent', 'register.created']);
+    // Sign-up is the exception: its mail waits on a store call made off the response path.
+    await env.auth.register({ email: 'new@example.com', password: PASSWORD, meta: meta() });
+    expect(order).toEqual(['send password-changed before the answer']);
+    await settled();
+
+    expect(order).toEqual([
+      'send password-changed before the answer',
+      'send verify-email after the answer',
+    ]);
   });
 });

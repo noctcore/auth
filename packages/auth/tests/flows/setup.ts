@@ -12,6 +12,18 @@ export const SECRET = 'test-secret-that-is-at-least-32-bytes-long';
 export const PASSWORD = 'correct horse battery';
 export const NEW_PASSWORD = 'another long passphrase';
 
+// Taken now, before a test can swap in fake timers.
+const realSetImmediate = globalThis.setImmediate;
+
+/**
+ * Lets work the flows started off the response path finish: sign-up's
+ * verification mail and audit event, a taken address's notice. The in-memory
+ * stores settle on microtasks, which all run before the next macrotask.
+ */
+export function settled(): Promise<void> {
+  return new Promise((resolve) => realSetImmediate(resolve));
+}
+
 export function meta(ip = '203.0.113.7'): RequestMeta {
   return { ip, userAgent: 'vitest', origin: 'https://app.example' };
 }
@@ -45,6 +57,8 @@ export function setup(overrides: Overrides = {}) {
     const registered = await auth.register({ email, password: PASSWORD, meta: meta(ip) });
 
     if (!registered.ok) throw new Error(`register failed: ${registered.reason}`);
+
+    await settled();
 
     const login = await auth.login({ email, password: PASSWORD, meta: meta(ip) });
 

@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { toPublicError } from '../../src';
-import { EMAIL, meta, PASSWORD, queued, registered, setup } from './support';
+import { EMAIL, meta, PASSWORD, queued, registered, settled, setup } from './support';
 
 describe('A003: account enumeration by the answer', () => {
   it('answers an unknown address, a wrong password and a malformed address the same', async () => {
@@ -37,6 +37,8 @@ describe('A003: account enumeration by the answer', () => {
       meta: meta(),
     });
 
+    await settled();
+
     const sentBefore = mailer.sent.length;
 
     const second = await auth.register({
@@ -46,6 +48,7 @@ describe('A003: account enumeration by the answer', () => {
     });
 
     expect(second).toEqual(first);
+    await settled();
     const newMail = mailer.sent.slice(sentBefore);
 
     expect(newMail.map((m) => m.type)).toEqual(['account-exists']);

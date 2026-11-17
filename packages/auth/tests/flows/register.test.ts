@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AuthConfigError, toPublicError } from '../../src';
-import { meta, PASSWORD, setup } from './setup';
+import { meta, PASSWORD, settled, setup } from './setup';
 
 describe('register', () => {
   it('creates the account, sends an 8-digit verification code and issues no session', async () => {
@@ -13,6 +13,7 @@ describe('register', () => {
     });
 
     expect(result).toEqual({ ok: true, value: { session: null } });
+    await settled();
     const mail = mailer.last('verify-email');
 
     expect(mail?.to).toBe('ada@example.com');

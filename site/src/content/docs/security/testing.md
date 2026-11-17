@@ -25,7 +25,7 @@ A timing leak is checked by counting work, not by measuring the clock, so the ch
 
 - at login, the same sequence of calls and one verify for a known and an unknown address, whether the account is open or locked. A locked account makes fewer counter calls than an open one (the gate stops before spending budgets), the same for known and unknown addresses, and the test pins every other call;
 - at the password reset request, the same sequence for a known and an unknown address;
-- at sign-up, one hash, one mail and the same number of store round trips for a taken and a new address. The calls are not identical: a taken address looks the owner up where a new account writes its verification token. The test pins both sequences, so any other drift fails.
+- at sign-up, one hash, one mail and the same number of store round trips for a taken and a new address. The calls are not identical: a taken address looks the owner up where a new account writes its verification token. The test pins both sequences, so any other drift fails, and with every store call after the insert (and the audit sink) hanging, both answers still come back, having waited on the same two calls: the door limit and the insert.
 
 Attack `A023` hands every flow that mails a mailer that never settles and requires each answer anyway, on Vitest's fake timers rather than the wall clock: no flow waits for delivery.
 

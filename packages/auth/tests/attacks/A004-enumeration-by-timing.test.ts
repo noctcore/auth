@@ -8,7 +8,9 @@
 //   dummy hash for unknown ones), password/verify.ts, tokens/one-time-tokens.ts
 //   (same HMAC and lookup for an unknown user), throttle/counter-keys.ts (keys from
 //   the address, never the user id), core/auth-core.ts (mail is handed over, never
-//   awaited). Checked by counting calls, not wall-clock
+//   awaited), flows/register.ts (everything after the insert runs off the response
+//   path), auth-prisma src/user-store.ts (a taken address is a skipped insert, not a
+//   failed statement). Checked by counting calls, not wall-clock
 //   time, so CI cannot flake: tests/timing/benchmark.ts (`bun run bench:timing`)
 //   measures the clock.
 // Learn: Enumeration (/auth/learn/enumeration/)
@@ -27,6 +29,7 @@ import {
   queued,
   recordStoreCalls,
   registered,
+  settled,
   setup,
 } from './support';
 
@@ -135,10 +138,8 @@ describe('A004: account enumeration by timing', () => {
   });
 
   // Not the same sequence: a taken address looks the owner up where a new
-  // account writes its verification token. Both are one indexed round trip;
-  // the test pins both sequences so any other drift fails. Each path hands
-  // one mail to the mailer and does not wait for it (A023), so delivery time
-  // stays out of the answer whichever template it is.
+  // account writes its verification token. The test pins both sequences so
+  // any other drift fails; the next test shows the answer waits on neither.
   it('hashes the password, makes the same number of store round trips and hands over one mail at sign-up, taken address or new', async () => {
     let hashes = 0;
     const base = plainHasher();
@@ -146,6 +147,7 @@ describe('A004: account enumeration by timing', () => {
     const env = setup({ password: { hasher, breachCheck: false } });
 
     await env.auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });
+    await settled();
 
     const { calls } = recordStoreCalls(env.stores);
 
@@ -156,6 +158,7 @@ describe('A004: account enumeration by timing', () => {
       const mailsBefore = env.mailer.sent.length;
 
       await env.auth.register({ email, password: PASSWORD, meta: meta() });
+      await settled();
 
       return { calls: [...calls], hashes, mails: env.mailer.sent.length - mailsBefore };
     };
@@ -174,6 +177,41 @@ describe('A004: account enumeration by timing', () => {
       hashes: 1,
       mails: 1,
     });
+  });
+
+  // On real stores the two sequences cost different times (a failed or skipped
+  // insert and a read, against an insert and a write), so the answer must not
+  // wait on anything after the insert: the owner lookup, the verification
+  // token, the mail and the audit event all run off the response path.
+  it('answers a sign-up without waiting on any store call after the insert, taken address or new', async () => {
+    const env = await registered();
+    const hang = () => new Promise<never>(() => undefined);
+
+    env.stores.users.findCredentialByEmail = hang;
+    env.stores.tokens.put = hang;
+    env.audit.emit = hang;
+
+    const { calls } = recordStoreCalls(env.stores);
+
+    const answer = async (email: string) => {
+      calls.length = 0;
+
+      const result = await onFakeClock(() =>
+        env.auth.register({ email, password: PASSWORD, meta: meta() }),
+      );
+
+      return { result, awaited: calls.slice(0, 2) };
+    };
+
+    const taken = await answer('ADA@example.com');
+    const fresh = await answer('new@example.com');
+
+    expect(taken).toEqual({
+      result: { ok: true, value: { session: null } },
+      awaited: ['counters.increment', 'users.create'],
+    });
+
+    expect(fresh).toEqual(taken);
   });
 
   it('makes the same token store lookup for an unknown user as for a known one', async () => {

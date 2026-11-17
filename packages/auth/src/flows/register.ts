@@ -5,15 +5,20 @@
  * say "this email is in use" opt in with `registration.revealExisting`.
  *
  * The password is checked and hashed BEFORE the address is looked up, so the
- * expensive step happens on both paths. Both paths hand one mail to the mailer
- * without waiting for it, so delivery time never reaches the answer.
+ * expensive step happens on both paths. The answer then waits on one insert,
+ * which succeeds for a new address and fails or is skipped for a taken one.
+ * Everything after it that differs between the paths runs off the response
+ * path through `background`: the owner lookup, the "account exists" mail and
+ * the `register.existing` event for a taken address; the `register.created`
+ * event, the verification token and its mail for a new one. On real stores
+ * the two sequences cost different times (a read against a write), so
+ * awaiting them showed in the answer. A failure there is logged, not answered.
  *
- * What still differs between the paths, and so can show in the response time:
- * the taken path's insert fails where the new one succeeds, the store calls
- * differ by one round trip (pinned by attack A004), and only a new address
- * runs the `afterRegister` hooks (awaited, so keep them fast and queue slow
- * work) and, with `autoLogin`, issues a session. `autoLogin` requires
- * `revealExisting`, whose answer already names a taken address.
+ * What still differs on the response path, and so can show in the response
+ * time: the insert itself (a stored row against a failed or skipped one), and
+ * only a new address runs the `afterRegister` hooks (awaited, so keep them fast
+ * and queue slow work) and, with `autoLogin`, issues a session. `autoLogin`
+ * requires `revealExisting`, whose answer already names a taken address.
  */
 import { sendVerification } from './email-verification';
 import type { FlowSettings } from './settings';
@@ -61,9 +66,9 @@ export async function register<U extends AuthUser, A>(
   const user = await core.users.create({ email, passwordHash: hashed.value });
 
   if (!user) {
-    const existing = await core.users.findCredentialByEmail(email);
-
     if (settings.revealExisting) {
+      const existing = await core.users.findCredentialByEmail(email);
+
       await core.emit(
         {
           type: 'register.refused',
@@ -76,20 +81,28 @@ export async function register<U extends AuthUser, A>(
       return fail('email_in_use', 'email_in_use');
     }
 
-    if (existing) core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
+    // Everything after the insert that differs from a new address runs off
+    // the response path, like the new address's verification below.
+    core.background('existing address notice', async () => {
+      const existing = await core.users.findCredentialByEmail(email);
 
-    await core.emit(
-      { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },
-      meta,
-    );
+      if (existing) core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
+
+      await core.emit(
+        { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },
+        meta,
+      );
+    });
 
     return ok({ session: null });
   }
 
   for (const hook of core.hooks.afterRegister) await hook({ user, meta });
 
-  await sendVerification(core, settings, user, meta);
-  await core.emit({ type: 'register.created', userId: user.id }, meta);
+  core.background('verification mail', async () => {
+    await core.emit({ type: 'register.created', userId: user.id }, meta);
+    await sendVerification(core, settings, user, meta);
+  });
 
   if (!settings.autoLogin) return ok({ session: null });
 
