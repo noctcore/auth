@@ -248,6 +248,7 @@ PluginContext [interface]<U extends AuthUser, A>
     readonly tokens: OneTimeTokens
     readonly users: UserStore<U>
     requireFreshAuth(session: StoredSession<A>): AuthResult<void>
+    requireFreshLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>>
     revokeAllSessions(userId: string, reason: RevocationReason): Promise<void>
     verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>
 RandomSource [type] = (bytes: Uint8Array) => void

@@ -88,6 +88,14 @@ export interface PluginContext<U extends AuthUser, A> {
   keyedHash(purpose: string, message: string): string;
   /** Refuses (`fresh_auth_required`) when the session's last credential proof is older than `session.freshAuthAge`. */
   requireFreshAuth(session: StoredSession<A>): AuthResult<void>;
+  /**
+   * Re-reads the session from the store and checks freshness on that live copy,
+   * not on the object passed in: `session_expired` unless it is live (unexpired,
+   * not idle, current epoch) and still the same user's, then `fresh_auth_required`
+   * as `requireFreshAuth`. Returns the live copy. Use it at every door that
+   * needs fresh authentication, so a hand-built or stale object cannot claim it.
+   */
+  requireFreshLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>>;
   /** Emits an audit event (and counts it). Never throws. */
   emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>;
   /**

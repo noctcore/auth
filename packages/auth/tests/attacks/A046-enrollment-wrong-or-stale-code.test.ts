@@ -5,7 +5,8 @@
 // shown) can lock the owner out, or activate a secret an attacker planted from
 // a session they briefly held.
 //
-// Stopped by: plugins/two-factor/enrollment.ts (needs a fresh credential proof; the secret
+// Stopped by: plugins/two-factor/enrollment.ts (needs a fresh credential proof, read from
+//   the live session by core/auth-core.ts `requireFreshLiveSession`; the secret
 //   stays pending until a code from it, within the drift window, is confirmed within 10
 //   minutes by a compare-and-set on that very secret; guesses spend the factor budget).
 // Learn: Second factors (/auth/learn/second-factors/)
@@ -124,9 +125,18 @@ describe('A046: confirming an enrollment with a wrong or stale code', () => {
     const t = twoFactorApp();
     const { session } = await t.signedIn();
 
-    t.clock.advance(60 * 60_000);
+    t.clock.advance(11 * 60_000);
 
     expect(await t.auth.twoFactor.enroll({ session, meta: meta() })).toMatchObject({
+      ok: false,
+      code: 'fresh_auth_required',
+    });
+
+    // Nor by claiming a fresh proof on the object it hands in: freshness is
+    // read from the live session in the store.
+    const claimed = { ...session, authenticatedAt: t.clock.now() };
+
+    expect(await t.auth.twoFactor.enroll({ session: claimed, meta: meta() })).toMatchObject({
       ok: false,
       code: 'fresh_auth_required',
     });

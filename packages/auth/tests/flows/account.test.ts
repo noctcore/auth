@@ -223,6 +223,48 @@ describe('session management', () => {
     expect(self).toEqual({ ok: true, value: { revoked: true } });
   });
 
+  it('reads freshness for revoking a device from the live session, not the object passed', async () => {
+    const t = await twoDevices();
+
+    t.clock.advance(11 * 60_000);
+
+    const claimed = { ...t.laptop.session, authenticatedAt: t.clock.now() };
+
+    const result = await t.auth.sessions.revoke({
+      session: claimed,
+      id: t.phone.session.id,
+      meta: meta(),
+    });
+
+    expect(!result.ok && result.code).toBe('fresh_auth_required');
+    expect(await t.sessionOf(t.phone.token)).not.toBeNull();
+  });
+
+  it('refuses to revoke a device from a session that is no longer live, or names another user', async () => {
+    const t = await twoDevices();
+    const eve = await t.signedInUser('eve@example.com', '192.0.2.99');
+    const borrowed = { ...eve.session, userId: t.laptop.session.userId };
+
+    const relabelled = await t.auth.sessions.revoke({
+      session: borrowed,
+      id: t.phone.session.id,
+      meta: meta(),
+    });
+
+    expect(!relabelled.ok && relabelled.code).toBe('session_expired');
+
+    await t.auth.logout({ token: t.laptop.token, meta: meta() });
+
+    const dead = await t.auth.sessions.revoke({
+      session: t.laptop.session,
+      id: t.phone.session.id,
+      meta: meta(),
+    });
+
+    expect(!dead.ok && dead.code).toBe('session_expired');
+    expect(await t.sessionOf(t.phone.token)).not.toBeNull();
+  });
+
   it("cannot revoke another user's session", async () => {
     const t = await twoDevices();
     const eve = await t.signedInUser('eve@example.com', '192.0.2.99');
