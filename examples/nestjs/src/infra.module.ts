@@ -19,8 +19,10 @@ export const MAILER = Symbol('mailer');
 
 /** Mail goes to stdout: this is a demo, not a mail setup. */
 const stdoutMailer: Mailer = {
-  async send(event) {
+  send(event) {
     process.stdout.write(`[mail] ${event.type} to ${event.to}\n`);
+
+    return Promise.resolve();
   },
 };
 
