@@ -1,6 +1,6 @@
 # Example: node:http with Prisma and Redis
 
-A small JSON API on `@noctcore/auth`: register, sign in, verify the address with a code, read the account, list sessions, sign out, and manage an organisation's members with the membership guards (no acting on yourself, no removing or demoting the last admin, sessions revoked on a role change). It wires every piece a production app needs (Argon2id, the Prisma and Redis stores, the session cookie, CSRF protection) without a framework, so each step is visible in `src/app.ts`.
+A small JSON API on `@noctcore/auth`: register, sign in, verify the address with a code, read the account, list sessions, sign out, and manage an organisation's members with the membership guards (no acting on yourself, owners above admins, no removing or demoting the last admin). It wires every piece a production app needs (Argon2id, the Prisma and Redis stores, the session cookie, CSRF protection) without a framework, so each step is visible in `src/app.ts`.
 
 ```sh
 bun run services:up                      # Redis and PostgreSQL from docker-compose.yml (repo root)

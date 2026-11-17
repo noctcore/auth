@@ -18,9 +18,13 @@
  *
  * Organisations, with the membership guards (`@noctcore/auth/membership`):
  *   POST   /api/orgs                                  signed in; the caller becomes its owner
- *   POST   /api/orgs/:org/members         { userId, role }   an owner or admin of :org
- *   POST   /api/orgs/:org/members/:user   { role }           change a role; revokes :user's sessions
- *   DELETE /api/orgs/:org/members/:user                     remove; revokes :user's sessions
+ *   POST   /api/orgs/:org/members/:user   { role }   change a role (owners for the owner role)
+ *   DELETE /api/orgs/:org/members/:user              remove a member (owners for an owner)
+ *
+ * There is no route that adds someone by user id: adding a user who never
+ * asked to join is app policy, and this example leaves it out. A full app
+ * lets members join through an invitation they accept
+ * (`@noctcore/auth/invitations`); this example does not wire one.
  */
 import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -74,8 +78,17 @@ const STATUS: Record<string, number> = {
   captcha_unavailable: 503,
 };
 
-/** /api/orgs/:org/members and /api/orgs/:org/members/:user */
-const MEMBERS = /^\/api\/orgs\/([0-9a-f]{16})\/members(?:\/([^/]+))?$/u;
+/** /api/orgs/:org/members/:user */
+const MEMBERS = /^\/api\/orgs\/([0-9a-f]{16})\/members\/([^/]+)$/u;
+
+/** The decoded path segment, or null for a malformed escape such as a lone `%`. */
+function decodeSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+}
 
 export function createApp(options: AppOptions) {
   if (options.secret === options.csrfSecret)
@@ -107,8 +120,24 @@ export function createApp(options: AppOptions) {
     secret,
     urls: { resetPassword: (token) => `${options.origin}/reset-password#${token}` },
     mailer: options.mailer,
-    // The last owner or admin of an organisation can be neither demoted nor removed.
-    plugins: [membership({ store: members, adminRoles: ['owner', 'admin'] })],
+    plugins: [
+      membership({
+        store: members,
+        // The last owner or admin of an organisation can be neither demoted nor removed.
+        adminRoles: ['owner', 'admin'],
+        canManage: ({ actor, action, from, to }) => {
+          // Nobody is added by user id here (see the route list above).
+          if (action === 'add') return false;
+
+          if (actor.role === 'owner') return true;
+
+          // An admin manages members and admins, never an owner or the owner role.
+          return actor.role === 'admin' && from !== 'owner' && to !== 'owner';
+        },
+        // Roles are read from the store on every request and never copied into
+        // sessions, so a role change has no session to revoke.
+      }),
+    ],
   });
 
   const csrfCookieName = options.secureCookies ? '__Host-csrf' : 'csrf';
@@ -341,25 +370,15 @@ export function createApp(options: AppOptions) {
     if (!session) return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
 
     const scope = match[1] ?? '';
-    const target = match[2];
+    const userId = decodeSegment(match[2] ?? '');
 
-    if (method === 'POST' && target === undefined) {
-      const result = await auth.membership.add({
-        session,
-        scope,
-        userId: str(body['userId']),
-        role: str(body['role']),
-        meta,
-      });
+    if (userId === null) return send(res, 400, { error: { code: 'invalid_request' } });
 
-      return result.ok ? send(res, 201, { member: result.value }) : failure(res, result);
-    }
-
-    if (method === 'POST' && target !== undefined) {
+    if (method === 'POST') {
       const result = await auth.membership.changeRole({
         session,
         scope,
-        userId: decodeURIComponent(target),
+        userId,
         role: str(body['role']),
         meta,
       });
@@ -367,13 +386,8 @@ export function createApp(options: AppOptions) {
       return result.ok ? send(res, 200, { member: result.value }) : failure(res, result);
     }
 
-    if (method === 'DELETE' && target !== undefined) {
-      const result = await auth.membership.remove({
-        session,
-        scope,
-        userId: decodeURIComponent(target),
-        meta,
-      });
+    if (method === 'DELETE') {
+      const result = await auth.membership.remove({ session, scope, userId, meta });
 
       return result.ok ? send(res, 200, { removed: true }) : failure(res, result);
     }
