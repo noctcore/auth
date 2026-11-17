@@ -210,7 +210,7 @@ describe('A004: account enumeration by timing', () => {
 
     expect(taken).toEqual({
       result: { ok: true, value: { session: null } },
-      awaited: ['counters.increment', 'tokens.findByUser', 'users.create'],
+      awaited: ['counters.increment', 'tokens.find', 'users.create'],
     });
 
     expect(fresh).toEqual(taken);

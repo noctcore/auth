@@ -12,7 +12,7 @@
 // Learn: Email change (/auth/learn/email-change/), Enumeration (/auth/learn/enumeration/)
 import { describe, expect, it } from 'vitest';
 
-import { meta, PASSWORD, recordStoreCalls, setup } from './support';
+import { meta, PASSWORD, recordStoreCalls, settled, setup } from './support';
 
 describe('A058: learning whether an address has an account through the email change answer', () => {
   it('answers a taken and a free address the same, with the same store calls', async () => {
@@ -56,6 +56,8 @@ describe('A058: learning whether an address has an account through the email cha
       password: PASSWORD,
       meta: meta('198.51.100.2'),
     });
+
+    await settled();
 
     const before = t.mailer.sent.length;
 
