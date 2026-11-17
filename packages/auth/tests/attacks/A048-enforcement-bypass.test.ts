@@ -170,6 +170,7 @@ describe('A048: getting a session past the second factor through another flow', 
 
     for (const via of ['password-change', 'reauthenticate', 'revoke-others', 'email-verified']) {
       const bare = await t.auth.context.issueSession(user, { via, meta: meta() });
+
       const foreign = await t.auth.context.issueSession(user, {
         via,
         meta: meta(),
