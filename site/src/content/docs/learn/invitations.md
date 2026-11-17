@@ -30,6 +30,8 @@ An invitation is a link that grants something: a seat in an organisation, a role
 
 ## What it does not do
 
+It does not tell the invited person from whoever reads the link. The token proves the mailbox, by design, so anyone holding a leaked link can `register` the invited address while it has no account yet: they get an account on that address, verified, with the invited seat. Keep the lifetime short and revoke an invitation you suspect leaked; once the address has an account, the link only works for that account, signed in.
+
 It does not hide whether an address has an account from someone holding a live invitation to it: creating an account from the link is refused for a taken address, so that person can sign in instead. The holder is normally the owner of the mailbox, who can learn the same by asking for a password reset. It does not decide what a seat or a role means, and it does not filter your queries by organisation: that is your app, in `onAccept` and in every request.
 
 How to wire it: [Invitations](/auth/build/invitations/) in Build.
