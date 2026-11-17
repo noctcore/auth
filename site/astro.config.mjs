@@ -82,6 +82,7 @@ export default defineConfig({
             './typedoc/entries/argon2.ts',
             './typedoc/entries/testing.ts',
             './typedoc/entries/two-factor.ts',
+            './typedoc/entries/membership.ts',
           ],
           tsconfig: typeDocTsconfig,
           output: 'reference/api/auth',
@@ -149,6 +150,7 @@ export default defineConfig({
             { label: 'Writing a store adapter', link: '/build/store-adapter/' },
             { label: 'Two-factor', link: '/build/two-factor/' },
             { label: 'Email change', link: '/build/email-change/' },
+            { label: 'Membership guards', link: '/build/membership/' },
           ],
         },
         {

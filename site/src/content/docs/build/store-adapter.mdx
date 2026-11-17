@@ -59,6 +59,7 @@ Under Vitest or Jest, pass the runner's own functions: `runConformance('my store
 | `tokenStoreConformance(store)` | none |
 | `sessionStoreConformance(store, options)` | `secondary`: a second instance of your store on its own connection, so the touch-versus-delete race really crosses connections. `epochTtlMs(userId)`: the remaining TTL of a user's epoch, for stores that expire epochs; enables the check that the epoch outlives the longest session. `advanceTime`, as below. |
 | `counterStoreConformance(store, context)` | `advanceTime`, as below. |
+| `membershipStoreConformance(store)` | none. For the membership plugin: a role change and a removal apply only to the role the caller decided on, and never leave a scope without an admin, checked with concurrent demotions and removals ([Membership guards](/auth/build/membership/#the-store)). |
 
 The expiry cases move time forward. By default they sleep, which suits a real backend with its own clock. A store built on an injectable `Clock` can pass `advanceTime: (ms) => clock.advance(ms)` with a `manualClock()`, and those cases then run instantly. Start the manual clock at `Date.now()`, because the sample records carry real timestamps.
 

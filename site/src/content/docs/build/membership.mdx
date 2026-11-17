@@ -1,0 +1,60 @@
+---
+title: Membership guards
+description: Changing roles and removing members without acting on yourself, without leaving an organisation with no admin, and without a demoted member keeping a session.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import authTs from '../../../../snippets/build/membership/auth.ts?raw';
+import routesTs from '../../../../snippets/build/membership/routes.ts?raw';
+
+The membership plugin, `@noctcore/auth/membership`, guards the three admin actions every multi-user app has: adding a member, changing a member's role, and removing one. Like the core, it has no HTTP endpoints: its flows live under `auth.membership`, and your routes call them. This guide builds on [A Node server with Redis and Prisma](/auth/build/node-server/).
+
+## What it guarantees
+
+- **Nobody acts on themselves.** Every flow refuses `self_target` when the session's user id is the target's. Ids are compared, never email addresses.
+- **The actor's right comes from the store.** The acting user's membership is read from the store on every call, never from the session, and `canManage` decides on it. A demoted admin loses the right at once, even with a session that still claims the old role.
+- **The last admin stays.** A role change from an admin role to a non-admin one, or the removal of an admin, is refused with `last_admin` when no other member of the scope holds an admin role. The store checks and writes in one atomic step, so two admins demoting or removing each other at the same moment leave one admin, never none. The conformance suite proves it under concurrency for every store, and the Prisma and Redis stores run it against Postgres and Redis.
+- **A demoted or removed member is signed out.** After a role change or a removal, every session of the member is revoked through the [epoch fence](/auth/learn/revocation-races/). The write comes first and the revocation second, so a login racing the change either reads the new role or is refused when it mints its session.
+- **The guards fail closed.** A member lookup that throws, an actor who is not a member of the scope, and a `canManage` that throws all refuse with `forbidden`. A refusal is a typed failure with a code; its reason is only in the audit row, never an exception carrying membership data.
+
+## What it does not do
+
+It does not scope your data. Filtering every query by organisation, and checking on every request that the signed-in user is a member of the organisation the request is about, stays in your app: the plugin only answers who is a member and with which role, and guards the changes. It also does not decide what each role may do in your app; `adminRoles` only names the roles that keep an organisation manageable.
+
+## The store
+
+The plugin needs a `MembershipStore`: `PrismaMembershipStore` from `@noctcore/auth-prisma` (copy the `AuthMember` and `AuthMemberScope` models from its `prisma/auth.prisma` and migrate) or `RedisMembershipStore` from `@noctcore/auth-redis`. Memberships are account data, so on Redis keep them only with persistence on; Redis keeps them under `ms:<scope>` with no TTL. `MemoryMembershipStore` from `@noctcore/auth/testing` is for tests.
+
+Your own store, on your own member table, must pass `membershipStoreConformance` (see [Writing a store adapter](/auth/build/store-adapter/)). Its two guarded writes, `changeRole` and `removeMember`, must check the member's current role and the other admins and write in one atomic step: a transaction that locks the scope, a single conditional statement, or a compare-and-set that retries. The Prisma store bumps a version on the scope's `AuthMemberScope` row in the same transaction as the member write, so write memberships only through the store, or bump that version yourself.
+
+## Wiring the plugin
+
+<Code code={authTs} lang="ts" title="src/auth.ts" />
+
+| Option | Default | |
+| --- | --- | --- |
+| `store` | required | |
+| `adminRoles` | required | At least one role. The last member holding one of them in a scope can be neither demoted to another role nor removed. |
+| `canManage` | the actor holds an admin role | `({ actor, action, userId, from, to }) => boolean`. `actor` is the acting user's membership, read from the store. `from` is the target's role now (undefined when adding), `to` the role being given (undefined when removing). Throwing refuses. |
+
+## The routes
+
+<Code code={routesTs} lang="ts" title="src/routes/members.ts" />
+
+The flows take the session your app validated, the scope id, the target's user id and the request meta:
+
+| Flow | Refusals | Revokes the target's sessions |
+| --- | --- | --- |
+| `add({ session, scope, userId, role, meta })` | `self_target`, `forbidden` | no: nothing was taken away |
+| `changeRole({ session, scope, userId, role, meta })` | `self_target`, `last_admin`, `forbidden` | yes |
+| `remove({ session, scope, userId, meta })` | `self_target`, `last_admin`, `forbidden` | yes |
+
+`forbidden` covers an actor who is not a member or whom `canManage` refuses, a target who is missing (or, for `add`, already a member), an empty role, a role that changed between the check and the write, and a lookup that failed; the audit row names which. Every change and every refusal writes an audit row (`membership.added`, `membership.role_changed`, `membership.removed`, `membership.refused`) with the actor as `userId` and the scope, target and roles in `data`.
+
+The first member of a scope has nobody to add them: create the first owner straight through the store, as `createOrganisation` does above.
+
+## Revocation in practice
+
+A role change or a removal signs the member out on every device, in every organisation: the epoch fence is per user. The revocation reason your `onSessionsRevoked` hook sees is `membership-changed`. With the two-factor plugin on, the epoch bump also voids the member's trusted devices, so their next sign-in asks for a code.
+
+Setting the role a member already holds writes nothing but still revokes. If the session store fails after the write, the call throws: the change stands and the sessions were not revoked. Retry the same `changeRole`, which revokes again; after a removal, call `auth.context.revokeAllSessions(userId, 'membership-changed')`.
