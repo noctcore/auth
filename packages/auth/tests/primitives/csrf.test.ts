@@ -203,3 +203,17 @@ describe('verifyRequestOrigin with a malformed allowlist entry', () => {
       ).toBe(false);
   });
 });
+
+describe('verifyRequestOrigin case folding', () => {
+  it('matches a custom-scheme origin whatever its case, since URL keeps the host of app:// as written', () => {
+    expect(new URL('app://APP').host).toBe('APP');
+
+    expect(
+      verifyRequestOrigin({ method: 'POST', origin: 'app://APP', allowedOrigins: ['app://app'] }),
+    ).toBe(true);
+
+    expect(
+      verifyRequestOrigin({ method: 'POST', origin: 'app://app', allowedOrigins: ['APP://App'] }),
+    ).toBe(true);
+  });
+});
