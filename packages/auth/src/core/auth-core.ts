@@ -125,17 +125,29 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     // Everything inside the task, the dedupe key included, so nothing here can
     // throw into the flow. `send` itself is still called before `mail`
     // returns: its synchronous part runs on the response path.
-    this.background(`mail ${event.type}`, async () => {
-      try {
-        await this.#deps.mailer.send({ ...event, dedupeKey: generateToken(this.random) });
-      } catch (error) {
-        this.logger.error('Mailer failed', {
-          type: event.type,
-          ...('userId' in event ? { userId: event.userId } : {}),
-          error: describeError(error),
-        });
-      }
-    });
+    this.background(
+      `mail ${event.type}`,
+      () => this.deliver(event),
+      'userId' in event ? { userId: event.userId } : undefined,
+    );
+  }
+
+  /**
+   * Sends a mail and waits for the send, for work that already runs off the
+   * response path (a background task, a queue job): the send then belongs to
+   * that task, its slot under `maxPending`, its timeout and `flush`, instead
+   * of starting a task of its own. Logs a failure, never throws.
+   */
+  async deliver(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): Promise<void> {
+    try {
+      await this.#deps.mailer.send({ ...event, dedupeKey: generateToken(this.random) });
+    } catch (error) {
+      this.logger.error('Mailer failed', {
+        type: event.type,
+        ...('userId' in event ? { userId: event.userId } : {}),
+        error: describeError(error),
+      });
+    }
   }
 
   async rateLimit(
@@ -354,9 +366,17 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return this.#manager.mint(input);
   }
 
-  /** Runs a task off the response path; failures are logged, never thrown. */
-  background(label: string, task: () => Promise<void>): void {
-    this.#deps.background.run(label, task);
+  /**
+   * Runs a task off the response path; failures are logged, never thrown.
+   * `details` (ids, never user input) go into the log lines about the task.
+   * Mail inside the task goes through `deliver`, not `mail`.
+   */
+  background(
+    label: string,
+    task: () => Promise<void>,
+    details?: Readonly<Record<string, string>>,
+  ): void {
+    this.#deps.background.run(label, task, details);
   }
 
   /** The device id when `token` is a valid, unexpired device token for this user at this epoch. */

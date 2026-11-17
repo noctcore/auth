@@ -17,8 +17,15 @@
  *   a new task is not started; it is logged and counted as dropped. This is
  *   what bounds memory when a mailer hangs instead of failing.
  *
- * `flush()` resolves once every task started before the call has settled or
- * timed out, for a graceful shutdown.
+ * `flush()` resolves once no task is left that has neither settled nor timed
+ * out, tasks started while it waits included, for a graceful shutdown.
+ *
+ * The library's own background work sends its mail inside its task
+ * (`AuthCore.deliver`), so a sign-up, a lock notice or a detached reset job is
+ * one task with one slot, however many sends it makes.
+ *
+ * Drops, timeouts and failures go to the configured `logger`. The default
+ * logger is silent, so pass one (and `metrics`) to see them.
  */
 import type { Logger, Metrics } from '../ports/logger';
 import { describeError } from '../shared/describe-error';
@@ -47,7 +54,8 @@ export class BackgroundTasks {
   readonly #metrics: Metrics;
   readonly #waitUntil: ((promise: Promise<void>) => void) | undefined;
   readonly #timeoutMs: number | undefined;
-  readonly #maxPending: number | undefined;
+  /** `Infinity` when no cap was set. */
+  readonly #maxPending: number;
   /** Tasks not settled yet, timed out or not: what `maxPending` counts. */
   #running = 0;
   /** What `flush` waits on: each task until it settles or times out. */
@@ -58,15 +66,14 @@ export class BackgroundTasks {
     this.#metrics = metrics;
     this.#waitUntil = options.waitUntil;
     this.#timeoutMs = options.timeout === undefined ? undefined : toMilliseconds(options.timeout);
-    this.#maxPending = options.maxPending;
+    this.#maxPending = options.maxPending ?? Number.POSITIVE_INFINITY;
 
     if (this.#timeoutMs !== undefined && !(this.#timeoutMs > 0))
       throw new AuthConfigError('background.timeout must be longer than zero');
 
-    if (
-      this.#maxPending !== undefined &&
-      !(Number.isSafeInteger(this.#maxPending) && this.#maxPending >= 1)
-    )
+    const cap = options.maxPending;
+
+    if (cap !== undefined && !(Number.isSafeInteger(cap) && cap >= 1))
       throw new AuthConfigError('background.maxPending must be a whole number of at least 1');
   }
 
@@ -75,9 +82,14 @@ export class BackgroundTasks {
     return this.#running;
   }
 
-  run(label: string, task: () => Promise<void>): void {
-    if (this.#maxPending !== undefined && this.#running >= this.#maxPending) {
-      this.#logger.error(`Background task dropped: ${label}`, { pending: this.#running });
+  /** `details` (ids, never user input) go into every log line about the task. */
+  run(label: string, task: () => Promise<void>, details?: Readonly<Record<string, string>>): void {
+    if (this.#running >= this.#maxPending) {
+      this.#logger.error(`Background task dropped: ${label}`, {
+        ...details,
+        pending: this.#running,
+      });
+
       this.#metrics.count(BACKGROUND_METRIC, { task: label, outcome: 'dropped' });
 
       return;
@@ -87,13 +99,17 @@ export class BackgroundTasks {
 
     const settled = start(task)
       .catch((error: unknown) => {
-        this.#logger.error(`Background task failed: ${label}`, { error: describeError(error) });
+        this.#logger.error(`Background task failed: ${label}`, {
+          ...details,
+          error: describeError(error),
+        });
       })
       .finally(() => {
         this.#running -= 1;
       });
 
-    const tracked = this.#timeoutMs === undefined ? settled : this.#withTimeout(label, settled);
+    const tracked =
+      this.#timeoutMs === undefined ? settled : this.#withTimeout(label, settled, details);
 
     this.#tracked.add(tracked);
     void tracked.finally(() => this.#tracked.delete(tracked));
@@ -107,15 +123,27 @@ export class BackgroundTasks {
     }
   }
 
-  /** Resolves once every task started before this call has settled or timed out. Never rejects. */
+  /**
+   * Resolves once every task has settled or timed out, including tasks started
+   * while it waits (by other tasks, or by requests still in flight). Never
+   * rejects. Each round waits at most `timeout` when one is set.
+   */
   async flush(): Promise<void> {
-    await Promise.all([...this.#tracked]);
+    while (this.#tracked.size > 0) await Promise.all([...this.#tracked]);
   }
 
-  #withTimeout(label: string, settled: Promise<void>): Promise<void> {
+  #withTimeout(
+    label: string,
+    settled: Promise<void>,
+    details: Readonly<Record<string, string>> | undefined,
+  ): Promise<void> {
     return new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
-        this.#logger.error(`Background task timed out: ${label}`, { timeoutMs: this.#timeoutMs });
+        this.#logger.error(`Background task timed out: ${label}`, {
+          ...details,
+          timeoutMs: this.#timeoutMs,
+        });
+
         this.#metrics.count(BACKGROUND_METRIC, { task: label, outcome: 'timed_out' });
         resolve();
       }, this.#timeoutMs);

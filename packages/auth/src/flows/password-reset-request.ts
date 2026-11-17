@@ -47,7 +47,7 @@ export async function requestPasswordReset<U extends AuthUser, A>(
   if (settings.reset.enqueue) {
     await settings.reset.enqueue(job);
   } else {
-    core.background('password reset job', () => processPasswordReset(core, settings, job));
+    core.background('password reset job', () => processPasswordReset(core, settings, job, true));
   }
 
   await core.emit({ type: 'password.reset_requested' }, meta);
@@ -60,6 +60,7 @@ export async function processPasswordReset<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
   job: PasswordResetJob,
+  inline = false,
 ): Promise<void> {
   const meta: RequestMeta = { ip: job.ip };
   const email = normalizeEmail(job.email);
@@ -91,9 +92,19 @@ export async function processPasswordReset<U extends AuthUser, A>(
     return;
   }
 
-  if (settings.reset.kind === 'code') await mailResetCode(core, settings, user);
-  else await mailResetLink(core, settings, user);
+  // Run detached (`inline`), the job waits for its own send, so the send
+  // shares its slot and `flush`. Run by the app's queue worker, it hands the
+  // mail over and returns, as before.
+  const send = inline
+    ? (event: ResetMail) => core.deliver(event)
+    : (event: ResetMail) => core.mail(event);
+
+  if (settings.reset.kind === 'code') await mailResetCode(core, settings, user, send);
+  else await mailResetLink(core, settings, user, send);
 }
+
+type ResetMail = Parameters<AuthCore<AuthUser, unknown>['deliver']>[0];
+type Send = (event: ResetMail) => void | Promise<void>;
 
 /** The audit row for a reset request that sends nothing; the client was answered already. */
 async function ignored<U extends AuthUser, A>(
@@ -112,6 +123,7 @@ async function mailResetCode<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
   user: U,
+  send: Send,
 ): Promise<void> {
   const { code, expiresAt } = await core.tokens.issueCode(
     PURPOSE.passwordReset,
@@ -120,7 +132,7 @@ async function mailResetCode<U extends AuthUser, A>(
     settings.reset.digits,
   );
 
-  core.mail({
+  await send({
     type: 'password-reset-code',
     to: user.email,
     userId: user.id,
@@ -133,6 +145,7 @@ async function mailResetLink<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
   user: U,
+  send: Send,
 ): Promise<void> {
   const url = settings.urls.resetPassword;
 
@@ -144,7 +157,7 @@ async function mailResetLink<U extends AuthUser, A>(
     settings.reset.ttlMs,
   );
 
-  core.mail({
+  await send({
     type: 'password-reset',
     to: user.email,
     userId: user.id,
