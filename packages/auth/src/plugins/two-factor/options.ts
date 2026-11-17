@@ -85,9 +85,20 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
     required: options.required ?? never,
     stepUpWindowMs,
     trustedDevices: resolveTrustedDevices(options.trustedDevices),
-    attempts: options.attempts ?? { limit: 5, window: '15m' },
-    perIp: options.perIp ?? { limit: 10, window: '1m' },
+    attempts: resolveRule('attempts', options.attempts ?? { limit: 5, window: '15m' }),
+    perIp: resolveRule('perIp', options.perIp ?? { limit: 10, window: '1m' }),
   };
+}
+
+/** A limit that is a positive integer over a positive window; anything else would never count or never refuse. */
+function resolveRule(name: string, rule: AttemptRule): AttemptRule {
+  if (!Number.isInteger(rule.limit) || rule.limit < 1)
+    throw new AuthConfigError(`twoFactor: ${name}.limit must be a positive integer`);
+
+  if (toMilliseconds(rule.window) <= 0)
+    throw new AuthConfigError(`twoFactor: ${name}.window must be positive`);
+
+  return rule;
 }
 
 function resolveTrustedDevices(
