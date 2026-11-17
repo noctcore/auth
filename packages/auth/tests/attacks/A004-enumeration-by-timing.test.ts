@@ -139,7 +139,10 @@ describe('A004: account enumeration by timing', () => {
     expect(await trace('ghost@example.com')).toEqual(await trace(EMAIL));
   });
 
-  it('hashes the password, makes as many store calls and sends one mail at sign-up, taken address or new', async () => {
+  // Not the same sequence: a taken address looks the owner up where a new
+  // account writes its verification token. Both are one indexed round trip;
+  // the test pins both sequences so any other drift fails.
+  it('hashes the password, makes the same number of store round trips and sends one mail at sign-up, taken address or new', async () => {
     let hashes = 0;
     const base = plainHasher();
     const hasher = { ...base, hash: async (p: string) => (hashes++, base.hash(p)) };
@@ -157,10 +160,23 @@ describe('A004: account enumeration by timing', () => {
 
       await env.auth.register({ email, password: PASSWORD, meta: meta() });
 
-      return { storeCalls: calls.length, hashes, mails: env.mailer.sent.length - mailsBefore };
+      return { calls: [...calls], hashes, mails: env.mailer.sent.length - mailsBefore };
     };
 
-    expect(await trace('ADA@example.com')).toEqual(await trace('new@example.com'));
+    const taken = await trace('ADA@example.com');
+    const fresh = await trace('new@example.com');
+
+    expect(taken).toEqual({
+      calls: ['counters.increment', 'users.create', 'users.findCredentialByEmail'],
+      hashes: 1,
+      mails: 1,
+    });
+
+    expect(fresh).toEqual({
+      calls: ['counters.increment', 'users.create', 'tokens.put'],
+      hashes: 1,
+      mails: 1,
+    });
   });
 
   it('makes the same token store lookup for an unknown user as for a known one', async () => {
