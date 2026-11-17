@@ -52,9 +52,10 @@ export class MemoryInvitationStore implements InvitationStore {
     return false;
   }
 
-  async deleteByInviter(inviterId: string): Promise<void> {
+  async deleteByInviter(inviterId: string, scope?: string): Promise<void> {
     for (const [hash, invitation] of this.invitations) {
-      if (invitation.inviterId === inviterId) this.invitations.delete(hash);
+      if (invitation.inviterId === inviterId && (scope === undefined || invitation.scope === scope))
+        this.invitations.delete(hash);
     }
   }
 }

@@ -125,6 +125,8 @@ export interface AuthHooks<U extends AuthUser, A> {
     userId: string;
     sessionIds: readonly string[];
     reason: RevocationReason;
+    /** The scope a scoped change concerns (a membership change in that scope); absent otherwise. */
+    scope?: string;
   }) => MaybePromise<void>;
 }
 

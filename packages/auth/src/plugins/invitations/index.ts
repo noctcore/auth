@@ -61,9 +61,13 @@ export type { InvitationView } from './runtime';
 export type { InvitationStore, StoredInvitation } from '../../ports/invitations';
 
 /**
- * Revocation reasons after which an inviter's pending invitations are kept.
- * Every other reason (sign out everywhere, a password reset or change, a role
- * change, any reason the app adds) deletes them.
+ * Revocation reasons after which an inviter's pending invitations are kept:
+ * ending sessions the user still controls says nothing about their right to
+ * invite. `two-factor-enabled` (which signs out the other devices after an
+ * upgrade) counts with them, like `revoke-others`. Every other reason (sign
+ * out everywhere, a password reset or change, a membership change, any reason
+ * the app adds) deletes them: in the revocation's scope when it names one,
+ * otherwise in every scope.
  */
 const KEEPS_INVITATIONS: ReadonlySet<string> = new Set([
   'logout',
@@ -71,6 +75,7 @@ const KEEPS_INVITATIONS: ReadonlySet<string> = new Set([
   'revoke-others',
   'evicted',
   'email-verified',
+  'two-factor-enabled',
 ]);
 
 /**
@@ -84,8 +89,16 @@ export function invitations<A = Record<string, never>>(options: InvitationsOptio
   return definePlugin({
     id: 'invitations',
     hooks: {
-      onSessionsRevoked: async ({ userId, reason }: { userId: string; reason: string }) => {
-        if (!KEEPS_INVITATIONS.has(reason)) await options.store.deleteByInviter(userId);
+      onSessionsRevoked: async ({
+        userId,
+        reason,
+        scope,
+      }: {
+        userId: string;
+        reason: string;
+        scope?: string;
+      }) => {
+        if (!KEEPS_INVITATIONS.has(reason)) await options.store.deleteByInviter(userId, scope);
       },
     },
     flows: (context) => {

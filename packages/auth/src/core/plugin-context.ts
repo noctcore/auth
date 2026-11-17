@@ -123,13 +123,22 @@ export interface PluginContext<U extends AuthUser, A> {
   hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>;
   /** THE seam: every session is minted here. */
   issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>;
-  /** Revokes every session of the user and tells the hooks. */
-  revokeAllSessions(userId: string, reason: RevocationReason): Promise<void>;
+  /**
+   * Revokes every session of the user and tells the hooks. `scope` names the
+   * scope a scoped change concerns (a membership change), passed on to
+   * `onSessionsRevoked`; the revocation itself always covers every scope.
+   */
+  revokeAllSessions(
+    userId: string,
+    reason: RevocationReason,
+    options?: { scope?: string },
+  ): Promise<void>;
   /** Tells the hooks sessions ended. Never throws. */
   notifyRevoked(
     userId: string,
     sessionIds: readonly string[],
     reason: RevocationReason,
+    options?: { scope?: string },
   ): Promise<void>;
 }
 
