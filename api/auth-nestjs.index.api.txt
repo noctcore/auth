@@ -1,0 +1,108 @@
+# @noctcore/auth-nestjs (root)
+
+## package.json exports
+{
+  ".": {
+    "import": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "require": {
+      "types": "./dist/index.d.cts",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "./package.json": "./package.json"
+}
+
+## runtime exports
+AUTH
+AuthMeta
+AuthModule
+CsrfMiddleware
+CurrentSession
+CurrentUser
+Public
+RequireFreshAuth
+RequireRole
+SessionCookies
+SessionGuard
+configureTrustProxy
+describeRoutes
+trustedHopsFromEnv
+
+## declarations
+AUTH [const]: typeof AUTH
+AuthMeta [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
+AuthModule [class]
+    (new) (): AuthModule
+    configure(consumer: MiddlewareConsumer): void
+    static static forRoot<U extends AuthUser>(options: AuthModuleOptions<U>): DynamicModule
+    static static forRootAsync<U extends AuthUser>(options: AuthModuleAsyncOptions<U>): DynamicModule
+AuthModuleAsyncOptions [interface]<U extends AuthUser = AuthUser>
+    imports: ModuleMetadata
+    readonly inject?: readonly (InjectionToken | OptionalFactoryDependency)[]
+    readonly useFactory: (...args: never[]) => AuthModuleOptions<U> | Promise<AuthModuleOptions<U>>
+AuthModuleOptions [interface]<U extends AuthUser = AuthUser>
+    readonly auth: NestAuth<U>
+    readonly csrf: CsrfOptions
+    readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>
+    readonly trustedHops: number
+configureTrustProxy [function]: (app: INestApplication, env: TrustProxyEnv) => number
+CsrfMiddleware [class]
+    (new) (options: ResolvedOptions): CsrfMiddleware
+    private check
+    private isExempt
+    private readonly options
+    use(request: unknown, response: unknown, next: (error?: unknown) => void): Promise<void>
+CsrfOptions [interface]
+    readonly allowSameSite?: boolean
+    readonly allowedOrigins: readonly string[]
+    readonly exempt?: readonly (string | RegExp)[]
+    readonly headerName?: string
+    readonly secrets: readonly (string | Uint8Array)[]
+CurrentSession [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
+CurrentUser [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
+describeRoutes [function]: (app: INestApplication) => RouteAccess[]
+NestAuth [interface]<U extends AuthUser = AuthUser>
+    logout(input: { token: string | null | undefined; meta: RequestMeta; }): Promise<{ cookie: CookieSpec; }>
+    readSessionToken(cookieHeader: string | null | undefined): string | null
+    readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; }
+    readonly cookieName: string
+    requireFreshAuth(session: StoredSession<unknown>): AuthResult<void>
+    validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<StoredSession<unknown>>>
+Public [const]: () => CustomDecorator<string>
+RequireFreshAuth [const]: (maxAge?: Duration) => CustomDecorator<string>
+RequireRole [const]: (...roles: readonly string[]) => CustomDecorator<string>
+RouteAccess [interface]
+    readonly controller: string
+    readonly freshAuth: boolean
+    readonly handler: string
+    readonly method: string
+    readonly path: string
+    readonly public: boolean
+    readonly roles: readonly (readonly string[])[]
+SessionCookies [class]
+    (new) (options: ResolvedOptions): SessionCookies
+    private readonly options
+    set(response: unknown, issued: Pick<IssuedSession<unknown>, 'cookie' | 'deviceCookie' | 'session'>): { csrfToken: string; }
+    signOut(request: unknown, response: unknown): Promise<{ csrfToken: string; }>
+SessionGuard [class]
+    (new) (reflector: Reflector, options: ResolvedOptions): SessionGuard
+    canActivate(context: ExecutionContext): Promise<boolean>
+    private checkFreshness
+    private checkRoles
+    private readonly options
+    private readonly reflector
+trustedHopsFromEnv [function]: (env: TrustProxyEnv) => number
+TrustProxyEnv [interface]
+    readonly NODE_ENV?: string | undefined
+    readonly TRUST_PROXY?: string | undefined
+
+## types reached through the exports (not exported by name)
+ResolvedOptions [interface]
+    readonly auth: NestAuth
+    readonly csrf: { readonly secrets: readonly Uint8Array[]; readonly allowedOrigins: readonly string[]; readonly allowSameSite: boolean; readonly exempt: readonly (string | RegExp)[]; readonly headerName: string; readonly cookieName: string; readonly preSessionCookieName: string; }
+    readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined
+    readonly secure: boolean
+    readonly trustedHops: number

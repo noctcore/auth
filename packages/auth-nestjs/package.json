@@ -1,0 +1,77 @@
+{
+  "name": "@noctcore/auth-nestjs",
+  "version": "0.0.0",
+  "description": "NestJS module for @noctcore/auth: a closed-by-default session guard, CSRF middleware, decorators and trust-proxy setup.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "noctcore",
+    "auth",
+    "nestjs",
+    "nest",
+    "sessions",
+    "csrf"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noctcore/auth.git",
+    "directory": "packages/auth-nestjs"
+  },
+  "homepage": "https://noctcore.github.io/auth/",
+  "bugs": "https://github.com/noctcore/auth/issues",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@noctcore/auth": "0.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": "12.5.0",
+    "@nestjs/core": "12.5.0",
+    "@nestjs/platform-express": "12.5.0",
+    "@nestjs/testing": "12.5.0",
+    "@types/node": "^22.20.5",
+    "@types/supertest": "7.2.1",
+    "@vitest/coverage-v8": "^5.1.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "supertest": "7.3.2",
+    "tsup": "^9.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": ">=11.0.0 <13",
+    "@nestjs/core": ">=11.0.0 <13"
+  }
+}

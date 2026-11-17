@@ -14,6 +14,7 @@
 packages/auth          core: primitives, flows, plugin seams, /argon2 and /testing subpaths
 packages/auth-redis    SessionStore and CounterStore on ioredis
 packages/auth-prisma   UserStore and TokenStore on Prisma, plus prisma/auth.prisma
+packages/auth-nestjs   the NestJS module: session guard, CSRF middleware, decorators
 ```
 
 `packages/auth/src` is split into folders that form layers. A folder may import only from the
@@ -71,7 +72,9 @@ bun run services:up && bun run test:integration
 ## Attack tests
 
 `packages/auth/tests/attacks/` holds one numbered file per attack the library defends against
-(`A001-...test.ts`), indexed in [ATTACKS.md](packages/auth/tests/attacks/ATTACKS.md).
+(`A001-...test.ts`), indexed in [ATTACKS.md](packages/auth/tests/attacks/ATTACKS.md). An adapter
+that adds attack surface keeps its attack tests in its own `tests/attacks/` folder, numbered in
+the same sequence and indexed in the same file.
 
 - Attack tests are never deleted, and a number is never reused. An attack that stops applying keeps
   its file, with a comment saying why.
