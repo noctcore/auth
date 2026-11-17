@@ -32,8 +32,10 @@ model AuthToken {
 // tokens are hashes.
 //
 // The factor and the recovery codes are account data: delete them with the
-// user (or add relations with onDelete: Cascade). Expired devices and step-up
-// proofs are deleted as they are next seen; `expiresAt` is indexed for a sweep.
+// user (or add relations with onDelete: Cascade). Expired devices are deleted
+// when the user adds another one. Expired step-up proofs are never deleted by
+// the store: sweep them with deleteMany({ where: { expiresAt: { lt: new Date() } } }),
+// on the indexed `expiresAt`.
 
 model AuthTwoFactor {
   userId    String   @id
