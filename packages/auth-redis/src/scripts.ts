@@ -102,3 +102,27 @@ for _, hash in ipairs(members) do redis.call('DEL', ARGV[1] .. hash) end
 redis.call('DEL', KEYS[1])
 return #members
 `;
+
+// Membership store. A scope is a hash: userId -> role. No TTL: account data.
+
+// KEYS[1] scope; ARGV[1] userId, ARGV[2] from, ARGV[3] '1' to remove or '0' to
+// change, ARGV[4] the new role, ARGV[5..] the admin roles. The check of the
+// other admins and the write are one script, so no other write lands between.
+export const GUARDED_MEMBER_WRITE = `
+local role = redis.call('HGET', KEYS[1], ARGV[1])
+if not role then return 'missing' end
+if role ~= ARGV[2] then return 'stale' end
+local admins = {}
+for i = 5, #ARGV do admins[ARGV[i]] = true end
+local remove = ARGV[3] == '1'
+if admins[role] and (remove or not admins[ARGV[4]]) then
+  local all = redis.call('HGETALL', KEYS[1])
+  local others = false
+  for i = 1, #all, 2 do
+    if all[i] ~= ARGV[1] and admins[all[i + 1]] then others = true break end
+  end
+  if not others then return 'last_admin' end
+end
+if remove then redis.call('HDEL', KEYS[1], ARGV[1]) else redis.call('HSET', KEYS[1], ARGV[1], ARGV[4]) end
+return 'done'
+`;

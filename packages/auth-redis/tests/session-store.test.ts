@@ -3,7 +3,7 @@
 // read as no session rather than thrown.
 import { describe, expect, it } from 'vitest';
 import { AuthConfigError, type StoredSession } from '@noctcore/auth';
-import { RedisSessionStore, RedisTwoFactorStore } from '../src';
+import { RedisMembershipStore, RedisSessionStore, RedisTwoFactorStore } from '../src';
 
 const DAY = 86_400_000;
 
@@ -51,5 +51,17 @@ describe('RedisTwoFactorStore without a server', () => {
     expect(await store.findTrustedDevice('u1', 'h')).toBeNull();
     expect(await store.findStepUp('s')).toBeNull();
     expect(await store.findFactor('u1')).toBeNull();
+  });
+});
+
+describe('RedisMembershipStore guards', () => {
+  it('throws on a reply the membership script never sends', async () => {
+    for (const reply of ['maybe', 1, null]) {
+      const store = new RedisMembershipStore({ eval: async () => reply } as never);
+
+      await expect(
+        store.removeMember({ scope: 's', userId: 'u', from: 'admin', adminRoles: ['admin'] }),
+      ).rejects.toThrow('Unexpected reply from the membership script');
+    }
   });
 });

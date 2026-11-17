@@ -2,7 +2,7 @@
 
 # @noctcore/auth-redis
 
-Redis session, counter and two-factor stores for [`@noctcore/auth`](https://github.com/noctcore/auth).
+Redis session, counter, two-factor and membership stores for [`@noctcore/auth`](https://github.com/noctcore/auth).
 
 ```ts
 import { Redis } from 'ioredis';
@@ -28,6 +28,19 @@ const store = new RedisTwoFactorStore(redis, { prefix: 'auth:' });
 
 - Every compare-and-set (the last accepted TOTP step, confirming an enrollment, spending a recovery code) is one Lua script or one atomic command.
 - Trusted devices and step-up proofs expire with their TTL. The factor and the recovery codes have no TTL: they are account data. Keep them only on a Redis with persistence (AOF), or put them in Postgres with `PrismaTwoFactorStore` from `@noctcore/auth-prisma`.
+
+## Membership store
+
+`RedisMembershipStore` backs the membership plugin (`@noctcore/auth/membership`):
+
+```ts
+import { RedisMembershipStore } from '@noctcore/auth-redis';
+
+const store = new RedisMembershipStore(redis, { prefix: 'auth:' });
+```
+
+- A scope's members are one hash under `ms:<scope>`. A role change or a removal is one Lua script that checks the member's role and the other admins and writes, so two admins demoting each other at once leave one admin.
+- Members have no TTL: they are account data. Keep them only on a Redis with persistence (AOF), or put them in Postgres with `PrismaMembershipStore`.
 
 ## Run Redis with `noeviction`
 
