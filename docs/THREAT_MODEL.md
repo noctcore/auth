@@ -74,7 +74,7 @@ The library defends against: guessing passwords and codes; locking the owner out
 | Attack | Defense | Test |
 |---|---|---|
 | Brute force by parallel guesses | Attempts reserved before the verify, per (account, IP) and per account | A001 |
-| Locking the victim out | Capped lock, no permanent tier, trusted-device bypass, reset lifts the lock | A002 |
+| Locking the victim out | Capped lock, no permanent tier, one backoff step per lock (not per request that crosses the limit), trusted-device bypass, reset lifts the lock | A002 |
 | Account enumeration by the answer | Public codes that never name account state | A003 |
 | Account enumeration by timing | Same store calls and one verify for every address at login and reset request; one hash, one mail and as many store round trips at sign-up | A004 |
 | Holding responses up through a slow or hung mailer | Every mail handed to the mailer without waiting; at-most-once delivery, failures logged | A023 |

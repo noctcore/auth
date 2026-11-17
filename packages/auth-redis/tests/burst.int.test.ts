@@ -37,6 +37,8 @@ describe.skipIf(!url)('parallel bursts against the redis counter store', () => {
     (redis) => new Throttle(new RedisCounterStore(redis, { prefix }), systemClock),
   );
 
+  const counters = new RedisCounterStore(clients[0] as Redis, { prefix });
+
   afterAll(async () => {
     const [first] = clients;
     const keys = (await first?.keys(`${prefix}*`)) ?? [];
@@ -80,6 +82,9 @@ describe.skipIf(!url)('parallel bursts against the redis counter store', () => {
 
       // perAccount defaults to 10 per 15 minutes.
       expect(allowed).toBeLessThanOrEqual(10);
+
+      // However many requests crossed the limit, the burst made one lock and one tier step.
+      expect((await counters.get(`tier:${account}`))?.count).toBe(1);
     }
   });
 });

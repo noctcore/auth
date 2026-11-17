@@ -127,11 +127,7 @@ export class Throttle {
       // got past the lock check above is refused here without a second lock.
       if (!locksAt(all.count, this.perAccount.limit)) return { allowed: false, reason: 'locked' };
 
-      return {
-        allowed: false,
-        reason: 'locked',
-        newLock: await this.lock(account, all.count),
-      };
+      return { allowed: false, reason: 'locked', ...(await this.lock(account, all.count)) };
     }
 
     return { allowed: true };
@@ -156,7 +152,7 @@ export class Throttle {
     if (all.count > rule.limit) {
       if (!locksAt(all.count, rule.limit)) return { allowed: false };
 
-      return { allowed: false, newLock: await this.lock(scope, all.count) };
+      return { allowed: false, ...(await this.lock(scope, all.count)) };
     }
 
     return { allowed: true };
@@ -173,7 +169,7 @@ export class Throttle {
 
     if (!locksAt(all.count, this.perAccount.limit)) return {};
 
-    return { newLock: await this.lock(account, all.count) };
+    return this.lock(account, all.count);
   }
 
   /**
@@ -185,22 +181,24 @@ export class Throttle {
   }
 
   /**
-   * Locks `account`. The attempt counter is NOT reset: it is held at `count`
-   * (already over the limit) for exactly as long as the lock lasts, so a
-   * request that read "no lock" a moment before still counts above the limit
-   * and is refused. Resetting it here let such requests through, one fresh
-   * budget at a time, under a parallel burst.
+   * Locks `account`, or finds it already locked. The attempt counter is NOT
+   * reset: it is held at `count` (already over the limit) for exactly as long
+   * as the lock lasts, so a request that read "no lock" a moment before still
+   * counts above the limit and is refused. Resetting it here let such requests
+   * through, one fresh budget at a time, under a parallel burst.
+   *
+   * Only the crossing whose increment CREATES the lock (the store answers 1)
+   * raises the backoff tier and reports `newLock`. A crossing that finds the
+   * lock already running, from a parallel burst or a wrong password let
+   * through by a device token, leaves the tier, the lock's end and the owner's
+   * mailbox alone: one tier step and one notice per lock.
    */
-  private async lock(account: string, count: number): Promise<{ until: number }> {
-    // The tier's TTL is renewed on every lock, so it only decays after a full
-    // quiet period without one.
+  private async lock(account: string, count: number): Promise<{ newLock?: { until: number } }> {
     const previous = await this.counters.get(keys.tier(account));
     const tier = (previous?.count ?? 0) + 1;
-
-    await this.counters.set(keys.tier(account), tier, this.quietPeriodMs);
-
     const backoffMs = this.baseLockMs * 3 ** Math.min(tier - 1, 20);
     const duration = Math.min(backoffMs, this.maxLockMs);
+    // An increment arms its TTL only on the first hit, so a running lock keeps its end.
     const lock = await this.counters.increment(keys.lock(account), duration);
 
     await this.counters.set(
@@ -209,7 +207,13 @@ export class Throttle {
       Math.max(1, lock.resetAt - this.clock.now()),
     );
 
-    return { until: lock.resetAt };
+    if (lock.count !== 1) return {};
+
+    // The tier's TTL is renewed on every lock, so it only decays after a full
+    // quiet period without one.
+    await this.counters.set(keys.tier(account), tier, this.quietPeriodMs);
+
+    return { newLock: { until: lock.resetAt } };
   }
 
   /**
@@ -233,14 +237,13 @@ export class Throttle {
 }
 
 /**
- * Whether the attempt that brought the counter to `count` locks. The counter is
- * never reset by a lock (see `lock`), so the first lock comes at `limit + 1`
- * and, while it lasts, every further `limit + 1` failures (a wrong password
- * let through by a device token, or requests that read "no lock" just before
- * it was set) cross again. Each crossing raises the backoff tier; the running
- * lock keeps its end time. Exactly one attempt sees each crossing count, so no
- * extra guesses get through, but a large parallel burst can cross several times
- * and raise the tier by more than one step.
+ * Whether the attempt that brought the counter to `count` crosses the limit.
+ * The counter is never reset by a lock (see `lock`), so the first crossing
+ * comes at `limit + 1` and, while the lock lasts, every further `limit + 1`
+ * failures (a wrong password let through by a device token, or requests that
+ * read "no lock" just before it was set) cross again. Exactly one attempt sees
+ * each crossing count, so no extra guesses get through. A crossing under a
+ * running lock finds it there and does not raise the tier (see `lock`).
  */
 function locksAt(count: number, limit: number): boolean {
   // Counts start at 1, so the multiples of `limit + 1` are exactly those crossings.

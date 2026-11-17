@@ -286,9 +286,23 @@ describe('trusted devices', () => {
       expect(await t.deviceFailed(victim)).toEqual({});
     }
 
-    // The fourth device failure spends the account budget again and renews the lock.
+    // The fourth device failure spends the account budget again, but the lock is
+    // already running: no second notice, and the tier stays where the lock set it.
     await t.gateLogin(victim, 'owner', 'device-1');
-    expect(await t.deviceFailed(victim)).toHaveProperty('newLock');
+    expect(await t.deviceFailed(victim)).toEqual({});
+    expect((await counters.get(`acct:${victim}`))?.count).toBe(8);
+    expect((await counters.get(`tier:${victim}`))?.count).toBe(1);
+
+    // So the next lock is one tier up (15 minutes), not two (45).
+    clock.advance(5 * MIN);
+
+    for (let i = 0; i < 3; i++) await t.gateLogin(victim, `later-${i}`);
+
+    expect(await t.gateLogin(victim, 'later-3')).toEqual({
+      allowed: false,
+      reason: 'locked',
+      newLock: { until: clock.now() + 15 * MIN },
+    });
   });
 });
 
@@ -392,7 +406,7 @@ describe('a lock holds the attempt counter', () => {
     expect((await counters.get('acct:2fa:acct'))?.count).toBe(4);
   });
 
-  it('locks once when racing factor attempts get past the lock read, and again every limit + 1', async () => {
+  it('locks once when racing factor attempts get past the lock read, even across a second crossing', async () => {
     staleLockReads();
 
     const until = clock.now() + 5 * MIN;
@@ -406,9 +420,33 @@ describe('a lock holds the attempt counter', () => {
       { allowed: false },
       { allowed: false },
       { allowed: false },
-      // The lock already running keeps its end; the crossing only raises the tier.
-      { allowed: false, newLock: { until } },
+      // The second crossing finds the lock running: no new lock, no tier step.
+      { allowed: false },
     ]);
+
+    expect((await counters.get('tier:2fa:acct'))?.count).toBe(1);
+    expect((await counters.get('acct:2fa:acct'))?.count).toBe(8);
+  });
+
+  it('raises the tier once per lock when a parallel burst crosses the limit many times', async () => {
+    const strict = new Throttle(counters, clock, {
+      perAccount: { limit: 3, window: '15m' },
+      perAccountIp: { limit: 1000, window: '15m' },
+    });
+
+    staleLockReads();
+
+    const gates = await Promise.all(
+      Array.from({ length: 200 }, (_, i) => strict.gateLogin(victim, `ip-${i}`)),
+    );
+
+    expect(gates.filter((g) => g.allowed)).toHaveLength(3);
+
+    expect(gates.filter((g) => !g.allowed && g.newLock)).toEqual([
+      { allowed: false, reason: 'locked', newLock: { until: clock.now() + 5 * MIN } },
+    ]);
+
+    expect((await counters.get(`tier:${victim}`))?.count).toBe(1);
   });
 
   it('locks the password once when racing logins get past the lock read', async () => {
@@ -428,5 +466,53 @@ describe('a lock holds the attempt counter', () => {
       { allowed: false, reason: 'locked', newLock: { until } },
       { allowed: false, reason: 'locked' },
     ]);
+  });
+
+  it('touches the lock only on the attempts that cross the limit', async () => {
+    const strict = new Throttle(counters, clock, {
+      perAccount: { limit: 3, window: '15m' },
+      perAccountIp: { limit: 100, window: '15m' },
+    });
+
+    staleLockReads();
+
+    const increment = counters.increment.bind(counters);
+    const lockWrites: string[] = [];
+
+    counters.increment = (key, windowMs) => {
+      if (key.startsWith('lock:')) lockWrites.push(key);
+
+      return increment(key, windowMs);
+    };
+
+    // Login: counts 4 and 8 cross; 5 to 7 and 9 to 10 do not.
+    for (let i = 0; i < 10; i++) await strict.gateLogin(victim, `ip-${i}`);
+
+    // Factor: counts 4 and 8 cross.
+    for (let i = 0; i < 9; i++) await throttle.gateFactor('acct', rule);
+
+    expect(lockWrites).toEqual([
+      `lock:${victim}`,
+      `lock:${victim}`,
+      'lock:2fa:acct',
+      'lock:2fa:acct',
+    ]);
+  });
+});
+
+describe('a failure recorded outside login', () => {
+  it('locks only once the account-wide budget is spent, and once per lock', async () => {
+    const t = new Throttle(counters, clock, { perAccount: { limit: 3, window: '15m' } });
+
+    for (let i = 0; i < 3; i++) expect(await t.recordFailure(victim)).toEqual({});
+
+    expect(await counters.get(`lock:${victim}`)).toBeNull();
+    expect(await t.recordFailure(victim)).toEqual({ newLock: { until: clock.now() + 5 * MIN } });
+
+    // Four more cross the limit again under the same lock: counted, not reported, no tier step.
+    for (let i = 0; i < 4; i++) expect(await t.recordFailure(victim)).toEqual({});
+
+    expect((await counters.get(`acct:${victim}`))?.count).toBe(8);
+    expect((await counters.get(`tier:${victim}`))?.count).toBe(1);
   });
 });
