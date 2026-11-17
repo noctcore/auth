@@ -1,0 +1,90 @@
+---
+title: Use with tRPC
+description: The tRPC adapter, with the session context on the Node and fetch adapters, guarded procedures, CSRF on mutations, error mapping that keeps account state private, and the checks to run in a test.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import fetchTs from '../../../../snippets/build/trpc/fetch.ts?raw';
+import routerTestTs from '../../../../snippets/build/trpc/router.test.ts?raw';
+import routerTs from '../../../../snippets/build/trpc/router.ts?raw';
+import serverTs from '../../../../snippets/build/trpc/server.ts?raw';
+
+`@noctcore/auth-trpc` puts the core behind tRPC procedures. The core stays the same: the flows return `AuthResult` values and never throw, and the adapter only decides who gets through, writes the cookies and turns a refusal into a tRPC error that says no more than the public code.
+
+This guide builds on [A Node server with Redis and Prisma](/auth/build/node-server/): `auth.ts` and `config.ts` there are used as they are.
+
+```sh
+bun add @noctcore/auth-trpc @noctcore/auth @trpc/server zod
+```
+
+`@trpc/server` 11.22.1 or later (within 11) and `zod` 4.3 or later (within 4) are peer dependencies; CI runs the adapter at both floors.
+
+## The router
+
+<Code code={routerTs} lang="ts" title="src/router.ts" />
+
+`createAuthMiddlewares(t)` returns two base procedures and the middlewares behind them:
+
+- `publicProcedure` checks CSRF on every mutation and needs no session: sign-up, sign-in, the reset request, sign-out.
+- `protectedProcedure` also refuses a caller without a valid session (`UNAUTHORIZED`, `session_expired`) and adds `ctx.user`, loaded from your user store on this request (so a deleted user is signed out at once), and `ctx.session`.
+- `freshAuth(maxAge?)` asks for a password proof newer than `freshAuthAge`; `maxAge` can only make it shorter. `role(...roles)` reads the roles through the `roles` option of `createAuthContext` on every call, so a role taken away stops working on the next request. Both run the session check themselves.
+- `rateLimited(name, rule?)` counts calls per client IP in a fixed window (10 a minute by default), under a key of its own so it never shares a budget with the core's doors. When the counter store does not answer, the call is refused.
+
+Every check that refuses a mutation runs the CSRF check first, `authed`, `freshAuth` and `role` included, so leaving the `csrf` step out of a chain does not skip it.
+
+## The context
+
+<Code code={serverTs} lang="ts" title="src/server.ts" />
+
+`createAuthContext` checks the options once, and its `node(opts)` (the standalone, Express and nestjs-trpc adapters) or `fetch(opts)` builds `ctx.auth` once per HTTP request, so every procedure of a batch shares it:
+
+- the session cookie is read and validated through the core (`validateRequest`); a token the core refused is cleared;
+- the client IP comes from the core's `clientIp`, counting `trustedHops` from the right of `X-Forwarded-For` (at most 16);
+- the three CSRF checks are computed from the headers: the `Origin` is on the allowlist, `Sec-Fetch-Site` says `same-origin` when the browser sends it, and the double-submit token matches its cookie and is bound to this session or pre-session;
+- on a query, the page gets what it needs for its next mutation: a pre-session id when it has none, and a CSRF cookie bound to the current session or pre-session.
+
+The CSRF cookie is readable by the page, which echoes it in the `x-csrf-token` header on every mutation. With `httpBatchLink` or `httpLink`, set it in `headers`.
+
+A failure while building the context (a store down) answers `internal`, and only the error's name is logged: a store error can carry the session key.
+
+### Cookies on sign-in and rotation
+
+Every flow that issues a session hands it to `ctx.auth.setSession(issued)`, which writes the session cookie, the trusted-device cookie and a CSRF cookie bound to the new session, and returns the token for the response. That covers sign-in and every rotation: `reauthenticate`, `changePassword`, `sessions.revokeOthers` and the email verification flows. A token from before the rotation stops verifying the moment the new cookie lands. `ctx.auth.signOut()` signs out through the core and starts a fresh pre-session; after `sessions.revokeAll`, pass its blank cookie to `ctx.auth.clearSession(cookie)`.
+
+### On the fetch adapter
+
+<Code code={fetchTs} lang="ts" title="src/fetch.ts" />
+
+A fetch `Request` carries no peer address, so pass it from your server (on Bun, `server.requestIP(req)?.address`). Behind proxies, count them in `trustedHops` as on Node.
+
+## Errors
+
+Throw `toTRPCError(result)` when a flow refuses. The message is the public code, there is no cause, and the tRPC code follows a fixed table (`AUTH_ERROR_TRPC_CODES`): `invalid_credentials` is `UNAUTHORIZED`, `rate_limited` is `TOO_MANY_REQUESTS`, `fresh_auth_required` and `forbidden` are `FORBIDDEN`, and so on. A code the table does not know becomes `INTERNAL_SERVER_ERROR` with the message `internal`, never the raw value.
+
+`authErrorFormatter` adds `data.auth` (the public code and, on `rate_limited`, `retryAfterSeconds`) and covers what tRPC builds itself:
+
+- an input that fails validation is answered with the message `invalid_input` and `data.input`, a list of paths and issue codes, never the submitted value;
+- any other internal error is answered with `internal`, without its message or stack.
+
+Sign-in answers an unknown email and a wrong password with the same error, and sign-up and the reset request answer a taken and a new address with the same `{ status: 'accepted' }`, as long as your procedure returns the same thing in both cases, as the router above does.
+
+## Schemas
+
+The package exports a Zod input and output for every auth flow. The outputs are plain objects that strip every key they do not name: `userOutput` sends `id`, `email` and `emailVerified`, whatever your user record grows. Declare `output:` on every procedure that returns a record.
+
+The inputs check shape and size only; whether an email is valid or a password long enough is the flow's answer, with its public code. Every input that carries a secret belongs to a mutation, since tRPC sends a query's input in the URL, where access logs, proxies and browser history keep it.
+
+## Checks for a test
+
+<Code code={routerTestTs} lang="ts" title="src/router.test.ts" />
+
+- `assertProceduresGuarded(router)` fails on a procedure built on `t.procedure` with neither `publicProcedure` nor a session check, and on one built on `publicProcedure` that also asks for a session, a role or a fresh proof: the two say opposite things.
+- `assertNoSecretQueries(router)` fails on a query or subscription whose input has a key naming a secret (`password`, `token`, `code`, `secret`, `otp`, `pin` and the like, at any depth). It also fails on an input it cannot read (anything but Zod 4) and on a lazy router, unless you list its path in `allow` after checking it by hand.
+
+Both walk a plain tRPC router. They cannot see into nestjs-trpc, which builds its router at boot.
+
+## nestjs-trpc
+
+The same middleware bodies come as classes for nestjs-trpc. Register `AuthGuardMiddleware` in `globalMiddlewares`: it checks CSRF on every mutation and requires a session on every procedure unless its meta says `auth: 'public'` (`@Mutation({ meta: { auth: 'public' } })`), so a procedure nobody marked is closed. `RoleMiddleware(...roles)`, `FreshAuthMiddleware(maxAge?)` and `RateLimitMiddleware(name, rule?)` make the classes for `@UseMiddlewares(...)`, once, at module level; list every class in a module's `providers`. A role or fresh-proof class on a procedure marked public refuses every call, as a configuration error.
+
+The context class returns `authContext.node(opts)`, and the error formatter goes in `trpc: { errorFormatter: authErrorFormatter }`.
