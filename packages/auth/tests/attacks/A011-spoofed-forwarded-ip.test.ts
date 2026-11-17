@@ -6,7 +6,7 @@
 // Stopped by: http/ip.ts: clientIp counts trusted hops from the right; parseTrustProxy
 //   refuses "true". Unit and property tests: tests/primitives/ip.test.ts,
 //   tests/property/ip.property.test.ts.
-// Learn: Trust proxy and client IPs (planned); Brute force and lockout (/auth/learn/brute-force-and-lockout/)
+// Learn: Trust proxy and client IPs (/auth/learn/trust-proxy-and-client-ips/); Brute force and lockout (/auth/learn/brute-force-and-lockout/)
 import { describe, expect, it } from 'vitest';
 
 import { clientIp, parseTrustProxy } from '../../src/http/ip';
