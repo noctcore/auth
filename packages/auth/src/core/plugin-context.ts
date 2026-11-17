@@ -74,11 +74,13 @@ export interface PluginContext<U extends AuthUser, A> {
   /** Emits an audit event (and counts it). Never throws. */
   emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>;
   /**
-   * Hands a mail event to the mailer with a fresh dedupe key, off the response
-   * path: `mailer.send` is called before this returns, but its promise is not
-   * awaited, so a slow or hung mailer never holds up the answer. At most once:
-   * a failure is logged, never thrown and never retried; retries belong to the
-   * app's mailer or queue.
+   * Hands a mail event to the mailer with a fresh dedupe key without awaiting
+   * delivery. `mailer.send` is called before this returns, so whatever `send`
+   * does before it returns its promise (building a template, say) is still on
+   * the response path; only the settling of that promise is not awaited, so a
+   * slow or hung delivery does not hold up the answer. At most once: a failure
+   * is logged, never thrown and never retried; retries belong to the app's
+   * mailer or queue. No timeout: a `send` that never settles stays pending.
    */
   mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void;
   /** One hit on a door's window; a failure result when over the limit. */
