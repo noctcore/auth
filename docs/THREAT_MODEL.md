@@ -106,10 +106,10 @@ The library defends against: guessing passwords and codes; locking the owner out
 | A trusted-device token outliving a password change | Bound to the revocation epoch, deleted with the revocation | A043 |
 | Resetting a password without the second factor | The reset demands a code; the factor is never touched | A044 |
 | Turning two-factor off without a proof | Step-up per session id; a password alone never records one | A045 |
-| Confirming an enrollment with a wrong or stale code | Fresh auth to start; compare-and-set on the pending secret within 10 minutes | A046 |
+| Confirming an enrollment with a wrong or stale code | Fresh auth, read from the live session, to start and to confirm; compare-and-set on the pending secret within 10 minutes | A046 |
 | Telling two-factor refusals apart by timing | Stand-in secret decrypted, same store calls for unknown and wrong | A047 |
 | Getting a session past the second factor through another flow | The session hook refuses every issue but the plugin's own and re-issues | A048 |
-| Acting on a stale or borrowed second-factor proof | Expiry on the server clock, bound to one session, fresh auth required too | A049 |
+| Acting on a stale or borrowed second-factor proof | Expiry on the server clock, bound to one session, fresh auth (read from the live session) required too | A049 |
 | Learning two-factor state from the answers | The factor is checked only after the password; one public code for every refusal | A050 |
 
 A report that breaks one of these defenses, or shows an attack the table misses, is a vulnerability: see [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md).

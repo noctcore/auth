@@ -55,7 +55,7 @@ The `session` key takes the session options and two more keys, `cookie` and `fre
 | `session.touchInterval` | `'60s'` | Last-active is written at most once a minute instead of on every request. Must be shorter than a fixed idle timeout. |
 | `session.maxPerUser` | `10` | The oldest sessions beyond the cap are evicted when a new one is issued, after it is written, so concurrent sign-ins converge on the cap. `null` for no cap. |
 | `session.attributes` | none | A schema with a zod-style `parse`, run on every read. Required when you declare session attributes, so a corrupt or old record is refused, not trusted. |
-| `session.freshAuthAge` | `'10m'` | How recent a credential proof must be to revoke another session or every other session, so a stolen session cannot sign the owner out. Your own routes can ask for it with `auth.requireFreshAuth(session)`. |
+| `session.freshAuthAge` | `'10m'` | How recent a credential proof must be to revoke another session or every other session, so a stolen session cannot sign the owner out. The library's own doors (revoking devices, second-factor enrollment, step-up) read it from the live session in the store. Your own routes can ask for it with `auth.requireFreshAuth(session)`, which checks the object you pass, so pass the session `validateRequest` just returned; plugins have `context.requireFreshLiveSession(session)`, which re-reads it. |
 
 ### Session cookie
 
@@ -211,7 +211,7 @@ Source: `packages/auth-redis/src/options.ts`, `session-store.ts`.
 | `epochTtl` | `'90d'` | How long a user's revocation epoch outlives its last write. Must be longer than `maxSessionTtl`, or the store refuses to start. If it ever lapses, the user's sessions fail closed. |
 | `clock` | system clock | For tests. |
 
-Run that Redis with `maxmemory-policy noeviction`: an evicting policy may drop an epoch (signing users out) or a lockout counter (handing an attacker a fresh budget).
+Run that Redis with `maxmemory-policy noeviction`: an evicting policy may drop an epoch (signing users out), a lockout counter (handing an attacker a fresh budget) or a lock key (ending a lock early).
 
 ### `prismaStores(options)`
 

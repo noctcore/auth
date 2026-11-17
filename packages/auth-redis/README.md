@@ -31,7 +31,7 @@ const store = new RedisTwoFactorStore(redis, { prefix: 'auth:' });
 
 ## Run Redis with `noeviction`
 
-Set `maxmemory-policy noeviction` on the Redis that holds these keys (and give it enough memory). Under an evicting policy Redis may drop a revocation epoch or a lockout counter to make room: a dropped epoch signs users out, and a dropped counter quietly hands an attacker a fresh budget. With `noeviction`, a full Redis refuses writes instead, and the auth flows fail closed.
+Set `maxmemory-policy noeviction` on the Redis that holds these keys (and give it enough memory). Under an evicting policy Redis may drop a revocation epoch, a lockout counter or a lock key to make room: a dropped epoch signs users out, a dropped counter quietly hands an attacker a fresh budget, and a dropped lock key ends a lock early. With `noeviction`, a full Redis refuses writes instead, and the auth flows fail closed.
 
 ```
 maxmemory-policy noeviction

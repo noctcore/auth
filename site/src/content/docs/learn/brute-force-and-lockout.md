@@ -31,7 +31,7 @@ The cookie skips no password check and grants no session. The test suite runs th
 
 **A lock looks like a wrong password.** See [Enumeration](/auth/learn/enumeration/): the counters are keyed on the address so unknown addresses lock too, a locked login still runs the full password verify, the lock's audit row and owner mail run off the response path, and the answer is `invalid_credentials` either way.
 
-**Every door has its own limit.** Login, sign-up, reset requests, code checks and password changes each have a fixed window per IP or per user. Reset-code guesses are also counted per address, from every network, whether or not the address has an account or a code outstanding. Limits fail closed: if the counter store is down, the request is refused, not let through.
+**Every door has its own limit.** Login, sign-up, reset requests, code checks and password changes each have a fixed window per IP or per user. Reset-code guesses are also counted per address, from every network, whether or not the address has an account or a code outstanding. Limits fail closed: if the counter store is down, the request is refused, not let through. They cannot survive a store that silently drops keys, though: on Redis, run with `maxmemory-policy noeviction`, because an evicted lock key ends a lock early and an evicted counter resets a budget.
 
 ## Where the package and the guide differ
 
