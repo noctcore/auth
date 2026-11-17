@@ -21,7 +21,15 @@ function model(schemaPath: string, name: string): string {
     .join('\n');
 }
 
-const MODELS = ['AuthToken', 'AuthTwoFactor', 'AuthRecoveryCodes', 'AuthTrustedDevice', 'AuthStepUp'];
+const MODELS = [
+  'AuthToken',
+  'AuthTwoFactor',
+  'AuthRecoveryCodes',
+  'AuthTrustedDevice',
+  'AuthStepUp',
+  'AuthMember',
+  'AuthMemberScope',
+];
 
 describe('code sample schema', () => {
   for (const name of MODELS) {

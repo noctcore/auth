@@ -82,3 +82,20 @@ model AuthStepUp {
 
   @@index([expiresAt])
 }
+
+// Copied from @noctcore/auth-prisma/prisma/auth.prisma, for the membership guide.
+model AuthMember {
+  // Your scope id: a tenant, organisation or team.
+  scope  String
+  userId String
+  role   String
+
+  @@id([scope, userId])
+  @@index([userId])
+}
+
+model AuthMemberScope {
+  scope   String @id
+  // Bumped by every guarded write of the scope.
+  version Int    @default(0)
+}
