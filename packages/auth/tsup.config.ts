@@ -14,6 +14,7 @@ export default defineConfig({
     index: 'src/index.ts',
     argon2: 'src/password/argon2.ts',
     testing: 'src/testing/index.ts',
+    'two-factor': 'src/plugins/two-factor/index.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,

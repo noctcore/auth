@@ -4,6 +4,7 @@
 MemoryCounterStore
 MemorySessionStore
 MemoryTokenStore
+MemoryTwoFactorStore
 MemoryUserStore
 counterStoreConformance
 manualClock
@@ -15,6 +16,7 @@ runConformance
 sessionStoreConformance
 sleep
 tokenStoreConformance
+twoFactorStoreConformance
 uniqueId
 userStoreConformance
 
@@ -71,6 +73,25 @@ MemoryTokenStore [class]
     private readonly tokens
     private removeByUser
     put(token: StoredToken): Promise<void>
+MemoryTwoFactorStore [class]
+    (new) (): MemoryTwoFactorStore
+    addTrustedDevice(device: StoredTrustedDevice, maxPerUser: number): Promise<void>
+    advanceStep(userId: string, step: number): Promise<boolean>
+    confirmFactor(userId: string, secret: string, step: number): Promise<boolean>
+    consumeRecoveryCode(userId: string, hash: string): Promise<boolean>
+    countRecoveryCodes(userId: string): Promise<number>
+    deleteFactor(userId: string): Promise<void>
+    deleteTrustedDevices(userId: string): Promise<void>
+    findFactor(userId: string): Promise<StoredTotpFactor | null>
+    findStepUp(sessionId: string): Promise<StoredStepUp | null>
+    findTrustedDevice(userId: string, hash: string): Promise<StoredTrustedDevice | null>
+    private readonly devices
+    private readonly factors
+    private readonly recoveryCodes
+    private readonly stepUps
+    putPendingFactor(factor: { userId: string; secret: string; createdAt: number; }): Promise<boolean>
+    putStepUp(stepUp: StoredStepUp): Promise<void>
+    replaceRecoveryCodes(userId: string, hashes: readonly string[]): Promise<void>
 MemoryUserStore [class]
     (new) (clock?: Clock): MemoryUserStore
     clearPassword(id: string): Promise<void>
@@ -109,6 +130,7 @@ TestApi [interface]
     describe(name: string, body: () => void): void
     it(name: string, body: () => Promise<void>, timeout?: number): void
 tokenStoreConformance [function]: (store: TokenStore) => ConformanceCase[]
+twoFactorStoreConformance [function]: (store: TwoFactorStore) => ConformanceCase[]
 uniqueId [function]: (prefix: string) => string
 userStoreConformance [function]: (store: UserStore, options?: UserStoreConformanceOptions) => ConformanceCase[]
 UserStoreConformanceOptions [interface]
@@ -122,8 +144,8 @@ AuthEvent [interface]
     readonly reason?: string
     readonly type: AuthEventType
     readonly userId?: string
-AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' | 'rate_limit.exceeded'
-AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; }
+AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' | 'rate_limit.exceeded' /** The two-factor plugin's events. */ | 'two_factor.enrollment_started' | 'two_factor.enabled' | 'two_factor.disabled' | 'two_factor.verified' | 'two_factor.failed' | 'two_factor.refused' | 'two_factor.step_up' | 'two_factor.recovery_code_used' | 'two_factor.recovery_codes_generated' | 'two_factor.trusted_device_added' | 'two_factor.trusted_devices_revoked'
+AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; } /** The two-factor plugin: a second factor was turned on for the account. */ | { readonly type: 'two-factor-enabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: the second factor was turned off. */ | { readonly type: 'two-factor-disabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */ | { readonly type: 'recovery-code-used'; readonly to: string; readonly userId: string; readonly remaining: number; readonly at: Date; readonly dedupeKey: string; }
 AuthUser [interface]
     readonly email: string
     readonly emailVerified: boolean
@@ -173,12 +195,28 @@ StoredSession [interface]<A = unknown>
     readonly rememberMe: boolean
     readonly userAgent: string
     readonly userId: string
+StoredStepUp [interface]
+    readonly expiresAt: number
+    readonly sessionId: string
+    readonly userId: string
 StoredToken [interface]
     readonly attempts: number
     readonly data: Readonly<Record<string, string>>
     readonly expiresAt: number
     readonly hash: string
     readonly purpose: string
+    readonly userId: string
+StoredTotpFactor [interface]
+    readonly confirmed: boolean
+    readonly createdAt: number
+    readonly lastStep: number
+    readonly secret: string
+    readonly userId: string
+StoredTrustedDevice [interface]
+    readonly createdAt: number
+    readonly epoch: number
+    readonly expiresAt: number
+    readonly hash: string
     readonly userId: string
 TokenStore [interface]
     consume(purpose: string, hash: string): Promise<StoredToken | null>
@@ -187,6 +225,20 @@ TokenStore [interface]
     findByUser(purpose: string, userId: string): Promise<StoredToken | null>
     incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
     put(token: StoredToken): Promise<void>
+TwoFactorStore [interface]
+    addTrustedDevice(device: StoredTrustedDevice, maxPerUser: number): Promise<void>
+    advanceStep(userId: string, step: number): Promise<boolean>
+    confirmFactor(userId: string, secret: string, step: number): Promise<boolean>
+    consumeRecoveryCode(userId: string, hash: string): Promise<boolean>
+    countRecoveryCodes(userId: string): Promise<number>
+    deleteFactor(userId: string): Promise<void>
+    deleteTrustedDevices(userId: string): Promise<void>
+    findFactor(userId: string): Promise<StoredTotpFactor | null>
+    findStepUp(sessionId: string): Promise<StoredStepUp | null>
+    findTrustedDevice(userId: string, hash: string): Promise<StoredTrustedDevice | null>
+    putPendingFactor(factor: { readonly userId: string; readonly secret: string; readonly createdAt: number; }): Promise<boolean>
+    putStepUp(stepUp: StoredStepUp): Promise<void>
+    replaceRecoveryCodes(userId: string, hashes: readonly string[]): Promise<void>
 UserStore [interface]<U extends AuthUser = AuthUser>
     create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<U | null>
     findById(id: string): Promise<U | null>

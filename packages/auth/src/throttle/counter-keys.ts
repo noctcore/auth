@@ -26,4 +26,6 @@ export const counterKeys = {
   device: (account: string, deviceId: string) => `dev:${account}:${deviceId}`,
   /** The budget shared by all of an account's trusted devices under a lock. */
   devices: (account: string) => `devs:${account}`,
+  /** The scope of a second factor's lock, tier and attempts: never an account's own keys. */
+  factor: (account: string) => `2fa:${account}`,
 } as const;
