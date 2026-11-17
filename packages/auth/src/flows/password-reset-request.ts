@@ -125,7 +125,7 @@ async function mailResetCode<U extends AuthUser, A>(
     settings.reset.digits,
   );
 
-  await core.mail({
+  core.mail({
     type: 'password-reset-code',
     to: user.email,
     userId: user.id,
@@ -149,7 +149,7 @@ async function mailResetLink<U extends AuthUser, A>(
     settings.reset.ttlMs,
   );
 
-  await core.mail({
+  core.mail({
     type: 'password-reset',
     to: user.email,
     userId: user.id,

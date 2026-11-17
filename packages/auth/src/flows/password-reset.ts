@@ -128,7 +128,7 @@ export async function resetPassword<U extends AuthUser, A>(
 
   await core.emit({ type: 'password.reset', userId: user.id }, meta);
 
-  await core.mail({
+  core.mail({
     type: 'password-changed',
     to: user.email,
     userId: user.id,

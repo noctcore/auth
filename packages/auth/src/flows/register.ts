@@ -5,7 +5,15 @@
  * say "this email is in use" opt in with `registration.revealExisting`.
  *
  * The password is checked and hashed BEFORE the address is looked up, so the
- * expensive step happens on both paths.
+ * expensive step happens on both paths. Both paths hand one mail to the mailer
+ * without waiting for it, so delivery time never reaches the answer.
+ *
+ * What still differs between the paths, and so can show in the response time:
+ * the taken path's insert fails where the new one succeeds, the store calls
+ * differ by one round trip (pinned by attack A004), and only a new address
+ * runs the `afterRegister` hooks (awaited, so keep them fast and queue slow
+ * work) and, with `autoLogin`, issues a session. `autoLogin` requires
+ * `revealExisting`, whose answer already names a taken address.
  */
 import { sendVerification } from './email-verification';
 import type { FlowSettings } from './settings';
@@ -68,8 +76,7 @@ export async function register<U extends AuthUser, A>(
       return fail('email_in_use', 'email_in_use');
     }
 
-    if (existing)
-      await core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
+    if (existing) core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
 
     await core.emit(
       { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },

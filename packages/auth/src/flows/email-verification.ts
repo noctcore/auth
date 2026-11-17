@@ -36,7 +36,7 @@ export async function sendVerification<U extends AuthUser, A>(
       data,
     );
 
-    await core.mail({
+    core.mail({
       type: 'verify-email',
       to: user.email,
       userId: user.id,
@@ -55,7 +55,7 @@ export async function sendVerification<U extends AuthUser, A>(
       data,
     );
 
-    await core.mail({
+    core.mail({
       type: 'verify-email',
       to: user.email,
       userId: user.id,

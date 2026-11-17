@@ -102,7 +102,7 @@ export async function changePassword<U extends AuthUser, A>(
   await core.tokens.revokeAll(user.id, RESET_PURPOSES);
   await core.emit({ type: 'password.changed', userId: user.id }, meta);
 
-  await core.mail({
+  core.mail({
     type: 'password-changed',
     to: user.email,
     userId: user.id,
