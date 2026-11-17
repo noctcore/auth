@@ -84,6 +84,10 @@ const LAYERS = {
   throttle: ['shared', 'crypto', 'ports'],
   core: ['shared', 'crypto', 'ports', 'http', 'password', 'session', 'tokens', 'throttle'],
   flows: ['shared', 'crypto', 'ports', 'http', 'password', 'session', 'tokens', 'throttle', 'core'],
+  // A plugin sees the core only through its plugin context, like an app's
+  // plugin would: never the flows, and never the session, token or throttle
+  // modules themselves.
+  plugins: ['shared', 'crypto', 'ports', 'http', 'core'],
   // The test kit builds on the stores and primitives, never on the flows.
   testing: ['shared', 'crypto', 'ports', 'password', 'session'],
 };
