@@ -35,8 +35,12 @@ trustedHopsFromEnv
 AUTH [const]: typeof AUTH
 AuthMeta [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
 AuthModule [class]
-    (new) (): AuthModule
+    (new) (discovery: DiscoveryService, reflector: Reflector, options: ResolvedOptions): AuthModule
     configure(consumer: MiddlewareConsumer): void
+    onModuleInit(): void
+    private readonly discovery
+    private readonly options
+    private readonly reflector
     static static forRoot<U extends AuthUser>(options: AuthModuleOptions<U>): DynamicModule
     static static forRootAsync<U extends AuthUser>(options: AuthModuleAsyncOptions<U>): DynamicModule
 AuthModuleAsyncOptions [interface]<U extends AuthUser = AuthUser>
@@ -90,6 +94,7 @@ SessionCookies [class]
 SessionGuard [class]
     (new) (reflector: Reflector, options: ResolvedOptions): SessionGuard
     canActivate(context: ExecutionContext): Promise<boolean>
+    private check
     private checkFreshness
     private checkRoles
     private readonly options

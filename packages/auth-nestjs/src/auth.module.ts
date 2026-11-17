@@ -12,6 +12,7 @@
  * feature module without importing it again.
  */
 import {
+  Inject,
   Module,
   RequestMethod,
   type DynamicModule,
@@ -19,13 +20,15 @@ import {
   type MiddlewareConsumer,
   type ModuleMetadata,
   type NestModule,
+  type OnModuleInit,
   type OptionalFactoryDependency,
   type Provider,
 } from '@nestjs/common';
-import { APP_GUARD, DiscoveryModule } from '@nestjs/core';
-import type { AuthUser } from '@noctcore/auth';
+import { APP_GUARD, DiscoveryModule, DiscoveryService, Reflector } from '@nestjs/core';
+import { AuthConfigError, type AuthUser } from '@noctcore/auth';
 import { CsrfMiddleware } from './csrf.middleware';
 import { resolveOptions, type AuthModuleOptions, type ResolvedOptions } from './options';
+import { collectRoutes, type RouteAccess } from './routes';
 import { SessionCookies } from './session-cookies';
 import { SessionGuard } from './session.guard';
 import { AUTH, AUTH_OPTIONS } from './tokens';
@@ -48,8 +51,29 @@ const shared: Provider[] = [
 
 const exported = [AUTH, AUTH_OPTIONS, SessionGuard, SessionCookies, CsrfMiddleware];
 
+/** What is wrong with a route's access rule, or null when nothing is. */
+function misconfiguration(route: RouteAccess, options: ResolvedOptions): string | null {
+  const name = `${route.controller}.${route.handler} (${route.method} ${route.path})`;
+
+  if (route.public && (route.roles.length > 0 || route.freshAuth)) {
+    return `${name} is @Public() and also requires a role or fresh auth; a public route has no session to check, so remove one of them`;
+  }
+
+  if (route.roles.length > 0 && !options.roles) {
+    return `${name} uses @RequireRole() but AuthModule has no \`roles\` option`;
+  }
+
+  return null;
+}
+
 @Module({})
-export class AuthModule implements NestModule {
+export class AuthModule implements NestModule, OnModuleInit {
+  constructor(
+    @Inject(DiscoveryService) private readonly discovery: DiscoveryService,
+    @Inject(Reflector) private readonly reflector: Reflector,
+    @Inject(AUTH_OPTIONS) private readonly options: ResolvedOptions,
+  ) {}
+
   static forRoot<U extends AuthUser>(options: AuthModuleOptions<U>): DynamicModule {
     return {
       module: AuthModule,
@@ -79,6 +103,19 @@ export class AuthModule implements NestModule {
       ],
       exports: exported,
     };
+  }
+
+  /**
+   * Refuses to boot on a route whose decorators contradict each other, such
+   * as `@Public()` on a controller and `@RequireRole()` on one of its
+   * handlers, instead of leaving it to the guard to pick one at request time.
+   */
+  onModuleInit(): void {
+    const problems = collectRoutes(this.discovery, this.reflector)
+      .map((route) => misconfiguration(route, this.options))
+      .filter((problem): problem is string => problem !== null);
+
+    if (problems.length > 0) throw new AuthConfigError(problems.join('\n'));
   }
 
   configure(consumer: MiddlewareConsumer): void {

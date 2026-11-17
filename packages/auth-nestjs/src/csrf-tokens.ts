@@ -12,12 +12,22 @@ import { randomBytes } from 'node:crypto';
 import {
   createCsrfToken,
   verifyCsrfToken,
+  verifyRequestOrigin,
   type CookieSpec,
   type StoredSession,
 } from '@noctcore/auth';
 import type { ResolvedOptions } from './options';
 
 const PRE_SESSION = /^[0-9a-f]{32}$/u;
+
+/**
+ * The core's own notion of a safe method (GET, HEAD, OPTIONS, with ASCII-only
+ * case folding): `verifyRequestOrigin` passes a safe method whatever the
+ * Origin, and refuses an unsafe one with none.
+ */
+export function isSafeMethod(method: string): boolean {
+  return verifyRequestOrigin({ method, origin: undefined, allowedOrigins: [] });
+}
 
 export const sessionBinding = (session: StoredSession<unknown>): string => `session:${session.id}`;
 

@@ -57,6 +57,17 @@ export interface Principal extends SessionState {
 
 const states = new WeakMap<object, Promise<SessionState>>();
 const principals = new WeakMap<object, Principal>();
+const csrfChecked = new WeakSet<object>();
+
+/** Recorded by CsrfMiddleware when a request passed its checks or is on an exempt path. */
+export function markCsrfPassed(req: RawRequest): void {
+  csrfChecked.add(req);
+}
+
+/** False for a request the CSRF middleware never saw, whatever the reason. */
+export function csrfPassed(req: RawRequest): boolean {
+  return csrfChecked.has(req);
+}
 
 /** Fastify hands Nest a wrapper with the Node request under `raw`; Express hands the request itself. */
 export function rawRequest(req: unknown): RawRequest {

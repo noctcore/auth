@@ -11,7 +11,14 @@
 //   refusal is a 403 with one fixed body, answered by the middleware itself.
 // Learn: CSRF (/auth/learn/csrf/); core attack A008
 import { afterEach, describe, expect, it } from 'vitest';
-import { boot, Browser, ORIGIN, type Booted } from '../support';
+import {
+  boot,
+  Browser,
+  ExcludedController,
+  ORIGIN,
+  PrefixRootController,
+  type Booted,
+} from '../support';
 
 const FORBIDDEN = { error: { code: 'forbidden' } };
 
@@ -130,5 +137,39 @@ describe('A026: cross-site request forgery against a Nest app', () => {
     expect(
       (await new Browser(t.app).send('GET', '/forgot', undefined, { origin: null })).status,
     ).toBe(401);
+  });
+
+  // Which routes Nest hands to a middleware depends on its version: before
+  // 11.2.8 (and on 12.0.0) `{*splat}` missed the global-prefix root, and
+  // 11.0.0 missed prefix-excluded routes. The guard refuses an unsafe request
+  // the middleware never saw, so these hold on every Nest the peer range allows.
+  it('refuses a cross-site POST to the global-prefix root and to a prefix-excluded route', async () => {
+    t = await boot({
+      controllers: [PrefixRootController, ExcludedController],
+      globalPrefix: { prefix: 'api', exclude: ['health'] },
+    });
+
+    const attacker = new Browser(t.app);
+    const crossSite = { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' };
+
+    for (const path of ['/api', '/api/', '/health', '/api/inside']) {
+      expect(await attacker.send('POST', path, {}, crossSite), path).toMatchObject({
+        status: 403,
+        body: FORBIDDEN,
+      });
+    }
+  });
+
+  it('still serves a legitimate POST inside the prefix', async () => {
+    t = await boot({
+      controllers: [PrefixRootController, ExcludedController],
+      globalPrefix: { prefix: 'api', exclude: ['health'] },
+    });
+
+    const browser = new Browser(t.app);
+
+    await browser.send('GET', '/api/inside');
+
+    expect((await browser.send('POST', '/api/inside', {})).status).toBe(201);
   });
 });

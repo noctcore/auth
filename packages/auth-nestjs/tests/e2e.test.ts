@@ -253,15 +253,6 @@ describe('roles', () => {
 
     expect((await browser.send('GET', '/api/admin')).status).toBe(200);
   });
-
-  it('fails closed with a 500 when a route needs a role and no roles option is set', async () => {
-    t = await boot({ withoutRoles: true });
-    const browser = new Browser(t.app);
-
-    await browser.signIn();
-
-    expect((await browser.send('GET', '/api/admin')).status).toBe(500);
-  });
 });
 
 describe('fresh authentication', () => {

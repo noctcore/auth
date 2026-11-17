@@ -12,6 +12,7 @@ import {
   Req,
   Res,
   type INestApplication,
+  type Type,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
@@ -221,6 +222,44 @@ export interface BootOptions {
   readonly async?: boolean;
   /** Leave out the `roles` option. */
   readonly withoutRoles?: boolean;
+  /** Controllers in place of the default set. */
+  readonly controllers?: readonly Type[];
+  /** `app.setGlobalPrefix(prefix, { exclude })` before init. */
+  readonly globalPrefix?: { readonly prefix: string; readonly exclude: string[] };
+}
+
+/** Under a global prefix: a handler at the prefix root, and a route excluded from the prefix. */
+@Public()
+@Controller()
+export class PrefixRootController {
+  @Get()
+  index() {
+    return { root: true };
+  }
+
+  @Post()
+  write() {
+    return { written: true };
+  }
+
+  @Get('inside')
+  page() {
+    return { page: true };
+  }
+
+  @Post('inside')
+  inside() {
+    return { written: true };
+  }
+}
+
+@Public()
+@Controller('health')
+export class ExcludedController {
+  @Post()
+  ping() {
+    return { pong: true };
+  }
 }
 
 export async function boot(overrides: BootOptions = {}) {
@@ -242,10 +281,23 @@ export async function boot(overrides: BootOptions = {}) {
         ? AuthModule.forRootAsync({ useFactory: async () => options })
         : AuthModule.forRoot(options),
     ],
-    controllers: [AccountController, StaffController, OpenController, ForgottenController],
+    controllers: [
+      ...(overrides.controllers ?? [
+        AccountController,
+        StaffController,
+        OpenController,
+        ForgottenController,
+      ]),
+    ],
   }).compile();
 
   const app = moduleRef.createNestApplication({ logger: false });
+
+  if (overrides.globalPrefix) {
+    app.setGlobalPrefix(overrides.globalPrefix.prefix, {
+      exclude: overrides.globalPrefix.exclude,
+    });
+  }
 
   await app.init();
 

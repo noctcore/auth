@@ -10,16 +10,18 @@
 //   src/routes.ts: describeRoutes lists every route with its rule for a test.
 // Learn: Build, "Use with NestJS" (/auth/build/nestjs/)
 import { afterEach, describe, expect, it } from 'vitest';
-import { describeRoutes } from '../../src';
-import { boot, Browser, type Booted } from '../support';
+import { Controller, Get } from '@nestjs/common';
+import { AuthConfigError } from '@noctcore/auth';
+import { describeRoutes, Public, RequireFreshAuth, RequireRole } from '../../src';
+import { AccountController, boot, Browser, type Booted } from '../support';
 
 let t: Booted;
 
-afterEach(async () => {
-  await t.app.close();
-});
-
 describe('A024: a route left open because nobody marked it', () => {
+  afterEach(async () => {
+    await t.app.close();
+  });
+
   it('refuses every route without @Public() when there is no session, found by walking them all', async () => {
     t = await boot();
     const routes = describeRoutes(t.app);
@@ -77,5 +79,47 @@ describe('A024: a route left open because nobody marked it', () => {
     ).toEqual({
       user: null,
     });
+  });
+});
+
+// A public controller whose handler asks for a role: the guard used to take
+// the @Public() and skip the role check, handing admin data to anyone.
+@Public()
+@Controller('reports')
+class PublicReportsWithAdminHandler {
+  @RequireRole('admin')
+  @Get('payroll')
+  payroll() {
+    return { salaries: 'everyone' };
+  }
+}
+
+@Public()
+@Controller('danger')
+class PublicDangerWithFreshHandler {
+  @RequireFreshAuth()
+  @Get()
+  zone() {
+    return { done: true };
+  }
+}
+
+describe('A024: a route both open and restricted, refused at boot', () => {
+  it('refuses to boot when @Public() on a controller meets @RequireRole() on a handler', async () => {
+    await expect(boot({ controllers: [PublicReportsWithAdminHandler] })).rejects.toThrow(
+      /PublicReportsWithAdminHandler\.payroll \(GET \/reports\/payroll\) is @Public\(\)/u,
+    );
+  });
+
+  it('refuses to boot when @Public() meets @RequireFreshAuth()', async () => {
+    await expect(boot({ controllers: [PublicDangerWithFreshHandler] })).rejects.toThrow(
+      AuthConfigError,
+    );
+  });
+
+  it('refuses to boot with @RequireRole() and no roles option, instead of failing at request time', async () => {
+    await expect(boot({ withoutRoles: true, controllers: [AccountController] })).rejects.toThrow(
+      /uses @RequireRole\(\) but AuthModule has no `roles` option/u,
+    );
   });
 });
