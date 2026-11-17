@@ -1,12 +1,13 @@
+> [!WARNING]
+> **Warning:** early 0.x releases are not meant for production apps yet. The API may have breaking changes between minor versions until 1.0.
+
 # @noctcore/auth
 
 The framework-free core of [noctcore auth](https://github.com/noctcore/auth): sessions, password hashing, one-time tokens, throttling and flows over storage interfaces you implement or take from the adapter packages.
 
-> [!WARNING]
-> **Early development.** This library is not ready for production apps yet. The API may change in any release before 1.0. Try it and read it, but do not put real users behind it yet.
-
 ```sh
-npm install @noctcore/auth @node-rs/argon2
+bun add @noctcore/auth @node-rs/argon2
+# or: npm install @noctcore/auth @node-rs/argon2
 ```
 
 `@node-rs/argon2` is an optional peer dependency, needed only for the Argon2id hasher in `@noctcore/auth/argon2`. The stores come from [`@noctcore/auth-prisma`](https://github.com/noctcore/auth/tree/main/packages/auth-prisma) and [`@noctcore/auth-redis`](https://github.com/noctcore/auth/tree/main/packages/auth-redis), or from your own adapters.

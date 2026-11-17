@@ -30,8 +30,8 @@
 
 > [!WARNING]
 > **Early development.** This library is not ready for production apps yet. The API may
-> change in any release before 1.0, and nothing is published to npm so far. Try it, read it,
-> open issues, but do not put real users behind it yet.
+> change in any release before 1.0. The 0.x versions are on npm, but they are previews: try
+> them, read the source, open issues, and do not put real users behind it yet.
 
 ## What it is
 
@@ -82,6 +82,11 @@ the stricter value wins.
 
 Any store that passes the conformance suite in `@noctcore/auth/testing` works, so Redis and Prisma
 are a starting point, not a requirement. All packages share one version.
+
+```sh
+bun add @noctcore/auth @node-rs/argon2   # 0.x: pre-1.0, the API may change in any release
+bun add @noctcore/auth-redis @noctcore/auth-prisma   # the store adapters, as you need them
+```
 
 ## Quick look
 
