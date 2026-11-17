@@ -8,65 +8,21 @@
 //   bun run bench:timing                       100 samples per arm, seed 20261117
 //   bun run bench:timing --samples 400 --seed 7
 //
-// Each comparison runs its two arms in a shuffled order (from the seed) so
-// drift and garbage collection land on both alike, drops the slowest 5
-// percent of each arm, and reports the medians and Welch's t. A |t| under
-// 4.5 (the threshold dudect uses) means this run could not tell the arms
-// apart. Each arm repeats one address (the new-address sign-up excepted), so
-// neither arm pays for creating counter keys the other reuses. The in-memory stores make a lookup far cheaper than a real database
-// round trip, so a store call one arm skips would show up here as a gap of
-// microseconds, not the milliseconds it costs in production.
-import {
-  createAuth,
-  type AuthConfig,
-  type AuthPlugin,
-  type Door,
-  type RequestMeta,
-} from '../../src';
+// compare.ts does the measuring. Each arm repeats one address (the
+// new-address sign-up excepted), so neither arm pays for creating counter
+// keys the other reuses. The in-memory stores make a lookup far cheaper than a
+// real database round trip, so a store call one arm skips would show up here
+// as a gap of microseconds, not the milliseconds it costs in production:
+// `bun run bench:timing:stores` times the sign-up pair on Postgres and Redis.
+import { createAuth, type AuthConfig, type AuthPlugin, type Door } from '../../src';
 import { argon2id } from '../../src/password/argon2';
 import type { AuthUser } from '../../src/ports/stores';
 import { manualClock, memoryStores, recordingMailer } from '../../src/testing';
+import { compare, meta, SAMPLES, SEED, summarize } from './compare';
 
 const PASSWORD = 'correct horse battery';
 const WRONG = 'wrong passphrase, nearly';
 const KNOWN = 'known@example.com';
-const THRESHOLD = 4.5;
-
-function arg(name: string, fallback: number): number {
-  const index = process.argv.indexOf(`--${name}`);
-  const value = index === -1 ? undefined : Number(process.argv[index + 1]);
-
-  return value !== undefined && Number.isSafeInteger(value) && value > 0 ? value : fallback;
-}
-
-const SAMPLES = arg('samples', 100);
-const SEED = arg('seed', 20_261_117);
-
-/** mulberry32: a small seeded generator, so a run's order can be replayed. */
-function seeded(seed: number): () => number {
-  let state = seed >>> 0;
-
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-
-    let t = state;
-
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
-
-const random = seeded(SEED);
-let ipCounter = 0;
-
-/** A fresh client address per request, so the per-IP door limit never answers first. */
-function meta(): RequestMeta {
-  ipCounter += 1;
-
-  return { ip: `10.${(ipCounter >> 16) & 255}.${(ipCounter >> 8) & 255}.${ipCounter & 255}` };
-}
 
 const UNLIMITED = { limit: 1_000_000_000, window: '15m' } as const;
 
@@ -99,82 +55,6 @@ function app(overrides: Partial<Config> = {}) {
   } as Config);
 
   return { auth, mailer };
-}
-
-async function time(run: () => Promise<unknown>): Promise<number> {
-  const start = process.hrtime.bigint();
-
-  await run();
-
-  return Number(process.hrtime.bigint() - start) / 1e6;
-}
-
-interface Stats {
-  median: number;
-  mean: number;
-  variance: number;
-  n: number;
-}
-
-function stats(samples: number[]): Stats {
-  const kept = [...samples].sort((a, b) => a - b).slice(0, Math.ceil(samples.length * 0.95));
-  const mean = kept.reduce((sum, x) => sum + x, 0) / kept.length;
-  const variance = kept.reduce((sum, x) => sum + (x - mean) ** 2, 0) / Math.max(kept.length - 1, 1);
-
-  return { median: kept[Math.floor(kept.length / 2)] ?? 0, mean, variance, n: kept.length };
-}
-
-function welch(a: Stats, b: Stats): number {
-  const spread = Math.sqrt(a.variance / a.n + b.variance / b.n);
-
-  return spread === 0 ? 0 : (a.mean - b.mean) / spread;
-}
-
-interface Comparison {
-  name: string;
-  arms: readonly [label: string, run: (i: number) => Promise<unknown>][];
-}
-
-async function compare({ name, arms }: Comparison): Promise<boolean> {
-  const order = arms.flatMap((_, arm) => Array.from({ length: SAMPLES }, (__, i) => ({ arm, i })));
-
-  for (let i = order.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-
-    [order[i], order[j]] = [order[j] ?? { arm: 0, i: 0 }, order[i] ?? { arm: 0, i: 0 }];
-  }
-
-  // Warm up both paths (JIT, Argon2's first allocation) before measuring.
-  for (const [, run] of arms) for (let i = 0; i < 5; i++) await run(-1 - i);
-
-  const samples: number[][] = arms.map(() => []);
-
-  for (const { arm, i } of order) {
-    const [, run] = arms[arm] ?? arms[0] ?? ['', () => Promise.resolve()];
-
-    samples[arm]?.push(await time(() => run(i)));
-  }
-
-  const [a, b] = samples.map(stats) as [Stats, Stats];
-  const t = welch(a, b);
-  const same = Math.abs(t) < THRESHOLD;
-  const label = (index: number) => arms[index]?.[0] ?? '';
-
-  console.log(`\n${name}`);
-
-  console.log(
-    `  ${label(0).padEnd(34)} median ${a.median.toFixed(3)} ms   mean ${a.mean.toFixed(3)} ms`,
-  );
-
-  console.log(
-    `  ${label(1).padEnd(34)} median ${b.median.toFixed(3)} ms   mean ${b.mean.toFixed(3)} ms`,
-  );
-
-  console.log(
-    `  Welch t = ${t.toFixed(2)}  ${same ? 'not distinguishable' : 'DISTINGUISHABLE'} at |t| < ${THRESHOLD}`,
-  );
-
-  return same;
 }
 
 async function main() {
@@ -299,11 +179,7 @@ async function main() {
     }),
   ];
 
-  const distinguishable = results.filter((same) => !same).length;
-
-  console.log(
-    `\n${distinguishable} of ${results.length} comparisons distinguishable. Replay with --seed ${SEED} --samples ${SAMPLES}.`,
-  );
+  summarize(results);
 }
 
 await main();

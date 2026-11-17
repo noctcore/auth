@@ -9,7 +9,8 @@
     "generate": "prisma generate",
     "typecheck": "prisma generate && tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:integration": "prisma generate && prisma db push && vitest run --config vitest.integration.config.ts"
+    "test:integration": "prisma generate && prisma db push && vitest run --config vitest.integration.config.ts",
+    "bench:timing": "prisma generate && prisma db push && bun tests/timing.ts"
   },
   "dependencies": {
     "@noctcore/auth": "workspace:*",
