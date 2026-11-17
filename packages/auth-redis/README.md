@@ -42,6 +42,19 @@ const store = new RedisMembershipStore(redis, { prefix: 'auth:' });
 - A scope's members are one hash under `ms:<scope>`. A role change or a removal is one Lua script that checks the member's role and the other admins and writes, so two admins demoting each other at once leave one admin.
 - Members have no TTL: they are account data. Keep them only on a Redis with persistence (AOF), or put them in Postgres with `PrismaMembershipStore`.
 
+## Invitation store
+
+`RedisInvitationStore` backs the invitations plugin (`@noctcore/auth/invitations`):
+
+```ts
+import { RedisInvitationStore } from '@noctcore/auth-redis';
+
+const store = new RedisInvitationStore(redis, { prefix: 'auth:' });
+```
+
+- Each invitation is JSON under `inv:h:<hash>`, with indexes under `inv:p:` (one per scope and address, named by a SHA-256 digest, so no address is a key name), `inv:s:<scope>` and `inv:u:<inviterId>`. Every key has a TTL at the invitation's expiry.
+- Creating and consuming are each one Lua script, so of many concurrent accepts exactly one gets the invitation.
+
 ## Run Redis with `noeviction`
 
 Set `maxmemory-policy noeviction` on the Redis that holds these keys (and give it enough memory). Under an evicting policy Redis may drop a revocation epoch, a lockout counter or a lock key to make room: a dropped epoch signs users out, a dropped counter quietly hands an attacker a fresh budget, and a dropped lock key ends a lock early. With `noeviction`, a full Redis refuses writes instead, and the auth flows fail closed.

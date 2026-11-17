@@ -17,6 +17,7 @@
 
 ## runtime exports
 RedisCounterStore
+RedisInvitationStore
 RedisMembershipStore
 RedisSessionStore
 RedisTwoFactorStore
@@ -34,6 +35,18 @@ RedisCounterStore [class]
     private readonly redis
     reset(key: string): Promise<void>
     set(key: string, count: number, windowMs: number): Promise<void>
+RedisInvitationStore [class]
+    (new) (redis: Redis, options?: Pick<RedisStoreOptions, "prefix">): RedisInvitationStore
+    consume(hash: string): Promise<StoredInvitation | null>
+    create(invitation: StoredInvitation, now: number): Promise<boolean>
+    deleteByInviter(inviterId: string): Promise<void>
+    findByHash(hash: string): Promise<StoredInvitation | null>
+    listByScope(scope: string, now: number): Promise<StoredInvitation[]>
+    private readonly prefix
+    private readonly redis
+    private rowKey
+    private scopeKey
+    revoke(scope: string, id: string): Promise<boolean>
 RedisMembershipStore [class]
     (new) (redis: Redis, options?: Pick<RedisStoreOptions, "prefix">): RedisMembershipStore
     addMember(member: StoredMember): Promise<boolean>

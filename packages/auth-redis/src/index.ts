@@ -8,7 +8,8 @@
  * - `e:<userId>`     the user's revocation epoch, kept alive past every session;
  * - `c:<key>`        a fixed-window counter, its TTL armed by the first hit;
  * - `tf:*`           the two-factor plugin's store (`RedisTwoFactorStore`), see its file;
- * - `ms:*`           the membership plugin's store (`RedisMembershipStore`), see its file.
+ * - `ms:*`           the membership plugin's store (`RedisMembershipStore`), see its file;
+ * - `inv:*`          the invitations plugin's store (`RedisInvitationStore`), see its file.
  *
  * Requires Redis 6.2 or newer (`SET ... XX KEEPTTL`). Multi-key scripts touch a
  * session and its user's index together, so Redis Cluster is not supported;
@@ -20,6 +21,7 @@ import type { RedisSessionStoreOptions } from './options';
 import { RedisSessionStore } from './session-store';
 
 export { RedisCounterStore } from './counter-store';
+export { RedisInvitationStore } from './invitation-store';
 export { RedisMembershipStore } from './membership-store';
 export type { RedisSessionStoreOptions, RedisStoreOptions } from './options';
 export { RedisSessionStore } from './session-store';

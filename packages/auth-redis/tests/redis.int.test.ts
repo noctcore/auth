@@ -2,6 +2,7 @@ import { Redis } from 'ioredis';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   counterStoreConformance,
+  invitationStoreConformance,
   membershipStoreConformance,
   runConformance,
   sessionStoreConformance,
@@ -10,6 +11,7 @@ import {
 } from '@noctcore/auth/testing';
 import {
   RedisCounterStore,
+  RedisInvitationStore,
   RedisMembershipStore,
   RedisSessionStore,
   RedisTwoFactorStore,
@@ -128,6 +130,80 @@ describe.skipIf(!url)('redis stores', () => {
       expect([...results].sort()).toEqual(['done', 'last_admin']);
       expect((await one.listMembers(scope)).filter((m) => m.role === 'admin')).toHaveLength(1);
     }
+  });
+
+  runConformance(
+    'redis invitation store',
+    invitationStoreConformance(new RedisInvitationStore(redis, { prefix })),
+    api,
+  );
+
+  it('gives an invitation to one of two connections consuming it at once', async () => {
+    const one = new RedisInvitationStore(redis, { prefix });
+    const two = new RedisInvitationStore(second, { prefix });
+
+    for (let round = 0; round < 20; round++) {
+      const now = Date.now();
+
+      const invitation = {
+        id: uniqueId('inv'),
+        hash: uniqueId('hash'),
+        scope: uniqueId('scope'),
+        email: 'bob@example.com',
+        inviterId: uniqueId('user'),
+        payload: {},
+        createdAt: now,
+        expiresAt: now + 60_000,
+      };
+
+      await one.create(invitation, now);
+
+      const results = await Promise.all([
+        one.consume(invitation.hash),
+        two.consume(invitation.hash),
+      ]);
+
+      expect(results.filter((r) => r !== null)).toHaveLength(1);
+    }
+  });
+
+  it('keeps every invitation key under a TTL at its expiry, with no raw address in a key', async () => {
+    const store = new RedisInvitationStore(redis, { prefix: `${prefix}inv-ttl:` });
+    const now = Date.now();
+
+    const invitation = {
+      id: uniqueId('inv'),
+      hash: uniqueId('hash'),
+      scope: uniqueId('scope'),
+      email: 'carol@example.com',
+      inviterId: uniqueId('user'),
+      payload: { role: 'member' },
+      createdAt: now,
+      expiresAt: now + 60_000,
+    };
+
+    await store.create(invitation, now);
+
+    const keys = await redis.keys(`${prefix}inv-ttl:*`);
+
+    expect(keys).toHaveLength(4);
+    expect(keys.join(' ')).not.toContain('carol');
+
+    for (const key of keys) {
+      const ttl = await redis.pttl(key);
+
+      expect(ttl).toBeGreaterThan(55_000);
+      expect(ttl).toBeLessThanOrEqual(60_000);
+    }
+
+    // A stale hash in the scope set (its row gone) is skipped and cleaned up.
+    await redis.sadd(`${prefix}inv-ttl:inv:s:${invitation.scope}`, 'gone');
+    expect(await store.listByScope(invitation.scope, now)).toHaveLength(1);
+    expect(await store.revoke(invitation.scope, 'missing')).toBe(false);
+    expect(await redis.sismember(`${prefix}inv-ttl:inv:s:${invitation.scope}`, 'gone')).toBe(0);
+
+    await store.deleteByInviter(invitation.inviterId);
+    expect(await redis.keys(`${prefix}inv-ttl:*`)).toEqual([]);
   });
 
   it('keeps members without a TTL, under the ms: prefix', async () => {
