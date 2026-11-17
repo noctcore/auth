@@ -9,6 +9,7 @@
 
   <p>
     <a href="https://github.com/noctcore/auth/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/noctcore/auth/ci.yml?branch=main&style=flat&label=ci" alt="CI status"></a>
+    <a href="https://scorecard.dev/viewer/?uri=github.com/noctcore/auth"><img src="https://api.scorecard.dev/projects/github.com/noctcore/auth/badge" alt="OpenSSF Scorecard"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b4a8c?style=flat" alt="MIT license"></a>
     <a href="#status"><img src="https://img.shields.io/badge/status-early%20development-b45309?style=flat" alt="Status: early development"></a>
     <img src="https://img.shields.io/badge/node-%3E%3D22-3b4a8c?style=flat" alt="Node 22 or later">
