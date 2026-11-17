@@ -183,6 +183,9 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 | `plugins` | `[]` | Plugins add hooks and flows, never endpoints. A plugin's flows appear on the auth object under its `id`. The two-factor plugin (`twoFactor` from `@noctcore/auth/two-factor`) is configured on its own; its options are in [Two-factor](/auth/build/two-factor/#wiring-the-plugin). The membership plugin (`membership` from `@noctcore/auth/membership`) is configured the same way; its options are in [Membership guards](/auth/build/membership/#wiring-the-plugin). So is the invitations plugin (`invitations` from `@noctcore/auth/invitations`), in [Invitations](/auth/build/invitations/#wiring-the-plugin). |
 | `logger` | silent | Where the package reports what it cannot return: a failed breach check, a mailer or audit sink that threw. Messages never carry secrets. |
 | `metrics` | no-op | Counters such as breach check outages and door refusals. Labels never carry user input. |
+| `background.waitUntil` | none | Handed every background task's promise (mail, lock notices, a reset job without `enqueue`) as it starts, so a runtime that freezes after the response keeps it alive. See [Mail](/auth/build/mail/#keeping-sends-alive-and-bounding-them). `auth.flush()` waits for the same tasks on shutdown. |
+| `background.timeout` | none | Stop waiting on a task after this long; logged and counted as `timed_out`. The task is not cancelled. |
+| `background.maxPending` | none | While this many tasks are still running (timed out or not), new ones are dropped, logged and counted as `dropped`. Bounds memory when a mailer hangs. |
 | `clock` | system clock | Injectable so tests move time instead of sleeping. |
 | `random` | `crypto.getRandomValues` | Injectable for tests. |
 
@@ -200,9 +203,10 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 - link verification, link reset or link email change is chosen without its `urls` function;
 - `emailVerification.digits`, `passwordReset.digits` or `emailChange.digits` is outside 6 to 9;
 - `emailChange.revertTtl` is shorter than 7 days;
-- a plugin requires `captcha` and none is configured.
+- a plugin requires `captcha` and none is configured;
+- `background.timeout` is zero, or `background.maxPending` is not a whole number of at least 1.
 
-Sources: `create-auth.ts`, `flows/resolve-settings.ts`, `session/session-manager.ts`, `http/cookie.ts`, `core/plugins.ts`.
+Sources: `create-auth.ts`, `core/background.ts`, `flows/resolve-settings.ts`, `session/session-manager.ts`, `http/cookie.ts`, `core/plugins.ts`.
 
 ## Store and hasher options
 
