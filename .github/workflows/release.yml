@@ -18,8 +18,8 @@ name: release
 # no git credentials. Tags and releases are created only for packages that were
 # published, so a run with nothing to publish creates none.
 #
-# Prereleases (`changeset pre enter rc`) publish under the `next` dist-tag; see
-# RELEASING.md.
+# Prereleases (`changeset pre enter rc`) publish under the `rc` dist-tag; `next` is
+# moved by hand. See RELEASING.md.
 on:
   push:
     branches: [main]
@@ -33,6 +33,8 @@ permissions: {}
 jobs:
   release:
     name: version or publish
+    # A manual dispatch from another branch must not publish that branch.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
