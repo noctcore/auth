@@ -28,6 +28,8 @@ const result = await auth.login({ email, password, meta });
 
 A second factor is a plugin: `twoFactor` from `@noctcore/auth/two-factor` adds TOTP, recovery codes, trusted devices and step-up, with its flows under `auth.twoFactor`.
 
+Membership guards are a plugin too: `membership` from `@noctcore/auth/membership` refuses acting on yourself and demoting or removing the last admin of a scope (decided atomically by the store), and revokes a member's sessions when their role changes or they are removed, with its flows under `auth.membership`.
+
 Flows return results instead of throwing HTTP errors, and your app keeps its own routes. The root README has a complete wiring example and the list of modules.
 
 - [Root README](https://github.com/noctcore/auth#readme)
