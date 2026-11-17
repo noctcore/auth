@@ -9,7 +9,7 @@
  * session, voids every outstanding reset token, lifts the lockout (the mailbox
  * was proved) and, by default, marks the address verified.
  */
-import { PURPOSE, RESET_PURPOSES, type FlowSettings } from './settings';
+import { PURPOSE, PASSWORD_PURPOSES, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
 import { normalizeEmail, type NormalizedEmail } from '../shared/email';
@@ -122,7 +122,7 @@ export async function resetPassword<U extends AuthUser, A>(
   if (!written) return failed(core, user.id, 'write_refused', meta);
 
   await core.revokeAllSessions(user.id, 'password-reset');
-  await core.tokens.revokeAll(user.id, RESET_PURPOSES);
+  await core.tokens.revokeAll(user.id, PASSWORD_PURPOSES);
   await core.throttle.clearAccount(accountKey(user.email));
 
   if (settings.reset.markEmailVerified && !user.emailVerified) {

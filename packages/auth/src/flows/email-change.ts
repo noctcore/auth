@@ -6,27 +6,36 @@
  *   (10 minutes by default), then the `beforeEmailChange` hooks (the
  *   two-factor plugin asks for its step-up or a code there). A code (or link)
  *   goes to the new address; nothing changes yet. A new request replaces the
- *   pending one. A new address that already has an account gets the same
- *   answer after the same store calls, and its owner gets an "in use" mail
- *   instead of a code, so the response never says whether it is taken.
- * - Confirm: the code, typed in a signed-in session of the same account (a
- *   link works only in such a session too), is single use and bound to the
- *   user, the address it was sent to and the address it replaces. The store
- *   moves the address as a compare-and-set that keeps it unique, so of two
- *   accounts racing for one address exactly one gets it. Every session of the
- *   account is revoked (the epoch fence), the caller's is re-issued, reset and
- *   verification tokens die, and the old address is mailed at once with a
- *   revert link.
- * - Revert: the link (32 random bytes, SHA-256 at rest, single use, 7 days by
- *   default) restores the old address, removes the password so the next
- *   sign-in needs a reset, revokes every session (and with them the two-factor
- *   plugin's trusted devices), voids every outstanding reset, verification and
- *   change token, blocks the lost address for this account for a while, and
- *   writes an audit row flagged for review. A password change, a reset or a
- *   later change does not void it: a live revert link is never replaced.
+ *   pending one; a password change or reset, or signing out of other devices
+ *   or everywhere, voids it. While the revert link of an earlier change lives,
+ *   no new change can start. A new address that already has an account, or is
+ *   held for another account (email-reservation.ts), gets the same answer
+ *   after the same store calls, and its owner gets an "in use" mail instead of
+ *   a code, so the response never says whether it is taken.
+ * - Confirm: the code, typed in a live signed-in session of the same account
+ *   (a link works only in such a session too), is single use and bound to the
+ *   user, the address it was sent to and the address it replaces. Reset and
+ *   verification tokens die and the revert link is written (with a hold on the
+ *   old address) BEFORE the address moves, so no failure leaves the address
+ *   moved without its revert link. The store moves the address as a
+ *   compare-and-set that keeps it unique, so of two accounts racing for one
+ *   address exactly one gets it. Every session of the account is then revoked
+ *   (the epoch fence), the caller's is re-issued, and the old address is
+ *   mailed the revert link.
+ * - Revert: the link (32 random bytes, SHA-256 at rest, 7 days by default)
+ *   restores the old address and removes the password in one write (the next
+ *   sign-in needs a reset), revokes every session (and with them the
+ *   two-factor plugin's trusted devices), voids every outstanding reset,
+ *   verification and change token, runs the `onEmailReverted` hooks (the
+ *   two-factor plugin removes a factor enrolled since the change), blocks the
+ *   lost address for this account for a while, and writes an audit row flagged
+ *   for review. The link is spent only once the address is back: if the old
+ *   address was taken meanwhile, the account is still locked out the same way
+ *   and the link stays usable. A password change or a reset does not void it.
  *
  * Guide: Learn, "Email change"; Build, "Email change".
  */
+import { addressHolder, releaseAddress, reserveAddress } from './email-reservation';
 import { PURPOSE, RESET_PURPOSES, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
@@ -107,6 +116,8 @@ export async function requestEmailChange<U extends AuthUser, A>(
   if (!user) return fail('session_expired', 'user_missing');
   if (user.email === newEmail)
     return changeFailed(core, user.id, fail('invalid_email', 'email_unchanged'), meta);
+  if (await pendingRevert(core, user))
+    return changeFailed(core, user.id, fail('forbidden', 'email_change_pending_revert'), meta);
 
   const perAddress = await core.rateLimit('email-change-address', accountKey(newEmail), meta);
 
@@ -127,11 +138,14 @@ export async function requestEmailChange<U extends AuthUser, A>(
 
   if (refusal) return changeFailed(core, user.id, fail(refusal.code, refusal.reason), meta);
 
-  // Both paths look the address up and issue (replacing any pending request)
-  // before they part, so the store calls and the answer are the same. A taken
-  // address gets a token nobody is ever shown, and the "in use" mail goes to
-  // its owner instead of a code to the requester.
-  const holder = await core.users.findCredentialByEmail(newEmail);
+  // Every path looks the address up (account, then hold) and issues
+  // (replacing any pending request) before they part, so the store calls and
+  // the answer are the same. A taken or held address gets a token nobody is
+  // ever shown, and the "in use" mail goes to its owner instead of a code to
+  // the requester.
+  const account = await core.users.findCredentialByEmail(newEmail);
+  const heldBy = await addressHolder(core, newEmail);
+  const holder = account ?? heldFor(heldBy, user.id, newEmail);
   const issued = await issueConfirmation(core, settings, user.id, user.email, newEmail);
 
   if (holder) {
@@ -205,20 +219,32 @@ export async function confirmEmailChangeCode<U extends AuthUser, A>(
 
   if (limited) return limited;
 
+  // A session revoked since the request (signed out everywhere, say) cannot
+  // finish it, and the code is left unspent.
+  const live = await core.confirmLiveSession(input.session);
+
+  if (!live)
+    return changeFailed(
+      core,
+      input.session.userId,
+      fail('session_expired', 'session_not_active'),
+      input.meta,
+    );
+
   const redemption = await core.tokens.redeemCode(
     PURPOSE.emailChange,
-    input.session.userId,
+    live.userId,
     input.code,
     settings.emailChange.maxAttempts,
   );
 
-  return finishChange(core, settings, support, redemption, input.session, input.meta);
+  return finishChange(core, settings, support, redemption, live, input.meta);
 }
 
 /**
  * Confirms a change with the link from the new address. Like a verification
- * link it works only in a signed-in session of the same account; opened
- * anywhere else it is refused and left unspent.
+ * link it works only in a live signed-in session of the same account; opened
+ * anywhere else, or in a revoked session, it is refused and left unspent.
  */
 export async function confirmEmailChangeLink<U extends AuthUser, A>(
   core: AuthCore<U, A>,
@@ -230,9 +256,10 @@ export async function confirmEmailChangeLink<U extends AuthUser, A>(
 
   if (limited) return limited;
 
+  const live = input.session ? await core.confirmLiveSession(input.session) : null;
   const peek = await core.tokens.peekLink(PURPOSE.emailChange, input.token);
 
-  if (peek.status === 'valid' && input.session?.userId !== peek.userId) {
+  if (peek.status === 'valid' && live?.userId !== peek.userId) {
     await core.emit(
       { type: 'email.change_failed', userId: peek.userId, reason: 'session_required' },
       input.meta,
@@ -243,7 +270,7 @@ export async function confirmEmailChangeLink<U extends AuthUser, A>(
 
   const redemption = await core.tokens.redeemLink(PURPOSE.emailChange, input.token);
 
-  return finishChange(core, settings, support, redemption, input.session, input.meta);
+  return finishChange(core, settings, support, redemption, live, input.meta);
 }
 
 async function finishChange<U extends AuthUser, A>(
@@ -251,7 +278,7 @@ async function finishChange<U extends AuthUser, A>(
   settings: FlowSettings,
   support: ReturnType<typeof requireSupport>,
   redemption: TokenRedemption,
-  current: StoredSession<A> | null,
+  live: StoredSession<A> | null,
   meta: RequestMeta,
 ): Promise<AuthResult<ChangedEmail<A>>> {
   if (redemption.status !== 'valid')
@@ -275,23 +302,28 @@ async function finishChange<U extends AuthUser, A>(
       meta,
     );
 
-  // Read live before anything is revoked: only a session still active, and
-  // this user's, is re-issued.
-  const live = current?.userId === user.id ? await core.confirmLiveSession(current) : null;
-  const changed = await support.changeEmail(user.id, { from, to });
+  if (await pendingRevert(core, user))
+    return changeFailed(core, user.id, fail('forbidden', 'email_change_pending_revert'), meta);
+  if (heldFor(await addressHolder(core, to), user.id, to))
+    return changeFailed(core, user.id, writeRefusal('taken'), meta);
 
-  if (changed !== 'changed') return changeFailed(core, user.id, writeRefusal(changed), meta);
-
+  // Fail safe: what must exist once the address moves is written first. A
+  // store error after this point leaves at worst a revert link nobody was
+  // mailed for an address that did not move, which pendingRevert ignores.
   await core.tokens.revokeAll(user.id, VOIDED_BY_CHANGE);
 
   const revert = await issueRevert(core, settings, support, user.id, from, to);
+  const changed = await support.changeEmail(user.id, { from, to });
+
+  if (changed !== 'changed') {
+    await core.tokens.revokeAll(user.id, [PURPOSE.emailRevert]);
+    await releaseAddress(core, from);
+
+    return changeFailed(core, user.id, writeRefusal(changed), meta);
+  }
 
   await core.revokeAllSessions(user.id, 'email-changed');
-
-  await core.emit(
-    { type: 'email.changed', userId: user.id, data: { revertLink: revert !== null } },
-    meta,
-  );
+  await core.emit({ type: 'email.changed', userId: user.id }, meta);
 
   core.mail({
     type: 'email-changed',
@@ -299,10 +331,13 @@ async function finishChange<U extends AuthUser, A>(
     userId: user.id,
     newEmail: to,
     at: new Date(core.clock.now()),
-    ...(revert ? { revertUrl: revert.url, revertExpiresAt: new Date(revert.expiresAt) } : {}),
+    revertUrl: revert.url,
+    revertExpiresAt: new Date(revert.expiresAt),
   });
 
-  if (!live) return ok({ session: null });
+  // Only a live session of this user is re-issued (the code path guarantees
+  // one; a link confirmed in another account's session was refused above).
+  if (live?.userId !== user.id) return ok({ session: null });
 
   const issued = await core.issueSession(
     { ...user, email: to, emailVerified: true },
@@ -313,10 +348,30 @@ async function finishChange<U extends AuthUser, A>(
 }
 
 /**
- * The revert link for a change from `from`. An unexpired one from an earlier
- * change is kept, and this change gets none: replacing it would let a second
- * change by the same intruder void the link the real owner holds.
+ * Whether the user's last change can still be reverted: a live revert link
+ * for a move to the address the account has now. A link left by a confirm
+ * whose move never happened (a store error) names another address and does
+ * not count.
  */
+async function pendingRevert<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  user: U,
+): Promise<boolean> {
+  const revert = await core.tokens.findLive(PURPOSE.emailRevert, user.id);
+
+  return revert?.data['to'] === user.email;
+}
+
+/** The account a hold keeps `email` for, as a holder, unless that is the requester. */
+function heldFor(
+  holderId: string | null,
+  requesterId: string,
+  email: NormalizedEmail,
+): { id: string; email: string } | null {
+  return holderId !== null && holderId !== requesterId ? { id: holderId, email } : null;
+}
+
+/** The revert link for a change from `from`, and the hold that keeps `from` for this account as long. */
 async function issueRevert<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
@@ -324,15 +379,16 @@ async function issueRevert<U extends AuthUser, A>(
   userId: string,
   from: NormalizedEmail,
   to: NormalizedEmail,
-): Promise<{ url: string; expiresAt: number } | null> {
-  if (await core.tokens.findLive(PURPOSE.emailRevert, userId)) return null;
+): Promise<{ url: string; expiresAt: number }> {
+  const ttl = settings.emailChange.revertTtlMs;
 
-  const { token, expiresAt } = await core.tokens.issueLink(
-    PURPOSE.emailRevert,
-    userId,
-    settings.emailChange.revertTtlMs,
-    { email: from, to, changedAt: String(core.clock.now()) },
-  );
+  await reserveAddress(core, from, userId, ttl);
+
+  const { token, expiresAt } = await core.tokens.issueLink(PURPOSE.emailRevert, userId, ttl, {
+    email: from,
+    to,
+    changedAt: String(core.clock.now()),
+  });
 
   return { url: support.revertUrl(token), expiresAt };
 }
@@ -341,6 +397,14 @@ async function issueRevert<U extends AuthUser, A>(
  * Undoes a change from the link mailed to the old address. No session is
  * needed: whoever holds the account now may be the intruder. The next sign-in
  * needs a password reset, which goes to the restored address.
+ *
+ * The link is looked at, not spent, until the address is back. If the old
+ * address has an account again (the hold should prevent that; see
+ * email-reservation.ts), the account is locked out anyway (password removed,
+ * sessions, trusted devices and pending tokens gone, a late factor removed)
+ * and the answer is `email_in_use`, with the link still usable once the
+ * address is free. Not atomic: if a store call fails partway, what ran stays
+ * done, and the unspent link runs it all again.
  */
 export async function revertEmailChange<U extends AuthUser, A>(
   core: AuthCore<U, A>,
@@ -353,29 +417,57 @@ export async function revertEmailChange<U extends AuthUser, A>(
 
   if (limited) return limited;
 
-  const redemption = await core.tokens.redeemLink(PURPOSE.emailRevert, input.token);
+  const link = await core.tokens.peekLink(PURPOSE.emailRevert, input.token);
 
-  if (redemption.status !== 'valid')
+  if (link.status !== 'valid')
     return revertFailed(
       core,
-      redemption.status === 'unknown' ? undefined : redemption.namedUserId,
-      fail('invalid_token', `email_revert_${redemption.status}`),
+      link.status === 'unknown' ? undefined : link.namedUserId,
+      fail('invalid_token', `email_revert_${link.status}`),
       meta,
     );
 
-  const restore = normalizeEmail(redemption.data['email']);
+  const restore = normalizeEmail(link.data['email']);
 
-  if (!restore)
-    return revertFailed(core, redemption.userId, fail('invalid_token', 'user_missing'), meta);
+  if (!restore) return revertFailed(core, link.userId, fail('invalid_token', 'user_missing'), meta);
 
-  const outcome = await restoreAddress(core, support, redemption.userId, restore);
+  const outcome = await restoreAddress(core, support, link.userId, restore);
 
-  if (!outcome.ok) return revertFailed(core, redemption.userId, outcome, meta);
+  if (!outcome.ok) return revertFailed(core, link.userId, outcome, meta);
 
-  const { user, lost } = outcome.value;
+  const { user, lost, restored } = outcome.value;
 
+  // Right after the write that removed the password: a session signed in
+  // before it is ended here, and none can start after it.
   await core.revokeAllSessions(user.id, 'email-reverted');
   await core.tokens.revokeAll(user.id, VOIDED_BY_REVERT);
+
+  const changedAt = Number(link.data['changedAt']);
+
+  for (const hook of core.hooks.onEmailReverted) await hook({ userId: user.id, changedAt, meta });
+
+  if (!restored) {
+    await core.emit(
+      {
+        type: 'email.change_revert_failed',
+        userId: user.id,
+        reason: 'email_revert_address_taken',
+        data: { review: true, passwordCleared: true, lockedOut: true },
+      },
+      meta,
+    );
+
+    return fail('email_in_use', 'email_revert_address_taken');
+  }
+
+  // Spent only now. Of concurrent clicks (each did the same work, which is
+  // safe to repeat) the one that spends it answers, audits and mails.
+  const spent = await core.tokens.redeemLink(PURPOSE.emailRevert, input.token);
+
+  if (spent.status !== 'valid')
+    return revertFailed(core, user.id, fail('invalid_token', `email_revert_${spent.status}`), meta);
+
+  await releaseAddress(core, restore);
 
   if (lost !== restore) {
     await core.tokens.issueLink(
@@ -406,32 +498,37 @@ export async function revertEmailChange<U extends AuthUser, A>(
 }
 
 /**
- * Moves the account back to `restore`, whatever address it has now (a later
- * change by the same intruder included), and removes the password. The write
- * is a compare-and-set on the address just read; a change that lands between
- * the read and the write is read again once, so the spent link is not wasted.
+ * Moves the account back to `restore`, whatever address it has now, and
+ * removes the password in the same write. When `restore` has an account
+ * again, it removes the password alone (a write that keeps the address), so
+ * the lockout still happens. Each write is a compare-and-set on the address
+ * just read; a change that lands between the read and the write is read again
+ * once.
  */
 async function restoreAddress<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   support: ReturnType<typeof requireSupport>,
   userId: string,
   restore: NormalizedEmail,
-): Promise<AuthResult<{ user: U; lost: NormalizedEmail }>> {
-  for (let attempt = 0; attempt < 2; attempt++) {
+): Promise<AuthResult<{ user: U; lost: NormalizedEmail; restored: boolean }>> {
+  let taken = false;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
     const user = await core.users.findById(userId);
 
     if (!user) return fail('invalid_token', 'user_missing');
 
     const lost = user.email as NormalizedEmail;
 
-    const restored = await support.changeEmail(user.id, {
+    const written = await support.changeEmail(user.id, {
       from: lost,
-      to: restore,
+      to: taken ? lost : restore,
       clearPassword: true,
     });
 
-    if (restored === 'changed') return ok({ user, lost });
-    if (restored === 'taken') return fail('email_in_use', 'email_revert_address_taken');
+    if (written === 'changed') return ok({ user, lost, restored: !taken });
+
+    taken ||= written === 'taken';
   }
 
   return fail('invalid_token', 'email_revert_stale');

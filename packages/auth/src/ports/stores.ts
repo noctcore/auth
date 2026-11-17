@@ -54,8 +54,10 @@ export interface UserStore<U extends AuthUser = AuthUser> {
    * `clearPassword`, removes the password hash, in one statement, as a
    * compare-and-set on the stored email still equalling `from`. The address
    * stays unique: of two users changing to one address at once, exactly one
-   * gets `changed`. Optional, so stores written before it still compile; the
-   * email change flows need it and throw `AuthConfigError` without it.
+   * gets `changed`. `to` may equal `from`: the revert uses that to remove the
+   * password alone when the old address has an account again. Optional, so
+   * stores written before it still compile; the email change flows need it
+   * and throw `AuthConfigError` without it.
    */
   changeEmail?(
     id: string,

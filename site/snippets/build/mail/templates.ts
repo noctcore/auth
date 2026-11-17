@@ -68,9 +68,7 @@ export function renderAuthMail(event: AuthMailEvent): OutgoingMail {
       return {
         to: event.to,
         subject: 'Your email address was changed',
-        text: event.revertUrl
-          ? `Your account now uses ${event.newEmail}. If this was not you, undo it before ${event.revertExpiresAt?.toISOString() ?? ''}: ${event.revertUrl}`
-          : `Your account now uses ${event.newEmail}. If this was not you, contact support.`,
+        text: `Your account now uses ${event.newEmail}. If this was not you, undo it before ${event.revertExpiresAt.toISOString()}: ${event.revertUrl}`,
       };
 
     case 'email-change-reverted':

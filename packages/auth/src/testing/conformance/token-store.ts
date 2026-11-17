@@ -109,7 +109,7 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
       },
     },
     {
-      name: 'keeps the email change purposes apart: a revert link lives for days beside a pending change and a block',
+      name: 'keeps the email change purposes apart: a revert link lives for days beside a pending change, a block and an address hold',
       async run() {
         // The email change flows keep three tokens per user at once: the
         // pending change, the revert link (7 days or more) and a block, and
@@ -135,6 +135,15 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
         assert.deepEqual(await store.findByUser('email-change-block', userId), block);
         assert.deepEqual(await store.consume(revert.purpose, revert.hash), revert);
         assert.equal(await store.consume(revert.purpose, revert.hash), null);
+
+        // A hold on an address is filed under a key that is not a user id.
+        const holdKey = `email-reserved:${'ab'.repeat(32)}-${uniqueId('hold')}`;
+        const hold = sampleToken({ userId: holdKey, purpose: 'email-reserved', data: { userId } });
+
+        await store.put(hold);
+        assert.deepEqual(await store.findByUser('email-reserved', holdKey), hold);
+        await store.deleteByUser(holdKey, ['email-reserved']);
+        assert.equal(await store.findByUser('email-reserved', holdKey), null);
       },
     },
   ];

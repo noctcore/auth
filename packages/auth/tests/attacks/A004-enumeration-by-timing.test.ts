@@ -140,6 +140,8 @@ describe('A004: account enumeration by timing', () => {
   // Not the same sequence: a taken address looks the owner up where a new
   // account writes its verification token. The test pins both sequences so
   // any other drift fails; the next test shows the answer waits on neither.
+  // Both first look for a hold on the address (an email change away from it
+  // can still be reverted); A061 pins a held address against these.
   it('hashes the password, makes the same number of store round trips and hands over one mail at sign-up, taken address or new', async () => {
     let hashes = 0;
     const base = plainHasher();
@@ -167,13 +169,18 @@ describe('A004: account enumeration by timing', () => {
     const fresh = await trace('new@example.com');
 
     expect(taken).toEqual({
-      calls: ['counters.increment', 'users.create', 'users.findCredentialByEmail'],
+      calls: [
+        'counters.increment',
+        'tokens.findByUser',
+        'users.create',
+        'users.findCredentialByEmail',
+      ],
       hashes: 1,
       mails: 1,
     });
 
     expect(fresh).toEqual({
-      calls: ['counters.increment', 'users.create', 'tokens.put'],
+      calls: ['counters.increment', 'tokens.findByUser', 'users.create', 'tokens.put'],
       hashes: 1,
       mails: 1,
     });
@@ -200,7 +207,7 @@ describe('A004: account enumeration by timing', () => {
         env.auth.register({ email, password: PASSWORD, meta: meta() }),
       );
 
-      return { result, awaited: calls.slice(0, 2) };
+      return { result, awaited: calls.slice(0, 3) };
     };
 
     const taken = await answer('ADA@example.com');
@@ -208,7 +215,7 @@ describe('A004: account enumeration by timing', () => {
 
     expect(taken).toEqual({
       result: { ok: true, value: { session: null } },
-      awaited: ['counters.increment', 'users.create'],
+      awaited: ['counters.increment', 'tokens.findByUser', 'users.create'],
     });
 
     expect(fresh).toEqual(taken);

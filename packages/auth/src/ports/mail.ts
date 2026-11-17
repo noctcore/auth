@@ -85,19 +85,15 @@ export type AuthMailEvent =
       readonly userId: string;
       readonly dedupeKey: string;
     }
-  /**
-   * An email change was confirmed: sent to the address it replaced. `revertUrl`
-   * undoes it until `revertExpiresAt`; it is absent when an earlier change's
-   * revert link is still live (that one stays the only one).
-   */
+  /** An email change was confirmed: sent to the address it replaced. `revertUrl` undoes it until `revertExpiresAt`. */
   | {
       readonly type: 'email-changed';
       readonly to: string;
       readonly userId: string;
       readonly newEmail: string;
       readonly at: Date;
-      readonly revertUrl?: string;
-      readonly revertExpiresAt?: Date;
+      readonly revertUrl: string;
+      readonly revertExpiresAt: Date;
       readonly dedupeKey: string;
     }
   /** A revert link was used: the address is back, every session ended and the password must be reset. */

@@ -4,7 +4,7 @@
  * password spends the account-wide lockout budget, like a failed login.
  */
 import { sendLockNotice } from './lock-notice';
-import { RESET_PURPOSES, publicUser } from './settings';
+import { PASSWORD_PURPOSES, publicUser } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
 import type { IssuedSession } from '../core/plugin-context';
@@ -110,7 +110,7 @@ export async function changePassword<U extends AuthUser, A>(
   // Stricter than the auth guide's "offer it": every session ends, the
   // current one is re-issued, and the change is mailed to the owner.
   await core.revokeAllSessions(user.id, 'password-change');
-  await core.tokens.revokeAll(user.id, RESET_PURPOSES);
+  await core.tokens.revokeAll(user.id, PASSWORD_PURPOSES);
   await core.emit({ type: 'password.changed', userId: user.id }, meta);
 
   core.mail({
