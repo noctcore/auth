@@ -83,6 +83,7 @@ export default defineConfig({
             './typedoc/entries/testing.ts',
             './typedoc/entries/two-factor.ts',
             './typedoc/entries/membership.ts',
+            './typedoc/entries/invitations.ts',
           ],
           tsconfig: typeDocTsconfig,
           output: 'reference/api/auth',
@@ -137,6 +138,7 @@ export default defineConfig({
             { label: 'Email change', link: '/learn/email-change/' },
             { label: 'CSRF', link: '/learn/csrf/' },
             { label: 'Second factors', link: '/learn/second-factors/' },
+            { label: 'Invitations', link: '/learn/invitations/' },
           ],
         },
         {
@@ -151,6 +153,7 @@ export default defineConfig({
             { label: 'Two-factor', link: '/build/two-factor/' },
             { label: 'Email change', link: '/build/email-change/' },
             { label: 'Membership guards', link: '/build/membership/' },
+            { label: 'Invitations', link: '/build/invitations/' },
           ],
         },
         {

@@ -100,6 +100,14 @@ export function renderAuthMail(event: AuthMailEvent): OutgoingMail {
         text: `A recovery code was used to sign in at ${event.at.toISOString()}. ${event.remaining} codes are left. If this was not you, reset your password now.`,
       };
 
+    case 'invitation':
+      // Never say whether the address has an account: the mail is the same either way.
+      return {
+        to: event.to,
+        subject: 'You are invited',
+        text: `You were invited to join. Accept before ${event.expiresAt.toISOString()}: ${event.url}`,
+      };
+
     default: {
       const unhandled: never = event;
 

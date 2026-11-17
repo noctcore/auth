@@ -99,3 +99,22 @@ model AuthMemberScope {
   // Bumped by every guarded write of the scope.
   version Int    @default(0)
 }
+
+// The invitations plugin (@noctcore/auth/invitations). Only a keyed hash of
+// the token is stored. The unique (scope, email) index holds one invitation
+// per scope and address; consume is a delete by the unique hash.
+
+model AuthInvitation {
+  id        String   @id
+  hash      String   @unique
+  scope     String
+  email     String
+  inviterId String
+  payload   Json
+  createdAt DateTime
+  expiresAt DateTime
+
+  @@unique([scope, email])
+  @@index([inviterId])
+  @@index([expiresAt])
+}

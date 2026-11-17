@@ -29,6 +29,7 @@ const MODELS = [
   'AuthStepUp',
   'AuthMember',
   'AuthMemberScope',
+  'AuthInvitation',
 ];
 
 describe('code sample schema', () => {
