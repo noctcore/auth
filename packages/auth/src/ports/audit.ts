@@ -30,6 +30,8 @@ export type AuthEventType =
   /** A revert link restored the old address. Carries `review: true`: look at the account. */
   | 'email.change_reverted'
   | 'email.change_revert_failed'
+  /** Support ended an account's lockout after a revert that could not finish. Carries `review: true`. */
+  | 'email.revert_lockout_cleared'
   | 'password.reset_requested'
   | 'password.reset_request_ignored'
   | 'password.reset_code_verified'

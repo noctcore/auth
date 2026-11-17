@@ -19,9 +19,10 @@
  * - `beforeEmailChange`: the same for an email change request, on top of the
  *   core's fresh-auth check, so a stolen session (even with the password)
  *   cannot move the account to a new address without the factor.
- * - `onEmailReverted`: a factor enrolled since the reverted change (by whoever
- *   made it) is removed with its recovery codes, so the owner's reset is not
- *   gated by the intruder's factor. A factor from before the change stays.
+ * - `onEmailReverted`: a factor enrolled since the session that asked for the
+ *   reverted change was created or last authenticated is removed with its
+ *   recovery codes, so the owner's reset is not gated by a factor that session
+ *   added. An older factor stays.
  * - `onSessionsRevoked`: a password change, a reset, revoke-all and the like
  *   also delete the trusted devices (they are already void by the epoch).
  *
@@ -59,24 +60,23 @@ export function twoFactorHooks(runtime: () => Runtime): HookInput<AuthUser, any>
       demandStepUp(runtime(), user, session, secondFactor, meta, 'password_change'),
     beforeEmailChange: ({ user, session, secondFactor, meta }) =>
       demandStepUp(runtime(), user, session, secondFactor, meta, 'email_change'),
-    onEmailReverted: ({ userId, changedAt, meta }) =>
-      removeLateFactor(runtime(), userId, changedAt, meta),
+    onEmailReverted: ({ userId, since, meta }) => removeLateFactor(runtime(), userId, since, meta),
     onSessionsRevoked: async ({ userId, reason }) => {
       if (!KEEPS_TRUSTED_DEVICES.has(reason)) await runtime().store.deleteTrustedDevices(userId);
     },
   };
 }
 
-/** Removes the factor, pending or confirmed, if it was enrolled at or after `changedAt`. */
+/** Removes the factor, pending or confirmed, if it was enrolled at or after `since`. */
 async function removeLateFactor(
   runtime: Runtime,
   userId: string,
-  changedAt: number,
+  since: number,
   meta: RequestMeta,
 ): Promise<void> {
   const factor = await runtime.store.findFactor(userId);
 
-  if (!factor || factor.createdAt < changedAt) return;
+  if (!factor || factor.createdAt < since) return;
 
   await runtime.store.deleteFactor(userId);
   await runtime.store.replaceRecoveryCodes(userId, []);

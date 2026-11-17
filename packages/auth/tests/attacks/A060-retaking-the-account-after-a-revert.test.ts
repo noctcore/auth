@@ -167,10 +167,38 @@ describe('A060: taking the account back after the owner reverted the change', ()
     );
   });
 
-  it("a revert keeps the owner's factor from before the change, and a pending one the intruder started is dropped silently", async () => {
+  it('a revert removes a factor the intruder session enrolled before it asked for the change', async () => {
     const t = twoFactorApp();
-    const { session, userId } = await t.enrolled();
+    const { session } = await t.signedIn();
+
+    t.clock.advance(30_000);
+
+    const started = await t.auth.twoFactor.enroll({ session, meta: meta() });
+
+    if (!started.ok) throw new Error(started.reason);
+
+    await t.auth.twoFactor.confirmEnrollment({
+      session,
+      code: t.codeFor(started.value.secret),
+      meta: meta(),
+    });
+
+    t.clock.advance(30_000);
+
     const taken = await changed(t, session, 'mallory@example.com');
+
+    expect((await t.auth.revertEmailChange({ token: taken.revert, meta: meta() })).ok).toBe(true);
+    expect(await t.store.findFactor(session.userId)).toBeNull();
+  });
+
+  it("a revert keeps the owner's factor from before the session that asked, and a pending one that session started is dropped silently", async () => {
+    const t = twoFactorApp();
+    const { secret, userId } = await t.enrolled();
+
+    t.clock.advance(60_000);
+
+    const later = await t.passed(secret);
+    const taken = await changed(t, later.session, 'mallory@example.com');
 
     expect((await t.auth.revertEmailChange({ token: taken.revert, meta: meta() })).ok).toBe(true);
     expect(await t.store.findFactor(userId)).toMatchObject({ confirmed: true });
