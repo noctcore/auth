@@ -236,8 +236,11 @@ export class Throttle {
  * Whether the attempt that brought the counter to `count` locks. The counter is
  * never reset by a lock (see `lock`), so the first lock comes at `limit + 1`
  * and, while it lasts, every further `limit + 1` failures (a wrong password
- * let through by a device token, say) renew it. Exactly one attempt sees each
- * of those counts, so a parallel burst locks once per crossing, never twice.
+ * let through by a device token, or requests that read "no lock" just before
+ * it was set) cross again. Each crossing raises the backoff tier; the running
+ * lock keeps its end time. Exactly one attempt sees each crossing count, so no
+ * extra guesses get through, but a large parallel burst can cross several times
+ * and raise the tier by more than one step.
  */
 function locksAt(count: number, limit: number): boolean {
   // Counts start at 1, so the multiples of `limit + 1` are exactly those crossings.
