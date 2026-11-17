@@ -109,9 +109,9 @@ async function enrollingUser<A>(
   input: EnrollInput<A>,
 ): Promise<AuthResult<string>> {
   if ('session' in input) {
-    const fresh = runtime.core.requireFreshAuth(input.session);
+    const live = await runtime.core.requireFreshLiveSession(input.session);
 
-    return fresh.ok ? ok(input.session.userId) : fresh;
+    return live.ok ? ok(live.value.userId) : live;
   }
 
   const peek = await runtime.core.tokens.peekLink(CHALLENGE_PURPOSE, input.challenge);
@@ -226,14 +226,18 @@ export async function confirmEnrollment<A>(
   input: ConfirmEnrollmentInput<A>,
 ): Promise<AuthResult<ConfirmedEnrollment<A>>> {
   const { core } = runtime;
-  const { session, meta } = input;
+  const { meta } = input;
   const limited = await limitIp(runtime, meta);
 
   if (limited) return limited;
 
-  const fresh = core.requireFreshAuth(session);
+  // Every later step (the re-issue's authenticatedAt, the step-up proof) uses
+  // the live copy, not the object the caller passed in.
+  const live = await core.requireFreshLiveSession(input.session);
 
-  if (!fresh.ok) return fresh;
+  if (!live.ok) return live;
+
+  const session = live.value;
 
   const confirmed = await confirmPending(runtime, {
     userId: session.userId,

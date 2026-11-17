@@ -51,8 +51,10 @@ export async function revokeSession<U extends AuthUser, A>(
   settings: FlowSettings,
   input: { session: StoredSession<A>; id: string; meta: RequestMeta },
 ): Promise<AuthResult<{ revoked: boolean }>> {
+  // Another device's session is high privilege: freshness is read from the
+  // live copy of the caller's session, not from the object passed in.
   if (input.id !== input.session.id) {
-    const fresh = requireFreshAuth(core, settings, input.session);
+    const fresh = await core.requireFreshLiveSession(input.session);
 
     if (!fresh.ok) return fresh;
   }

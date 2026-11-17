@@ -42,16 +42,16 @@ export async function hasStepUp(
 }
 
 /**
- * Fresh authentication, plus a recent second-factor proof when the user has a
+ * Fresh authentication (read from the live session), plus a recent second-factor proof when the user has a
  * confirmed factor. A user without one passes on fresh authentication alone.
  */
 export async function requireStepUp<A>(
   runtime: Runtime,
   session: StoredSession<A>,
 ): Promise<AuthResult<void>> {
-  const fresh = runtime.core.requireFreshAuth(session);
+  const live = await runtime.core.requireFreshLiveSession(session);
 
-  if (!fresh.ok) return fresh;
+  if (!live.ok) return live;
 
   const factor = await runtime.store.findFactor(session.userId);
 

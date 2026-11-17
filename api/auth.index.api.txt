@@ -327,6 +327,7 @@ PluginContext [interface]<U extends AuthUser, A>
     readonly tokens: OneTimeTokens
     readonly users: UserStore<U>
     requireFreshAuth(session: StoredSession<A>): AuthResult<void>
+    requireFreshLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>>
     revokeAllSessions(userId: string, reason: RevocationReason): Promise<void>
     verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>
 PluginFlows [type]<P extends readonly AuthPlugin[]> = UnionToIntersection<P[number] extends infer Plugin ? Plugin extends AuthPlugin<infer Id, infer F> ? { readonly [K in Id]: F; } : never : never>

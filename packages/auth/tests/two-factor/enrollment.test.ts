@@ -161,6 +161,54 @@ describe('two-factor enrollment', () => {
     expect(!confirmed.ok && confirmed.code).toBe('fresh_auth_required');
   });
 
+  it('reads freshness from the live session, not from the object the caller passes', async () => {
+    const t = twoFactorApp();
+    const { session } = await t.signedIn();
+    const started = await t.auth.twoFactor.enroll({ session, meta: meta() });
+
+    if (!started.ok) throw new Error(started.reason);
+
+    t.clock.advance(11 * 60_000);
+
+    const claimed = { ...session, authenticatedAt: t.clock.now() };
+
+    const confirmed = await t.auth.twoFactor.confirmEnrollment({
+      session: claimed,
+      code: t.codeFor(started.value.secret),
+      meta: meta(),
+    });
+
+    expect(!confirmed.ok && confirmed.code).toBe('fresh_auth_required');
+    expect((await t.store.findFactor(session.userId))?.confirmed).toBe(false);
+  });
+
+  it('refuses a session that is no longer live, or that names another user', async () => {
+    const t = twoFactorApp();
+    const { session, token } = await t.signedIn();
+    const eve = await t.signedIn('eve@example.com', '192.0.2.99');
+
+    // Eve's session id, relabelled with Ada's user id.
+    const borrowed = { ...eve.session, userId: session.userId };
+
+    expect(await t.auth.twoFactor.enroll({ session: borrowed, meta: meta() })).toMatchObject({
+      ok: false,
+      code: 'session_expired',
+    });
+
+    await t.auth.logout({ token, meta: meta() });
+
+    expect(await t.auth.twoFactor.enroll({ session, meta: meta() })).toMatchObject({
+      ok: false,
+      code: 'session_expired',
+    });
+
+    expect(
+      await t.auth.twoFactor.confirmEnrollment({ session, code: '123456', meta: meta() }),
+    ).toMatchObject({ ok: false, code: 'session_expired' });
+
+    expect(await t.store.findFactor(session.userId)).toBeNull();
+  });
+
   it('refuses to enroll over a confirmed factor', async () => {
     const t = twoFactorApp();
     const { session } = await t.enrolled();

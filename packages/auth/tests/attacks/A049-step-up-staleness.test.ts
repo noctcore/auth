@@ -6,7 +6,8 @@
 // the phone.
 //
 // Stopped by: plugins/two-factor/step-up.ts (a proof per session id, with an expiry on the
-//   server clock, 10 minutes by default; checked together with fresh authentication; a
+//   server clock, 10 minutes by default; checked together with fresh authentication read
+//   from the live session in the store, core/auth-core.ts `requireFreshLiveSession`; a
 //   re-issued session starts without one), plugins/two-factor/challenge.ts (a trusted
 //   device records none).
 // Learn: Second factors (/auth/learn/second-factors/)
@@ -35,11 +36,18 @@ describe('A049: acting on a stale or borrowed second-factor proof', () => {
     const t = twoFactorApp();
     const { secret } = await t.enrolled();
     const session = (await t.passed(secret)).session;
+
+    expect((await t.auth.twoFactor.requireStepUp(session)).ok).toBe(true);
+
     const reauth = await t.auth.reauthenticate({ session, password: PASSWORD, meta: meta() });
 
     if (!reauth.ok) throw new Error(reauth.reason);
 
-    expect((await t.auth.twoFactor.requireStepUp(session)).ok).toBe(true);
+    // The rotation ended the old session, and its proof with it.
+    expect(await t.auth.twoFactor.requireStepUp(session)).toMatchObject({
+      ok: false,
+      code: 'session_expired',
+    });
 
     expect(await t.auth.twoFactor.requireStepUp(reauth.value.session)).toMatchObject({
       ok: false,
@@ -76,7 +84,7 @@ describe('A049: acting on a stale or borrowed second-factor proof', () => {
     const { secret } = await t.enrolled();
     const session = (await t.passed(secret)).session;
 
-    t.clock.advance(30 * 60_000);
+    t.clock.advance(11 * 60_000);
 
     await t.auth.twoFactor.stepUp({
       session,
@@ -85,6 +93,15 @@ describe('A049: acting on a stale or borrowed second-factor proof', () => {
     });
 
     expect(await t.auth.twoFactor.requireStepUp(session)).toMatchObject({
+      ok: false,
+      code: 'fresh_auth_required',
+    });
+
+    // Claiming a fresh proof on the object does not help: freshness is read
+    // from the live session in the store.
+    const claimed = { ...session, authenticatedAt: t.clock.now() };
+
+    expect(await t.auth.twoFactor.requireStepUp(claimed)).toMatchObject({
       ok: false,
       code: 'fresh_auth_required',
     });
