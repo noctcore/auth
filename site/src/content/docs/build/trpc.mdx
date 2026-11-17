@@ -67,7 +67,8 @@ A fetch `Request` carries no peer address, so pass it from your server (on Bun, 
 
 `httpBatchStreamLink` (the create-t3-app default) sends the response headers before any procedure of the batch runs, so a cookie set by a procedure cannot reach the browser: on the fetch adapter it would be dropped, on Node the write would fail after the flow had already run. The adapter does not let either happen silently:
 
-- `writesCookies` refuses the call on a streamed batch before the procedure runs, so no sign-in, rotation or sign-out happens without its cookie. The client sees `internal`, and the server gets an `AuthConfigError` naming the fix.
+- `writesCookies` refuses the call on a streamed batch before the procedure runs, so no sign-in, rotation or sign-out happens without its cookie. The client sees `internal`, and the server gets an `AuthConfigError` naming the fix. It decides what is streamed exactly as tRPC does: the `trpc-accept` header when present, otherwise an `Accept` header that lists `application/jsonl`.
+- A subscription's response is a stream too, so `writesCookies` on a subscription refuses every call, as a configuration error. Write cookies from a mutation.
 - A procedure without `writesCookies` has no writers at all (see [the router](#the-router)), so it cannot reach this case.
 
 So route mutations to `httpLink` or `httpBatchLink`, with `splitLink` as above. Queries can keep streaming: the pre-session and CSRF cookies are written when the context is built, before the stream starts.
@@ -80,10 +81,10 @@ Throw `toTRPCError(result)` when a flow refuses. The message is the public code,
 
 - no error carries a stack, in development or production (tRPC adds one whenever `NODE_ENV` is not `production`, with absolute paths);
 - an input that fails validation is answered with the message `invalid_input` and `data.input`, a list of paths and issue codes, never the submitted value;
-- any other `BAD_REQUEST`, such as a body that is not JSON (the parser's message quotes the body), and the request errors `PARSE_ERROR`, `METHOD_NOT_SUPPORTED`, `UNSUPPORTED_MEDIA_TYPE` and `PAYLOAD_TOO_LARGE` are answered with a fixed message: the code in lower case;
+- any other `BAD_REQUEST`, such as a body that is not JSON (the parser's message quotes the body), and the request errors `PARSE_ERROR`, `METHOD_NOT_SUPPORTED`, `UNSUPPORTED_MEDIA_TYPE`, `PAYLOAD_TOO_LARGE` and `NOT_FOUND` (tRPC's quotes the requested path) are answered with a fixed message, the code in lower case, whoever raised them;
 - any internal error is answered with `internal`, without its message.
 
-An error your own procedure throws with another code (`NOT_FOUND`, `CONFLICT`) keeps the message you gave it, so keep secrets and account state out of it.
+An error your own procedure throws with any other code (`CONFLICT`, `FORBIDDEN`) keeps the message you gave it, so keep secrets and account state out of it.
 
 Sign-in answers an unknown email and a wrong password with the same error, and sign-up and the reset request answer a taken and a new address with the same `{ status: 'accepted' }`, as long as your procedure returns the same thing in both cases, as the router above does.
 
@@ -98,7 +99,7 @@ The inputs check shape and size only; whether an email is valid or a password lo
 <Code code={routerTestTs} lang="ts" title="src/router.test.ts" />
 
 - `assertProceduresGuarded(router)` fails on a procedure built on `t.procedure` with neither `publicProcedure` nor a session check, and on one built on `publicProcedure` that also asks for a session, a role or a fresh proof: the two say opposite things. It checks which markers a procedure carries, not their order: a `rateLimited` placed ahead of the session check passes it.
-- `assertNoSecretQueries(router)` fails on a query or subscription whose input has a key naming a secret (`password`, `token`, `code`, `secret`, `otp`, `pin` and the like). It walks every part of a Zod 4 schema: object shapes and catch-alls, array elements, tuple items and rest, record, map and set keys and values (a record keyed by an enum or literal is checked by its values), unions, intersections, both sides of a pipe, and wrapped and lazy schemas. It fails closed on what it cannot read: a validator that is not Zod 4, `z.unknown()` and `z.any()` (a loose object's catch-all among them), `z.custom()` and `z.instanceof()`, and any Zod type it does not know. It also fails on a lazy router. List a path in `allow` once you have checked it by hand. A record keyed by `z.string()` accepts any key name, which no static check can see.
+- `assertNoSecretQueries(router)` fails on a query or subscription whose input has a key naming a secret (`password`, `token`, `code`, `secret`, `otp`, `pin` and the like). It walks every part of a Zod 4 schema: object shapes and catch-alls, array elements, tuple items and rest, record, map and set keys and values (a record keyed by an enum or literal is checked by its values), unions, intersections, both sides of a pipe, and wrapped and lazy schemas. It fails closed on what it cannot read: `z.preprocess()` (its function sees the raw input before any schema), a validator that is not Zod 4, `z.unknown()` and `z.any()` (a loose object's catch-all among them), `z.custom()` and `z.instanceof()`, and any Zod type it does not know. It also fails on a lazy router. List a path in `allow` once you have checked it by hand. A record keyed by `z.string()` accepts any key name, which no static check can see.
 
 Both walk a plain tRPC router. They cannot see into nestjs-trpc, which builds its router at boot. Neither can see what a procedure's handler calls, so they cannot report a cookie writer without `writesCookies`; the type of `ctx.auth` does that at compile time instead, and the writers refuse at run time.
 
