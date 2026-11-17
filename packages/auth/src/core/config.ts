@@ -2,6 +2,7 @@
  * Everything an app can change, with the default and the reason for it.
  * Where published guidance disagrees on a default, the stricter value wins.
  */
+import type { BackgroundOptions } from './background';
 import type { HookInput } from './hooks';
 import type { PluginContext } from './plugin-context';
 import type { RandomSource } from '../crypto/random';
@@ -190,4 +191,12 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
   readonly random?: RandomSource;
   readonly logger?: Logger;
   readonly metrics?: Metrics;
+  /**
+   * Work the flows run off the response path (every mail, the lock notice, a
+   * reset job without `enqueue`). Pass `waitUntil` on runtimes that freeze the
+   * instance after the response, a `timeout` and `maxPending` to bound a
+   * mailer that hangs. All optional; by default tasks run detached, with no
+   * limit. Call `auth.flush()` on shutdown to wait for them.
+   */
+  readonly background?: BackgroundOptions;
 }

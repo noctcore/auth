@@ -11,7 +11,6 @@ import type { AuthCore } from '../core/auth-core';
 import type { PasswordResetJob } from '../core/config';
 import { sha256Hex } from '../crypto/hash';
 import type { AuthUser } from '../ports/stores';
-import { describeError } from '../shared/describe-error';
 import { normalizeEmail } from '../shared/email';
 import { fail, ok, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
@@ -48,11 +47,7 @@ export async function requestPasswordReset<U extends AuthUser, A>(
   if (settings.reset.enqueue) {
     await settings.reset.enqueue(job);
   } else {
-    void processPasswordReset(core, settings, job).catch((error: unknown) => {
-      core.logger.error('Detached password reset job failed', {
-        error: describeError(error),
-      });
-    });
+    core.background('password reset job', () => processPasswordReset(core, settings, job));
   }
 
   await core.emit({ type: 'password.reset_requested' }, meta);
