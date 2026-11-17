@@ -61,6 +61,7 @@ PrismaTwoFactorStore [class]
     replaceRecoveryCodes(userId: string, hashes: readonly string[]): Promise<void>
 PrismaUserDelegate [interface]
     create(args: any): PromiseLike<any>
+    createManyAndReturn?(args: any): PromiseLike<any[]>
     findFirst(args: any): PromiseLike<any>
     updateMany(args: any): PromiseLike<{ count: number; }>
 PrismaUserStore [class]<U extends AuthUser = AuthUser>

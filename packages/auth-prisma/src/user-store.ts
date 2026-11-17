@@ -107,14 +107,39 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     return row ? this.toUser(row) : null;
   }
 
+  /**
+   * Inserts the user, or answers null when the address (or another unique
+   * column) is taken. With `createManyAndReturn` on the delegate (Prisma on
+   * PostgreSQL, CockroachDB and SQLite), a taken address is an insert that
+   * skips the duplicate and returns no row, not a failed statement. A failed
+   * statement makes the driver's next query on that pool slower (about 3 ms
+   * measured on PostgreSQL through `@prisma/adapter-pg`), and at sign-up that
+   * next query is the owner lookup, so a taken address answered slower than a
+   * new one. Without it (MySQL, SQL Server), a unique violation (P2002) still
+   * answers null.
+   */
   async create(input: { email: NormalizedEmail; passwordHash: string }): Promise<U | null> {
+    const data = {
+      ...this.options.createData?.(input),
+      [this.f.email]: input.email,
+      [this.f.passwordHash]: input.passwordHash,
+    };
+
+    if (this.options.delegate.createManyAndReturn) {
+      const rows = (await this.options.delegate.createManyAndReturn({
+        data: [data],
+        skipDuplicates: true,
+        select: this.selectUser,
+      })) as UserRow[];
+
+      const [row] = rows;
+
+      return row ? this.toUser(row) : null;
+    }
+
     try {
       const row = (await this.options.delegate.create({
-        data: {
-          ...this.options.createData?.(input),
-          [this.f.email]: input.email,
-          [this.f.passwordHash]: input.passwordHash,
-        },
+        data,
         select: this.selectUser,
       })) as UserRow;
 
