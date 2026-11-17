@@ -12,6 +12,8 @@ import { checkPlugins, namespacePluginFlows, type PluginFlows } from './core/plu
 import { deriveKey, toSecret } from './crypto/keys';
 import { cryptoRandom } from './crypto/random';
 import * as emailChange from './flows/email-change';
+import { clearEmailRevertLockout, lockoutHooks } from './flows/email-lockout';
+import { isAddressHeld } from './flows/email-reservation';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
 import { changePassword, reauthenticate } from './flows/password-change';
@@ -105,10 +107,16 @@ export function createAuth<
 
   assertStoreOutlivesSessions(config.stores.sessions, sessions);
 
+  const tokens = new OneTimeTokens(config.stores.tokens, clock, random, codeKey);
+
+  // Only a store that can change emails can have an account in revert lockout.
+  const coreHooks =
+    typeof config.stores.users.changeEmail === 'function' ? [lockoutHooks(tokens)] : [];
+
   const core = new AuthCore<U, A>({
     users: config.stores.users,
     sessions,
-    tokens: new OneTimeTokens(config.stores.tokens, clock, random, codeKey),
+    tokens,
     throttle: new Throttle(config.stores.counters, clock, config.throttle?.lockout),
     hasher: config.password.hasher,
     policy,
@@ -116,7 +124,7 @@ export function createAuth<
     captcha: config.captcha,
     mailer: config.mailer,
     audit: config.audit,
-    hooks: mergeHooks<U, A>([...plugins.map((p) => p.hooks), config.hooks]),
+    hooks: mergeHooks<U, A>([...coreHooks, ...plugins.map((p) => p.hooks), config.hooks]),
     doors: config.throttle?.doors ?? {},
     cookie,
     attributeSchema: config.session?.attributes,
@@ -195,6 +203,19 @@ export function createAuth<
     /** Undoes an email change from the link mailed to the old address. No session needed. */
     revertEmailChange: (input: { token: string; meta: RequestMeta }) =>
       emailChange.revertEmailChange(core, settings, input),
+    /**
+     * Whether an address is held for an account whose email change away from
+     * it can still be reverted. Every path of your app that creates a user or
+     * gives one an address (invites, admin create, a first SSO login, imports)
+     * must refuse a held address as it refuses a taken one.
+     */
+    isAddressHeld: (email: string) => isAddressHeld(core, email),
+    /**
+     * Ends the lockout left by a revert that could not restore the address.
+     * For support, once the account is on an address its owner controls.
+     */
+    clearEmailRevertLockout: (input: { userId: string; meta: RequestMeta }) =>
+      clearEmailRevertLockout(core, input),
     sessions: {
       list: (session: StoredSession<A>) => listSessions(core, session),
       revoke: (input: { session: StoredSession<A>; id: string; meta: RequestMeta }) =>

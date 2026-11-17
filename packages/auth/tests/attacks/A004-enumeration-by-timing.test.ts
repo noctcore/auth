@@ -169,18 +169,13 @@ describe('A004: account enumeration by timing', () => {
     const fresh = await trace('new@example.com');
 
     expect(taken).toEqual({
-      calls: [
-        'counters.increment',
-        'tokens.findByUser',
-        'users.create',
-        'users.findCredentialByEmail',
-      ],
+      calls: ['counters.increment', 'tokens.find', 'users.create', 'users.findCredentialByEmail'],
       hashes: 1,
       mails: 1,
     });
 
     expect(fresh).toEqual({
-      calls: ['counters.increment', 'tokens.findByUser', 'users.create', 'tokens.put'],
+      calls: ['counters.increment', 'tokens.find', 'users.create', 'tokens.put'],
       hashes: 1,
       mails: 1,
     });

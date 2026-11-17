@@ -123,14 +123,17 @@ export interface AuthHooks<U extends AuthUser, A> {
   /**
    * After an email change was reverted (or its revert was refused because the
    * old address has an account again, with the account locked out anyway),
-   * once the password is removed and every session revoked. `changedAt` is
-   * when the change was confirmed: a second-factor plugin removes a factor
-   * enrolled since then. Awaited, and an error fails the revert with the link
-   * still unspent, so the owner can click it again.
+   * once the password is removed and every session revoked. `since` is the
+   * earliest moment the session that asked for the change could act (it was
+   * created or last proved a credential): a second-factor plugin removes a
+   * factor enrolled since then. Not called when the revert link's record of
+   * it is unreadable; the account is locked out for review instead. Awaited,
+   * and an error fails the revert with the link still unspent, so the owner
+   * can click it again.
    */
   onEmailReverted: (context: {
     userId: string;
-    changedAt: number;
+    since: number;
     meta: RequestMeta;
   }) => MaybePromise<void>;
   /** Sessions ended: close their sockets, drop caches. Errors are logged, never thrown into the flow. */

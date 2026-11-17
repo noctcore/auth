@@ -109,7 +109,7 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
       },
     },
     {
-      name: 'keeps the email change purposes apart: a revert link lives for days beside a pending change, a block and an address hold',
+      name: 'keeps the email change purposes apart: a revert link lives for days beside a pending change, a block, an address hold and a lockout',
       async run() {
         // The email change flows keep three tokens per user at once: the
         // pending change, the revert link (7 days or more) and a block, and
@@ -122,7 +122,7 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
           userId,
           purpose: 'email-revert',
           expiresAt: systemClock.now() + week + 60_000,
-          data: { email: 'old@example.com', to: 'new@example.com', changedAt: '1' },
+          data: { email: 'old@example.com', to: 'new@example.com', since: '1' },
         });
 
         const block = sampleToken({ userId, purpose: 'email-change-block' });
@@ -136,14 +136,16 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
         assert.deepEqual(await store.consume(revert.purpose, revert.hash), revert);
         assert.equal(await store.consume(revert.purpose, revert.hash), null);
 
-        // A hold on an address is filed under a key that is not a user id.
-        const holdKey = `email-reserved:${'ab'.repeat(32)}-${uniqueId('hold')}`;
-        const hold = sampleToken({ userId: holdKey, purpose: 'email-reserved', data: { userId } });
+        // A hold on an address is filed under its owner and found by its hash
+        // alone; a revert lockout sits beside it.
+        const hold = sampleToken({ userId, purpose: 'email-reserved' });
+        const lockout = sampleToken({ userId, purpose: 'email-revert-lockout' });
 
-        await store.put(hold);
-        assert.deepEqual(await store.findByUser('email-reserved', holdKey), hold);
-        await store.deleteByUser(holdKey, ['email-reserved']);
-        assert.equal(await store.findByUser('email-reserved', holdKey), null);
+        await Promise.all([store.put(hold), store.put(lockout)]);
+        assert.deepEqual(await store.find('email-reserved', hold.hash), hold);
+        await store.deleteByUser(userId, ['email-reserved']);
+        assert.equal(await store.find('email-reserved', hold.hash), null);
+        assert.deepEqual(await store.findByUser('email-revert-lockout', userId), lockout);
       },
     },
   ];

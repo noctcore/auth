@@ -12,9 +12,11 @@ export const PURPOSE = {
   emailRevert: 'email-revert',
   /**
    * Not a secret: holds the old address for its owner while the revert link
-   * lives. Keyed by the address (see email-reservation.ts), not by a user.
+   * lives. Filed under the owner, found by the address (email-reservation.ts).
    */
   emailReserved: 'email-reserved',
+  /** Not a secret: the lockout after a revert that could not restore the address (email-lockout.ts). */
+  emailRevertLockout: 'email-revert-lockout',
   /** Not a secret: remembers, after a revert, the address the account may not change to for a while. */
   emailChangeBlock: 'email-change-block',
 } as const;

@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { changed, requestCode, tokenOf } from './email-change-support';
 import { meta, NEW_PASSWORD, PASSWORD, setup } from './setup';
-import { sha256Hex } from '../../src/crypto/hash';
 
-const holdKey = (email: string) => `email-reserved:${sha256Hex(email)}`;
+const holdKey = (email: string) => `email-reserved:${email}`;
 
 const NEW = 'grace@example.com';
 
@@ -362,7 +361,7 @@ describe('confirmEmailChangeCode', () => {
     expect(await t.stores.tokens.findByUser('email-revert', session.userId)).toBeNull();
 
     expect(
-      await t.auth.context.tokens.findLive('email-reserved', holdKey('ada@example.com')),
+      await t.auth.context.tokens.findKeyed('email-reserved', holdKey('ada@example.com')),
     ).toBeNull();
 
     expect((await requestCode(t, session, 'other@example.com')).length).toBeGreaterThan(0);
@@ -376,7 +375,7 @@ describe('confirmEmailChangeCode', () => {
     await t.auth.context.tokens.issueLink('email-revert', session.userId, 60_000, {
       email: 'old@example.com',
       to: 'ada@example.com',
-      changedAt: '0',
+      since: '0',
     });
 
     expect(await t.auth.confirmEmailChangeCode({ session, code, meta: meta() })).toEqual({
@@ -415,9 +414,7 @@ describe('confirmEmailChangeCode', () => {
     const t = setup();
     const { session } = await t.signedInUser();
 
-    await t.auth.context.tokens.issueLink('email-reserved', holdKey(NEW), 60_000, {
-      userId: session.userId,
-    });
+    await t.auth.context.tokens.putKeyed('email-reserved', session.userId, holdKey(NEW), 60_000);
 
     await t.auth.requestEmailChange({ session, newEmail: NEW, meta: meta() });
 
@@ -430,9 +427,7 @@ describe('confirmEmailChangeCode', () => {
     const { session } = await t.signedInUser();
     const code = await requestCode(t, session, NEW);
 
-    await t.auth.context.tokens.issueLink('email-reserved', holdKey(NEW), 60_000, {
-      userId: 'someone-else',
-    });
+    await t.auth.context.tokens.putKeyed('email-reserved', 'someone-else', holdKey(NEW), 60_000);
 
     expect(await t.auth.confirmEmailChangeCode({ session, code, meta: meta() })).toMatchObject({
       ok: false,
@@ -807,11 +802,40 @@ describe('revertEmailChange', () => {
     expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
   });
 
-  it('passes the hooks the time of the change and releases the hold on the restored address', async () => {
+  it('fails closed on an unreadable record of when the change began: no factor judged, the account left locked for support', async () => {
     const seen: number[] = [];
-    const t = setup({ hooks: { onEmailReverted: ({ changedAt }) => void seen.push(changedAt) } });
+    const t = setup({ hooks: { onEmailReverted: ({ since }) => void seen.push(since) } });
     const { session } = await t.signedInUser();
-    const at = t.clock.now();
+
+    await t.stores.users.setEmail(session.userId, NEW as never);
+
+    const forged = await t.auth.context.tokens.issueLink('email-revert', session.userId, 60_000, {
+      email: 'ada@example.com',
+      to: NEW,
+    });
+
+    expect((await t.auth.revertEmailChange({ token: forged.token, meta: meta() })).ok).toBe(true);
+    expect(seen).toEqual([]);
+    expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
+
+    expect(t.audit.events.at(-1)).toMatchObject({
+      type: 'email.change_reverted',
+      data: { review: true, passwordCleared: true, lockedOut: true },
+    });
+
+    expect(
+      await t.auth.context.tokens.findLive('email-revert-lockout', session.userId),
+    ).not.toBeNull();
+  });
+
+  it('passes the hooks when the requesting session could first act, and releases the hold on the restored address', async () => {
+    const seen: number[] = [];
+    const t = setup({ hooks: { onEmailReverted: ({ since }) => void seen.push(since) } });
+    const { session } = await t.signedInUser();
+    const at = session.createdAt;
+
+    t.clock.advance(60_000);
+
     const after = await changed(t, session, NEW);
 
     t.clock.advance(5_000);
@@ -820,7 +844,7 @@ describe('revertEmailChange', () => {
     expect(seen).toEqual([at]);
 
     expect(
-      await t.auth.context.tokens.findLive('email-reserved', holdKey('ada@example.com')),
+      await t.auth.context.tokens.findKeyed('email-reserved', holdKey('ada@example.com')),
     ).toBeNull();
   });
 
