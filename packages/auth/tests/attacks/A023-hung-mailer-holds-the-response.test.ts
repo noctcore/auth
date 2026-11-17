@@ -10,7 +10,9 @@
 //   and never awaits it), core/background.ts, flows/register.ts,
 //   flows/email-verification.ts, flows/password-change.ts, flows/password-reset.ts,
 //   flows/password-reset-request.ts, flows/lock-notice.ts. Bounded by Vitest's
-//   fake timers, not the wall clock.
+//   fake timers, not the wall clock. Not stopped: whatever `send` does before it
+//   returns its promise runs on the response path, which is why `send` must
+//   only enqueue (the last case pins that).
 // Learn: Enumeration (/auth/learn/enumeration/)
 import { describe, expect, it } from 'vitest';
 
@@ -127,6 +129,28 @@ describe('A023: holding responses up through a slow or hung mailer', () => {
     expect(handedTypes(handed)).toEqual(['password-changed']);
   });
 
+  it('answers the wrong current password that locks the account while the lock notice never settles', async () => {
+    const env = setup({ throttle: { lockout: { perAccount: { limit: 2, window: '15m' } } } });
+    const { session } = await env.signedInUser(EMAIL);
+    const { handed } = hangMailer(env.mailer);
+    const answers: unknown[] = [];
+
+    for (let i = 0; i < 3; i++)
+      answers.push(
+        await onFakeClock(() =>
+          env.auth.changePassword({
+            session,
+            currentPassword: 'wrong passphrase!',
+            newPassword: NEW_PASSWORD,
+            meta: meta(),
+          }),
+        ),
+      );
+
+    expect(answers).not.toContain('held up');
+    expect(handedTypes(handed)).toEqual(['lockout']);
+  });
+
   it('hands each mail over at most once: a failing send is logged, never retried', async () => {
     const failures: string[] = [];
 
@@ -152,5 +176,25 @@ describe('A023: holding responses up through a slow or hung mailer', () => {
     expect(answer.ok).toBe(true);
     expect(sends).toBe(1);
     expect(failures).toEqual(['Mailer failed']);
+  });
+
+  // Documents the limit of the defence: `send` is called, not awaited, so its
+  // synchronous part (a template rendered before it returns) runs inside the
+  // request, before the audit row and the answer. Hence: `send` must only enqueue.
+  it('runs the synchronous part of send on the response path, before the flow answers', async () => {
+    const env = setup();
+    const order: string[] = [];
+    const emit = env.audit.emit.bind(env.audit);
+
+    env.mailer.send = (event) => (
+      order.push(`send ${event.type}`),
+      new Promise<void>(() => undefined)
+    );
+
+    env.audit.emit = async (event, meta) => (order.push(event.type), emit(event, meta));
+
+    await onFakeClock(() => env.auth.register({ email: EMAIL, password: PASSWORD, meta: meta() }));
+
+    expect(order).toEqual(['send verify-email', 'email.verification_sent', 'register.created']);
   });
 });
