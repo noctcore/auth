@@ -70,6 +70,32 @@ function fields(token: string): [string, string, string, string] {
 }
 
 describe('verifyDeviceToken', () => {
+  it('refuses anything that is not a string, even an object that prints as a valid token', () => {
+    fc.assert(
+      fc.property(issued, (c) => {
+        for (const value of [{ toString: () => c.token }, [c.token], new String(c.token)])
+          expect(verifyDeviceToken(c.key, value, c.check)).toBeNull();
+      }),
+      runs(),
+    );
+  });
+
+  it('refuses a valid token with anything before or after it', () => {
+    fc.assert(
+      fc.property(
+        issued,
+        fc.string({ minLength: 1, maxLength: 8 }),
+        fc.boolean(),
+        (c, junk, before) => {
+          const padded = before ? `${junk}${c.token}` : `${c.token}${junk}`;
+
+          expect(verifyDeviceToken(c.key, padded, c.check)).toBeNull();
+        },
+      ),
+      runs(),
+    );
+  });
+
   it('accepts a token for its own claims anywhere inside the age window', () => {
     fc.assert(
       fc.property(issued, (c) => {
