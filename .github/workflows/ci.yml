@@ -43,6 +43,9 @@ jobs:
       - run: bun run lint
       # The public API of every entry point, compared with the reports in api/.
       - run: bun run check:api
+      # A new runtime dependency ships into every consumer's app, so it needs an
+      # entry in scripts/runtime-dependencies.json (an explicit decision).
+      - run: bun run check:deps
       # Packs every published package and checks the tarball with publint and
       # @arethetypeswrong/cli, so a manifest that hands one runtime the other's
       # declarations fails here instead of in a consumer's editor.
