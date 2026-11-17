@@ -27,7 +27,9 @@ A timing leak is checked by counting work, not by measuring the clock, so the ch
 - at the password reset request, the same sequence for a known and an unknown address;
 - at sign-up, one hash, one mail and the same number of store round trips for a taken and a new address. The calls are not identical: a taken address looks the owner up where a new account writes its verification token. The test pins both sequences, so any other drift fails.
 
-`bun run bench:timing` also measures the wall clock with the real Argon2id hasher. It compares the same pairs over shuffled, seeded samples and reports medians and Welch's t. It is for reading, not gating.
+Attack `A023` hands every flow that mails a mailer that never settles and requires each answer anyway, on Vitest's fake timers rather than the wall clock: no flow waits for delivery.
+
+`bun run bench:timing` also measures the wall clock with the real Argon2id hasher. It compares the same pairs over shuffled, seeded samples and reports medians and Welch's t. It is for reading, not gating. The in-memory stores make a store call nearly free, so `bun run bench:timing:stores` times the sign-up pair again on Postgres and Redis (after `services:up` and a build), where each call is a round trip.
 
 A lint rule pushes secret comparisons onto the constant-time helpers in `crypto/hash.ts`. It matches by name and by the forms listed below, so it narrows the ways to slip rather than proving there are none: a secret under an unrelated name, or read some other way (a template-literal key, a computed method name, a `switch`, `startsWith` or `includes`), is not caught, and review still has to look. In library code it refuses:
 
@@ -81,6 +83,7 @@ bun run check:api && bun run check:package
 bun run services:up && bun run test:integration
 bun run test:mutation           # about two minutes
 bun run bench:timing            # wall clock, not a gate
+bun run bench:timing:stores     # sign-up on Postgres and Redis, not a gate
 ```
 
 [CONTRIBUTING.md](https://github.com/noctcore/auth/blob/main/CONTRIBUTING.md) lists every gate with the job that runs it, and which ones are required to merge.

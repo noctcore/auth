@@ -11,11 +11,11 @@ import templatesTs from '../../../../snippets/build/mail/templates.ts?raw';
 
 The package never renders or sends mail. Each flow that needs one emits a typed `AuthMailEvent` to your `Mailer`, and your code turns it into a message in your own templates and language.
 
-## Why `send` must enqueue
+## Why `send` should enqueue
 
-The flows do the same work for a known and an unknown address up to the mail step, so an attacker cannot tell from the response time whether an account exists. A `send` that talked to SMTP inline would add that round trip for known addresses only and give the answer back. So `Mailer.send` should store a job and return; a worker sends it.
+No flow waits for the mailer. Each one calls `send` and answers without awaiting the promise it returns, so a slow provider, or a `send` that never settles, neither delays nor hangs a response, and the time one template or recipient takes never shows in the response time.
 
-A `send` that throws does not fail the flow: the error goes to the configured `logger` as `Mailer failed`, with the event type and user id. Make sure your queue is up, and give `createAuth` a logger.
+Delivery from the library is at most once. Each mail is handed to `send` once; a `send` that throws or rejects does not fail the flow, the error goes to the configured `logger` as `Mailer failed` with the event type and user id, and the mail is not retried. Retries are the job of your mailer or queue. That is why `send` should store a job and return, and a worker should send it: the queue retries a failed send, and a job already stored survives a process that exits right after answering, where a send still in flight would be lost. Make sure your queue is up, and give `createAuth` a logger.
 
 ## The events
 
