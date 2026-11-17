@@ -2,7 +2,13 @@
  * The `UserStore` on a Prisma model. Guarded writes put the guard in the
  * `where` of one `updateMany`, so a compare-and-set is a single statement.
  */
-import type { AuthUser, NormalizedEmail, UserStore, WithPasswordHash } from '@noctcore/auth';
+import type {
+  AuthUser,
+  EmailChangeResult,
+  NormalizedEmail,
+  UserStore,
+  WithPasswordHash,
+} from '@noctcore/auth';
 import type { PrismaUserDelegate } from './delegates';
 import { isValidationError, P2002, prismaCode } from './prisma-errors';
 
@@ -190,5 +196,33 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     });
 
     return count > 0;
+  }
+
+  async changeEmail(
+    id: string,
+    change: {
+      readonly from: NormalizedEmail;
+      readonly to: NormalizedEmail;
+      readonly clearPassword?: boolean;
+    },
+  ): Promise<EmailChangeResult> {
+    // The old address is in the WHERE of the same UPDATE (a compare-and-set),
+    // and the unique index on the email column refuses a taken address.
+    try {
+      const { count } = await this.options.delegate.updateMany({
+        where: this.live({ [this.f.id]: id, [this.f.email]: change.from }),
+        data: {
+          [this.f.email]: change.to,
+          [this.f.emailVerified]: true,
+          ...(change.clearPassword ? { [this.f.passwordHash]: null } : {}),
+        },
+      });
+
+      return count > 0 ? 'changed' : 'stale';
+    } catch (error) {
+      if (prismaCode(error) === P2002) return 'taken';
+
+      throw error;
+    }
   }
 }
