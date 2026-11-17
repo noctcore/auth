@@ -52,6 +52,7 @@ AuthModuleOptions [interface]<U extends AuthUser = AuthUser>
     readonly auth: NestAuth<U>
     readonly csrf: CsrfOptions
     readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>
+    readonly shutdownTimeout?: Duration
     readonly trustedHops: number
 configureTrustProxy [function]: (app: INestApplication, env: TrustProxyEnv) => number
 CsrfMiddleware [class]
@@ -70,7 +71,7 @@ CurrentSession [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
 CurrentUser [const]: (...dataOrPipes: unknown[]) => ParameterDecorator
 describeRoutes [function]: (app: INestApplication) => RouteAccess[]
 NestAuth [interface]<U extends AuthUser = AuthUser>
-    flush?(): Promise<void>
+    flush?(options?: { readonly timeout?: Duration; }): Promise<void>
     logout(input: { token: string | null | undefined; meta: RequestMeta; }): Promise<{ cookie: CookieSpec; }>
     readSessionToken(cookieHeader: string | null | undefined): string | null
     readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; }
@@ -112,4 +113,5 @@ ResolvedOptions [interface]
     readonly csrf: { readonly secrets: readonly Uint8Array[]; readonly allowedOrigins: readonly string[]; readonly allowSameSite: boolean; readonly exempt: readonly (string | RegExp)[]; readonly headerName: string; readonly cookieName: string; readonly preSessionCookieName: string; }
     readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined
     readonly secure: boolean
+    readonly shutdownTimeout: Duration
     readonly trustedHops: number
