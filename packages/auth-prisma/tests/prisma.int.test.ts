@@ -2,6 +2,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { AuthUser, NormalizedEmail } from '@noctcore/auth';
 import {
+  invitationStoreConformance,
   membershipStoreConformance,
   runConformance,
   tokenStoreConformance,
@@ -10,6 +11,7 @@ import {
   userStoreConformance,
 } from '@noctcore/auth/testing';
 import {
+  PrismaInvitationStore,
   PrismaMembershipStore,
   PrismaTokenStore,
   PrismaTwoFactorStore,
@@ -64,6 +66,14 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
   });
 
   runConformance('prisma membership store', membershipStoreConformance(members), api);
+
+  runConformance(
+    'prisma invitation store',
+    invitationStoreConformance(
+      new PrismaInvitationStore({ client: prisma, invitation: prisma.authInvitation }),
+    ),
+    api,
+  );
 
   it('bumps the scope version with every guarded write, and decides again after a lost race', async () => {
     const scope = uniqueId('scope');

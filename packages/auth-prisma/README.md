@@ -58,4 +58,18 @@ const store = new PrismaMembershipStore({
 - A role change or a removal reads the scope's version, the member and the other admins, then commits a version-guarded update of the scope row and the member write in one `$transaction`. If another write of the scope committed in between, the transaction rolls back and the store decides again on fresh rows, so two admins demoting each other at once leave one admin.
 - Write memberships only through the store, or bump `AuthMemberScope.version` in the same transaction as your own write.
 
+## Invitation store
+
+For the invitations plugin (`@noctcore/auth/invitations`), copy the `AuthInvitation` model, migrate, and hand the store the client and its delegate:
+
+```ts
+import { PrismaInvitationStore } from '@noctcore/auth-prisma';
+
+const store = new PrismaInvitationStore({ client: prisma, invitation: prisma.authInvitation });
+```
+
+- `consume` is one delete by the unique hash that returns the row, so of many concurrent accepts exactly one gets the invitation.
+- The unique (scope, email) index keeps one invitation per scope and address; an expired one is deleted and replaced in one `$transaction`.
+- Expired rows stay until they are replaced, accepted or revoked. Sweep them with `prisma.authInvitation.deleteMany({ where: { expiresAt: { lte: new Date() } } })` if the table grows.
+
 Every store passes the conformance suite from `@noctcore/auth/testing` on PostgreSQL in CI.

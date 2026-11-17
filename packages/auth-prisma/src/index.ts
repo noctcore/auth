@@ -1,5 +1,5 @@
 /**
- * @noctcore/auth-prisma: Prisma user, one-time token, two-factor and membership stores for @noctcore/auth.
+ * @noctcore/auth-prisma: Prisma user, one-time token, two-factor, membership and invitation stores for @noctcore/auth.
  *
  * The stores take your client's model delegates (`prisma.user`,
  * `prisma.authToken`), not a client type, because Prisma 7 generates the client
@@ -18,10 +18,12 @@ import { PrismaUserStore, type PrismaUserStoreOptions } from './user-store';
 
 export type {
   PrismaAuthTokenDelegate,
+  PrismaInvitationDelegates,
   PrismaMembershipDelegates,
   PrismaTwoFactorDelegates,
   PrismaUserDelegate,
 } from './delegates';
+export { PrismaInvitationStore } from './invitation-store';
 export { PrismaMembershipStore } from './membership-store';
 export { PrismaTokenStore } from './token-store';
 export { PrismaTwoFactorStore } from './two-factor-store';

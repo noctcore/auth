@@ -76,3 +76,16 @@ export interface PrismaMembershipDelegates {
     update(args: any): PromiseLike<any>;
   };
 }
+
+export interface PrismaInvitationDelegates {
+  /** Your `PrismaClient`: replacing an expired invitation commits through `$transaction([...])`. */
+  readonly client: { $transaction(operations: any[]): PromiseLike<unknown> };
+  /** `prisma.authInvitation` */
+  readonly invitation: {
+    findUnique(args: any): PromiseLike<any>;
+    findMany(args: any): PromiseLike<any[]>;
+    create(args: any): PromiseLike<any>;
+    delete(args: any): PromiseLike<any>;
+    deleteMany(args: any): PromiseLike<{ count: number }>;
+  };
+}
