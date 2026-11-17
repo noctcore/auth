@@ -10,6 +10,7 @@ import {
   type AuthUser,
   type Clock,
   type CookieSpec,
+  type Duration,
   type RequestMeta,
   type StoredSession,
 } from '@noctcore/auth';
@@ -27,8 +28,8 @@ export interface NestAuth<U extends AuthUser = AuthUser> {
     touch?: boolean;
   }): Promise<AuthResult<StoredSession<unknown>>>;
   requireFreshAuth(session: StoredSession<unknown>): AuthResult<void>;
-  /** Waits for background work (mail sends); the module calls it on shutdown. */
-  flush?(): Promise<void>;
+  /** Waits for background work (mail sends); the module calls it on shutdown, bounded. */
+  flush?(options?: { readonly timeout?: Duration }): Promise<void>;
   logout(input: { token: string | null | undefined; meta: RequestMeta }): Promise<{
     cookie: CookieSpec;
   }>;
@@ -77,7 +78,15 @@ export interface AuthModuleOptions<U extends AuthUser = AuthUser> {
    * takes effect on the next request.
    */
   readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>;
+  /**
+   * How long shutdown waits for background work (mail sends) before it gives
+   * up, logs what it left running and lets the app close. Default `'10s'`.
+   */
+  readonly shutdownTimeout?: Duration;
 }
+
+/** How long shutdown waits for background work by default. */
+export const DEFAULT_SHUTDOWN_TIMEOUT: Duration = '10s';
 
 /** The options after the boot checks, with secrets as bytes and cookie names fixed. */
 export interface ResolvedOptions {
@@ -85,6 +94,7 @@ export interface ResolvedOptions {
   readonly trustedHops: number;
   readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined;
   readonly secure: boolean;
+  readonly shutdownTimeout: Duration;
   readonly csrf: {
     readonly secrets: readonly Uint8Array[];
     readonly allowedOrigins: readonly string[];
@@ -144,6 +154,7 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     trustedHops,
     roles: options.roles as ResolvedOptions['roles'],
     secure,
+    shutdownTimeout: options.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT,
     csrf: {
       secrets,
       allowedOrigins: [...csrf.allowedOrigins],

@@ -317,4 +317,18 @@ describe('shutting down', () => {
     // Already closed: the shared afterEach must not close it again.
     t = { ...t, app: { close: async () => undefined } as never };
   });
+
+  it('closes anyway after shutdownTimeout when a send never settles', async () => {
+    t = await boot({ options: { shutdownTimeout: '50ms' } });
+    t.mailer.send = () => new Promise<void>(() => undefined);
+
+    await t.auth.requestPasswordReset({ email: EMAIL, meta: { ip: '203.0.113.9' } });
+
+    const started = Date.now();
+
+    await t.app.close();
+    expect(Date.now() - started).toBeLessThan(5000);
+
+    t = { ...t, app: { close: async () => undefined } as never };
+  });
 });

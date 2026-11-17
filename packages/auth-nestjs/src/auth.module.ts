@@ -10,7 +10,9 @@
  * - `auth.flush()` on shutdown (`beforeApplicationShutdown`), so mail sends
  *   still in flight finish before your `onApplicationShutdown` hooks close the
  *   database and Redis connections. Nest runs it on `app.close()`, and on
- *   SIGTERM once you call `app.enableShutdownHooks()`.
+ *   SIGTERM once you call `app.enableShutdownHooks()`. The wait is bounded by
+ *   `shutdownTimeout` (10 seconds by default); what is still running then is
+ *   logged and abandoned.
  *
  * The module is global, so the guard, the decorators and `AUTH` work in every
  * feature module without importing it again.
@@ -116,7 +118,9 @@ export class AuthModule implements NestModule, OnModuleInit, BeforeApplicationSh
    * handlers, instead of leaving it to the guard to pick one at request time.
    */
   async beforeApplicationShutdown(): Promise<void> {
-    await this.options.auth.flush?.();
+    // Bounded: a send that never settles must not keep `app.close()` (or
+    // SIGTERM) from finishing. Whatever is left is logged by the core.
+    await this.options.auth.flush?.({ timeout: this.options.shutdownTimeout });
   }
 
   onModuleInit(): void {

@@ -49,6 +49,11 @@ class FakeResponse implements RawResponse {
 }
 
 describe('resolveOptions', () => {
+  it('waits 10 seconds for background work on shutdown unless told otherwise', () => {
+    expect(resolveOptions(options()).shutdownTimeout).toBe('10s');
+    expect(resolveOptions(options({ shutdownTimeout: '2s' })).shutdownTimeout).toBe('2s');
+  });
+
   it('refuses a missing auth instance', () => {
     expect(() => resolveOptions(options({ auth: undefined as never }))).toThrow(AuthConfigError);
   });
