@@ -67,7 +67,7 @@ export default {
   reporters: ['clear-text', 'progress', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },
-  // Measured 98.57 on 2026-11-17, with the two-factor plugin and the email change flow in scope.
+  // Measured 98.52 on 2026-11-17, with the two-factor plugin and the email change flow in scope.
   thresholds: { high: 98, low: 90, break: 98 },
   concurrency: 4,
   timeoutMS: 10_000,
