@@ -64,7 +64,7 @@ export async function acceptInvitation<A>(
 
   if (!user) return refused(r, 'forbidden', 'user_missing', session.userId, meta);
 
-  if (normalizeEmail(user.email) !== invitation.email)
+  if (normalizeEmail(user.email) !== normalizeEmail(invitation.email))
     return refused(r, 'forbidden', 'email_mismatch', user.id, meta);
 
   if (!user.emailVerified) return refused(r, 'forbidden', 'email_unverified', user.id, meta);
