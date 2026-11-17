@@ -18,6 +18,7 @@ Each page covers one concept: what goes wrong, the attack, the rule the package 
 - [Email change](/auth/learn/email-change/)
 - [CSRF](/auth/learn/csrf/)
 - [Second factors](/auth/learn/second-factors/)
+- [Invitations](/auth/learn/invitations/)
 
 ## Planned
 

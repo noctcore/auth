@@ -1,0 +1,68 @@
+---
+title: Invitations
+description: Inviting someone to an organisation by email, and letting them accept into their account or create one, without the link becoming a way into someone else's account.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import authTs from '../../../../snippets/build/invitations/auth.ts?raw';
+import routesTs from '../../../../snippets/build/invitations/routes.ts?raw';
+
+The invitations plugin, `@noctcore/auth/invitations`, sends an invitation to an address and lets its owner accept it, either into the account they already have or into a new one. Like the core, it has no HTTP endpoints: its flows live under `auth.invitations`, and your routes call them. What an accepted invitation means (a seat, a role, a team) is yours to decide in `onAccept`; the plugin does not scope data. Why each rule is there: [Invitations](/auth/learn/invitations/) in Learn. This guide builds on [A Node server with Redis and Prisma](/auth/build/node-server/), and the example wires it to the [membership guards](/auth/build/membership/).
+
+## What it guarantees
+
+- **The token is a bearer secret, kept like one.** 256 random bits from the CSPRNG, mailed once, stored only as an HMAC under a key derived from your `secret` for invitations alone. A leaked table holds no usable link.
+- **One invitation, one accept.** Accepting spends the invitation through the store's atomic `consume`: of many concurrent accepts, from any number of browsers, exactly one runs `onAccept`. The conformance suite checks it for every store, against Postgres and Redis for the shipped ones.
+- **Only the invited address, verified.** `accept` needs a session whose account's address is verified and equals the invited one, both normalised. An unverified account, the kind an attacker registers ahead of the victim, never collects the invitation, and nothing is spent.
+- **No second factor is skipped.** `accept` issues no session. `register` creates only a new account and issues its session through the core's one seam with `via: 'invitation'`, so the two-factor plugin refuses it when the app requires a factor.
+- **Creating is never open.** The plugin refuses to start without `authorize`, and `create`, `list` and `revoke` ask it with the acting user read from the user store. Accepting asks it again for the inviter (unless you turn `recheckInviter` off), so an invitation from someone who lost the right, or the account, is withdrawn instead of accepted.
+- **Nobody learns which addresses have accounts from `create`.** It never reads the invited address from the user store: its answer, its mail and its store calls are the same for every address. Junk, unknown and expired tokens all get `invalid_token`.
+- **Invitations cannot flood a mailbox.** One live invitation per scope and address: a repeat writes nothing and sends no mail. Creates are also limited per address (across scopes), per inviter and per IP.
+
+## What it does not do
+
+It does not scope your data and does not define roles: `onAccept` and `authorize` are where your rules live. It does not hide everything from the holder of a live token: `register` answers `email_in_use` when the address already has an account, so that person can sign in and use `accept` instead. That holder is normally the owner of the mailbox; a forwarded link tells its reader as much. And it sends one mail per invitation: there is no resend, so revoke and create again.
+
+## The store
+
+The plugin needs an `InvitationStore`: `PrismaInvitationStore` from `@noctcore/auth-prisma` (copy the `AuthInvitation` model from its `prisma/auth.prisma` and migrate) or `RedisInvitationStore` from `@noctcore/auth-redis`, where every key expires with its invitation. `MemoryInvitationStore` from `@noctcore/auth/testing` is for tests. On Postgres, expired rows stay until they are replaced, accepted or revoked; sweep them with a `deleteMany` on `expiresAt` if the table grows.
+
+Your own store must pass `invitationStoreConformance` (see [Writing a store adapter](/auth/build/store-adapter/)): `consume` removes and returns a row in one step, and `create` refuses a second live invitation for the same scope and address, also under concurrency.
+
+## Wiring the plugin
+
+<Code code={authTs} lang="ts" title="src/auth.ts" />
+
+| Option | Default | |
+| --- | --- | --- |
+| `store` | required | |
+| `authorize` | required | `({ user, scope, action, email?, payload? }) => boolean`. `action` is `create`, `list` or `revoke`; `email` and `payload` are set for `create` and for the inviter check on accept. Only `true` allows; throwing refuses. |
+| `onAccept` | required | `({ user, invitation, created, meta }) => void`. Runs after the invitation is spent. A throw reaches the caller and the invitation stays spent: send a new one. |
+| `url` | required | `(token) => string`, the link in the mail. Must be absolute and carry the token in the path or the fragment; a token in the query string is refused at startup. Serve the page with `Referrer-Policy: no-referrer`. |
+| `ttl` | `'7d'` | At most 30 days. |
+| `recheckInviter` | `true` | Ask `authorize` again for the inviter on accept. |
+| `perAddress` | 3 per day | Invitations one address receives, across scopes, keyed by a keyed hash of the address. |
+| `perInviter` | 20 per hour | |
+| `perIp` | 10 per minute | Creates, accepts and registrations per client IP, counted together. |
+
+The mail is the `invitation` event: `to`, `scope`, `inviterId`, `url` and `expiresAt`, and no `userId`, because the address may have no account (see [Mail](/auth/build/mail/)). Write the same mail for every address.
+
+## The routes
+
+<Code code={routesTs} lang="ts" title="src/routes/invitations.ts" />
+
+| Flow | Answers | Refusals |
+| --- | --- | --- |
+| `create({ session, scope, email, payload?, meta })` | `{ invitation }`, or `{ invitation: null }` when one is already pending | `invalid_email`, `forbidden`, `rate_limited` |
+| `list({ session, scope, meta })` | the scope's live invitations | `forbidden` |
+| `revoke({ session, scope, id, meta })` | | `forbidden` (also for an unknown id) |
+| `accept({ session, token, meta })` | the invitation | `invalid_token`, `forbidden`, `rate_limited` |
+| `register({ token, password, meta })` | `{ invitation, session }` | `invalid_token`, `email_in_use`, the password policy's codes, `rate_limited`, and any refusal of the session (for example `second_factor_required`) |
+
+The page at your `url` reads the token from the fragment. A signed-in visitor posts it to your accept route; a signed-out one chooses between signing in (then accept) and creating an account (register). `register` checks the password against the policy before it looks up the address, marks the new address verified (the token proved the mailbox), runs your `afterRegister` hooks, then `onAccept`, then issues the session. If the session is refused, the account and the membership already exist: the user signs in normally.
+
+Every outcome writes an audit row: `invitation.created`, `invitation.deduplicated`, `invitation.revoked`, `invitation.accepted` (with `created` in `data`), `invitation.refused` (the reason names which check failed), and `register.created` for an account made by `register`.
+
+## When the inviter changes
+
+Revoking all of a user's sessions (sign out everywhere, a password reset or change, a role change by the membership plugin, any reason your app adds) deletes the invitations that user sent. A sign-out, ending one session, "sign out other sessions", an eviction and an email verification keep them. On accept, the inviter is read from the user store and asked `authorize` again with the invitation's scope, address and payload; a deleted inviter or a refusal withdraws the invitation and answers `invalid_token`.
