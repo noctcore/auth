@@ -3,7 +3,9 @@ import { describe, it } from 'vitest';
 import {
   counterStoreConformance,
   manualClock,
+  invitationStoreConformance,
   memoryStores,
+  MemoryInvitationStore,
   membershipStoreConformance,
   MemoryMembershipStore,
   runConformance,
@@ -41,5 +43,11 @@ runConformance(
 runConformance(
   'memory membership store',
   membershipStoreConformance(new MemoryMembershipStore()),
+  api,
+);
+
+runConformance(
+  'memory invitation store',
+  invitationStoreConformance(new MemoryInvitationStore(), context),
   api,
 );

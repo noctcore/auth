@@ -90,6 +90,7 @@ export type {
   TwoFactorStore,
 } from './ports/two-factor';
 export type { MembershipStore, MemberWrite, StoredMember } from './ports/membership';
+export type { InvitationStore, StoredInvitation } from './ports/invitations';
 export { SessionManager } from './session/session-manager';
 export type {
   AttributeSchema,
