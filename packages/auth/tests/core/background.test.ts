@@ -188,6 +188,57 @@ describe('flush and tasks started while it waits', () => {
   });
 });
 
+describe('uncapped tasks and a bounded flush', () => {
+  it('never drops an uncapped task, and does not count it toward the cap', async () => {
+    const r = recorder();
+    const tasks = new BackgroundTasks(r.logger, r.metrics, { maxPending: 1 });
+    let audited = 0;
+
+    tasks.run('audit a', () => new Promise<void>(() => undefined), undefined, { uncapped: true });
+    tasks.run('mail', () => new Promise<void>(() => undefined));
+    tasks.run('audit b', async () => void audited++, undefined, { uncapped: true });
+    tasks.run('mail', async () => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(audited).toBe(1);
+    expect(tasks.pending).toBe(1);
+    expect(r.errors).toEqual(['Background task dropped: mail']);
+  });
+
+  it('gives up after its own timeout, logging the tasks it left running', async () => {
+    const r = recorder();
+    const tasks = new BackgroundTasks(r.logger, r.metrics);
+
+    tasks.run('mail verify-email', () => new Promise<void>(() => undefined));
+    tasks.run('audit account.locked', async () => undefined);
+
+    const flushed = tasks.flush({ timeout: '10s' });
+
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(await isSettled(flushed)).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await isSettled(flushed)).toBe(true);
+    expect(r.errors).toEqual(['Background flush stopped waiting']);
+    expect(r.contexts).toEqual([{ pending: 1, tasks: 'mail verify-email' }]);
+  });
+
+  it('with a timeout, still resolves as soon as everything settles, and logs nothing', async () => {
+    const r = recorder();
+    const tasks = new BackgroundTasks(r.logger, r.metrics);
+    const job = deferred();
+
+    tasks.run('mail', () => job.promise);
+
+    const flushed = tasks.flush({ timeout: '10s' });
+
+    job.resolve();
+    expect(await isSettled(flushed)).toBe(true);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(r.errors).toEqual([]);
+    await expect(tasks.flush({ timeout: '1s' })).resolves.toBeUndefined();
+  });
+});
+
 describe('waitUntil', () => {
   it('is handed each task as it starts, as a promise that never rejects', async () => {
     const r = recorder();
@@ -449,6 +500,32 @@ describe('through createAuth', () => {
 
     expect(sent).toEqual(['verify-email', 'account-exists']);
     expect(t.errors.filter((e) => e.startsWith('Background task dropped'))).toEqual([]);
+  });
+
+  it('drops only the mail under the cap: sign-up and lock audit rows are still written', async () => {
+    const t = app({ maxPending: 1 }, { lockout: { perAccount: { limit: 2, window: '15m' } } });
+
+    t.mailer.send = () => new Promise<void>(() => undefined);
+
+    await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: { ip: '1' } });
+    await t.auth.register({ email: 'bob@example.com', password: PASSWORD, meta: { ip: '2' } });
+
+    for (let i = 0; i < 3; i++)
+      await t.auth.login({
+        email: 'bob@example.com',
+        password: 'wrong passphrase!',
+        meta: { ip: '3' },
+      });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(t.audit.types().filter((type) => type === 'register.created')).toHaveLength(2);
+    expect(t.audit.types()).toContain('account.locked');
+
+    expect(t.errors.filter((e) => e.startsWith('Background task dropped'))).toEqual([
+      'Background task dropped: verification mail',
+      'Background task dropped: mail lockout',
+    ]);
   });
 
   it('sends the lock notice even while the audit sink hangs', async () => {

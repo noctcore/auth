@@ -59,7 +59,7 @@ export class BackgroundTasks {
   /** Tasks not settled yet, timed out or not: what `maxPending` counts. */
   #running = 0;
   /** What `flush` waits on: each task until it settles or times out. */
-  readonly #tracked = new Set<Promise<void>>();
+  readonly #tracked = new Map<Promise<void>, string>();
 
   constructor(logger: Logger, metrics: Metrics, options: BackgroundOptions = {}) {
     this.#logger = logger;
@@ -82,9 +82,21 @@ export class BackgroundTasks {
     return this.#running;
   }
 
-  /** `details` (ids, never user input) go into every log line about the task. */
-  run(label: string, task: () => Promise<void>, details?: Readonly<Record<string, string>>): void {
-    if (this.#running >= this.#maxPending) {
+  /**
+   * `details` (ids, never user input) go into every log line about the task.
+   * An `uncapped` task (an audit write) is never dropped and does not count
+   * toward `maxPending`, so a cap that drops mail never drops the audit trail;
+   * `timeout`, `waitUntil` and `flush` still cover it.
+   */
+  run(
+    label: string,
+    task: () => Promise<void>,
+    details?: Readonly<Record<string, string>>,
+    options: { readonly uncapped?: boolean } = {},
+  ): void {
+    const capped = options.uncapped !== true;
+
+    if (capped && this.#running >= this.#maxPending) {
       this.#logger.error(`Background task dropped: ${label}`, {
         ...details,
         pending: this.#running,
@@ -95,7 +107,7 @@ export class BackgroundTasks {
       return;
     }
 
-    this.#running += 1;
+    if (capped) this.#running += 1;
 
     const settled = start(task)
       .catch((error: unknown) => {
@@ -105,13 +117,13 @@ export class BackgroundTasks {
         });
       })
       .finally(() => {
-        this.#running -= 1;
+        if (capped) this.#running -= 1;
       });
 
     const tracked =
       this.#timeoutMs === undefined ? settled : this.#withTimeout(label, settled, details);
 
-    this.#tracked.add(tracked);
+    this.#tracked.set(tracked, label);
     void tracked.finally(() => this.#tracked.delete(tracked));
 
     if (!this.#waitUntil) return;
@@ -126,10 +138,46 @@ export class BackgroundTasks {
   /**
    * Resolves once every task has settled or timed out, including tasks started
    * while it waits (by other tasks, or by requests still in flight). Never
-   * rejects. Each round waits at most `timeout` when one is set.
+   * rejects. Each round waits at most `background.timeout` when one is set.
+   *
+   * With `timeout`, it gives up after that long in all: whatever is still
+   * running is logged as `Background flush stopped waiting`, with the task
+   * labels, and left running. Use it on shutdown, where a `send` that never
+   * settles must not hold the process forever.
    */
-  async flush(): Promise<void> {
-    while (this.#tracked.size > 0) await Promise.all([...this.#tracked]);
+  async flush(options: { readonly timeout?: Duration } = {}): Promise<void> {
+    if (options.timeout === undefined) {
+      while (this.#tracked.size > 0) await Promise.all([...this.#tracked.keys()]);
+
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const expired = new Promise<'expired'>((resolve) => {
+      timer = setTimeout(() => resolve('expired'), toMilliseconds(options.timeout ?? 0));
+      (timer as { unref?: () => void }).unref?.();
+    });
+
+    try {
+      while (this.#tracked.size > 0) {
+        const round = await Promise.race([
+          Promise.all([...this.#tracked.keys()]).then(() => 'done' as const),
+          expired,
+        ]);
+
+        if (round === 'expired') {
+          this.#logger.error('Background flush stopped waiting', {
+            pending: this.#tracked.size,
+            tasks: [...this.#tracked.values()].join(', '),
+          });
+
+          return;
+        }
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   #withTimeout(

@@ -375,8 +375,22 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     label: string,
     task: () => Promise<void>,
     details?: Readonly<Record<string, string>>,
+    options?: { readonly uncapped?: boolean },
   ): void {
-    this.#deps.background.run(label, task, details);
+    this.#deps.background.run(label, task, details, options);
+  }
+
+  /**
+   * Writes an audit event off the response path, as a task `maxPending` never
+   * drops: under a cap, mail can be dropped, the audit trail cannot.
+   */
+  auditInBackground(event: AuthEvent, meta: RequestMeta | undefined): void {
+    this.background(
+      `audit ${event.type}`,
+      () => this.emit(event, meta),
+      event.userId === undefined ? undefined : { userId: event.userId },
+      { uncapped: true },
+    );
   }
 
   /** The device id when `token` is a valid, unexpired device token for this user at this epoch. */

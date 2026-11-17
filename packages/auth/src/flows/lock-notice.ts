@@ -23,14 +23,18 @@ export async function sendLockNotice<U extends AuthUser, A>(
     until: new Date(until),
   } as const;
 
-  const audit = core.emit({ type: 'account.locked', userId: owner.id, data: { until } }, meta);
+  const audited = { type: 'account.locked', userId: owner.id, data: { until } } as const;
 
+  // Off the response path (`inline`): the audit row and the mail are separate
+  // tasks, so a hung audit sink cannot hold the mail back and `maxPending`
+  // can drop the mail but never the audit row.
   if (inline) {
-    await Promise.all([audit, core.deliver(event)]);
+    core.auditInBackground(audited, meta);
+    core.mail(event);
 
     return;
   }
 
-  await audit;
+  await core.emit(audited, meta);
   core.mail(event);
 }
