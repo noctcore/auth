@@ -42,6 +42,8 @@ export const AUTH_ERROR_TRPC_CODES: Readonly<Record<AuthErrorCode, TRPC_ERROR_CO
   second_factor_required: 'FORBIDDEN',
   invalid_second_factor: 'UNAUTHORIZED',
   forbidden: 'FORBIDDEN',
+  self_target: 'FORBIDDEN',
+  last_admin: 'CONFLICT',
 };
 
 /** What the client may learn about an auth refusal. */

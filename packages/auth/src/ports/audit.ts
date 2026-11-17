@@ -56,7 +56,12 @@ export type AuthEventType =
   | 'two_factor.recovery_code_used'
   | 'two_factor.recovery_codes_generated'
   | 'two_factor.trusted_device_added'
-  | 'two_factor.trusted_devices_revoked';
+  | 'two_factor.trusted_devices_revoked'
+  /** The membership plugin's events. `userId` is the acting admin, `data.target` the member. */
+  | 'membership.added'
+  | 'membership.role_changed'
+  | 'membership.removed'
+  | 'membership.refused';
 
 export interface AuthEvent {
   readonly type: AuthEventType;

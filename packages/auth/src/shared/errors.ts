@@ -34,7 +34,11 @@ export type AuthErrorCode =
   | 'second_factor_required'
   | 'invalid_second_factor'
   /** A hook refused for a reason that is safe to name only generically. */
-  | 'forbidden';
+  | 'forbidden'
+  /** The membership plugin: an admin action aimed at the acting user. */
+  | 'self_target'
+  /** The membership plugin: the change would leave the scope without an admin. */
+  | 'last_admin';
 
 export interface AuthFailure {
   readonly ok: false;

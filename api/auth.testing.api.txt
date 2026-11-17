@@ -2,12 +2,14 @@
 
 ## runtime exports
 MemoryCounterStore
+MemoryMembershipStore
 MemorySessionStore
 MemoryTokenStore
 MemoryTwoFactorStore
 MemoryUserStore
 counterStoreConformance
 manualClock
+membershipStoreConformance
 memoryStores
 plainHasher
 recordingAudit
@@ -32,6 +34,7 @@ ManualClock [interface]
     advance(ms: number): void
     now(): number
     set(ms: number): void
+membershipStoreConformance [function]: (store: MembershipStore) => ConformanceCase[]
 MemoryCounterStore [class]
     (new) (clock?: Clock): MemoryCounterStore
     decrement(key: string): Promise<void>
@@ -42,6 +45,15 @@ MemoryCounterStore [class]
     private readonly counters
     reset(key: string): Promise<void>
     set(key: string, count: number, windowMs: number): Promise<void>
+MemoryMembershipStore [class]
+    (new) (): MemoryMembershipStore
+    addMember(member: StoredMember): Promise<boolean>
+    changeRole(input: { scope: string; userId: string; from: string; to: string; adminRoles: readonly string[]; }): Promise<MemberWrite>
+    findMember(scope: string, userId: string): Promise<StoredMember | null>
+    listMembers(scope: string): Promise<StoredMember[]>
+    private guard
+    private readonly scopes
+    removeMember(input: { scope: string; userId: string; from: string; adminRoles: readonly string[]; }): Promise<MemberWrite>
 MemorySessionStore [class]
     (new) (clock?: Clock): MemorySessionStore
     bumpEpoch(userId: string): Promise<number>
@@ -94,7 +106,6 @@ MemoryTwoFactorStore [class]
     replaceRecoveryCodes(userId: string, hashes: readonly string[]): Promise<void>
 MemoryUserStore [class]
     (new) (clock?: Clock): MemoryUserStore
-    changeEmail(id: string, change: { readonly from: NormalizedEmail; readonly to: NormalizedEmail; readonly clearPassword?: boolean; }): Promise<EmailChangeResult>
     clearPassword(id: string): Promise<void>
     create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<AuthUser | null>
     findById(id: string): Promise<AuthUser | null>
@@ -145,8 +156,8 @@ AuthEvent [interface]
     readonly reason?: string
     readonly type: AuthEventType
     readonly userId?: string
-AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' /** Email change: a request (uniform whether or not the new address is taken), a refusal, a confirmed change. */ | 'email.change_requested' | 'email.change_failed' | 'email.changed' /** A revert link restored the old address. Carries `review: true`: look at the account. */ | 'email.change_reverted' | 'email.change_revert_failed' /** Support ended an account's lockout after a revert that could not finish. Carries `review: true`. */ | 'email.revert_lockout_cleared' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' | 'rate_limit.exceeded' /** The two-factor plugin's events. */ | 'two_factor.enrollment_started' | 'two_factor.enabled' | 'two_factor.disabled' | 'two_factor.verified' | 'two_factor.failed' | 'two_factor.refused' | 'two_factor.step_up' | 'two_factor.recovery_code_used' | 'two_factor.recovery_codes_generated' | 'two_factor.trusted_device_added' | 'two_factor.trusted_devices_revoked'
-AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; } /** An email change: the code or link that proves the new address, sent to that address. */ | { readonly type: 'email-change-confirm'; readonly to: string; readonly userId: string; /** Set for link confirmation. */ readonly url?: string; /** Set for code confirmation. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } /** * An email change to an address that already has an account: the uniform * answer's mail, sent to that address. `userId` is the account that holds the address. */ | { readonly type: 'email-change-in-use'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } /** An email change was confirmed: sent to the address it replaced. `revertUrl` undoes it until `revertExpiresAt`. */ | { readonly type: 'email-changed'; readonly to: string; readonly userId: string; readonly newEmail: string; readonly at: Date; readonly revertUrl: string; readonly revertExpiresAt: Date; readonly dedupeKey: string; } /** A revert link was used: the address is back, every session ended and the password must be reset. */ | { readonly type: 'email-change-reverted'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a second factor was turned on for the account. */ | { readonly type: 'two-factor-enabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: the second factor was turned off. */ | { readonly type: 'two-factor-disabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */ | { readonly type: 'recovery-code-used'; readonly to: string; readonly userId: string; readonly remaining: number; readonly at: Date; readonly dedupeKey: string; }
+AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' | 'rate_limit.exceeded' /** The two-factor plugin's events. */ | 'two_factor.enrollment_started' | 'two_factor.enabled' | 'two_factor.disabled' | 'two_factor.verified' | 'two_factor.failed' | 'two_factor.refused' | 'two_factor.step_up' | 'two_factor.recovery_code_used' | 'two_factor.recovery_codes_generated' | 'two_factor.trusted_device_added' | 'two_factor.trusted_devices_revoked' /** The membership plugin's events. `userId` is the acting admin, `data.target` the member. */ | 'membership.added' | 'membership.role_changed' | 'membership.removed' | 'membership.refused'
+AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; } /** The two-factor plugin: a second factor was turned on for the account. */ | { readonly type: 'two-factor-enabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: the second factor was turned off. */ | { readonly type: 'two-factor-disabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */ | { readonly type: 'recovery-code-used'; readonly to: string; readonly userId: string; readonly remaining: number; readonly at: Date; readonly dedupeKey: string; }
 AuthUser [interface]
     readonly email: string
     readonly emailVerified: boolean
@@ -162,9 +173,15 @@ CounterStore [interface]
 CounterWindow [interface]
     readonly count: number
     readonly resetAt: number
-EmailChangeResult [type] = 'changed' | 'taken' | 'stale'
 Mailer [interface]
     send(event: AuthMailEvent): Promise<void>
+MembershipStore [interface]
+    addMember(member: StoredMember): Promise<boolean>
+    changeRole(input: { readonly scope: string; readonly userId: string; readonly from: string; readonly to: string; readonly adminRoles: readonly string[]; }): Promise<MemberWrite>
+    findMember(scope: string, userId: string): Promise<StoredMember | null>
+    listMembers(scope: string): Promise<StoredMember[]>
+    removeMember(input: { readonly scope: string; readonly userId: string; readonly from: string; readonly adminRoles: readonly string[]; }): Promise<MemberWrite>
+MemberWrite [type] = 'done' | 'missing' | 'stale' | 'last_admin'
 NormalizedEmail [type] = string & { readonly __normalizedEmail: true; }
 PasswordHasher [interface]
     hash(password: string): Promise<string>
@@ -183,6 +200,10 @@ SessionStore [interface]
     listByUser(userId: string): Promise<StoredSession[]>
     readonly maxSessionTtlMs?: number
     touch(session: StoredSession): Promise<boolean>
+StoredMember [interface]
+    readonly role: string
+    readonly scope: string
+    readonly userId: string
 StoredSession [interface]<A = unknown>
     readonly attributes: A
     readonly authenticatedAt: number
@@ -242,7 +263,6 @@ TwoFactorStore [interface]
     putStepUp(stepUp: StoredStepUp): Promise<void>
     replaceRecoveryCodes(userId: string, hashes: readonly string[]): Promise<void>
 UserStore [interface]<U extends AuthUser = AuthUser>
-    changeEmail?(id: string, change: { readonly from: NormalizedEmail; readonly to: NormalizedEmail; readonly clearPassword?: boolean; }): Promise<EmailChangeResult>
     create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<U | null>
     findById(id: string): Promise<U | null>
     findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
