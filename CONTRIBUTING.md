@@ -80,6 +80,32 @@ bun run services:up && bun run test:integration
 - Each file starts with a header naming the attack, the module that stops it and its Learn page.
   `tests/attacks/index.test.ts` fails when the files, the index or the numbering disagree.
 
+## Production readiness
+
+Every gate below fails its run; none is `continue-on-error`. Run the local command before pushing.
+The site page [How this library is tested](https://noctcore.github.io/auth/security/testing/)
+explains what each one catches.
+
+| Gate | CI job | Locally |
+|---|---|---|
+| Formatting | `build · lint · typecheck · package shape` | `bun run format:check` |
+| Types (strict, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`) | `build · lint · typecheck · package shape` | `bun run typecheck` |
+| Lint, including layering and the secret-comparison rule | `build · lint · typecheck · package shape` | `bun run lint` (after a build) |
+| Public API unchanged | `build · lint · typecheck · package shape` | `bun run check:api` (after a build) |
+| Package shape | `build · lint · typecheck · package shape` | `bun run check:package` |
+| Runtime dependency allowlist | `build · lint · typecheck · package shape` | `bun run check:deps` |
+| Actions pinned to SHAs, least-privilege permissions | `build · lint · typecheck · package shape` | `bun run check:workflows` |
+| Unit, attack and property tests with coverage thresholds | `test`, `test · windows` | `bun run test` |
+| Attack suite index (files, rows and numbering agree) | `test` | `bun run test` |
+| Conformance and end to end on Redis and Postgres | `integration · redis + postgres` | `bun run services:up && bun run test:integration` |
+| A changeset on every package change | `changeset status` | `bun run changeset` |
+| CodeQL (security-extended) | `codeql · javascript-typescript` | runs in CI only |
+| Dependency review (high severity, licence allowlist) | `dependency review` | runs in CI only |
+| Property tests with a new seed and 20000 cases | `fuzz · property tests (nightly)` | `FC_SEED=<n> FC_NUM_RUNS=20000 bunx vitest run tests/property` in `packages/auth` |
+| Mutation score at or above `break` | `mutation · stryker (weekly)` | `bun run test:mutation` |
+| OpenSSF Scorecard, target 7.5 | `scorecard` (weekly) | the badge in the README |
+| Timing, wall clock (not a gate) | none | `bun run bench:timing` |
+
 ## Changesets
 
 A pull request that changes a published package carries a changeset (`bun run changeset`). Changes
