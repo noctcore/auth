@@ -25,6 +25,7 @@
     "check:api": "bun scripts/api-snapshot.ts --check",
     "check:deps": "bun scripts/check-runtime-deps.ts",
     "check:workflows": "bun scripts/check-workflows.ts",
+    "bench:timing": "bun packages/auth/tests/timing/benchmark.ts",
     "api:update": "bun scripts/api-snapshot.ts",
     "changeset": "changeset",
     "version-packages": "changeset version && bun install --lockfile-only",
