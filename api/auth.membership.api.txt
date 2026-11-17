@@ -1,0 +1,324 @@
+# @noctcore/auth /membership
+
+## runtime exports
+MEMBERSHIP_REVOCATION
+membership
+
+## declarations
+AddMemberInput [interface]<A>
+    readonly meta: RequestMeta
+    readonly role: string
+    readonly scope: string
+    readonly session: StoredSession<A>
+    readonly userId: string
+ChangeRoleInput [interface]<A>
+    readonly meta: RequestMeta
+    readonly role: string
+    readonly scope: string
+    readonly session: StoredSession<A>
+    readonly userId: string
+ManageContext [interface]
+    readonly action: MemberAction
+    readonly actor: StoredMember
+    readonly from: string | undefined
+    readonly to: string | undefined
+    readonly userId: string
+MemberAction [type] = 'add' | 'change-role' | 'remove'
+MemberActionInput [interface]<A>
+    readonly meta: RequestMeta
+    readonly scope: string
+    readonly session: StoredSession<A>
+    readonly userId: string
+membership [function]: <A = Record<string, never>>(options: MembershipOptions) => AuthPlugin<"membership", { add: (input: AddMemberInput<A>) => Promise<AuthResult<StoredMember>>; changeRole: (input: ChangeRoleInput<A>) => Promise<AuthResult<StoredMember>>; remove: (input: RemoveMemberInput<A>) => Promise<AuthResult<void>>; }>
+MEMBERSHIP_REVOCATION [const]: "membership-changed"
+MembershipOptions [interface]
+    readonly adminRoles: readonly string[]
+    readonly canManage?: (context: ManageContext) => boolean | Promise<boolean>
+    readonly store: MembershipStore
+MembershipStore [interface]
+    addMember(member: StoredMember): Promise<boolean>
+    changeRole(input: { readonly scope: string; readonly userId: string; readonly from: string; readonly to: string; readonly adminRoles: readonly string[]; }): Promise<MemberWrite>
+    findMember(scope: string, userId: string): Promise<StoredMember | null>
+    listMembers(scope: string): Promise<StoredMember[]>
+    removeMember(input: { readonly scope: string; readonly userId: string; readonly from: string; readonly adminRoles: readonly string[]; }): Promise<MemberWrite>
+MemberWrite [type] = 'done' | 'missing' | 'stale' | 'last_admin'
+RemoveMemberInput [type]<A> = MemberActionInput<A>
+StoredMember [interface]
+    readonly role: string
+    readonly scope: string
+    readonly userId: string
+
+## types reached through the exports (not exported by name)
+AttributeSchema [interface]<A>
+    parse(value: unknown): A
+AuthErrorCode [type] = 'invalid_credentials' /** Unknown, expired, used or exhausted token or code. */ | 'invalid_token' | 'invalid_email' /** Shorter than the policy's minimum. */ | 'weak_password' | 'password_too_long' | 'breached_password' /** The signed-in account has no password to check (for example a social-only account). */ | 'password_not_set' /** Only when the app opted into `registration.revealExisting`. */ | 'email_in_use' | 'captcha_failed' /** The captcha provider could not answer: an outage, not the user's mistake. */ | 'captcha_unavailable' | 'rate_limited' | 'session_expired' | 'fresh_auth_required' | 'second_factor_required' | 'invalid_second_factor' /** A hook refused for a reason that is safe to name only generically. */ | 'forbidden' /** The membership plugin: an admin action aimed at the acting user. */ | 'self_target' /** The membership plugin: the change would leave the scope without an admin. */ | 'last_admin'
+AuthEvent [interface]
+    readonly data?: Readonly<Record<string, string | number | boolean>>
+    readonly reason?: string
+    readonly type: AuthEventType
+    readonly userId?: string
+AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' | 'rate_limit.exceeded' /** The two-factor plugin's events. */ | 'two_factor.enrollment_started' | 'two_factor.enabled' | 'two_factor.disabled' | 'two_factor.verified' | 'two_factor.failed' | 'two_factor.refused' | 'two_factor.step_up' | 'two_factor.recovery_code_used' | 'two_factor.recovery_codes_generated' | 'two_factor.trusted_device_added' | 'two_factor.trusted_devices_revoked' /** The membership plugin's events. `userId` is the acting admin, `data.target` the member. */ | 'membership.added' | 'membership.role_changed' | 'membership.removed' | 'membership.refused'
+AuthFailure [interface]
+    readonly code: AuthErrorCode
+    readonly ok: false
+    readonly reason: string
+    readonly retryAfterSeconds?: number
+AuthHooks [interface]<U extends AuthUser, A>
+    afterRegister: (context: { user: U; meta: RequestMeta; }) => MaybePromise<void>
+    beforePasswordChange: (context: { user: U; session: StoredSession<A>; secondFactor: string | undefined; meta: RequestMeta; }) => MaybePromise<HookResult>
+    beforePasswordReset: (context: { user: U; secondFactor: string | undefined; meta: RequestMeta; }) => MaybePromise<HookResult>
+    beforePasswordResetRequest: (context: { user: U; }) => MaybePromise<HookResult>
+    beforeSessionCreate: (context: { user: U; via: IssueVia; attributes: A; meta: RequestMeta; }) => MaybePromise<HookResult>
+    loginChallenge: (context: { user: U; rememberMe: boolean; epoch: number; meta: RequestMeta; }) => MaybePromise<{ challenge: string; methods: readonly string[]; } | null | undefined>
+    onSessionValidate: (context: { session: StoredSession<A>; meta: RequestMeta | undefined; }) => MaybePromise<HookResult>
+    onSessionsRevoked: (context: { userId: string; sessionIds: readonly string[]; reason: RevocationReason; }) => MaybePromise<void>
+    sessionAttributes: (context: { user: U; via: IssueVia; inherited: A | undefined; }) => MaybePromise<Partial<A>>
+AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; } /** The two-factor plugin: a second factor was turned on for the account. */ | { readonly type: 'two-factor-enabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: the second factor was turned off. */ | { readonly type: 'two-factor-disabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */ | { readonly type: 'recovery-code-used'; readonly to: string; readonly userId: string; readonly remaining: number; readonly at: Date; readonly dedupeKey: string; }
+AuthPlugin [interface]<Id extends string = string, F extends object = object>
+    readonly flows?: (context: PluginContext<any, any>) => F
+    readonly hooks?: HookInput<any, any>
+    readonly id: Id
+    readonly requires?: ReadonlyArray<'captcha'>
+AuthResult [type]<T> = AuthSuccess<T> | AuthFailure
+AuthSuccess [interface]<T>
+    readonly ok: true
+    readonly value: T
+AuthUser [interface]
+    readonly email: string
+    readonly emailVerified: boolean
+    readonly id: string
+CaptchaDoor [type] = 'login' | 'register' | 'password-reset' | 'email-verification'
+Clock [interface]
+    now(): number
+CookieAttributes [interface]
+    readonly httpOnly: boolean
+    readonly maxAge?: number
+    readonly path: string
+    readonly sameSite: SameSite
+    readonly secure: boolean
+CookieSpec [interface]
+    readonly attributes: CookieAttributes
+    readonly name: string
+    readonly value: string
+CounterStore [interface]
+    decrement(key: string): Promise<void>
+    get(key: string): Promise<CounterWindow | null>
+    increment(key: string, windowMs: number): Promise<CounterWindow>
+    reset(key: string): Promise<void>
+    set(key: string, count: number, windowMs: number): Promise<void>
+CounterWindow [interface]
+    readonly count: number
+    readonly resetAt: number
+DistributiveOmit [type]<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+Door [type] = 'login' | 'register' | 'password-reset-request' /** Per user: reset mails one account can receive. */ | 'password-reset-mail' | 'password-reset' | 'password-reset-code' | 'email-verification' /** Per user: verification mails one account can request. */ | 'email-verification-request' /** Per user. */ | 'password-change' /** Per user: re-entering the password for a sensitive action. */ | 'reauthenticate' /** * Per address: reset-code guesses for one email, known or not, from all IPs. * Trade-off: anyone who knows an address can spend this budget and block * that address's code-mode reset for 15 minutes. Link-mode reset (the * default) does not use this door and is unaffected. */ | 'password-reset-code-address'
+Duration [type] = number | `${number}${'ms' | 's' | 'm' | 'h' | 'd'}`
+FactorGate [type] = { readonly allowed: true; } | { readonly allowed: false; readonly newLock?: { until: number; }; }
+Hit [interface]
+    readonly allowed: boolean
+    readonly count: number
+    readonly firstRefusal: boolean
+    readonly retryAfterSeconds: number
+HookInput [type]<U extends AuthUser, A> = { readonly [K in keyof AuthHooks<U, A>]?: AuthHooks<U, A>[K] | ReadonlyArray<AuthHooks<U, A>[K]>; }
+HookLists [type]<U extends AuthUser, A> = { readonly [K in keyof AuthHooks<U, A>]: ReadonlyArray<AuthHooks<U, A>[K]>; }
+HookResult [type] = void | undefined | Refusal
+IssuedSession [interface]<A>
+    readonly cookie: CookieSpec
+    readonly deviceCookie: CookieSpec
+    readonly session: StoredSession<A>
+    readonly token: string
+IssueOptions [interface]<A>
+    readonly authenticatedAt?: number
+    readonly epoch?: number
+    readonly inherit?: StoredSession<A>
+    readonly meta: RequestMeta
+    readonly persistentCookie?: boolean
+    readonly rememberMe?: boolean
+    readonly via: IssueVia
+IssueVia [type] = 'password' | 'register' | 'second-factor' | 'password-change' | 'email-verified' | 'revoke-others' | 'reauthenticate' | (string & {})
+LockoutOptions [interface]
+    readonly baseLock?: Duration
+    readonly deviceMaxAge?: Duration
+    readonly maxLock?: Duration
+    readonly perAccount?: RateLimitRule
+    readonly perAccountIp?: RateLimitRule
+    readonly perDevice?: RateLimitRule
+    readonly quietPeriod?: Duration
+Logger [interface]
+    error(message: string, context?: Record<string, unknown>): void
+    warn(message: string, context?: Record<string, unknown>): void
+LoginGate [type] = { readonly allowed: true; readonly viaDevice?: true; } | { readonly allowed: false; readonly reason: 'locked' | 'account_ip_budget' | 'device_budget'; readonly newLock?: { until: number; }; }
+MaybePromise [type]<T> = T | Promise<T>
+Metrics [interface]
+    count(name: string, labels?: Readonly<Record<string, string>>): void
+MintInput [interface]<A>
+    readonly attributes: A
+    readonly authenticatedAt: number
+    readonly epoch?: number
+    readonly meta: RequestMeta
+    readonly persistentCookie: boolean
+    readonly rememberMe: boolean
+    readonly userId: string
+MintResult [type]<A> = { readonly ok: true; readonly token: string; readonly session: StoredSession<A>; readonly evicted: readonly string[]; } | { readonly ok: false; readonly reason: 'epoch_fence'; }
+NormalizedEmail [type] = string & { readonly __normalizedEmail: true; }
+OneTimeTokens [class]
+    (new) (store: TokenStore, clock: Clock, random: RandomSource, secret: Uint8Array | undefined): OneTimeTokens
+    issueCode(purpose: string, userId: string, ttlMs: number, digits: number, data?: Record<string, string>): Promise<{ code: string; expiresAt: number; }>
+    issueLink(purpose: string, userId: string, ttlMs: number, data?: Record<string, string>): Promise<{ token: string; expiresAt: number; }>
+    peekLink(purpose: string, token: unknown): Promise<TokenRedemption>
+    private classify
+    private codeHash
+    private readonly clock
+    private readonly random
+    private readonly secret
+    private readonly store
+    redeemCode(purpose: string, userId: string | null, code: unknown, maxAttempts: number): Promise<TokenRedemption>
+    redeemLink(purpose: string, token: unknown): Promise<TokenRedemption>
+    revokeAll(userId: string, purposes: readonly string[]): Promise<void>
+PasswordHasher [interface]
+    hash(password: string): Promise<string>
+    needsRehash(hash: string): boolean
+    verify(hash: string, password: string): Promise<boolean>
+PasswordPolicy [interface]
+    readonly maxLength: number
+    readonly minLength: number
+PluginContext [interface]<U extends AuthUser, A>
+    checkCaptcha(door: CaptchaDoor, token: string | undefined, meta: RequestMeta): Promise<AuthFailure | null>
+    emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
+    hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>
+    issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>
+    keyedHash(purpose: string, message: string): string
+    mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void
+    notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason): Promise<void>
+    rateLimit(door: Door, key: string, meta: RequestMeta | undefined): Promise<AuthFailure | null>
+    readonly clock: Clock
+    readonly cookie: SessionCookieConfig
+    readonly hasher: PasswordHasher
+    readonly hooks: HookLists<U, A>
+    readonly logger: Logger
+    readonly metrics: Metrics
+    readonly policy: PasswordPolicy
+    readonly random: RandomSource
+    readonly sessions: SessionAccess<A>
+    readonly throttle: Throttle
+    readonly tokens: OneTimeTokens
+    readonly users: UserStore<U>
+    requireFreshAuth(session: StoredSession<A>): AuthResult<void>
+    revokeAllSessions(userId: string, reason: RevocationReason): Promise<void>
+    verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>
+RandomSource [type] = (bytes: Uint8Array) => void
+RateLimitRule [interface]
+    readonly limit: number
+    readonly window: Duration
+Refusal [interface]
+    readonly code: AuthErrorCode
+    readonly reason: string
+    readonly refuse: true
+RequestMeta [interface]
+    readonly ip: string
+    readonly origin?: string | undefined
+    readonly userAgent?: string | undefined
+RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'evicted' | (string & {})
+SameSite [type] = 'lax' | 'strict' | 'none'
+SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
+SessionCookieConfig [interface]
+    readonly name?: string
+    readonly sameSite?: SameSite | ((origin: string | undefined) => SameSite)
+    readonly secure?: boolean
+SessionManager [class]<A>
+    (new) <A>(store: SessionStore, options: SessionOptions<A>, clock: Clock, random: RandomSource, logger: Logger): SessionManager<A>
+    findActive(id: string): Promise<StoredSession<A> | null>
+    listActive(userId: string): Promise<StoredSession<A>[]>
+    mint(input: MintInput<A>): Promise<MintResult<A>>
+    private evictOverCap
+    private idleTimeoutMs
+    private parse
+    private readonly clock
+    private readonly logger
+    private readonly options
+    private readonly random
+    private readonly store
+    private refusalFor
+    readEpoch(userId: string): Promise<number>
+    readonly absoluteTtlMs: number
+    readonly maxPerUser: number | null
+    readonly rememberMeTtlMs: number
+    readonly touchIntervalMs: number
+    revoke(userId: string, ids: readonly string[]): Promise<string[]>
+    revokeAll(userId: string): Promise<string[]>
+    revokeToken(token: unknown): Promise<StoredSession | null>
+    validate(token: unknown, options?: { touch?: boolean; }): Promise<ValidateResult<A>>
+SessionOptions [interface]<A>
+    readonly absoluteTtl?: Duration
+    readonly attributes?: AttributeSchema<A>
+    readonly idleTimeout?: Duration | ((context: { rememberMe: boolean; attributes: A; }) => Duration)
+    readonly maxPerUser?: number | null
+    readonly rememberMeTtl?: Duration
+    readonly touchInterval?: Duration
+SessionRefusal [type] = 'malformed' | 'unknown' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked'
+SessionStore [interface]
+    bumpEpoch(userId: string): Promise<number>
+    create(session: StoredSession, ttlMs: number): Promise<void>
+    delete(userId: string, ids: readonly string[]): Promise<void>
+    get(id: string): Promise<StoredSession | null>
+    getEpoch(userId: string): Promise<number>
+    listByUser(userId: string): Promise<StoredSession[]>
+    readonly maxSessionTtlMs?: number
+    touch(session: StoredSession): Promise<boolean>
+StoredSession [interface]<A = unknown>
+    readonly attributes: A
+    readonly authenticatedAt: number
+    readonly createdAt: number
+    readonly epoch: number
+    readonly expiresAt: number
+    readonly id: string
+    readonly idleTimeoutMs: number
+    readonly ip: string
+    readonly lastActiveAt: number
+    readonly persistentCookie: boolean
+    readonly rememberMe: boolean
+    readonly userAgent: string
+    readonly userId: string
+StoredToken [interface]
+    readonly attempts: number
+    readonly data: Readonly<Record<string, string>>
+    readonly expiresAt: number
+    readonly hash: string
+    readonly purpose: string
+    readonly userId: string
+Throttle [class]
+    (new) (counters: CounterStore, clock: Clock, lockout?: LockoutOptions): Throttle
+    clearAccount(account: string): Promise<void>
+    deviceFailed(account: string): Promise<{ newLock?: { until: number; }; }>
+    factorSucceeded(account: string): Promise<void>
+    gateFactor(account: string, rule: RateLimitRule): Promise<FactorGate>
+    gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate>
+    hit(scope: string, rule: RateLimitRule): Promise<Hit>
+    loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void>
+    private lock
+    private readonly baseLockMs
+    private readonly clock
+    private readonly counters
+    private readonly maxLockMs
+    private readonly perAccount
+    private readonly perAccountIp
+    private readonly perDevice
+    private readonly quietPeriodMs
+    readonly deviceMaxAgeMs: number
+    recordFailure(account: string): Promise<{ newLock?: { until: number; }; }>
+TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; readonly data: Readonly<Record<string, string>>; } | { readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch'; readonly namedUserId: string; } | { readonly status: 'unknown'; }
+TokenStore [interface]
+    consume(purpose: string, hash: string): Promise<StoredToken | null>
+    deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
+    find(purpose: string, hash: string): Promise<StoredToken | null>
+    findByUser(purpose: string, userId: string): Promise<StoredToken | null>
+    incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    put(token: StoredToken): Promise<void>
+UserStore [interface]<U extends AuthUser = AuthUser>
+    create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<U | null>
+    findById(id: string): Promise<U | null>
+    findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
+    findCredentialById(id: string): Promise<WithPasswordHash<U> | null>
+    markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean>
+    setPasswordHash(id: string, passwordHash: string, options?: { readonly expected?: string | null; }): Promise<boolean>
+ValidateResult [type]<A> = { readonly ok: true; readonly session: StoredSession<A>; } | { readonly ok: false; readonly reason: SessionRefusal; }
+WithPasswordHash [type]<U> = U & { readonly passwordHash: string | null; }

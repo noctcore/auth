@@ -48,6 +48,16 @@
         "default": "./dist/two-factor.cjs"
       }
     },
+    "./membership": {
+      "import": {
+        "types": "./dist/membership.d.ts",
+        "default": "./dist/membership.js"
+      },
+      "require": {
+        "types": "./dist/membership.d.cts",
+        "default": "./dist/membership.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
