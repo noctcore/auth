@@ -17,7 +17,7 @@ Nothing is excluded from coverage. One branch is left uncovered on purpose: a fa
 
 ## The attack suite
 
-`packages/auth/tests/attacks/` holds one numbered test file per attack: `A001` brute force by parallel guesses, `A004` enumeration by timing, `A012` account pre-hijacking, and so on. The [index](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/ATTACKS.md) maps each one to its Learn page and the module that stops it, and the [threat model](/auth/security/threat-model/) maps the attacks to the defenses. An attack test is never deleted and a number is never reused, and every security fix adds one that fails before the fix.
+`packages/auth/tests/attacks/` holds one numbered test file per attack (an adapter that adds attack surface, such as `@noctcore/auth-nestjs`, keeps its own in its `tests/attacks/` folder, numbered in the same sequence): `A001` brute force by parallel guesses, `A004` enumeration by timing, `A012` account pre-hijacking, and so on. The [index](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/ATTACKS.md) maps each one to its Learn page and the module that stops it, and the [threat model](/auth/security/threat-model/) maps the attacks to the defenses. An attack test is never deleted and a number is never reused, and every security fix adds one that fails before the fix.
 
 ## Timing
 

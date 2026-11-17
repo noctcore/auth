@@ -7,7 +7,9 @@
     "allowImportingTsExtensions": true,
     // Readers copy these samples into apps that read request bodies and the
     // environment with dot access, so the samples keep that style.
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+    // The NestJS guide's decorators are Nest's legacy kind.
+    "experimentalDecorators": true
   },
   "include": ["**/*.ts"]
 }
