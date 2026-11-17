@@ -139,6 +139,11 @@ export default defineConfig({
             { label: 'CSRF', link: '/learn/csrf/' },
             { label: 'Second factors', link: '/learn/second-factors/' },
             { label: 'Invitations', link: '/learn/invitations/' },
+            { label: 'Entropy and tokens', link: '/learn/entropy-and-tokens/' },
+            { label: 'Why tokens are hashed', link: '/learn/why-tokens-are-hashed/' },
+            { label: 'Captcha', link: '/learn/captcha/' },
+            { label: 'Trust proxy and client IPs', link: '/learn/trust-proxy-and-client-ips/' },
+            { label: 'Cookies and desktop shells', link: '/learn/cookies-and-desktop-shells/' },
           ],
         },
         {
