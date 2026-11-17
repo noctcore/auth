@@ -9,7 +9,7 @@
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro sync && tsc --noEmit && PRISMA_HIDE_UPDATE_MESSAGE=1 prisma generate --schema snippets/prisma/schema.prisma && tsc -p snippets",
     "test": "bun test scripts --pass-with-no-tests",
-    "test:snippets": "node --test snippets/build/adapter/sqlite-counter-store.test.ts"
+    "test:snippets": "node --test snippets/build/adapter/sqlite-counter-store.test.ts snippets/build/trpc/router.test.ts"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.42.8",
@@ -30,9 +30,11 @@
     "@noctcore/auth-nestjs": "workspace:*",
     "@noctcore/auth-prisma": "workspace:*",
     "@noctcore/auth-redis": "workspace:*",
+    "@noctcore/auth-trpc": "workspace:*",
     "@node-rs/argon2": "2.2.2",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
+    "@trpc/server": "11.28.0",
     "@types/bun": "^1.4.4",
     "@types/node": "22.20.5",
     "@types/supertest": "7.2.1",
@@ -41,6 +43,7 @@
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "supertest": "7.3.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "4.6.7"
   }
 }

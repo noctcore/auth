@@ -11,6 +11,7 @@ const [authTypeDoc, authApiGroup] = createStarlightTypeDocPlugin();
 const [redisTypeDoc, redisApiGroup] = createStarlightTypeDocPlugin();
 const [prismaTypeDoc, prismaApiGroup] = createStarlightTypeDocPlugin();
 const [nestTypeDoc, nestApiGroup] = createStarlightTypeDocPlugin();
+const [trpcTypeDoc, trpcApiGroup] = createStarlightTypeDocPlugin();
 const typeDocTsconfig = './typedoc/tsconfig.json';
 const typeDoc = (name) => ({
   name,
@@ -107,6 +108,13 @@ export default defineConfig({
           sidebar: { label: '@noctcore/auth-nestjs', collapsed: true },
           typeDoc: typeDoc('@noctcore/auth-nestjs'),
         }),
+        trpcTypeDoc({
+          entryPoints: ['./typedoc/entries/auth-trpc.ts'],
+          tsconfig: typeDocTsconfig,
+          output: 'reference/api/auth-trpc',
+          sidebar: { label: '@noctcore/auth-trpc', collapsed: true },
+          typeDoc: typeDoc('@noctcore/auth-trpc'),
+        }),
       ],
       editLink: { baseUrl: 'https://github.com/noctcore/auth/edit/main/site/' },
       sidebar: [
@@ -134,6 +142,7 @@ export default defineConfig({
             { label: 'A Node server with Redis and Prisma', link: '/build/node-server/' },
             { label: 'Mail into your templates and queue', link: '/build/mail/' },
             { label: 'Use with NestJS', link: '/build/nestjs/' },
+            { label: 'Use with tRPC', link: '/build/trpc/' },
             { label: 'Writing a store adapter', link: '/build/store-adapter/' },
           ],
         },
@@ -146,6 +155,7 @@ export default defineConfig({
             redisApiGroup,
             prismaApiGroup,
             nestApiGroup,
+            trpcApiGroup,
           ],
         },
         {
