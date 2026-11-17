@@ -164,6 +164,34 @@
         "ioredis": ">=5.4.0 <7",
       },
     },
+    "packages/auth-trpc": {
+      "name": "@noctcore/auth-trpc",
+      "version": "0.2.0",
+      "dependencies": {
+        "@noctcore/auth": "0.2.0",
+      },
+      "devDependencies": {
+        "@nestjs/common": "12.5.0",
+        "@nestjs/core": "12.5.0",
+        "@nestjs/platform-express": "12.5.0",
+        "@nestjs/testing": "12.5.0",
+        "@trpc/client": "11.28.0",
+        "@trpc/server": "11.28.0",
+        "@types/node": "^22.20.5",
+        "@vitest/coverage-v8": "^5.1.0",
+        "nestjs-trpc": "2.14.1",
+        "reflect-metadata": "0.2.2",
+        "rxjs": "7.8.2",
+        "tsup": "^9.0.0",
+        "typescript": "^5.9.3",
+        "vitest": "^5.1.0",
+        "zod": "4.6.7",
+      },
+      "peerDependencies": {
+        "@trpc/server": ">=11.22.1 <12",
+        "zod": ">=4.3.0 <5",
+      },
+    },
     "site": {
       "name": "@noctcore/auth-docs",
       "version": "0.0.0",
@@ -636,6 +664,8 @@
 
     "@noctcore/auth-redis": ["@noctcore/auth-redis@workspace:packages/auth-redis"],
 
+    "@noctcore/auth-trpc": ["@noctcore/auth-trpc@workspace:packages/auth-trpc"],
+
     "@noctcore/eslint-plugin-architecture": ["@noctcore/eslint-plugin-architecture@1.1.0", "", { "dependencies": { "@noctcore/eslint-utils": "^0.2.0", "@typescript-eslint/utils": "^8.72.1" }, "peerDependencies": { "eslint": ">=9.0.0 <11", "typescript": ">=5.0.0 <7" } }, "sha512-WcYxOUK54iEPOzlFzt/3Ak+k2YR2CPCm7xlKN40cl8Nmg/kZClx6udRs/AdbSEtQLQmJAxjb2un7nieyA0ZFSg=="],
 
     "@noctcore/eslint-plugin-async-safety": ["@noctcore/eslint-plugin-async-safety@1.0.0", "", { "dependencies": { "@noctcore/eslint-utils": "^0.2.0", "@typescript-eslint/utils": "^8.72.1" }, "peerDependencies": { "eslint": ">=9.0.0 <11", "typescript": ">=5.0.0 <7" } }, "sha512-puCt1XfsKjf8xRI8XBe6bYZLpN9RkyvH9pyJWF1e6ZB/ihx5sLDJnVWCFpcWetchvkakt/I/tIvMMA1tg1GQUA=="],
@@ -887,6 +917,10 @@
     "@tokenizer/inflate": ["@tokenizer/inflate@0.6.0", "", { "dependencies": { "debug": "^4.4.3", "strtok3": "^10.6.2", "token-types": "^6.1.2" } }, "sha512-+0RDxhBkyT9xMnGdJAwmats9yxRLR8ypJrQgrnLqOu4Gv/aHlnxYgdGVy2QTwvBl6IF/w2Hr+ZNirH+iMUbVZA=="],
 
     "@tokenizer/token": ["@tokenizer/token@0.3.0", "", {}, "sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A=="],
+
+    "@trpc/client": ["@trpc/client@11.28.0", "", { "peerDependencies": { "@trpc/server": "11.28.0", "typescript": ">=5.7.2" } }, "sha512-uaj/19rUZKcUkQHAw8mBpjHeR5N/SJyCEy1HPPOC0fpgfV7Zz3cXbz/L9Tqhy+0YMlHwb0PuFGEo2krNjV+Sng=="],
+
+    "@trpc/server": ["@trpc/server@11.28.0", "", { "peerDependencies": { "@types/aws-lambda": "*", "@types/express": "*", "@types/ws": "*", "fastify": "*", "next": "*", "typescript": ">=5.7.2" }, "optionalPeers": ["@types/aws-lambda", "@types/express", "@types/ws", "fastify", "next"] }, "sha512-jj/JplNMKCyNZChmOxYRVnN4vNsS1zvLEnFfPkuvoYmrouKMuFNi4zaIMn1lDx6yyuuru/e5+rjcrBrIGc3p4g=="],
 
     "@tybys/wasm-util": ["@tybys/wasm-util@0.10.4", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A=="],
 
@@ -1744,6 +1778,8 @@
 
     "neotraverse": ["neotraverse@1.0.2", "", {}, "sha512-DLMUFnyCrRAncRJhDC2yNbSTcpEukp+nczID/na3XdIHQFokPveK69xel642cQHgUGszctsOSeCePqPpY25W6Q=="],
 
+    "nestjs-trpc": ["nestjs-trpc@2.14.1", "", { "dependencies": { "lodash": "^4.17.21", "tslib": "^2.5.0" }, "peerDependencies": { "@nestjs/common": "^9.3.8 || ^10.0.0 || ^11.0.0 || ^12.0.0", "@nestjs/core": "^9.3.8 || ^10.0.0 || ^11.0.0 || ^12.0.0", "@trpc/server": "^11.0.0", "reflect-metadata": "^0.1.13 || ^0.2.0", "rxjs": "7.8.1", "zod": "^3.14.0 || ^4.0.0" }, "bin": { "nestjs-trpc": "bin/nestjs-trpc.js" } }, "sha512-LGN46WWzVc3DNLE12mD47lt08FdzPj0NX0KNas+uTbWAzOgi9OL7FyTjK4sOHgkeMMxeumeRDBTVvtarZIn/sA=="],
+
     "nlcst-to-string": ["nlcst-to-string@4.0.0", "", { "dependencies": { "@types/nlcst": "^2.0.0" } }, "sha512-YKLBCcUYKAg0FNlOBT6aI91qFmSiFKiluk655WzPF+DDMA02qIyy8uiRqI8QXtcFpEvll12LpL5MXqEmAZ+dcA=="],
 
     "node-emoji": ["node-emoji@2.2.0", "", { "dependencies": { "@sindresorhus/is": "^4.6.0", "char-regex": "^1.0.2", "emojilib": "^2.4.0", "skin-tone": "^2.0.0" } }, "sha512-Z3lTE9pLaJF47NyMhd4ww1yFTAP8YhYI8SleJiHzM46Fgpm5cnNzSl9XfzFNqbaz+VlJrIj3fXQ4DeN1Rjm6cw=="],
@@ -2323,6 +2359,8 @@
     "marked-terminal/chalk": ["chalk@5.6.2", "", {}, "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="],
 
     "multer/type-is": ["type-is@1.6.18", "", { "dependencies": { "media-typer": "0.3.0", "mime-types": "~2.1.24" } }, "sha512-TkRKr9sUTxEH8MdfuCSP7VizJyzRNMjj2J2do2Jr3Kym598JVdEksuzPQCnlFPW4ky9Q+iA+ma9BGm06XQBy8g=="],
+
+    "nestjs-trpc/tslib": ["tslib@2.9.1", "", {}, "sha512-a4Ux9VKuIMHsOS7ENbEq6hK2ZGYIT27Rtl0E4eD9KqwxhKiQeMZE/9xb3IdYwWaSOyIBQLExhQgXDTYoiCxnWA=="],
 
     "npm-run-path/path-key": ["path-key@4.0.0", "", {}, "sha512-haREypq7xkM7ErfgIyA0z+Bj4AGKlMSdlQE2jvJo6huWD1EdkKYV+G/T4nq0YEF2vgTT8kqMFKo1uHn950r4SQ=="],
 

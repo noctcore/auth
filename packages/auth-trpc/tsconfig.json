@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "noEmit": true,
+    // The nestjs-trpc test boots a Nest app, whose decorators are the legacy
+    // (experimental) kind. The package source uses no decorators.
+    "experimentalDecorators": true
+  },
+  "include": ["src", "tests", "*.ts"]
+}

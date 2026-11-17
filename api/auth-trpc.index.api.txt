@@ -1,0 +1,178 @@
+# @noctcore/auth-trpc (root)
+
+## package.json exports
+{
+  ".": {
+    "import": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "require": {
+      "types": "./dist/index.d.cts",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "./package.json": "./package.json"
+}
+
+## runtime exports
+AUTH_ERROR_TRPC_CODES
+AuthGuardMiddleware
+AuthTRPCError
+AuthedMiddleware
+CsrfMiddleware
+DEFAULT_RATE_LIMIT
+FreshAuthMiddleware
+MAX_TRUSTED_HOPS
+RateLimitMiddleware
+RoleMiddleware
+acceptedOutput
+assertNoSecretQueries
+assertProceduresGuarded
+authErrorFormatter
+changePasswordInput
+createAuthContext
+createAuthMiddlewares
+csrfTokenOutput
+describeProcedures
+findSecretQueries
+loginInput
+loginOutput
+reauthenticateInput
+registerInput
+requestPasswordResetInput
+resetPasswordInput
+resetTicketOutput
+revokeSessionInput
+revokedOutput
+sessionListOutput
+sessionSummaryOutput
+toTRPCError
+userOutput
+verificationRequestOutput
+verifyEmailCodeInput
+verifyEmailLinkInput
+verifyPasswordResetCodeInput
+
+## declarations
+acceptedOutput [const]: z.ZodObject<{ status: z.ZodLiteral<"accepted">; csrfToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
+assertNoSecretQueries [function]: (router: AnyRouter, options?: { allow?: readonly string[]; }) => void
+assertProceduresGuarded [function]: (router: AnyRouter) => void
+AUTH_ERROR_TRPC_CODES [const]: Readonly<Record<AuthErrorCode, TRPC_ERROR_CODE_KEY>>
+AuthContext [interface]<U extends AuthUser = AuthUser, A = unknown>
+    readonly auth: AuthState<U, A>
+AuthContextFactory [interface]<U extends AuthUser, A = unknown>
+    fetch(input: FetchContextInput, peer?: { remoteAddress?: string; }): Promise<{ auth: AuthState<U, A>; }>
+    node(input: NodeContextInput): Promise<{ auth: AuthState<U, A>; }>
+AuthContextOf [type]<TAuth> = TAuth extends TrpcAuth<infer U, infer A> ? AuthContext<U, A> : never
+AuthContextOptions [interface]<U extends AuthUser = AuthUser, A = unknown>
+    readonly auth: TrpcAuth<U, A>
+    readonly csrf: CsrfOptions
+    readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>
+    readonly trustedHops: number
+AuthedMiddleware [const]: NestTrpcMiddlewareClass
+authErrorFormatter [function]: <TShape extends ShapeLike>(opts: { shape: TShape; error: TRPCError; }) => AuthErrorShape<TShape>
+AuthErrorShape [type]<TShape extends ShapeLike> = Omit<TShape, 'data' | 'message'> & { readonly message: string; readonly data: Omit<TShape['data'], 'stack'> & { readonly stack?: string | undefined; /** Set on an auth refusal: the public code, and when to retry on `rate_limited`. */ readonly auth: PublicAuthError | null; /** Set when the input failed validation: where and what kind, never the value. */ readonly input: readonly PublicInputIssue[] | null; }; }
+AuthGuardMiddleware [const]: NestTrpcMiddlewareClass
+AuthMiddlewares [interface]<TContext, TMeta, TErrorShape>
+    freshAuth(maxAge?: Duration): TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
+    rateLimited(name: string, rule?: RateLimitRule): TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
+    readonly authed: TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
+    readonly csrf: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
+    readonly protectedProcedure: AuthProcedureBuilder<TContext, TMeta, PrincipalOf<TContext>, TErrorShape>
+    readonly publicProcedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>
+    role(...roles: readonly string[]): TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
+AuthProcedureBuilder [type]<TContext, TMeta, TOverrides, TErrorShape> = TRPCProcedureBuilder<TContext, TMeta, TOverrides, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, false, TErrorShape>
+AuthRoot [interface]<TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>
+    readonly middleware: (fn: never) => unknown
+    readonly procedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>
+AuthState [interface]<U extends AuthUser = AuthUser, A = unknown>
+    clearSession(cookie: CookieSpec): { csrfToken: string; }
+    readonly deviceToken: string | null
+    readonly meta: RequestMeta
+    readonly session: StoredSession<A> | null
+    setSession(issued: Pick<IssuedSession<unknown>, 'cookie' | 'deviceCookie' | 'session'>): { csrfToken: string; }
+    signOut(): Promise<{ csrfToken: string; }>
+    user(): Promise<U | null>
+AuthTRPCError [class]
+    (new) (auth: PublicAuthError): AuthTRPCError
+    readonly auth: PublicAuthError
+changePasswordInput [const]: z.ZodObject<{ currentPassword: z.ZodString; newPassword: z.ZodString; secondFactor: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
+createAuthContext [function]: <U extends AuthUser, A = unknown>(options: AuthContextOptions<U, A>) => AuthContextFactory<U, A>
+createAuthMiddlewares [function]: <TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>(t: AuthRoot<TContext, TMeta, TErrorShape>) => AuthMiddlewares<TContext, TMeta, TErrorShape>
+CsrfMiddleware [const]: NestTrpcMiddlewareClass
+CsrfOptions [interface]
+    readonly allowSameSite?: boolean
+    readonly allowedOrigins: readonly string[]
+    readonly headerName?: string
+    readonly secrets: readonly (string | Uint8Array)[]
+csrfTokenOutput [const]: z.ZodObject<{ csrfToken: z.ZodString; }, z.core.$strip>
+DEFAULT_RATE_LIMIT [const]: RateLimitRule
+describeProcedures [function]: (router: AnyRouter) => ProcedureAccess[]
+FetchContextInput [interface]
+    readonly req: { readonly method: string; readonly headers: { get(name: string): string | null; }; }
+    readonly resHeaders: { append(name: string, value: string): void; }
+findSecretQueries [function]: (router: AnyRouter, options?: { allow?: readonly string[]; }) => SecretQueryFinding[]
+FreshAuthMiddleware [const]: (maxAge?: Duration) => NestTrpcMiddlewareClass
+loginInput [const]: z.ZodObject<{ email: z.ZodString; password: z.ZodString; rememberMe: z.ZodExactOptional<z.ZodBoolean>; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
+loginOutput [const]: z.ZodDiscriminatedUnion<[z.ZodObject<{ kind: z.ZodLiteral<"session">; csrfToken: z.ZodString; }, z.core.$strip>, z.ZodObject<{ kind: z.ZodLiteral<"challenge">; challenge: z.ZodString; methods: z.ZodReadonly<z.ZodArray<z.ZodString>>; }, z.core.$strip>], "kind">
+MAX_TRUSTED_HOPS [const]: 16
+NestTrpcMiddleware [interface]
+    use<TResult>(opts: MiddlewareCall<TResult> & { readonly meta?: unknown; }): Promise<TResult>
+NestTrpcMiddlewareClass [type] = new () => NestTrpcMiddleware
+NodeContextInput [interface]
+    readonly req: { readonly method?: string | undefined; readonly headers: IncomingHttpHeaders; readonly socket?: { readonly remoteAddress?: string | undefined; } | undefined; }
+    readonly res: { getHeader(name: string): number | string | string[] | undefined; setHeader(name: string, value: number | string | readonly string[]): unknown; }
+Principal [interface]<U extends AuthUser = AuthUser, A = unknown>
+    readonly session: StoredSession<A>
+    readonly user: U
+ProcedureAccess [interface]
+    readonly access: 'session' | 'public' | 'open'
+    readonly conflicting: boolean
+    readonly path: string
+    readonly type: string
+PublicAuthError [interface]
+    readonly code: AuthErrorCode | 'internal'
+    readonly retryAfterSeconds?: number
+PublicInputIssue [interface]
+    readonly code: string
+    readonly path: readonly (string | number)[]
+RateLimitMiddleware [const]: (name: string, rule?: RateLimitRule) => NestTrpcMiddlewareClass
+reauthenticateInput [const]: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
+registerInput [const]: z.ZodObject<{ email: z.ZodString; password: z.ZodString; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
+requestPasswordResetInput [const]: z.ZodObject<{ email: z.ZodString; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
+resetPasswordInput [const]: z.ZodObject<{ token: z.ZodString; password: z.ZodString; secondFactor: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
+resetTicketOutput [const]: z.ZodObject<{ ticket: z.ZodString; expiresAt: z.ZodNumber; }, z.core.$strip>
+revokedOutput [const]: z.ZodObject<{ revoked: z.ZodBoolean; }, z.core.$strip>
+revokeSessionInput [const]: z.ZodObject<{ id: z.ZodString; }, z.core.$strip>
+RoleMiddleware [const]: (...roles: readonly string[]) => NestTrpcMiddlewareClass
+SecretQueryFinding [interface]
+    readonly keys: readonly string[]
+    readonly path: string
+    readonly problem: 'secret_in_query' | 'unreadable_input' | 'lazy_router'
+sessionListOutput [const]: z.ZodArray<z.ZodObject<{ id: z.ZodString; current: z.ZodBoolean; createdAt: z.ZodNumber; lastActiveAt: z.ZodNumber; expiresAt: z.ZodNumber; ip: z.ZodString; userAgent: z.ZodString; }, z.core.$strip>>
+sessionSummaryOutput [const]: z.ZodObject<{ id: z.ZodString; current: z.ZodBoolean; createdAt: z.ZodNumber; lastActiveAt: z.ZodNumber; expiresAt: z.ZodNumber; ip: z.ZodString; userAgent: z.ZodString; }, z.core.$strip>
+toTRPCError [function]: (failure: Pick<AuthFailure, "code" | "retryAfterSeconds">) => AuthTRPCError
+TrpcAuth [interface]<U extends AuthUser = AuthUser, A = unknown>
+    logout(input: { token: string | null | undefined; meta: RequestMeta; }): Promise<{ cookie: CookieSpec; }>
+    readDeviceToken(cookieHeader: string | null | undefined): string | null
+    readSessionToken(cookieHeader: string | null | undefined): string | null
+    readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly throttle: { hit(scope: string, rule: RateLimitRule): Promise<Hit>; }; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>; }
+    readonly cookieName: string
+    requireFreshAuth(session: StoredSession<A>): AuthResult<void>
+    validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<StoredSession<A>>>
+userOutput [const]: z.ZodObject<{ id: z.ZodString; email: z.ZodString; emailVerified: z.ZodBoolean; }, z.core.$strip>
+verificationRequestOutput [const]: z.ZodObject<{ sent: z.ZodBoolean; }, z.core.$strip>
+verifyEmailCodeInput [const]: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+verifyEmailLinkInput [const]: z.ZodObject<{ token: z.ZodString; }, z.core.$strip>
+verifyPasswordResetCodeInput [const]: z.ZodObject<{ email: z.ZodString; code: z.ZodString; }, z.core.$strip>
+
+## types reached through the exports (not exported by name)
+MiddlewareCall [interface]<TResult>
+    next(opts?: { ctx: object; }): Promise<TResult>
+    readonly ctx: unknown
+    readonly type: string
+PrincipalOf [type]<TContext> = TContext extends AuthContext<infer U, infer A> ? Principal<U, A> : Principal
+ShapeLike [interface]
+    readonly data: { readonly stack?: string | undefined; }
+    readonly message: string
