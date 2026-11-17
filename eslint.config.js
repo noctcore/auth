@@ -24,6 +24,8 @@ import security from '@noctcore/eslint-plugin-security';
 import stylistic from '@stylistic/eslint-plugin';
 import tseslint from 'typescript-eslint';
 
+import noSecretComparison from './scripts/eslint/no-secret-comparison.js';
+
 const TS = ['**/*.ts'];
 const TESTS = ['**/tests/**/*.ts'];
 const SCRIPTS = ['scripts/**/*.ts', '**/*.config.ts', 'examples/**/*.ts'];
@@ -70,25 +72,6 @@ const CONSTANT_TIME_IMPORT = {
   name: '@oslojs/crypto/subtle',
   message: 'Compare secrets with hexDigestsEqual or secretsEqual from crypto/hash.ts.',
 };
-
-const SECRET_NAME = '/(?:hash|token|secret|digest|mac)$/i';
-const SECRET_MESSAGE =
-  'Do not compare a secret with ===, !== or Buffer.compare: use hexDigestsEqual or secretsEqual from crypto/hash.ts.';
-
-const SECRET_COMPARISONS = [
-  ...['left', 'right'].flatMap((side) => {
-    const other = side === 'left' ? 'right' : 'left';
-    const equality = `BinaryExpression[operator=/^[!=]==?$/]:not([${other}.type='Literal']):not([${other}.name='undefined']):not([${other}.type='UnaryExpression'])`;
-
-    return [
-      `${equality}[${side}.type='Identifier'][${side}.name=${SECRET_NAME}]`,
-      `${equality}[${side}.type='MemberExpression'][${side}.property.name=${SECRET_NAME}]`,
-    ];
-  }),
-  "CallExpression[callee.object.name='Buffer'][callee.property.name='compare']",
-  "CallExpression[callee.property.name='timingSafeEqual']",
-  "CallExpression[callee.name='timingSafeEqual']",
-].map((selector) => ({ selector, message: SECRET_MESSAGE }));
 
 const LAYERS = {
   shared: [],
@@ -295,16 +278,15 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': ['error', { paths: BARREL_IMPORTS }] },
   },
   {
-    // A secret compared with `===` or `Buffer.compare` returns at the first
-    // byte that differs, so the time it takes leaks how much of a guess was
-    // right. Library code compares hashes, tokens, digests, MACs and secrets
-    // only through hexDigestsEqual or secretsEqual in crypto/hash.ts. The
-    // check is by name: a value named like a secret on either side of an
-    // equality, unless the other side is a literal or undefined (a shape or
-    // presence check, not a comparison of two secrets). The in-memory test
-    // stores are exempt: they stand in for a database lookup by key.
+    // A secret compared with `===`, `equals`, `Object.is` or `Buffer.compare`
+    // returns at the first byte that differs, so the time it takes leaks how
+    // much of a guess was right. scripts/eslint/no-secret-comparison.js says
+    // what it catches and what it cannot. crypto/hash.ts is where the
+    // constant-time helpers live; the in-memory test stores stand in for a
+    // database lookup by key.
     files: ['packages/*/src/**/*.ts'],
     ignores: ['packages/auth/src/crypto/hash.ts', 'packages/auth/src/testing/**'],
-    rules: { 'no-restricted-syntax': ['error', ...SECRET_COMPARISONS] },
+    plugins: { local: { rules: { 'no-secret-comparison': noSecretComparison } } },
+    rules: { 'local/no-secret-comparison': 'error' },
   },
 );
