@@ -10,10 +10,36 @@
 //   password lockout's capped backoff), plugins/two-factor/proofs.ts (a locked factor
 //   answers exactly like a wrong code, even with the right code),
 //   plugins/two-factor/challenge.ts (5 codes per challenge, then a new password login).
+//   A lock never resets the attempt counter (throttle.ts `lock`), so a request that read
+//   "no lock" just before the lock was set still counts above the limit. The same burst
+//   runs on a real Redis over 16 connections in auth-redis/tests/burst.int.test.ts.
 // Learn: Second factors (/auth/learn/second-factors/), Brute force and lockout (/auth/learn/brute-force-and-lockout/)
 import { describe, expect, it } from 'vitest';
 
+import type { CounterStore } from '../../src';
+import { manualClock, MemoryCounterStore } from '../../src/testing';
+import { Throttle } from '../../src/throttle/throttle';
 import { meta, twoFactorApp } from '../two-factor/setup';
+
+/**
+ * Counters whose lock reads can be made stale: they answer "no lock" as a
+ * request would that read the lock a moment before another request set it,
+ * the gap a parallel burst over many connections opens on a real store.
+ */
+function staleLockReads(): { counters: CounterStore; stale: (on: boolean) => void } {
+  const inner = new MemoryCounterStore(manualClock(0));
+  let stale = false;
+
+  const counters: CounterStore = {
+    increment: (key, windowMs) => inner.increment(key, windowMs),
+    get: (key) => (stale && key.startsWith('lock:') ? Promise.resolve(null) : inner.get(key)),
+    set: (key, count, windowMs) => inner.set(key, count, windowMs),
+    decrement: (key) => inner.decrement(key),
+    reset: (key) => inner.reset(key),
+  };
+
+  return { counters, stale: (on) => (stale = on) };
+}
 
 const wrong = (code: string) => (code === '000000' ? '111111' : '000000');
 
@@ -77,6 +103,27 @@ describe('A038: brute forcing the second factor from many IPs', () => {
 
     expect(results.filter((r) => !r.ok && r.reason === 'wrong_code')).toHaveLength(5);
     expect(results.filter((r) => !r.ok && r.reason === 'factor_locked')).toHaveLength(45);
+  });
+
+  it('refuses attempts that read the lock just before it was set', async () => {
+    const { counters, stale } = staleLockReads();
+    const throttle = new Throttle(counters, manualClock(0));
+    const rule = { limit: 5, window: '15m' };
+    const gate = async () => (await throttle.gateFactor('victim', rule)).allowed;
+    const first = [];
+
+    for (let i = 0; i < 6; i++) first.push(await gate());
+
+    expect(first).toEqual([true, true, true, true, true, false]);
+
+    // Twenty more that each saw "no lock": none of them gets a guess.
+    stale(true);
+
+    const late = [];
+
+    for (let i = 0; i < 20; i++) late.push(await gate());
+
+    expect(late.filter(Boolean)).toEqual([]);
   });
 
   it('spends a challenge after 5 codes, so each new batch costs a password login', async () => {
