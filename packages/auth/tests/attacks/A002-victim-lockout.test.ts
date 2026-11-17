@@ -4,7 +4,8 @@
 // out, from one IP or spread over many.
 //
 // Stopped by: throttle/throttle.ts: a small per-(account, IP) budget, a capped lock with no
-//   permanent tier, and the trusted-device bypass for a correct password;
+//   permanent tier that rises one step per lock (not per request that crosses the limit), and
+//   the trusted-device bypass for a correct password;
 //   flows/password-reset.ts lifts the lock once the mailbox is proved.
 // Learn: Brute force and lockout (/auth/learn/brute-force-and-lockout/)
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -163,6 +164,29 @@ describe('A002: locking the victim out', () => {
 
     clock.advance(60 * MIN);
     expect((await throttle.gateLogin(victim, '198.51.100.1')).allowed).toBe(true);
+  });
+
+  it('raises the lock by one tier per lock, however many requests of a burst cross the limit', async () => {
+    // Every request reads "no lock", as a burst that all got past the lock check would.
+    const get = counters.get.bind(counters);
+
+    counters.get = (key) => (key.startsWith('lock:') ? Promise.resolve(null) : get(key));
+
+    const burst = () =>
+      Promise.all(Array.from({ length: 500 }, (_, i) => throttle.gateLogin(victim, `10.1.${i}`)));
+
+    const first = await burst();
+
+    expect(first.filter((g) => g.allowed)).toHaveLength(10);
+    expect(first.filter((g) => !g.allowed && g.newLock)).toHaveLength(1);
+
+    // The next lock is one step up (15 minutes), not the cap the burst would have pushed it to.
+    clock.advance(5 * MIN);
+    const second = await burst();
+
+    expect(second.filter((g) => !g.allowed && g.newLock)).toEqual([
+      { allowed: false, reason: 'locked', newLock: { until: clock.now() + 15 * MIN } },
+    ]);
   });
 
   it('lifts the lockout, since the mailbox was proved', async () => {
