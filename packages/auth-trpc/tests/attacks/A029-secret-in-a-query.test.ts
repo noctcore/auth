@@ -98,7 +98,6 @@ describe('A029 secret in a query', () => {
         .default({ password: '' })
         .readonly()
         .catch({ password: '' }),
-      preprocessed: z.preprocess((value) => value, secret),
       promise: z.promise(secret),
     };
 
@@ -127,6 +126,8 @@ describe('A029 secret in a query', () => {
       any: z.object({ data: z.any() }),
       loose: z.looseObject({ id: z.string() }),
       preprocessedUnknown: z.preprocess((value) => value, z.unknown()),
+      // Its function reads the raw input first: whatever the schema after it says.
+      preprocessed: z.preprocess((value) => value, z.object({ id: z.string() })),
     };
 
     const router = t.router(
