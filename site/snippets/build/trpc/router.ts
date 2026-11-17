@@ -47,8 +47,8 @@ export function createAppRouter(auth: AppAuth) {
         return { status: 'accepted' as const };
       }),
 
-    // writesCookies on every procedure that sets a cookie: on a streamed
-    // batch it refuses before the flow runs.
+    // writesCookies hands the procedure ctx.auth.setSession and signOut;
+    // without it they are not there. On a streamed batch it refuses first.
     login: publicProcedure
       .use(writesCookies)
       .input(loginInput)
