@@ -45,6 +45,7 @@ export const CSRF_SECRET = 'csrf-secret-that-is-at-least-32-bytes-long';
 export function makeAuth() {
   const clock = manualClock();
   const stores = memoryStores(clock);
+  const mailer = recordingMailer();
 
   const auth = createAuth({
     stores,
@@ -53,10 +54,10 @@ export function makeAuth() {
     session: { cookie: { secure: false } },
     secret: 'auth-secret-that-is-at-least-32-bytes-long',
     urls: { resetPassword: (token) => `${ORIGIN}/reset#${token}` },
-    mailer: recordingMailer(),
+    mailer,
   });
 
-  return { auth, clock, stores };
+  return { auth, clock, stores, mailer };
 }
 
 export type TestAuth = ReturnType<typeof makeAuth>['auth'];

@@ -26,6 +26,7 @@ export class AppModule {}
 - **Decorators.** `@CurrentUser()`, `@CurrentSession()` and `@AuthMeta()` (the `RequestMeta` for the flows); `@RequireRole(...)`, read fresh on every request; `@RequireFreshAuth(maxAge?)`, which can only shorten the core's `freshAuthAge`.
 - **Cookies.** `SessionCookies.set(res, issued)` writes a new session with a CSRF token bound to it (sign-in and every rotation); `SessionCookies.signOut(req, res)` ends one.
 - **Trust proxy.** `trustedHopsFromEnv` reads `TRUST_PROXY` as a hop count counted from the right, refuses `true` and counts above 16, and refuses an unset value in production. `configureTrustProxy(app, process.env)` sets Express's `trust proxy` to the same count.
+- **Flush on shutdown.** The module awaits `auth.flush()` in `beforeApplicationShutdown`, before any `onApplicationShutdown` hook closes your connections, so background mail sends finish first. Call `app.enableShutdownHooks()` so SIGTERM runs it.
 - **A compile test.** `describeRoutes(app)` lists every route with its rule, so a test can boot the whole app and pin the routes open without a session.
 
 - **Contradictions refused at boot.** A route that is `@Public()` and also requires a role or fresh auth, or uses `@RequireRole()` without the `roles` option, stops the app at startup with the route's name.
