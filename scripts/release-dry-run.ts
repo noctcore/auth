@@ -1,17 +1,13 @@
 /**
  * The release workflow's publish step, in dry-run form.
  *
- * Real publishing waits until the owner has registered an npm trusted
- * publisher for every package name (npm only lets you configure one on a
- * package that exists). Until then the workflow runs this instead of
- * `changeset publish`: it builds, then asks npm what each public package would
+ * For checking a release locally. The release workflow publishes for real with
+ * `bun run release`; this builds, then asks npm what each public package would
  * publish, without contacting the registry for a write.
  *
- * It prints no "New tag:" lines, so changesets/action creates no tags and no
- * GitHub releases on a dry run.
+ * It prints no "New tag:" lines, so it creates no tags and no GitHub releases.
  *
- * To switch to real publishing, set the workflow's `publish-script` to
- * `bunx changeset publish` (see the comment in .github/workflows/release.yml).
+ *   bun run release:dry-run
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
