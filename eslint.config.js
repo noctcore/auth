@@ -167,6 +167,13 @@ export default tseslint.config(
     rules: { 'noctcore-contracts/no-direct-process-env': 'off' },
   },
   {
+    // The property tests' shared parameters read FC_SEED and FC_NUM_RUNS, the
+    // knobs the nightly fuzz job turns. A test helper has no config module to
+    // go through, and the rule already lets the `*.test.ts` files read it.
+    files: ['packages/auth/tests/property/runs.ts'],
+    rules: { 'noctcore-contracts/no-direct-process-env': 'off' },
+  },
+  {
     // Command-line scripts print for a person reading a terminal, not for a
     // log pipeline, so a sentence with the value in it is the right output.
     files: ['scripts/**/*.ts'],
