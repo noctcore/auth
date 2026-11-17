@@ -1,4 +1,4 @@
-// A075: keeping the account after an email change by changing the password.
+// A056: keeping the account after an email change by changing the password.
 //
 // The attacker moves the account to their address, then changes the password
 // (or resets it from their mailbox) hoping that voids the revert link the old
@@ -18,7 +18,7 @@ import { changed } from '../flows/email-change-support';
 const OWNER = 'ada@example.com';
 const INTRUDER = 'mallory@example.com';
 
-describe('A075: keeping the account after an email change by changing the password', () => {
+describe('A056: keeping the account after an email change by changing the password', () => {
   it('the revert still works after a password change and leaves the intruder no password', async () => {
     const t = queued();
     const { session } = await t.signedInUser(OWNER);

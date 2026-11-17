@@ -113,15 +113,15 @@ The library defends against: guessing passwords and codes; locking the owner out
 | Getting a session past the second factor through another flow | The session hook refuses every issue but the plugin's own and re-issues | A048 |
 | Acting on a stale or borrowed second-factor proof | Expiry on the server clock, bound to one session, fresh auth (read from the live session) required too | A049 |
 | Learning two-factor state from the answers | The factor is checked only after the password; one public code for every refusal | A050 |
-| Changing the email without a fresh credential proof | The request needs a password proof inside `freshAuthAge` | A070 |
-| Changing the email of a two-factor account without the factor | A step-up in the session or a code with the request | A071 |
-| Brute forcing the email change code | Attempt cap counted atomically before the compare; per-IP limit | A072 |
-| Reusing an email change code or link | Atomic single-use consume; only hashes stored | A073 |
-| Confirming an email change with a proof for another address or account | Codes bound to user and purpose; the token carries both addresses; compare-and-set on the old one | A074 |
-| Keeping the account after an email change by changing the password | The revert link survives password changes and resets, removes the password and voids reset tokens | A075 |
-| Replaying an email revert link | Purpose-bound, atomic single-use consume | A076 |
-| Account enumeration through the email change answer | Same answer and store calls for a taken and a free address; the code only to a free one | A077 |
-| Racing two email changes | One pending change per user; unique compare-and-set in the store | A078 |
-| Taking the account back after a revert | A live revert link is never replaced; the lost address is blocked; tokens and trusted devices end | A079 |
+| Changing the email without a fresh credential proof | The request needs a password proof inside `freshAuthAge` | A051 |
+| Changing the email of a two-factor account without the factor | A step-up in the session or a code with the request | A052 |
+| Brute forcing the email change code | Attempt cap counted atomically before the compare; per-IP limit | A053 |
+| Reusing an email change code or link | Atomic single-use consume; only hashes stored | A054 |
+| Confirming an email change with a proof for another address or account | Codes bound to user and purpose; the token carries both addresses; compare-and-set on the old one | A055 |
+| Keeping the account after an email change by changing the password | The revert link survives password changes and resets, removes the password and voids reset tokens | A056 |
+| Replaying an email revert link | Purpose-bound, atomic single-use consume | A057 |
+| Account enumeration through the email change answer | Same answer and store calls for a taken and a free address; the code only to a free one | A058 |
+| Racing two email changes | One pending change per user; unique compare-and-set in the store | A059 |
+| Taking the account back after a revert | A live revert link is never replaced; the lost address is blocked; tokens and trusted devices end | A060 |
 
 A report that breaks one of these defenses, or shows an attack the table misses, is a vulnerability: see [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md).

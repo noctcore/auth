@@ -1,4 +1,4 @@
-// A076: replaying an email revert link.
+// A057: replaying an email revert link.
 //
 // The revert link restores the old address and locks the account down. Replayed
 // later (from a forwarded mail, or by whoever reads the old mailbox), it could
@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { meta, setup } from './support';
 import { changed } from '../flows/email-change-support';
 
-describe('A076: replaying an email revert link', () => {
+describe('A057: replaying an email revert link', () => {
   it('works once, even under 20 concurrent clicks', async () => {
     const t = setup();
     const { session } = await t.signedInUser();

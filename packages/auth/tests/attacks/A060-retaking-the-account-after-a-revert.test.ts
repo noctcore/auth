@@ -1,4 +1,4 @@
-// A079: taking the account back after the owner reverted the change.
+// A060: taking the account back after the owner reverted the change.
 //
 // The intruder plans for the revert: a second change to void the owner's
 // revert link, a reset link or a trusted device kept from before, or simply
@@ -19,7 +19,7 @@ import { twoFactorApp } from '../two-factor/setup';
 
 const OWNER = 'ada@example.com';
 
-describe('A079: taking the account back after the owner reverted the change', () => {
+describe('A060: taking the account back after the owner reverted the change', () => {
   it("a second change by the intruder does not void the owner's revert link, and gets none of its own", async () => {
     const t = setup();
     const { session } = await t.signedInUser(OWNER);

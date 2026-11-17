@@ -1,4 +1,4 @@
-// A074: confirming an email change with a proof meant for another address or account.
+// A055: confirming an email change with a proof meant for another address or account.
 //
 // The attacker holds a code for an address they control and tries to make it
 // confirm a different change: one the owner started later, a change on another
@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { meta, setup } from './support';
 import { requestCode, tokenOf } from '../flows/email-change-support';
 
-describe('A074: confirming an email change with a proof meant for another address or account', () => {
+describe('A055: confirming an email change with a proof meant for another address or account', () => {
   it('a code for the first address dies when a second request replaces it', async () => {
     const t = setup();
     const { session } = await t.signedInUser();

@@ -1,4 +1,4 @@
-// A078: racing two email changes.
+// A059: racing two email changes.
 //
 // Two changes in flight at once: two requests from one account (to slip an
 // old code past the replacement), two confirmations of one code, or two
@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { meta, setup } from './support';
 import { requestCode } from '../flows/email-change-support';
 
-describe('A078: racing two email changes', () => {
+describe('A059: racing two email changes', () => {
   it('of two concurrent requests from one account, only one code stays live', async () => {
     const t = setup();
     const { session } = await t.signedInUser();
