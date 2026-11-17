@@ -3,7 +3,7 @@ title: How this library is tested
 description: Every gate a change to the library must pass, what each one catches, and how to run it yourself.
 ---
 
-Authentication code fails quietly: a missing check still returns 200. So the library is tested from several angles, and each angle is a gate that fails a pull request or a scheduled run. Nothing here is advisory: no gate is allowed to fail and let the run pass.
+Authentication code fails quietly: a missing check still returns 200. So the library is tested from several angles. Most of them are required checks: a pull request cannot merge until they pass, and none of them is allowed to fail and let the run pass. Three run on a schedule instead and do not block a merge: the nightly property run, the weekly mutation run and OpenSSF Scorecard. A failure there is a failed run on `main` to fix.
 
 ## Unit tests and coverage
 
@@ -13,7 +13,7 @@ Every flow and primitive runs against in-memory fakes of the stores, the mailer 
 - the HTTP helpers and the flows sit just under 100;
 - the Redis and Prisma adapters have their own thresholds, measured against the real servers.
 
-Nothing is excluded from coverage except one branch the type checker requires and no input can reach, named in the config.
+Nothing is excluded from coverage. One branch is left uncovered on purpose: a fallback the type checker requires after `split` in the client IP masking, which no input can reach. The config names it, and the thresholds for `http` sit just under 100 because of it.
 
 ## The attack suite
 
@@ -21,27 +21,30 @@ Nothing is excluded from coverage except one branch the type checker requires an
 
 ## Timing
 
-A timing leak is checked by counting work, not by measuring the clock, so the check cannot flake on a busy CI machine. Attack `A004` records every call each flow makes through a store port, and every password verify. It then requires the same sequence for:
+A timing leak is checked by counting work, not by measuring the clock, so the check cannot flake on a busy CI machine. Attack `A004` records every call each flow makes through a store port, and every password verify. It then requires:
 
-- a known address, an unknown one and a locked one, at login;
-- a taken address and a new one, at sign-up;
-- a known address and an unknown one, at the password reset request.
+- at login, the same sequence of calls and one verify for a known and an unknown address, whether the account is open or locked. A locked account makes fewer counter calls than an open one (the gate stops before spending budgets), the same for known and unknown addresses, and the test pins every other call;
+- at the password reset request, the same sequence for a known and an unknown address;
+- at sign-up, one hash, one mail and the same number of store round trips for a taken and a new address. The calls are not identical: a taken address looks the owner up where a new account writes its verification token. The test pins both sequences, so any other drift fails.
 
 `bun run bench:timing` also measures the wall clock with the real Argon2id hasher. It compares the same pairs over shuffled, seeded samples and reports medians and Welch's t. It is for reading, not gating.
 
-A lint rule makes the constant-time helpers the only way to compare secrets. In library code it refuses:
+A lint rule keeps secret comparisons on the constant-time helpers in `crypto/hash.ts`. It goes by name, so it catches every comparison of a value named like a secret, and only those. In library code it refuses:
 
-- `===` or `!==` on a value named like a hash, token, secret, digest or MAC;
-- `Buffer.compare`;
+- `==`, `===`, `!=` or `!==` where either side is named like a hash, token, code, secret, digest, MAC or signature, however it is read: `tokenHash`, `row.tokenHash`, `row?.tokenHash`, `rec['passwordHash']`, or wrapped in `as`, `satisfies` or `!`. A comparison with a literal, `undefined` or a `typeof` is a shape check and is allowed;
+- `.equals()`, `Object.is()` and `localeCompare()` on such a value;
+- `Buffer.compare` and `timingSafeEqual`;
 - importing the constant-time primitive outside `crypto/hash.ts`.
+
+A secret kept under an unrelated name is not caught: the rule narrows the ways to slip, and review covers the rest. A fixture test proves each form above is caught.
 
 ## Property tests
 
-[fast-check](https://fast-check.dev/) generates inputs for the parsers and checks: cookies, CSRF tokens and the Origin check, device cookies, client IPs behind proxies, email normalisation, the password policy and durations. They run in the normal suite with a fixed seed. Nightly, they run with a new seed and a hundred times more cases. A failure prints its seed, and `FC_SEED=<seed> bunx vitest run tests/property` replays it.
+[fast-check](https://fast-check.dev/) generates inputs for the parsers and checks: cookies, CSRF tokens and the Origin check, device cookies, client IPs behind proxies, email normalisation, the password policy and durations. They run in the normal suite with a fixed seed. Nightly, outside the required checks, they run with a new seed and a hundred times more cases. A failure prints its seed, and `FC_SEED=<seed> bunx vitest run tests/property` replays it.
 
 ## Mutation testing
 
-Coverage says a line ran, not that a test would notice it breaking. [Stryker](https://stryker-mutator.io/) changes one operator, condition or literal at a time in crypto, tokens, session, throttle, the CSRF checks and the client IP parser, and reruns the tests. The run fails if the share of changes the tests catch drops under the threshold in `packages/auth/stryker.config.mjs` (96 percent; measured 97). The few changes no test can tell apart from the original are listed there, each with its reason. It runs weekly and on demand, and locally with `bun run test:mutation`.
+Coverage says a line ran, not that a test would notice it breaking. [Stryker](https://stryker-mutator.io/) changes one operator, condition or literal at a time in crypto, tokens, session, throttle, the CSRF checks and the client IP parser, and reruns the tests. The run fails if the share of changes the tests catch drops under the threshold in `packages/auth/stryker.config.mjs` (96 percent; measured 97). The few changes no test can tell apart from the original are listed there, each with its reason. It runs weekly and on demand, not on pull requests, so it does not block a merge; run it locally with `bun run test:mutation`.
 
 ## Real backends
 
@@ -66,7 +69,7 @@ The example app runs end to end against both. CI sets `AUTH_REQUIRE_SERVICES=1`,
 - **Dependency review** refuses a pull request that adds a dependency with a high-severity advisory or a licence outside the allowlist.
 - **Runtime dependencies** must match an allowlist that fails closed: a new one needs a reviewed change to `scripts/runtime-dependencies.json`.
 - **Workflows**: every action is pinned to a commit SHA with its version beside it, and every workflow declares least-privilege permissions; a script checks both.
-- **OpenSSF Scorecard** grades the repository weekly. The target is 7.5 out of 10. The score is held back mainly by a single maintainer (code review and contributor checks), which is expected for a project this young.
+- **OpenSSF Scorecard** grades the repository weekly and on every push to `main`; it does not gate pull requests. The target is 7.5 out of 10. The score is held back mainly by a single maintainer (code review and contributor checks), which is expected for a project this young.
 
 ## Running it yourself
 
@@ -80,4 +83,4 @@ bun run test:mutation           # about two minutes
 bun run bench:timing            # wall clock, not a gate
 ```
 
-[CONTRIBUTING.md](https://github.com/noctcore/auth/blob/main/CONTRIBUTING.md) lists every gate with the job that runs it.
+[CONTRIBUTING.md](https://github.com/noctcore/auth/blob/main/CONTRIBUTING.md) lists every gate with the job that runs it, and which ones are required to merge.
