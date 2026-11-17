@@ -108,7 +108,7 @@ describe('A038: brute forcing the second factor from many IPs', () => {
   it('refuses attempts that read the lock just before it was set', async () => {
     const { counters, stale } = staleLockReads();
     const throttle = new Throttle(counters, manualClock(0));
-    const rule = { limit: 5, window: '15m' };
+    const rule = { limit: 5, window: '15m' } as const;
     const gate = async () => (await throttle.gateFactor('victim', rule)).allowed;
     const first = [];
 
