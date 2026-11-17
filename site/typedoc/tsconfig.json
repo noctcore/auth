@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
+    "experimentalDecorators": true,
     "paths": {
       "@noctcore/auth": ["../../packages/auth/src/index.ts"],
       "@noctcore/auth/argon2": ["../../packages/auth/src/password/argon2.ts"],
@@ -12,6 +13,7 @@
     "entries",
     "../../packages/auth/src",
     "../../packages/auth-redis/src",
-    "../../packages/auth-prisma/src"
+    "../../packages/auth-prisma/src",
+    "../../packages/auth-nestjs/src"
   ]
 }

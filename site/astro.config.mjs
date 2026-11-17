@@ -10,6 +10,7 @@ import { createStarlightTypeDocPlugin } from 'starlight-typedoc';
 const [authTypeDoc, authApiGroup] = createStarlightTypeDocPlugin();
 const [redisTypeDoc, redisApiGroup] = createStarlightTypeDocPlugin();
 const [prismaTypeDoc, prismaApiGroup] = createStarlightTypeDocPlugin();
+const [nestTypeDoc, nestApiGroup] = createStarlightTypeDocPlugin();
 const typeDocTsconfig = './typedoc/tsconfig.json';
 const typeDoc = (name) => ({
   name,
@@ -99,6 +100,13 @@ export default defineConfig({
           sidebar: { label: '@noctcore/auth-prisma', collapsed: true },
           typeDoc: typeDoc('@noctcore/auth-prisma'),
         }),
+        nestTypeDoc({
+          entryPoints: ['./typedoc/entries/auth-nestjs.ts'],
+          tsconfig: typeDocTsconfig,
+          output: 'reference/api/auth-nestjs',
+          sidebar: { label: '@noctcore/auth-nestjs', collapsed: true },
+          typeDoc: typeDoc('@noctcore/auth-nestjs'),
+        }),
       ],
       editLink: { baseUrl: 'https://github.com/noctcore/auth/edit/main/site/' },
       sidebar: [
@@ -125,6 +133,7 @@ export default defineConfig({
             { label: 'Guides', link: '/build/' },
             { label: 'A Node server with Redis and Prisma', link: '/build/node-server/' },
             { label: 'Mail into your templates and queue', link: '/build/mail/' },
+            { label: 'Use with NestJS', link: '/build/nestjs/' },
             { label: 'Writing a store adapter', link: '/build/store-adapter/' },
           ],
         },
@@ -136,6 +145,7 @@ export default defineConfig({
             authApiGroup,
             redisApiGroup,
             prismaApiGroup,
+            nestApiGroup,
           ],
         },
         {
