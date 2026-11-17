@@ -11,11 +11,15 @@ import templatesTs from '../../../../snippets/build/mail/templates.ts?raw';
 
 The package never renders or sends mail. Each flow that needs one emits a typed `AuthMailEvent` to your `Mailer`, and your code turns it into a message in your own templates and language.
 
-## Why `send` should enqueue
+## Why `send` must enqueue
 
-No flow waits for the mailer. Each one calls `send` and answers without awaiting the promise it returns, so a slow provider, or a `send` that never settles, neither delays nor hangs a response, and the time one template or recipient takes never shows in the response time.
+Each flow calls `send` and answers without awaiting the promise it returns, so a delivery that is slow, or never settles, neither delays nor hangs a response. The call itself is on the response path, though: whatever your `send` does before it returns its promise counts toward the response time. The flows do the same work for a known and an unknown address up to the mail step, and they send different templates (a taken address at sign-up gets `account-exists`, a new one `verify-email`). A `send` that rendered the template, or opened an SMTP connection, before returning would make the two paths take different times and give the answer back. So `Mailer.send` must store a job and return; a worker builds the template and sends it.
 
-Delivery from the library is at most once. Each mail is handed to `send` once; a `send` that throws or rejects does not fail the flow, the error goes to the configured `logger` as `Mailer failed` with the event type and user id, and the mail is not retried. Retries are the job of your mailer or queue. That is why `send` should store a job and return, and a worker should send it: the queue retries a failed send, and a job already stored survives a process that exits right after answering, where a send still in flight would be lost. Make sure your queue is up, and give `createAuth` a logger.
+Delivery from the library is at most once. Each mail is handed to `send` once; a `send` that throws or rejects does not fail the flow, the error goes to the configured `logger` as `Mailer failed` with the event type and user id, and the mail is not retried. Retries are the job of your queue. Make sure your queue is up, and give `createAuth` a logger.
+
+Enqueueing narrows the window in which a mail can be lost, but does not close it. The library does not await the enqueue either, so if the process exits, or a serverless runtime freezes the instance once the response is sent, before the queue write settles, that mail is lost. There is no flush or `waitUntil` hook yet ([#50](https://github.com/noctcore/auth/issues/50)).
+
+Give the enqueue a timeout. The library sets none and does not cap how many sends are pending, so if your queue hangs instead of failing, every request leaves one more unsettled promise in memory until it recovers ([#51](https://github.com/noctcore/auth/issues/51) tracks an optional limit).
 
 ## The events
 
