@@ -57,7 +57,10 @@ export function pwnedPasswords(options: PwnedPasswordsOptions = {}): BreachCheck
     let breached = false;
 
     for (const raw of body.split(/\r?\n/u)) {
-      const line = raw.trim().toUpperCase();
+      // ASCII only: toUpperCase() folds some non-ASCII characters into ASCII
+      // ones (the ligature U+FB00 becomes "FF"), which would let a malformed
+      // line pass the format check below.
+      const line = raw.trim().replace(/[a-z]+/gu, (letters) => letters.toUpperCase());
 
       if (line === '') continue;
 
