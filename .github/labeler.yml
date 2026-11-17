@@ -13,6 +13,14 @@
   - changed-files:
       - any-glob-to-any-file: ['packages/auth-prisma/**']
 
+'pkg: auth-nestjs':
+  - changed-files:
+      - any-glob-to-any-file: ['packages/auth-nestjs/**']
+
+'area: integrations':
+  - changed-files:
+      - any-glob-to-any-file: ['packages/auth-nestjs/**', 'examples/nestjs/**']
+
 'area: core':
   - changed-files:
       - any-glob-to-any-file:
