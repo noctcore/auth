@@ -62,7 +62,7 @@ describe.skipIf(!url)('parallel bursts against the redis counter store', () => {
   it('A038: lets at most the factor budget through, from every connection together', async () => {
     for (let round = 0; round < 5; round++) {
       const account = uniqueId('factor');
-      const rule = { limit: 5, window: '15m' };
+      const rule = { limit: 5, window: '15m' } as const;
       const allowed = await burst(async (t) => (await t.gateFactor(account, rule)).allowed);
 
       expect(allowed).toBeLessThanOrEqual(5);
