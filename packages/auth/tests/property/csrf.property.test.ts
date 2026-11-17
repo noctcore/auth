@@ -171,6 +171,19 @@ const safeMethod = fc.constantFrom(...SAFE).chain((method) => fc.mixedCase(fc.co
 const unsafeMethod = fc.oneof(
   fc.constantFrom('POST', 'PUT', 'PATCH', 'DELETE', 'post', 'Delete'),
   fc.stringMatching(/^[A-Za-z]{1,10}$/u).filter((m) => !SAFE.includes(m.toUpperCase())),
+  // A safe method with one letter swapped for any non-ASCII character, including
+  // the ones `toUpperCase()` folds into ASCII (long s, dotless i).
+  fc
+    .tuple(
+      fc.constantFrom(...SAFE),
+      fc.nat(),
+      fc.oneof(
+        fc.constantFrom('\u017F', '\u0131'),
+        fc.string({ unit: 'grapheme', minLength: 1, maxLength: 1 }),
+      ),
+    )
+    .filter(([, , ch]) => (ch.codePointAt(0) ?? 0) > 0x7f)
+    .map(([m, i, ch]) => m.slice(0, i % m.length) + ch + m.slice((i % m.length) + 1)),
 );
 
 const scheme = fc.constantFrom('https', 'http', 'app');

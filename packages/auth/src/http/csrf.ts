@@ -29,6 +29,15 @@ import { AuthConfigError } from '../shared/errors';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/**
+ * Upper-cases ASCII letters only. `toUpperCase()` also folds some non-ASCII
+ * letters into ASCII ones (a long s becomes "S", a dotless i becomes "I"), which
+ * would let a method like `OPTION` plus a long s pass as safe.
+ */
+function isSafeMethod(method: string): boolean {
+  return SAFE_METHODS.has(method.replace(/[a-z]+/gu, (letters) => letters.toUpperCase()));
+}
+
 function normalizeOrigin(value: string): string | null {
   try {
     const url = new URL(value);
@@ -46,7 +55,7 @@ export function verifyRequestOrigin(input: {
   origin: string | null | undefined;
   allowedOrigins: readonly string[];
 }): boolean {
-  if (SAFE_METHODS.has(input.method.toUpperCase())) return true;
+  if (isSafeMethod(input.method)) return true;
   if (!input.origin || input.origin === 'null') return false;
 
   const origin = normalizeOrigin(input.origin);
@@ -67,7 +76,7 @@ export function verifyFetchSite(input: {
   secFetchSite: string | null | undefined;
   allowSameSite?: boolean;
 }): boolean {
-  if (SAFE_METHODS.has(input.method.toUpperCase())) return true;
+  if (isSafeMethod(input.method)) return true;
   if (input.secFetchSite === 'same-origin') return true;
 
   return input.allowSameSite === true && input.secFetchSite === 'same-site';
