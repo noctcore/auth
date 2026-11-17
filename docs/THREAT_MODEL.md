@@ -23,7 +23,7 @@ A server-side library. A consuming app calls it from its own HTTP handlers to re
 
 **The stores** (Redis, Postgres through Prisma, or an adapter the app writes) are trusted to keep what is written and to honour the port contracts: single-use consumption, atomic counters, keys that expire, and a session touch that never brings a deleted session back. The conformance suite in `@noctcore/auth/testing` checks an adapter against those contracts. The library limits what a store leak gives away: tokens are stored only as hashes and codes as HMACs, so a read-only dump does not hand out working credentials.
 
-**The mailer** is trusted to deliver to the address it is given. A mailbox is treated as proof of control: proving one lifts a lock, verifies the address and ends every other session. Sending happens off the response path, so a slow or failing mailer changes neither the answer nor its timing.
+**The mailer** is trusted to deliver to the address it is given. A mailbox is treated as proof of control: proving one lifts a lock, verifies the address and ends every other session. A mailer that throws never changes the answer: the error is logged and the flow goes on. A slow mailer is another matter. Only the lockout notice and the password reset request's job send off the response path; sign-up, email verification, password change and password reset await the mailer before they answer, so a slow mailer slows those responses and a mailer that never settles keeps them waiting. Those doors send one mail whichever way they go (a taken address gets "account exists" where a new one gets its verification mail), so the count of sends does not reveal account state, but delivery time that differs between templates or recipients can show in the response time. Give the mailer a timeout, or have it enqueue and return. Moving every send off the response path is tracked in [#46](https://github.com/noctcore/auth/issues/46).
 
 **The proxy.** Only the number of proxies the app configures is trusted. The client IP is read that many hops from the right of `X-Forwarded-For`, so entries the client wrote never decide it. With no proxy configured, the header is ignored.
 
@@ -63,7 +63,7 @@ The library defends against: guessing passwords and codes; locking the owner out
 | Brute force by parallel guesses | Attempts reserved before the verify, per (account, IP) and per account | A001 |
 | Locking the victim out | Capped lock, no permanent tier, trusted-device bypass, reset lifts the lock | A002 |
 | Account enumeration by the answer | Public codes that never name account state | A003 |
-| Account enumeration by timing | Same store calls and one verify for every address | A004 |
+| Account enumeration by timing | Same store calls and one verify for every address at login and reset request; one hash, one mail and as many store round trips at sign-up | A004 |
 | The locked-account oracle | Unknown addresses lock too; a lock answers like a wrong password | A005 |
 | Replaying a revoked session | The epoch fence | A006 |
 | Reusing a password reset token | Atomic single-use consume, expiry checked after it | A007 |
@@ -81,5 +81,6 @@ The library defends against: guessing passwords and codes; locking the owner out
 | Two spellings of one address | ASCII-only normalisation, non-ASCII refused | A019 |
 | Exhausting the server with oversized passwords | Maximum length; oversized input verified as empty against the dummy hash | A020 |
 | Passing an unsafe method as a safe one through case folding | ASCII-only method comparison | A021 |
+| Turning a malformed breach-check response into a verdict through case folding | ASCII-only upper-casing before the format check | A022 |
 
 A report that breaks one of these defenses, or shows an attack the table misses, is a vulnerability: see [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md).
