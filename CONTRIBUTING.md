@@ -114,7 +114,8 @@ failure shows as a failed run on `main` to fix, not as a blocked pull request.
 | OpenSSF Scorecard, target 7.5 | `scorecard` (weekly and on every push to `main`) | the badge in the README |
 
 `bun run bench:timing` measures login, sign-up and reset timing on the wall clock. It is for
-reading, not a gate, and no job runs it.
+reading, not a gate, and no job runs it. `bun run bench:timing:stores` measures sign-up on Postgres
+and Redis (after `services:up` and a build).
 
 ## Changesets
 
