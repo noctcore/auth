@@ -32,6 +32,8 @@ A server-side library. A consuming app calls it from its own HTTP handlers to re
 
 **The cipher** (two-factor plugin) is trusted to encrypt and decrypt TOTP secrets, and to bind each ciphertext to the user id it is given. The plugin never holds a key: key management and rotation are the app's. A store dump without the key yields no TOTP secret; an attacker who runs code with the key yields every one.
 
+**Plugins and callers of `auth.context`** are trusted code, like the app. They can call `issueSession`, and the two-factor plugin's enforcement lets through a session issued with `via: 'second-factor'`, which is a claim that the factor was checked; the library cannot tell a true claim from a false one. The core's re-issue labels are the exception: it accepts them only with a session it read live from the store for the same user.
+
 **The proxy.** Only the number of proxies the app configures is trusted. The client IP is read that many hops from the right of `X-Forwarded-For`, so entries the client wrote never decide it. With no proxy configured, the header is ignored.
 
 **The browser** is not trusted: everything it sends is attacker-controlled input. The library sets cookies so the browser protects them (`__Host-` prefix, `HttpOnly`, `Secure`, `SameSite=Lax`), and checks the Origin, `Sec-Fetch-Site` and a signed double-submit token against cross-site requests. Request bodies, cookies, tokens and codes are validated for shape before they reach a store key or a hash.
@@ -50,18 +52,21 @@ The attacker is assumed to be able to:
 
 ## In scope
 
-The library defends against: guessing passwords and codes; locking the owner out; finding out which addresses have accounts, by the answer or by its timing; holding answers up through a slow mailer; replaying or reusing sessions, links and codes; keeping a session alive after a revocation, a password change or a reset; cross-site request forgery on the flows it serves; spoofing the client IP to escape rate limits; taking over an account registered on someone else's address; forging trusted-device cookies; and turning a leaked store into working credentials. With the two-factor plugin on, also: replaying or guessing a TOTP or recovery code, reusing a login challenge, getting a session past the second factor through any flow (sign-up, re-issues, other plugins), resetting a password or turning the factor off without it, and a stolen trusted-device token outliving a password change.
+The library defends against: guessing passwords and codes; locking the owner out of the password login; finding out which addresses have accounts, by the answer or by its timing; holding answers up through a slow mailer; replaying or reusing sessions, links and codes; keeping a session alive after a revocation, a password change or a reset; cross-site request forgery on the flows it serves; spoofing the client IP to escape rate limits; taking over an account registered on someone else's address; forging trusted-device cookies; and turning a leaked store into working credentials. With the two-factor plugin on, also: replaying or guessing a TOTP or recovery code, reusing a login challenge, getting a session past the second factor through the core's flows (sign-up with auto-login, a plain login, and re-issues, which need a session the core read live for the same user), resetting a password or turning the factor off without it, and a stolen trusted-device token outliving a password change.
 
 ## Out of scope
 
 - **The app's own authorization.** The library says who the user is. Whether that user may read an invoice or delete a project is the app's decision and the app's code.
 - **XSS in the host app.** Script running in the app's origin can act as the user: send requests with their cookies, read pages, and change the password through the app's own forms. `HttpOnly` keeps the session cookie itself out of reach, but no authentication library can defend a page that runs the attacker's code.
 - **A compromised Redis or database with write access.** An attacker who can write to the stores can create sessions, reset counters and edit password hashes. The store is inside the trust boundary; protect it with network isolation, credentials and TLS.
-- **A leaked server secret or app configuration.** Rotate the secret (CSRF tokens accept the previous one during rollover); device cookies and outstanding codes signed with it become void.
+- **A leaked server secret or app configuration.** Rotate the secret (CSRF tokens accept the previous one during rollover); device cookies and outstanding codes signed with it become void, and so do the two-factor plugin's recovery codes, whose HMAC key is derived from it: users with a factor must generate a new set after a rotation.
 - **The mail provider and the user's mailbox.** Whoever controls the mailbox controls the account.
 - **Weak configuration chosen by the app.** Defaults are the library's responsibility; overrides are the app's.
 - **Volumetric denial of service.** Rate limits protect accounts and the hasher, not the network.
 - **Phishing and malware on the user's device.** This includes a phishing page that relays a password and a TOTP code to the real site in real time: TOTP does not stop it, only origin-bound factors (WebAuthn) would.
+- **Enrolling a factor for a required user who has none yet.** For that user the password is the only credential, so whoever has it can answer the enrollment challenge. The owner is mailed when the factor goes on.
+- **A stolen session locking the second factor.** Step-up counts wrong codes in the same per-account budget as the login challenge, so a session holder can lock the factor (and the owner's challenge) for up to an hour at a time, as long as the session lives.
+- **A recovery code spent by a race on one challenge.** Two proofs sent at once on one challenge can both be checked; one gets the session, and a recovery code sent as the other is spent anyway.
 - **A two-factor challenge carried to another browser.** A challenge is bound only to the user agent it was issued to, which an attacker holding the challenge can copy. Its limits are its 5-minute life and 5 codes.
 
 ## Mapping to the attack suite
