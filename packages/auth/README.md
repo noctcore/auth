@@ -26,6 +26,8 @@ const auth = createAuth({
 const result = await auth.login({ email, password, meta });
 ```
 
+A second factor is a plugin: `twoFactor` from `@noctcore/auth/two-factor` adds TOTP, recovery codes, trusted devices and step-up, with its flows under `auth.twoFactor`.
+
 Flows return results instead of throwing HTTP errors, and your app keeps its own routes. The root README has a complete wiring example and the list of modules.
 
 - [Root README](https://github.com/noctcore/auth#readme)
