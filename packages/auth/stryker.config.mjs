@@ -5,7 +5,9 @@
 // `bun run test:mutation` (about two minutes); CI runs it weekly and on demand.
 //
 // Scope: crypto, tokens, session, throttle, the two-factor plugin and the email
-// change flow, plus the CSRF and client IP checks the attack suite leans on. The rest of http (cookie, turnstile) and
+// change flow, plus the CSRF and client IP checks the attack suite leans on, and
+// the background task runner (its cap and timeout bound memory when a mailer
+// hangs). The rest of http (cookie, turnstile) and
 // password are measured from time to time but not gated yet.
 //
 // `break` sits just under the measured score, so a change that lets mutants
@@ -47,6 +49,9 @@
 //     (without a factor the delete runs under a null id, which finds nothing,
 //     as NO_SUCH_USER_ID does) and `code !== null` turned true (the HMAC of an
 //     empty code is never stored).
+// - core/background.ts: `timer.unref?.()` made non-optional. Node timers
+//   always have `unref`; the `?.` is for runtimes whose setTimeout returns a
+//   number, which the Node test run cannot reach.
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   testRunner: 'vitest',
@@ -63,6 +68,7 @@ export default {
     'src/http/csrf.ts',
     'src/http/ip.ts',
     'src/flows/email-change.ts',
+    'src/core/background.ts',
   ],
   reporters: ['clear-text', 'progress', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },
