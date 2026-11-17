@@ -1,5 +1,12 @@
 # @noctcore/auth-prisma
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [[`ceaae4c`](https://github.com/noctcore/auth/commit/ceaae4c11e265c833e34375e829cf34205cb07a5)]:
+  - @noctcore/auth@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

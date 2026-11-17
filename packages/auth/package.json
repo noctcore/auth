@@ -1,6 +1,6 @@
 {
   "name": "@noctcore/auth",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Lucia-style authentication core: sessions, password hashing, one-time tokens, throttling and flows over storage interfaces.",
   "license": "MIT",
   "type": "module",
