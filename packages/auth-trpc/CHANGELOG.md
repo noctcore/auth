@@ -1,5 +1,12 @@
 # @noctcore/auth-trpc
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [[`a78168e`](https://github.com/noctcore/auth/commit/a78168e668f7add8256d44596bd29a6455f61dd1)]:
+  - @noctcore/auth@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
