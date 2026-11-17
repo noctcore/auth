@@ -81,6 +81,13 @@ export { NO_SUCH_USER_ID } from './ports/stores';
 export { createDeviceToken, verifyDeviceToken } from './throttle/device-token';
 export type { AuthMailEvent, Mailer } from './ports/mail';
 export type { AuditSink, AuthEvent, AuthEventType } from './ports/audit';
+export type {
+  SecretCipher,
+  StoredStepUp,
+  StoredTotpFactor,
+  StoredTrustedDevice,
+  TwoFactorStore,
+} from './ports/two-factor';
 export { SessionManager } from './session/session-manager';
 export type {
   AttributeSchema,
@@ -93,7 +100,7 @@ export type {
 export { OneTimeTokens, type TokenRedemption } from './tokens/one-time-tokens';
 export { Throttle } from './throttle/throttle';
 export { accountKey } from './throttle/counter-keys';
-export type { Hit, LockoutOptions, LoginGate, RateLimitRule } from './throttle/rules';
+export type { FactorGate, Hit, LockoutOptions, LoginGate, RateLimitRule } from './throttle/rules';
 export type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './core/config';
 export { DEFAULT_DOOR_LIMITS } from './core/config';
 export { createAuth, type Auth } from './create-auth';

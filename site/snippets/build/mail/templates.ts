@@ -48,6 +48,28 @@ export function renderAuthMail(event: AuthMailEvent): OutgoingMail {
         text: `After repeated wrong passwords, your account is locked until ${event.until.toISOString()}. A device you signed in from before can still sign in with your password.`,
       };
 
+    // The three below come from the two-factor plugin (@noctcore/auth/two-factor).
+    case 'two-factor-enabled':
+      return {
+        to: event.to,
+        subject: 'Two-factor authentication is on',
+        text: `Two-factor authentication was turned on at ${event.at.toISOString()}. If this was not you, reset your password and contact support.`,
+      };
+
+    case 'two-factor-disabled':
+      return {
+        to: event.to,
+        subject: 'Two-factor authentication is off',
+        text: `Two-factor authentication was turned off at ${event.at.toISOString()}. If this was not you, reset your password and contact support.`,
+      };
+
+    case 'recovery-code-used':
+      return {
+        to: event.to,
+        subject: 'A recovery code was used',
+        text: `A recovery code was used to sign in at ${event.at.toISOString()}. ${event.remaining} codes are left. If this was not you, reset your password now.`,
+      };
+
     default: {
       const unhandled: never = event;
 
