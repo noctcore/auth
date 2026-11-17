@@ -132,6 +132,23 @@ export function userStoreConformance(
         },
       },
       {
+        name: 'clears the password alone when the address stays the same',
+        async run() {
+          const address = email();
+          const user = await store.create({ email: address, passwordHash: 'h' });
+
+          assert.ok(user);
+
+          assert.equal(
+            await changeEmail(user.id, { from: address, to: address, clearPassword: true }),
+            'changed',
+          );
+
+          assert.equal((await store.findCredentialById(user.id))?.passwordHash, null);
+          assert.equal((await store.findById(user.id))?.email, address);
+        },
+      },
+      {
         name: 'refuses a taken address as taken, and of 10 users racing for one address exactly one gets it',
         async run() {
           const taken = email();

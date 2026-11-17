@@ -5,8 +5,10 @@
 // undo a change the owner made on purpose afterwards, or strip the password again.
 //
 // Stopped by: flows/email-change.ts (the revert link is purpose-bound,
-//   `email-revert`, and consumed by one atomic delete), tokens/one-time-tokens.ts
-//   (32 random bytes, only the SHA-256 stored; expiry checked after the consume).
+//   `email-revert`, and consumed by one atomic delete once the address is
+//   back; of concurrent clicks only the one that consumes it answers),
+//   tokens/one-time-tokens.ts (32 random bytes, only the SHA-256 stored;
+//   expiry checked after the consume).
 // Learn: Email change (/auth/learn/email-change/)
 import { describe, expect, it } from 'vitest';
 

@@ -6,15 +6,22 @@
  * revoking another device's session, or every other session, needs a fresh
  * credential proof, so a stolen session cannot keep signing the owner out.
  * Signing out of the current device, or everywhere including it, needs none.
+ * Signing out of other devices or everywhere also voids a pending email change.
  */
 import { requireFreshAuth } from './session-validation';
-import type { FlowSettings } from './settings';
+import { PURPOSE, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { IssuedSession } from '../core/plugin-context';
 import { createBlankSessionCookie, type CookieSpec } from '../http/cookie';
 import type { AuthUser, StoredSession } from '../ports/stores';
 import { fail, ok, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
+
+/**
+ * What signing out of other devices, or of all of them, voids: a pending email
+ * change, so one started from a session the owner just ended dies with it.
+ */
+const SIGN_OUT_PURPOSES: readonly string[] = [PURPOSE.emailChange];
 
 export interface SessionSummary {
   readonly id: string;
@@ -95,6 +102,7 @@ export async function revokeOtherSessions<U extends AuthUser, A>(
   if (!user) return fail('session_expired', 'user_missing');
 
   await core.revokeAllSessions(user.id, 'revoke-others');
+  await core.tokens.revokeAll(user.id, SIGN_OUT_PURPOSES);
 
   return core.issueSession(user, {
     via: 'revoke-others',
@@ -110,6 +118,7 @@ export async function revokeAllSessions<U extends AuthUser, A>(
   input: { session: StoredSession<A>; meta: RequestMeta },
 ): Promise<{ cookie: CookieSpec }> {
   await core.revokeAllSessions(input.session.userId, 'revoke-all');
+  await core.tokens.revokeAll(input.session.userId, SIGN_OUT_PURPOSES);
 
   return { cookie: createBlankSessionCookie(core.cookie, input.meta.origin) };
 }

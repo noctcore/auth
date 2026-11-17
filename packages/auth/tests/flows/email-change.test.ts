@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { changed, requestCode, tokenOf } from './email-change-support';
 import { meta, NEW_PASSWORD, PASSWORD, setup } from './setup';
+import { sha256Hex } from '../../src/crypto/hash';
+
+const holdKey = (email: string) => `email-reserved:${sha256Hex(email)}`;
 
 const NEW = 'grace@example.com';
 
@@ -286,7 +289,7 @@ describe('confirmEmailChangeCode', () => {
     expect(t.audit.events.at(-1)?.userId).toBeUndefined();
   });
 
-  it('confirms without a session to re-issue when the caller session ended meanwhile', async () => {
+  it('refuses a session that ended since the request, and leaves the code unspent', async () => {
     const t = setup();
     const { session, token } = await t.signedInUser();
     const code = await requestCode(t, session, NEW);
@@ -294,11 +297,49 @@ describe('confirmEmailChangeCode', () => {
     await t.auth.logout({ token, meta: meta() });
 
     expect(await t.auth.confirmEmailChangeCode({ session, code, meta: meta() })).toEqual({
-      ok: true,
-      value: { session: null },
+      ok: false,
+      code: 'session_expired',
+      reason: 'session_not_active',
     });
 
-    expect((await t.stores.users.findById(session.userId))?.email).toBe(NEW);
+    expect(t.audit.events.at(-1)).toMatchObject({
+      type: 'email.change_failed',
+      userId: session.userId,
+      reason: 'session_not_active',
+    });
+
+    expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
+
+    expect(await t.stores.tokens.findByUser('email-change', session.userId)).toMatchObject({
+      attempts: 0,
+    });
+  });
+
+  it('a pending change dies when the owner signs out everywhere, signs out other devices, or changes the password', async () => {
+    type App = ReturnType<typeof setup>;
+    type Session = Parameters<App['auth']['sessions']['revokeAll']>[0]['session'];
+
+    const signOuts = [
+      (t: App, session: Session) => t.auth.sessions.revokeAll({ session, meta: meta() }),
+      (t: App, session: Session) => t.auth.sessions.revokeOthers({ session, meta: meta() }),
+      (t: App, session: Session) =>
+        t.auth.changePassword({
+          session,
+          currentPassword: PASSWORD,
+          newPassword: NEW_PASSWORD,
+          meta: meta(),
+        }),
+    ];
+
+    for (const signOut of signOuts) {
+      const t = setup();
+      const { session } = await t.signedInUser();
+
+      await requestCode(t, session, NEW);
+      await signOut(t, session);
+
+      expect(await t.stores.tokens.findByUser('email-change', session.userId)).toBeNull();
+    }
   });
 
   it('refuses when the new address was taken between the request and the confirmation', async () => {
@@ -315,6 +356,56 @@ describe('confirmEmailChangeCode', () => {
     });
 
     expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
+
+    // The revert link and the hold written before the move are withdrawn,
+    // so the next change is not refused as pending a revert.
+    expect(await t.stores.tokens.findByUser('email-revert', session.userId)).toBeNull();
+
+    expect(
+      await t.auth.context.tokens.findLive('email-reserved', holdKey('ada@example.com')),
+    ).toBeNull();
+
+    expect((await requestCode(t, session, 'other@example.com')).length).toBeGreaterThan(0);
+  });
+
+  it('refuses a new address held for another account, as taken', async () => {
+    const t = setup();
+    const { session } = await t.signedInUser();
+    const code = await requestCode(t, session, NEW);
+
+    await t.auth.context.tokens.issueLink('email-reserved', holdKey(NEW), 60_000, {
+      userId: 'someone-else',
+    });
+
+    expect(await t.auth.confirmEmailChangeCode({ session, code, meta: meta() })).toMatchObject({
+      ok: false,
+      code: 'email_in_use',
+      reason: 'email_change_taken',
+    });
+
+    expect(await t.stores.tokens.findByUser('email-revert', session.userId)).toBeNull();
+  });
+
+  it('writes the revert link before the move, so a store error leaves no moved address without one', async () => {
+    const t = setup();
+    const { session } = await t.signedInUser();
+    const code = await requestCode(t, session, NEW);
+    const users = t.stores.users;
+    const real = users.changeEmail.bind(users);
+
+    users.changeEmail = () => Promise.reject(new Error('store down'));
+
+    await expect(t.auth.confirmEmailChangeCode({ session, code, meta: meta() })).rejects.toThrow(
+      'store down',
+    );
+
+    expect(await t.stores.tokens.findByUser('email-revert', session.userId)).toMatchObject({
+      data: { email: 'ada@example.com', to: NEW },
+    });
+
+    // The address did not move, so that link does not count as a pending revert.
+    users.changeEmail = real;
+    expect((await requestCode(t, session, 'other@example.com')).length).toBeGreaterThan(0);
   });
 
   it('refuses when the store loses the compare-and-set', async () => {
@@ -465,6 +556,25 @@ describe('confirmEmailChangeLink', () => {
       reason: 'email_change_unknown',
     });
   });
+
+  it('refuses in a session that ended since the request, and leaves the link unspent', async () => {
+    const t = setup({ emailChange: { kind: 'link' } });
+    const { session, token: cookie } = await t.signedInUser();
+
+    await t.auth.requestEmailChange({ session, newEmail: NEW, meta: meta() });
+
+    const token = tokenOf(t.mailer.last('email-change-confirm')?.url);
+
+    await t.auth.logout({ token: cookie, meta: meta() });
+
+    expect(await t.auth.confirmEmailChangeLink({ token, session, meta: meta() })).toMatchObject({
+      ok: false,
+      code: 'session_expired',
+      reason: 'email_change_session_required',
+    });
+
+    expect((await t.auth.context.tokens.peekLink('email-change', token)).status).toBe('valid');
+  });
 });
 
 describe('revertEmailChange', () => {
@@ -573,18 +683,80 @@ describe('revertEmailChange', () => {
     expect((await t.stores.users.findById(session.userId))?.email).toBe(NEW);
   });
 
-  it('refuses when the old address now belongs to another account', async () => {
+  it('when the old address has an account again, locks the account out anyway and keeps the link', async () => {
     const t = setup();
     const { session } = await t.signedInUser();
     const after = await changed(t, session, NEW);
 
-    await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: meta() });
+    // The hold keeps sign-up off the address; a store write gets past it.
+    const squatter = await t.stores.users.create({
+      email: 'ada@example.com' as never,
+      passwordHash: 'x',
+    });
 
-    expect(await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).toMatchObject({
+    expect(await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).toEqual({
       ok: false,
       code: 'email_in_use',
       reason: 'email_revert_address_taken',
     });
+
+    const account = await t.stores.users.findCredentialById(session.userId);
+
+    expect(account).toMatchObject({ email: NEW, passwordHash: null });
+    expect(await t.stores.sessions.listByUser(session.userId)).toEqual([]);
+
+    expect(t.audit.events.at(-1)).toMatchObject({
+      type: 'email.change_revert_failed',
+      userId: session.userId,
+      reason: 'email_revert_address_taken',
+      data: { review: true, passwordCleared: true, lockedOut: true },
+    });
+
+    await t.stores.users.setEmail(squatter?.id ?? '', 'elsewhere@example.com' as never);
+
+    expect((await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).ok).toBe(true);
+    expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
+  });
+
+  it('leaves the link unspent when an onEmailReverted hook fails, so a second click finishes', async () => {
+    let fail = true;
+
+    const t = setup({
+      hooks: {
+        onEmailReverted: () => {
+          if (fail) throw new Error('hook down');
+        },
+      },
+    });
+
+    const { session } = await t.signedInUser();
+    const after = await changed(t, session, NEW);
+
+    await expect(t.auth.revertEmailChange({ token: after.revert, meta: meta() })).rejects.toThrow(
+      'hook down',
+    );
+
+    fail = false;
+
+    expect((await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).ok).toBe(true);
+    expect((await t.stores.users.findById(session.userId))?.email).toBe('ada@example.com');
+  });
+
+  it('passes the hooks the time of the change and releases the hold on the restored address', async () => {
+    const seen: number[] = [];
+    const t = setup({ hooks: { onEmailReverted: ({ changedAt }) => void seen.push(changedAt) } });
+    const { session } = await t.signedInUser();
+    const at = t.clock.now();
+    const after = await changed(t, session, NEW);
+
+    t.clock.advance(5_000);
+    await t.auth.revertEmailChange({ token: after.revert, meta: meta() });
+
+    expect(seen).toEqual([at]);
+
+    expect(
+      await t.auth.context.tokens.findLive('email-reserved', holdKey('ada@example.com')),
+    ).toBeNull();
   });
 
   it('reads the address again once when a change lands mid-revert, then gives up', async () => {

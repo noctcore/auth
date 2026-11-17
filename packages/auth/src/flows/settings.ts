@@ -8,8 +8,13 @@ export const PURPOSE = {
   passwordResetTicket: 'password-reset-ticket',
   /** The code or link that proves a new address. One per user: a new request replaces it. */
   emailChange: 'email-change',
-  /** The revert link mailed to the old address. One per user: a live one is never replaced. */
+  /** The revert link mailed to the old address. One per user; while it is live the user cannot start another change. */
   emailRevert: 'email-revert',
+  /**
+   * Not a secret: holds the old address for its owner while the revert link
+   * lives. Keyed by the address (see email-reservation.ts), not by a user.
+   */
+  emailReserved: 'email-reserved',
   /** Not a secret: remembers, after a revert, the address the account may not change to for a while. */
   emailChangeBlock: 'email-change-block',
 } as const;
@@ -18,6 +23,9 @@ export const RESET_PURPOSES: readonly string[] = [
   PURPOSE.passwordReset,
   PURPOSE.passwordResetTicket,
 ];
+
+/** What a password change or reset voids: resets, and an email change started under the old password. */
+export const PASSWORD_PURPOSES: readonly string[] = [...RESET_PURPOSES, PURPOSE.emailChange];
 
 export interface FlowSettings {
   readonly revealExisting: boolean;
