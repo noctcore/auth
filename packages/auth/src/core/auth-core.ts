@@ -2,7 +2,6 @@
  * The shared steps every flow runs through. See plugin-context.ts for what
  * each one promises.
  */
-import { runInBackground } from './background';
 import { DEFAULT_DOOR_LIMITS, type Door } from './config';
 import type { CoreDependencies } from './dependencies';
 import { firstRefusal, type HookLists, type IssueVia, type RevocationReason } from './hooks';
@@ -357,7 +356,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
 
   /** Runs a task off the response path; failures are logged, never thrown. */
   background(label: string, task: () => Promise<void>): void {
-    runInBackground(this.logger, label, task);
+    this.#deps.background.run(label, task);
   }
 
   /** The device id when `token` is a valid, unexpired device token for this user at this epoch. */

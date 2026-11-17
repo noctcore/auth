@@ -5,6 +5,7 @@
  * the results onto responses with `toPublicError`.
  */
 import { AuthCore } from './core/auth-core';
+import { BackgroundTasks } from './core/background';
 import type { AuthConfig, AuthPlugin, PasswordResetJob } from './core/config';
 import { mergeHooks } from './core/hooks';
 import type { PluginContext } from './core/plugin-context';
@@ -87,6 +88,8 @@ export function createAuth<
   const clock = config.clock ?? systemClock;
   const random = config.random ?? cryptoRandom;
   const logger = config.logger ?? silentLogger;
+  const metrics = config.metrics ?? noopMetrics;
+  const background = new BackgroundTasks(logger, metrics, config.background);
   const policy = { ...DEFAULT_PASSWORD_POLICY, ...config.password.policy };
 
   if (policy.minLength < 8)
@@ -136,7 +139,8 @@ export function createAuth<
     clock,
     random,
     logger,
-    metrics: config.metrics ?? noopMetrics,
+    metrics,
+    background,
   });
 
   const flows = {
@@ -228,6 +232,12 @@ export function createAuth<
       revokeAll: (input: { session: StoredSession<A>; meta: RequestMeta }) =>
         revokeAllSessions(core, input),
     },
+    /**
+     * Resolves once every background task started before the call (mail
+     * hand-offs, lock notices, detached reset jobs) has settled or timed out.
+     * Never rejects. Await it on graceful shutdown.
+     */
+    flush: () => background.flush(),
     /** Entry points for your queue workers. */
     jobs: {
       processPasswordReset: (job: PasswordResetJob) => processPasswordReset(core, settings, job),

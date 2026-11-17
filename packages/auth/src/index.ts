@@ -106,6 +106,7 @@ export { accountKey } from './throttle/counter-keys';
 export type { FactorGate, Hit, LockoutOptions, LoginGate, RateLimitRule } from './throttle/rules';
 export type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './core/config';
 export { DEFAULT_DOOR_LIMITS } from './core/config';
+export { BACKGROUND_METRIC, type BackgroundOptions } from './core/background';
 export { createAuth, type Auth } from './create-auth';
 export { definePlugin, type PluginFlows } from './core/plugins';
 export {

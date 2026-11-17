@@ -3,6 +3,7 @@
  * config. Kept in one object so the core can hold it in a native private field
  * that plugins and `auth.context` cannot reach.
  */
+import type { BackgroundTasks } from './background';
 import type { Door } from './config';
 import type { HookLists } from './hooks';
 import type { RandomSource } from '../crypto/random';
@@ -47,4 +48,6 @@ export interface CoreDependencies<U extends AuthUser, A> {
   readonly random: RandomSource;
   readonly logger: Logger;
   readonly metrics: Metrics;
+  /** Where `background` tasks run: the app's `waitUntil`, timeout and pending cap. */
+  readonly background: BackgroundTasks;
 }
