@@ -8,7 +8,7 @@ import {
 import type { MembershipStore } from '../../src/ports/membership';
 import { membershipStoreConformance, MemoryMembershipStore } from '../../src/testing';
 import { setup } from '../flows/setup';
-import { acting, membershipApp, meta, SCOPE } from './setup';
+import { acting, membershipApp, meta, PASSWORD, SCOPE } from './setup';
 
 describe('membership options', () => {
   const store = new MemoryMembershipStore();
@@ -94,11 +94,23 @@ describe('membership add', () => {
 });
 
 describe('membership changeRole', () => {
-  it('changes the role, revokes the member and keeps the actor signed in', async () => {
+  it('changes the role and keeps every session by default', async () => {
+    const t = membershipApp();
+    const admin = await t.member('admin');
+    const target = await t.member('member');
+    const changed = await t.auth.membership.changeRole({ ...acting(admin, target), role: 'admin' });
+
+    expect(changed.ok).toBe(true);
+    expect((await t.store.findMember(SCOPE, target.userId))?.role).toBe('admin');
+    expect(await t.sessionOf(target.token)).not.toBeNull();
+    expect(t.audit.types()).not.toContain('sessions.revoked');
+  });
+
+  it('with revokeSessionsOnChange, revokes the member before and after the write and keeps the actor signed in', async () => {
     const revoked: Array<{ userId: string; reason: string }> = [];
 
     const t = membershipApp(
-      {},
+      { revokeSessionsOnChange: true },
       {
         hooks: { onSessionsRevoked: ({ userId, reason }) => void revoked.push({ userId, reason }) },
       },
@@ -116,7 +128,12 @@ describe('membership changeRole', () => {
     expect((await t.store.findMember(SCOPE, target.userId))?.role).toBe('admin');
     expect(await t.sessionOf(target.token)).toBeNull();
     expect(await t.sessionOf(admin.token)).not.toBeNull();
-    expect(revoked).toEqual([{ userId: target.userId, reason: 'membership-changed' }]);
+
+    expect(revoked).toEqual([
+      { userId: target.userId, reason: 'membership-changed' },
+      { userId: target.userId, reason: 'membership-changed' },
+    ]);
+
     expect(MEMBERSHIP_REVOCATION).toBe('membership-changed');
 
     expect(t.audit.events.at(-1)).toEqual({
@@ -127,16 +144,21 @@ describe('membership changeRole', () => {
     });
   });
 
-  it('writes nothing for the role the member already holds, and still revokes', async () => {
-    const t = membershipApp();
+  it('writes and revokes nothing for the role the member already holds', async () => {
+    const t = membershipApp({ revokeSessionsOnChange: true });
     const admin = await t.member('admin');
     const target = await t.member('member');
     const write = vi.spyOn(t.store, 'changeRole');
     const same = await t.auth.membership.changeRole({ ...acting(admin, target), role: 'member' });
 
-    expect(same.ok).toBe(true);
+    expect(same).toEqual({
+      ok: true,
+      value: { scope: SCOPE, userId: target.userId, role: 'member' },
+    });
+
     expect(write).not.toHaveBeenCalled();
-    expect(await t.sessionOf(target.token)).toBeNull();
+    expect(await t.sessionOf(target.token)).not.toBeNull();
+    expect(t.audit.types()).not.toContain('membership.role_changed');
   });
 
   it('refuses to demote the last admin and revokes nothing', async () => {
@@ -201,8 +223,15 @@ describe('membership changeRole', () => {
 });
 
 describe('membership remove', () => {
-  it('removes the member and revokes its sessions', async () => {
-    const t = membershipApp();
+  it('removes the member, and revokes its sessions only with revokeSessionsOnChange', async () => {
+    const quiet = membershipApp();
+    const keeper = await quiet.member('admin');
+    const kept = await quiet.member('member');
+
+    expect((await quiet.auth.membership.remove(acting(keeper, kept))).ok).toBe(true);
+    expect(await quiet.sessionOf(kept.token)).not.toBeNull();
+
+    const t = membershipApp({ revokeSessionsOnChange: true });
     const admin = await t.member('admin');
     const target = await t.member('admin');
 
@@ -393,5 +422,70 @@ describe('membership store conformance suite', () => {
     );
 
     await expect(racing?.run()).rejects.toThrow();
+  });
+});
+
+describe('membership acting session', () => {
+  it('refuses a session that is no longer live, or that belongs to someone else', async () => {
+    const t = membershipApp();
+    const admin = await t.member('admin');
+    const target = await t.member('member');
+    const other = await t.member('member');
+
+    await t.auth.logout({ token: admin.token, meta: meta() });
+
+    expect(await t.auth.membership.changeRole({ ...acting(admin, target), role: 'admin' })).toEqual(
+      { ok: false, code: 'session_expired', reason: 'session_not_live' },
+    );
+
+    const fresh = await t.auth.login({ email: admin.email, password: PASSWORD, meta: meta() });
+
+    if (!fresh.ok || fresh.value.kind !== 'session') throw new Error('login failed');
+
+    const borrowed = { ...fresh.value.session.session, userId: other.userId };
+
+    expect(
+      await t.auth.membership.remove({ ...acting({ session: borrowed }, target) }),
+    ).toMatchObject({ code: 'session_expired', reason: 'session_not_live' });
+
+    expect((await t.store.findMember(SCOPE, target.userId))?.role).toBe('member');
+
+    expect(t.audit.events.at(-1)).toMatchObject({
+      type: 'membership.refused',
+      reason: 'session_not_live',
+      data: { action: 'remove' },
+    });
+  });
+});
+
+describe('membership revocation order', () => {
+  it('writes nothing when the revocation before the write fails', async () => {
+    const t = membershipApp({ revokeSessionsOnChange: true });
+    const admin = await t.member('admin');
+    const target = await t.member('member');
+
+    vi.spyOn(t.auth.context, 'revokeAllSessions').mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(
+      t.auth.membership.changeRole({ ...acting(admin, target), role: 'admin' }),
+    ).rejects.toThrow('redis down');
+
+    expect((await t.store.findMember(SCOPE, target.userId))?.role).toBe('member');
+  });
+
+  it('keeps the change and throws when the revocation after the write fails', async () => {
+    const t = membershipApp({ revokeSessionsOnChange: true });
+    const admin = await t.member('admin');
+    const target = await t.member('member');
+    const real = t.auth.context.revokeAllSessions.bind(t.auth.context);
+
+    vi.spyOn(t.auth.context, 'revokeAllSessions')
+      .mockImplementationOnce(real)
+      .mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(t.auth.membership.remove(acting(admin, target))).rejects.toThrow('redis down');
+    expect(await t.store.findMember(SCOPE, target.userId)).toBeNull();
+    // The first bump already ended every session the member held before the change.
+    expect(await t.sessionOf(target.token)).toBeNull();
   });
 });

@@ -11,10 +11,16 @@
  * 3. The write is one atomic, guarded step in the store: it refuses to leave
  *    the scope without an admin (`last_admin`) and to apply a decision made on
  *    a role that changed meanwhile.
- * 4. After a role change or a removal, every session of the member is revoked
- *    through the epoch fence. The write comes first: a login that read the old
- *    epoch is refused by the fence, and one that starts after the bump reads
- *    the new role.
+ * 4. Only with `revokeSessionsOnChange`: when a role really changed, or a
+ *    member was removed, every session of the member is revoked through the
+ *    epoch fence, once before the write and once after it. A revocation that
+ *    fails before the write leaves nothing changed. The bump after the write
+ *    catches a login that read the old role between the two: the fence refuses
+ *    it at mint, or it was minted on the first bump's epoch and dies now.
+ *    Adding a member and setting the role a member already holds never revoke.
+ *
+ * Every flow first reads the acting session live from the store: a revoked,
+ * expired or idle session, or one of another user, acts on nothing.
  */
 import type { MemberAction, MembershipSettings } from './options';
 import type { PluginContext } from '../../core/plugin-context';
@@ -80,7 +86,7 @@ export async function addMember<A>(
   return ok(member);
 }
 
-/** Gives a member another role, then revokes every session the member holds. */
+/** Gives a member another role. Revokes the member's sessions only with `revokeSessionsOnChange`. */
 export async function changeRole<A>(
   r: Runtime,
   input: ChangeRoleInput<A>,
@@ -92,27 +98,30 @@ export async function changeRole<A>(
   // authorize refuses a missing target for a role change.
   const from = (allowed.value as StoredMember).role;
 
-  // Setting the role the member already holds writes nothing but still
-  // revokes, so a retry after a failed revocation finishes the job.
-  if (from !== input.role) {
-    const write = await r.store.changeRole({
-      scope: input.scope,
-      userId: input.userId,
-      from,
-      to: input.role,
-      adminRoles: r.settings.adminRoles,
-    });
+  const member: StoredMember = { scope: input.scope, userId: input.userId, role: input.role };
 
-    if (write !== 'done') return refusedWrite(r, input, write, 'change-role');
-  }
+  // The role the member already holds: nothing to write, nothing to revoke.
+  if (from === input.role) return ok(member);
 
-  await r.core.revokeAllSessions(input.userId, MEMBERSHIP_REVOCATION);
+  await revoke(r, input.userId);
+
+  const write = await r.store.changeRole({
+    scope: input.scope,
+    userId: input.userId,
+    from,
+    to: input.role,
+    adminRoles: r.settings.adminRoles,
+  });
+
+  if (write !== 'done') return refusedWrite(r, input, write, 'change-role');
+
+  await revoke(r, input.userId);
   await r.core.emit(event('membership.role_changed', input, { from, to: input.role }), input.meta);
 
-  return ok({ scope: input.scope, userId: input.userId, role: input.role });
+  return ok(member);
 }
 
-/** Removes a member from a scope, then revokes every session the member holds. */
+/** Removes a member from a scope. Revokes the member's sessions only with `revokeSessionsOnChange`. */
 export async function removeMember<A>(
   r: Runtime,
   input: RemoveMemberInput<A>,
@@ -124,6 +133,8 @@ export async function removeMember<A>(
   // authorize refuses a missing target for a removal.
   const from = (allowed.value as StoredMember).role;
 
+  await revoke(r, input.userId);
+
   const write = await r.store.removeMember({
     scope: input.scope,
     userId: input.userId,
@@ -133,7 +144,7 @@ export async function removeMember<A>(
 
   if (write !== 'done') return refusedWrite(r, input, write, 'remove');
 
-  await r.core.revokeAllSessions(input.userId, MEMBERSHIP_REVOCATION);
+  await revoke(r, input.userId);
   await r.core.emit(event('membership.removed', input, { from }), input.meta);
 
   return ok();
@@ -153,6 +164,11 @@ async function authorize<A>(
   const actorId = input.session.userId;
 
   if (actorId === input.userId) return refused(r, input, 'self_target', 'self_target', action);
+
+  const live = await r.core.sessions.findActive(input.session.id);
+
+  if (live?.userId !== actorId)
+    return refused(r, input, 'session_expired', 'session_not_live', action);
 
   if (to !== undefined && (typeof to !== 'string' || to.length === 0))
     return refused(r, input, 'forbidden', 'invalid_role', action);
@@ -185,6 +201,12 @@ async function authorize<A>(
 
     return refused(r, input, 'forbidden', 'check_failed', action);
   }
+}
+
+/** Revokes every session of the member, when the app turned revocation on. */
+async function revoke(r: Runtime, userId: string): Promise<void> {
+  if (r.settings.revokeSessionsOnChange)
+    await r.core.revokeAllSessions(userId, MEMBERSHIP_REVOCATION);
 }
 
 /** The refusal of a guarded write that did not happen. */

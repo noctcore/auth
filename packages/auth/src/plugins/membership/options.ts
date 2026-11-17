@@ -34,11 +34,22 @@ export interface MembershipOptions {
    * so a demoted admin loses the right at once. Throwing refuses.
    */
   readonly canManage?: (context: ManageContext) => boolean | Promise<boolean>;
+  /**
+   * Revoke every session of a member whose role changed or who was removed.
+   * Default false: the guards read roles from the store on every call, so
+   * they never need it. Turn it on when the app copies roles into session
+   * attributes or caches them per session. The epoch is per user, so the
+   * member is signed out everywhere, in every scope, and with the two-factor
+   * plugin their trusted devices are voided: an admin of any scope the member
+   * belongs to can sign them out.
+   */
+  readonly revokeSessionsOnChange?: boolean;
 }
 
 export interface MembershipSettings {
   readonly adminRoles: readonly string[];
   readonly canManage: (context: ManageContext) => boolean | Promise<boolean>;
+  readonly revokeSessionsOnChange: boolean;
 }
 
 export function resolveSettings(options: MembershipOptions): MembershipSettings {
@@ -58,5 +69,6 @@ export function resolveSettings(options: MembershipOptions): MembershipSettings 
   return {
     adminRoles: [...admins],
     canManage: options.canManage ?? (({ actor }) => admins.has(actor.role)),
+    revokeSessionsOnChange: options.revokeSessionsOnChange === true,
   };
 }

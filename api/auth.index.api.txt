@@ -561,5 +561,5 @@ DeviceClaims [interface]
 DistributiveOmit [type]<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 HookLists [type]<U extends AuthUser, A> = { readonly [K in keyof AuthHooks<U, A>]: ReadonlyArray<AuthHooks<U, A>[K]>; }
 MaybePromise [type]<T> = T | Promise<T>
-SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
+SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
 UnionToIntersection [type]<T> = (T extends unknown ? (value: T) => void : never) extends (value: infer I) => void ? I : never
