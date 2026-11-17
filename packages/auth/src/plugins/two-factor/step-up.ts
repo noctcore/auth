@@ -1,8 +1,10 @@
 /**
  * Step-up: a sensitive action (turning the factor off, new recovery codes, a
- * password change, and whatever the app guards with `requireStepUp`, such as
- * deleting the account or changing the email) needs a second-factor proof made
- * in this session within the last few minutes, on top of the fresh-auth check.
+ * password change, an email change request, and whatever the app guards with
+ * `requireStepUp`, such as deleting the account) needs a second-factor proof
+ * made in this session within the last few minutes, on top of the fresh-auth
+ * check. A password change or an email change request also takes a code with
+ * the request instead.
  *
  * - The proof is stored per session id, with a server-side expiry; a session
  *   re-issued by a password re-entry gets a new id and so no proof: the

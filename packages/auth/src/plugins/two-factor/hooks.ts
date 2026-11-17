@@ -7,7 +7,7 @@
  *   confirmed factor, or one the app requires, unless it is the plugin's own
  *   (`second-factor`) or a re-issue of a session the user already holds
  *   (password change, re-authentication, sign out of other devices, email
- *   verified; the core refuses those labels unless the call passes that user's
+ *   verified, email changed; the core refuses those labels unless the call passes that user's
  *   session as `inherit`). So no flow that issues a session, sign-up with
  *   `autoLogin` included, gets past the factor. Plugins are trusted code: one
  *   that issues with `via: 'second-factor'` claims to have checked the factor.
@@ -16,6 +16,9 @@
  *   cannot take the account. The factor survives the reset.
  * - `beforePasswordChange`: the current password is not enough with a factor
  *   on; it needs a step-up in this session or a code with the request.
+ * - `beforeEmailChange`: the same for an email change request, on top of the
+ *   core's fresh-auth check, so a stolen session (even with the password)
+ *   cannot move the account to a new address without the factor.
  * - `onSessionsRevoked`: a password change, a reset, revoke-all and the like
  *   also delete the trusted devices (they are already void by the epoch).
  *
@@ -36,6 +39,7 @@ const PASSES_ENFORCEMENT: ReadonlySet<IssueVia> = new Set([
   'reauthenticate',
   'revoke-others',
   'email-verified',
+  'email-changed',
 ]);
 
 /** Revocations that leave the user's trusted devices alone: one session ended, nothing was compromised. */
@@ -49,7 +53,9 @@ export function twoFactorHooks(runtime: () => Runtime): HookInput<AuthUser, any>
     beforePasswordReset: ({ user, secondFactor, meta }) =>
       demandProof(runtime(), user, secondFactor, meta, 'reset'),
     beforePasswordChange: ({ user, session, secondFactor, meta }) =>
-      demandStepUp(runtime(), user, session, secondFactor, meta),
+      demandStepUp(runtime(), user, session, secondFactor, meta, 'password_change'),
+    beforeEmailChange: ({ user, session, secondFactor, meta }) =>
+      demandStepUp(runtime(), user, session, secondFactor, meta, 'email_change'),
     onSessionsRevoked: async ({ userId, reason }) => {
       if (!KEEPS_TRUSTED_DEVICES.has(reason)) await runtime().store.deleteTrustedDevices(userId);
     },
@@ -109,8 +115,9 @@ async function demandStepUp(
   session: StoredSession<unknown>,
   secondFactor: string | undefined,
   meta: RequestMeta,
+  action: 'password_change' | 'email_change',
 ): Promise<HookResult> {
   if (await hasStepUp(runtime, session)) return undefined;
 
-  return demandProof(runtime, user, secondFactor, meta, 'password_change');
+  return demandProof(runtime, user, secondFactor, meta, action);
 }
