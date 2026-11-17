@@ -1,4 +1,4 @@
-// A067: collecting an invitation with an unverified account (pre-hijacking).
+// A071: collecting an invitation with an unverified account (pre-hijacking).
 //
 // An attacker registers the victim's address before the victim ever signs up,
 // never verifies it, and waits. When an organisation invites the victim, an
@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 
 import { invitationApp, meta, PASSWORD, SCOPE } from '../invitations/setup';
 
-describe('A067: collecting an invitation with an unverified account (pre-hijacking)', () => {
+describe('A071: collecting an invitation with an unverified account (pre-hijacking)', () => {
   it('refuses the unverified squatter on accept, and the token never verifies it', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });

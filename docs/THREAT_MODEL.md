@@ -137,17 +137,13 @@ The library defends against: guessing passwords and codes; locking the owner out
 | Acting on yourself through the membership flows | User ids compared before any lookup; the actor's role read from the store | A066 |
 | Keeping a role or a scope after it was taken away | The actor's role read from the store on every call; with `revokeSessionsOnChange`, every session revoked before and after the write, and the epoch fence refuses a racing login | A067 |
 | Signing a stranger out of everything through the membership flows | No revocation by default; never on an add or a same-role change. With `revokeSessionsOnChange` on, only consent to joining stops it | A068 |
-| Leaving a scope without an admin by concurrent demotions or removals (membership plugin) | The store checks the other admins and writes in one atomic step | A061 |
-| Acting on yourself through the membership flows | User ids compared before any lookup; the actor's role read from the store | A062 |
-| Keeping a role or a scope after it was taken away | The actor's role read from the store on every call; with `revokeSessionsOnChange`, every session revoked before and after the write, and the epoch fence refuses a racing login | A063 |
-| Reusing an invitation, or racing two accepts of one (invitations plugin) | The store spends it in one atomic step | A065 |
-| Accepting an invitation with an account at another address | Normalised addresses compared; nothing spent on a mismatch | A066 |
-| Collecting an invitation with an unverified account | `accept` needs a verified address; `register` refuses a taken one | A067 |
-| Accepting an expired invitation | 7-day default, 30-day cap; expired answers like unknown | A068 |
-| Getting a session past a second factor through an invitation | `accept` issues none; `register` issues through the seam the two-factor hook guards | A069 |
-| Learning whether an address has an account through invitations | `create` never reads the address; every bad token is `invalid_token` | A070 |
-| Mail bombing through repeated invitations | One live invitation per scope and address; per-address, per-inviter and per-IP limits | A071 |
-| Inviting without the right, or accepting after the inviter lost it | `authorize` required and asked on every create and again on accept; revoke-all deletes an inviter's invitations | A072 |
-| Signing a stranger out of everything through the membership flows | No revocation by default; never on an add or a same-role change. With `revokeSessionsOnChange` on, only consent to joining stops it | A073 |
+| Reusing an invitation, or racing two accepts of one (invitations plugin) | The store spends it in one atomic step | A069 |
+| Accepting an invitation with an account at another address | Normalised addresses compared; nothing spent on a mismatch | A070 |
+| Collecting an invitation with an unverified account | `accept` needs a verified address; `register` refuses a taken one | A071 |
+| Accepting an expired invitation | 7-day default, 30-day cap; expired answers like unknown | A072 |
+| Getting a session past a second factor through an invitation | `accept` issues none; `register` issues through the seam the two-factor hook guards | A073 |
+| Learning whether an address has an account through invitations | `create` never reads the address; every bad token is `invalid_token` | A074 |
+| Mail bombing through repeated invitations | One live invitation per scope and address; per-address, per-inviter and per-IP limits | A075 |
+| Inviting without the right, or accepting after the inviter lost it | `authorize` required and asked on every create and again on accept; revoke-all deletes an inviter's invitations | A076 |
 
 A report that breaks one of these defenses, or shows an attack the table misses, is a vulnerability: see [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md).

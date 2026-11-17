@@ -1,4 +1,4 @@
-// A070: learning whether an address has an account through invitations.
+// A074: learning whether an address has an account through invitations.
 //
 // An inviter (any user the app lets invite) types addresses and watches the
 // answer, the mail or the timing: "already a member", a different mail
@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { invitationApp, meta } from '../invitations/setup';
 
-describe('A070: learning whether an address has an account through invitations', () => {
+describe('A074: learning whether an address has an account through invitations', () => {
   it('answers, mails and calls the stores the same for a known and an unknown address', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });
