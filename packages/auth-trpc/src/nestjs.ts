@@ -22,6 +22,7 @@ import {
   freshAuthBody,
   guardBody,
   rateLimitedBody,
+  writesCookiesBody,
   roleBody,
   type MiddlewareCall,
 } from './middlewares';
@@ -76,3 +77,9 @@ export const RoleMiddleware = (...roles: readonly string[]): NestTrpcMiddlewareC
 /** A fixed window per client IP under `trpc:<name>`; refuses when the counter store is down. */
 export const RateLimitMiddleware = (name: string, rule?: RateLimitRule): NestTrpcMiddlewareClass =>
   middlewareClass(rateLimitedBody(name, rule));
+
+/**
+ * For every procedure that writes cookies: refuses it on a streamed batch
+ * (`httpBatchStreamLink`) before the flow runs.
+ */
+export const WritesCookiesMiddleware: NestTrpcMiddlewareClass = middlewareClass(writesCookiesBody);

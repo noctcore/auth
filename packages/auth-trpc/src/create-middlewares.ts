@@ -22,6 +22,7 @@ import {
   freshAuthBody,
   publicBody,
   rateLimitedBody,
+  writesCookiesBody,
   roleBody,
   type MiddlewareCall,
   type Principal,
@@ -83,6 +84,13 @@ export interface AuthMiddlewares<TContext, TMeta, TErrorShape> {
     name: string,
     rule?: RateLimitRule,
   ): TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>;
+  /**
+   * Put it on every procedure that writes cookies (`setSession`, `signOut`,
+   * `clearSession`): on a streamed batch (`httpBatchStreamLink`), whose
+   * headers are already sent, it refuses before the flow runs, so a sign-in
+   * or a rotation never happens without its cookie.
+   */
+  readonly writesCookies: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>;
   /** Marked public: CSRF on mutations, no session needed (sign-in, sign-up, reset). */
   readonly publicProcedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>;
   /** CSRF on mutations and a valid session, with `ctx.user` and `ctx.session`. */
@@ -129,6 +137,7 @@ export function createAuthMiddlewares<
     freshAuth: (maxAge) => make(freshAuthBody(maxAge)),
     role: (...roles) => make(roleBody(roles)),
     rateLimited: (name, rule) => make(rateLimitedBody(name, rule)),
+    writesCookies: make(writesCookiesBody),
     publicProcedure: root.procedure.use(make(publicBody)) as never,
     protectedProcedure: root.procedure.use(authed) as never,
   };

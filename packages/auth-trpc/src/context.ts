@@ -16,11 +16,16 @@
  *   refused is cleared, so the browser stops sending it.
  * - A new session (sign-in and every rotation) is written with
  *   `ctx.auth.setSession(issued)`, which also binds a fresh CSRF token to it.
+ * - On a streamed batch (`httpBatchStreamLink`) the response headers are sent
+ *   before any procedure runs. `setSession`, `signOut` and `clearSession`
+ *   throw an `AuthConfigError` there instead of losing the cookie, and the
+ *   `writesCookies` middleware refuses the call before the flow runs.
  *
  * A failure to resolve (a store down) answers `internal`, logging only the
  * error's name: a store error can carry the session key.
  */
 import {
+  AuthConfigError,
   parseCookieHeader,
   verifyFetchSite,
   verifyRequestOrigin,
@@ -87,6 +92,30 @@ export interface Internals {
   readonly options: ResolvedOptions;
   /** True when the request passes all three CSRF checks as an unsafe request. */
   readonly csrfOk: boolean;
+  /**
+   * True on a streamed batch (`httpBatchStreamLink`, header
+   * `trpc-accept: application/jsonl`): its response headers go out before
+   * any procedure runs, so no procedure can set a cookie.
+   */
+  readonly streamed: boolean;
+}
+
+/** The header value `httpBatchStreamLink` sends; tRPC answers it with a streamed body. */
+const STREAMED = 'application/jsonl';
+
+/**
+ * Refuses a cookie write on a streamed response, where it would be lost (the
+ * fetch adapter) or throw after the flow ran (Node). Run by `writesCookies`
+ * before the procedure, and by the writers themselves as a backstop.
+ */
+export function refuseStreamedWrite(streamed: boolean): void {
+  if (streamed) {
+    throw new AuthConfigError(
+      'This procedure writes cookies, and a streamed batch (httpBatchStreamLink) sends its ' +
+        'headers before any procedure runs. Send it through httpBatchLink or httpLink, for ' +
+        'example with splitLink.',
+    );
+  }
 }
 
 const internals = new WeakMap<object, Internals>();
@@ -160,6 +189,7 @@ async function resolveState(
   }
 
   const csrfOk = csrfVerdict(options, request, bound, cookieToken);
+  const streamed = request.header('trpc-accept') === STREAMED;
 
   if (isSafeMethod(request.method)) {
     if (bound === null) {
@@ -196,6 +226,8 @@ async function resolveState(
       return user;
     },
     setSession: (issued) => {
+      refuseStreamedWrite(streamed);
+
       const next = csrfCookie(options, sessionBinding(issued.session));
 
       write(issued.cookie);
@@ -205,6 +237,9 @@ async function resolveState(
       return { csrfToken: next.token };
     },
     signOut: async () => {
+      // Before the core signs the session out, not after.
+      refuseStreamedWrite(streamed);
+
       const { cookie } = await auth.logout({ token, meta });
 
       write(cookie);
@@ -212,13 +247,14 @@ async function resolveState(
       return startPreSession();
     },
     clearSession: (cookie) => {
+      refuseStreamedWrite(streamed);
       write(cookie);
 
       return startPreSession();
     },
   };
 
-  internals.set(state, { options, csrfOk });
+  internals.set(state, { options, csrfOk, streamed });
 
   return state;
 }

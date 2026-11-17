@@ -36,7 +36,7 @@ import {
   type RateLimitRule,
   type StoredSession,
 } from '@noctcore/auth';
-import { internalsOf, type AuthState, type Internals } from './context';
+import { internalsOf, refuseStreamedWrite, type AuthState, type Internals } from './context';
 import { internalError, toTRPCError } from './errors';
 
 /** The options of a tRPC middleware call, as far as these bodies read them. */
@@ -49,7 +49,7 @@ export interface MiddlewareCall<TResult> {
 type MetaCall<TResult> = MiddlewareCall<TResult> & { readonly meta?: unknown };
 
 /** What a middleware body checks, for `describeProcedures`. */
-export type BodyKind = 'csrf' | 'public' | 'session' | 'rate';
+export type BodyKind = 'csrf' | 'public' | 'session' | 'rate' | 'cookies';
 
 const kinds = new WeakMap<object, BodyKind>();
 
@@ -125,6 +125,20 @@ export const authedBody = tagged(
   'session',
   async <TResult>(call: MiddlewareCall<TResult>): Promise<TResult> =>
     call.next({ ctx: await principalOf(call) }),
+);
+
+/**
+ * Marks a procedure that writes cookies (`setSession`, `signOut`,
+ * `clearSession`) and refuses it on a streamed batch before it runs, so the
+ * core flow (a sign-in, a rotation) never runs when its cookie cannot be set.
+ */
+export const writesCookiesBody = tagged(
+  'cookies',
+  async <TResult>(call: MiddlewareCall<TResult>): Promise<TResult> => {
+    refuseStreamedWrite(stateOf(call.ctx).internals.streamed);
+
+    return call.next();
+  },
 );
 
 const isPublicMeta = (meta: unknown): boolean =>
