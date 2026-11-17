@@ -9,13 +9,14 @@
 //
 // Stopped by: flows/email-lockout.ts (a refused revert locks the account out:
 //   no session is issued for it, a reset request for it sends nothing and a
-//   reset link for it is refused, each with the ordinary answer; the owner's
-//   revert link lives as long as the lockout), flows/email-change.ts (the
+//   reset link for it is refused, each with the ordinary answer and before
+//   any password is hashed; the lockout never lapses, and the owner's revert
+//   link lives as long), flows/email-change.ts (the
 //   revert sets the lockout right after the write that removed the password,
 //   and a finished revert ends it), create-auth.ts (`clearEmailRevertLockout`
 //   for support, `isAddressHeld` for the app's own user-creating paths).
 // Learn: Email change (/auth/learn/email-change/)
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { meta, PASSWORD, queued, requestAndDrain, tokenOf } from './support';
 import { changed } from '../flows/email-change-support';
@@ -61,11 +62,12 @@ describe('A062: resetting the password at the intruder address after a refused r
     });
   });
 
-  it('a reset link issued before the lockout is refused like a dead one', async () => {
+  it('a reset link issued before the lockout is refused like a dead one, without hashing the password', async () => {
     const { t, userId } = await refusedRevert();
 
     // Suppose a reset link survived (it is voided by the revert; this one is minted after).
     const link = await t.auth.context.tokens.issueLink('password-reset', userId, 60_000);
+    const hash = vi.spyOn(t.auth.context.hasher, 'hash');
 
     expect(
       await t.auth.resetPassword({
@@ -75,6 +77,7 @@ describe('A062: resetting the password at the intruder address after a refused r
       }),
     ).toMatchObject({ ok: false, code: 'invalid_token' });
 
+    expect(hash).not.toHaveBeenCalled();
     expect((await t.stores.users.findCredentialById(userId))?.passwordHash).toBeNull();
   });
 
@@ -127,12 +130,24 @@ describe('A062: resetting the password at the intruder address after a refused r
     expect(t.mailer.last('password-reset')).toMatchObject({ to: INTRUDER });
   });
 
-  it('the lockout lapses after 90 days', async () => {
-    const { t, userId } = await refusedRevert();
+  it('the lockout never lapses while the account names the intruder address, and the owner link keeps working', async () => {
+    const { t, userId, revert, squatterId } = await refusedRevert();
 
-    t.clock.advance(90 * 24 * 60 * 60_000 - 1);
-    expect(await t.auth.context.tokens.findLive('email-revert-lockout', userId)).not.toBeNull();
-    t.clock.advance(1);
+    t.clock.advance(10 * 365 * 24 * 60 * 60_000);
+
+    const before = t.mailer.sent.length;
+
+    await requestAndDrain(t, INTRUDER);
+
+    expect(t.mailer.sent.slice(before)).toEqual([]);
+
+    expect(await t.auth.context.tokens.findLive('email-revert-lockout', userId)).toMatchObject({
+      expiresAt: Date.UTC(9999, 11, 31),
+    });
+
+    await t.stores.users.setEmail(squatterId, 'elsewhere@example.com' as never);
+
+    expect((await t.auth.revertEmailChange({ token: revert, meta: meta() })).ok).toBe(true);
     expect(await t.auth.context.tokens.findLive('email-revert-lockout', userId)).toBeNull();
   });
 

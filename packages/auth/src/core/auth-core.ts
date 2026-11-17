@@ -184,6 +184,21 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     password: string,
     meta: RequestMeta | undefined,
   ): Promise<AuthResult<string>> {
+    const checked = await this.checkNewPassword(password, meta);
+
+    return checked.ok ? ok(await this.hasher.hash(checked.value)) : checked;
+  }
+
+  /**
+   * The policy and breach checks of `hashNewPassword`, without the hash:
+   * returns the normalized password to pass to `hashCheckedPassword`. For a
+   * flow whose hooks run between the two, so a refused password spends
+   * nothing a hook asked for and a hook's refusal costs no hash.
+   */
+  async checkNewPassword(
+    password: string,
+    meta: RequestMeta | undefined,
+  ): Promise<AuthResult<string>> {
     const verdict = checkPasswordPolicy(password, this.policy);
 
     if (verdict === 'too_short') return fail('weak_password', 'password_too_short');
@@ -208,9 +223,12 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       }
     }
 
-    const hash = await this.hasher.hash(normalized);
+    return ok(normalized);
+  }
 
-    return ok(hash);
+  /** Hashes a password `checkNewPassword` accepted (and normalized). */
+  async hashCheckedPassword(normalized: string): Promise<string> {
+    return this.hasher.hash(normalized);
   }
 
   /**
