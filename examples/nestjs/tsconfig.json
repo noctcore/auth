@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Nest's decorators are the legacy kind. Every injection names its token
+    // with @Inject, so the app does not depend on emitDecoratorMetadata.
+    "experimentalDecorators": true
+  },
+  "include": ["src", "tests", "*.ts"]
+}
