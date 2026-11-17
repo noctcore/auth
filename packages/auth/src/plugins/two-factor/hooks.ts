@@ -7,8 +7,10 @@
  *   confirmed factor, or one the app requires, unless it is the plugin's own
  *   (`second-factor`) or a re-issue of a session the user already holds
  *   (password change, re-authentication, sign out of other devices, email
- *   verified). So no flow that issues a session, sign-up with `autoLogin`
- *   included, or one a later plugin adds, gets past the factor.
+ *   verified; the core refuses those labels unless the call passes that user's
+ *   session as `inherit`). So no flow that issues a session, sign-up with
+ *   `autoLogin` included, gets past the factor. Plugins are trusted code: one
+ *   that issues with `via: 'second-factor'` claims to have checked the factor.
  * - `beforePasswordReset`: a reset of an account with a factor needs a code or
  *   a recovery code before the password is written, so a stolen mailbox alone
  *   cannot take the account. The factor survives the reset.

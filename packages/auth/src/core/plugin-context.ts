@@ -40,7 +40,11 @@ export interface IssueOptions<A> {
   readonly persistentCookie?: boolean;
   /** The epoch read before the credential was checked. */
   readonly epoch?: number;
-  /** The session this one replaces: its attributes, remember-me and cookie shape carry over. */
+  /**
+   * The session this one replaces: its attributes, remember-me and cookie
+   * shape carry over. Required, and of the same user, for the re-issue vias
+   * (`password-change`, `reauthenticate`, `revoke-others`, `email-verified`).
+   */
   readonly inherit?: StoredSession<A>;
   /** When the credential was proved. Default now; a re-issue that proved nothing passes the old value. */
   readonly authenticatedAt?: number;
