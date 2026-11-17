@@ -178,7 +178,7 @@ CaptchaVerdict [type] = 'pass' | 'reject' | 'unavailable'
 CaptchaVerifier [interface]
     verify(token: string | undefined, context: { ip?: string; door: CaptchaDoor; }): Promise<CaptchaVerdict>
 ChangedEmail [interface]<A>
-    readonly session: IssuedSession<A> | null
+    readonly session: IssuedSession<A>
 checkPasswordPolicy [function]: (password: string, policy?: PasswordPolicy) => PasswordPolicyVerdict
 clientIp [function]: (input: { remoteAddress: string | undefined; forwardedFor?: string | readonly string[] | null | undefined; trustedHops: number; }) => string | undefined
 Clock [interface]
