@@ -38,6 +38,7 @@ const ENTRIES: readonly Entry[] = [
   { pkg: 'auth', name: 'testing', base: 'packages/auth/dist/testing' },
   { pkg: 'auth', name: 'two-factor', base: 'packages/auth/dist/two-factor' },
   { pkg: 'auth', name: 'membership', base: 'packages/auth/dist/membership' },
+  { pkg: 'auth', name: 'invitations', base: 'packages/auth/dist/invitations' },
   { pkg: 'auth-redis', name: 'index', base: 'packages/auth-redis/dist/index' },
   { pkg: 'auth-prisma', name: 'index', base: 'packages/auth-prisma/dist/index' },
   { pkg: 'auth-nestjs', name: 'index', base: 'packages/auth-nestjs/dist/index' },

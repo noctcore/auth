@@ -132,7 +132,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       } catch (error) {
         this.logger.error('Mailer failed', {
           type: event.type,
-          userId: event.userId,
+          ...('userId' in event ? { userId: event.userId } : {}),
           error: describeError(error),
         });
       }
