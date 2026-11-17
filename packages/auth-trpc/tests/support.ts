@@ -7,7 +7,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createAuth, type AuthUser } from '@noctcore/auth';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '@noctcore/auth/testing';
-import { createTRPCClient, httpLink, TRPCClientError } from '@trpc/client';
+import { createTRPCClient, httpBatchStreamLink, httpLink, TRPCClientError } from '@trpc/client';
 import { initTRPC } from '@trpc/server';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { createHTTPHandler } from '@trpc/server/adapters/standalone';
@@ -58,7 +58,7 @@ export type Context = AuthContextOf<TestAuth>;
 export function buildRouter(auth: TestAuth) {
   const t = initTRPC.context<Context>().create({ errorFormatter: authErrorFormatter });
 
-  const { publicProcedure, protectedProcedure, freshAuth, role, rateLimited } =
+  const { publicProcedure, protectedProcedure, freshAuth, role, rateLimited, writesCookies } =
     createAuthMiddlewares(t);
 
   return t.router({
@@ -67,6 +67,7 @@ export function buildRouter(auth: TestAuth) {
       user: (await ctx.auth.user())?.id ?? null,
     })),
     login: publicProcedure
+      .use(writesCookies)
       .input(loginInput)
       .output(loginOutput)
       .mutation(async ({ ctx, input }) => {
@@ -111,6 +112,7 @@ export function buildRouter(auth: TestAuth) {
       .output(sessionListOutput)
       .query(({ ctx }) => auth.sessions.list(ctx.session)),
     reauthenticate: protectedProcedure
+      .use(writesCookies)
       .input(reauthenticateInput)
       .output(csrfTokenOutput)
       .mutation(async ({ ctx, input }) => {
@@ -133,15 +135,21 @@ export function buildRouter(auth: TestAuth) {
     echo: protectedProcedure
       .input(z.object({ note: z.string().max(5) }))
       .mutation(({ input }) => input),
-    logout: publicProcedure.output(csrfTokenOutput).mutation(({ ctx }) => ctx.auth.signOut()),
-    revokeAll: protectedProcedure.output(csrfTokenOutput).mutation(async ({ ctx }) => {
-      const { cookie } = await auth.sessions.revokeAll({
-        session: ctx.session,
-        meta: ctx.auth.meta,
-      });
+    logout: publicProcedure
+      .use(writesCookies)
+      .output(csrfTokenOutput)
+      .mutation(({ ctx }) => ctx.auth.signOut()),
+    revokeAll: protectedProcedure
+      .use(writesCookies)
+      .output(csrfTokenOutput)
+      .mutation(async ({ ctx }) => {
+        const { cookie } = await auth.sessions.revokeAll({
+          session: ctx.session,
+          meta: ctx.auth.meta,
+        });
 
-      return ctx.auth.clearSession(cookie);
-    }),
+        return ctx.auth.clearSession(cookie);
+      }),
     boom: publicProcedure.query(() => {
       throw new Error('store failed for session key 4f2a');
     }),
@@ -225,11 +233,15 @@ export class Browser {
   constructor(
     private readonly env: { readonly url: string; readonly transport: typeof fetch },
     private readonly ip = '198.51.100.7',
+    link: 'plain' | 'stream' = 'plain',
   ) {
+    const options = {
+      url: env.url,
+      fetch: (input: unknown, init: unknown) => this.fetch(input, init as RequestInit),
+    };
+
     this.client = createTRPCClient<AppRouter>({
-      links: [
-        httpLink({ url: env.url, fetch: (input, init) => this.fetch(input, init as RequestInit) }),
-      ],
+      links: [link === 'stream' ? httpBatchStreamLink(options) : httpLink(options)],
     });
   }
 

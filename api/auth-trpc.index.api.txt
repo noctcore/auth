@@ -26,6 +26,7 @@ FreshAuthMiddleware
 MAX_TRUSTED_HOPS
 RateLimitMiddleware
 RoleMiddleware
+WritesCookiesMiddleware
 acceptedOutput
 assertNoSecretQueries
 assertProceduresGuarded
@@ -72,7 +73,7 @@ AuthContextOptions [interface]<U extends AuthUser = AuthUser, A = unknown>
     readonly trustedHops: number
 AuthedMiddleware [const]: NestTrpcMiddlewareClass
 authErrorFormatter [function]: <TShape extends ShapeLike>(opts: { shape: TShape; error: TRPCError; }) => AuthErrorShape<TShape>
-AuthErrorShape [type]<TShape extends ShapeLike> = Omit<TShape, 'data' | 'message'> & { readonly message: string; readonly data: Omit<TShape['data'], 'stack'> & { readonly stack?: string | undefined; /** Set on an auth refusal: the public code, and when to retry on `rate_limited`. */ readonly auth: PublicAuthError | null; /** Set when the input failed validation: where and what kind, never the value. */ readonly input: readonly PublicInputIssue[] | null; }; }
+AuthErrorShape [type]<TShape extends ShapeLike> = Omit<TShape, 'data' | 'message'> & { readonly message: string; readonly data: Omit<TShape['data'], 'stack'> & { /** Set on an auth refusal: the public code, and when to retry on `rate_limited`. */ readonly auth: PublicAuthError | null; /** Set when the input failed validation: where and what kind, never the value. */ readonly input: readonly PublicInputIssue[] | null; }; }
 AuthGuardMiddleware [const]: NestTrpcMiddlewareClass
 AuthMiddlewares [interface]<TContext, TMeta, TErrorShape>
     freshAuth(maxAge?: Duration): TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
@@ -81,6 +82,7 @@ AuthMiddlewares [interface]<TContext, TMeta, TErrorShape>
     readonly csrf: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
     readonly protectedProcedure: AuthProcedureBuilder<TContext, TMeta, PrincipalOf<TContext>, TErrorShape>
     readonly publicProcedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>
+    readonly writesCookies: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
     role(...roles: readonly string[]): TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
 AuthProcedureBuilder [type]<TContext, TMeta, TOverrides, TErrorShape> = TRPCProcedureBuilder<TContext, TMeta, TOverrides, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, false, TErrorShape>
 AuthRoot [interface]<TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>
@@ -166,6 +168,7 @@ verificationRequestOutput [const]: z.ZodObject<{ sent: z.ZodBoolean; }, z.core.$
 verifyEmailCodeInput [const]: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
 verifyEmailLinkInput [const]: z.ZodObject<{ token: z.ZodString; }, z.core.$strip>
 verifyPasswordResetCodeInput [const]: z.ZodObject<{ email: z.ZodString; code: z.ZodString; }, z.core.$strip>
+WritesCookiesMiddleware [const]: NestTrpcMiddlewareClass
 
 ## types reached through the exports (not exported by name)
 MiddlewareCall [interface]<TResult>

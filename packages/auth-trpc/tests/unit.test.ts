@@ -14,6 +14,7 @@ import {
   MAX_TRUSTED_HOPS,
   type AuthContextOptions,
   type AuthState,
+  WritesCookiesMiddleware,
 } from '../src';
 import { secretKeys } from '../src/secret-queries';
 import { CSRF_SECRET, EMAIL, makeAuth, ORIGIN, PASSWORD } from './support';
@@ -158,6 +159,55 @@ describe('the auth state', () => {
     await signedIn.auth.user();
     await signedIn.auth.user();
     expect(find).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('cookie writes on a streamed batch', () => {
+  it('throws a configuration error from every writer, before the core signs out', async () => {
+    const env = makeAuth();
+    const logout = vi.spyOn(env.auth, 'logout');
+    const resHeaders = new Headers();
+
+    const { auth } = await createAuthContext(options({ auth: env.auth })).fetch({
+      req: new Request(ORIGIN, {
+        method: 'POST',
+        headers: { 'trpc-accept': 'application/jsonl' },
+      }),
+      resHeaders,
+    });
+
+    const issued = { cookie: {}, deviceCookie: {}, session: { id: 's' } } as never;
+
+    expect(() => auth.setSession(issued)).toThrow(AuthConfigError);
+    expect(() => auth.clearSession({} as never)).toThrow(/httpBatchLink or httpLink/u);
+    await expect(auth.signOut()).rejects.toThrow(AuthConfigError);
+    expect(logout).not.toHaveBeenCalled();
+    expect(resHeaders.getSetCookie()).toEqual([]);
+  });
+
+  it('refuses through the nestjs-trpc class too, and passes an ordinary request', async () => {
+    const make = (headers: Record<string, string>) =>
+      createAuthContext(options()).fetch({
+        req: new Request(ORIGIN, { method: 'POST', headers }),
+        resHeaders: new Headers(),
+      });
+
+    const next = vi.fn(async () => Promise.resolve('ran'));
+    const middleware = new WritesCookiesMiddleware();
+
+    await expect(
+      middleware.use({
+        ctx: await make({ 'trpc-accept': 'application/jsonl' }),
+        type: 'mutation',
+        next,
+      }),
+    ).rejects.toThrow(AuthConfigError);
+
+    expect(next).not.toHaveBeenCalled();
+
+    await expect(middleware.use({ ctx: await make({}), type: 'mutation', next })).resolves.toBe(
+      'ran',
+    );
   });
 });
 

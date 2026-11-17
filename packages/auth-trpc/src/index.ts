@@ -4,14 +4,15 @@
  * - `createAuthContext` checks the options once and returns the context
  *   creators for the fetch and Node adapters: `ctx.auth` holds the session the
  *   core accepted, the request meta and the cookie writers.
- * - `createAuthMiddlewares(t)` returns `csrf`, `authed`, `freshAuth`, `role`
- *   and `rateLimited`, plus `publicProcedure` (CSRF on mutations) and
+ * - `createAuthMiddlewares(t)` returns `csrf`, `authed`, `freshAuth`, `role`,
+ *   `rateLimited` and `writesCookies`, plus `publicProcedure` (CSRF on mutations) and
  *   `protectedProcedure` (CSRF and a valid session).
  * - `assertProceduresGuarded(router)` fails on a procedure built with neither.
  * - The nestjs-trpc classes run the same bodies; `AuthGuardMiddleware` is the
  *   closed-by-default global for nestjs-trpc.
  * - `toTRPCError` and `authErrorFormatter` map refusals to tRPC errors
- *   without leaking account state, input values or internal messages.
+ *   without leaking account state, and keep stacks, submitted values and
+ *   internal messages out of the errors tRPC and the adapter raise.
  * - Zod input and output schemas for the auth procedures, and
  *   `assertNoSecretQueries` to keep secrets out of URLs.
  */
@@ -46,6 +47,7 @@ export {
   FreshAuthMiddleware,
   RateLimitMiddleware,
   RoleMiddleware,
+  WritesCookiesMiddleware,
   type NestTrpcMiddleware,
   type NestTrpcMiddlewareClass,
 } from './nestjs';

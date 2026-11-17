@@ -187,6 +187,37 @@ describe.each(['fetch', 'node'] as const)('tRPC on the %s adapter', (transport) 
     });
   });
 
+  it('refuses a cookie-writing procedure on a streamed batch before the flow runs', async () => {
+    const browser = await start();
+
+    await browser.signIn();
+
+    const streamed = new Browser(env, '198.51.100.7', 'stream');
+
+    for (const [name, value] of browser.cookies) streamed.cookies.set(name, value);
+
+    const login = vi.spyOn(env.auth, 'login');
+    const reauthenticate = vi.spyOn(env.auth, 'reauthenticate');
+    const logout = vi.spyOn(env.auth, 'logout');
+
+    // Reads still stream.
+    await expect(streamed.client.me.query()).resolves.toMatchObject({ email: EMAIL });
+
+    for (const call of [
+      streamed.client.login.mutate({ email: EMAIL, password: PASSWORD }),
+      streamed.client.reauthenticate.mutate({ password: PASSWORD }),
+      streamed.client.logout.mutate(),
+    ]) {
+      expect((await failure(call)).message).toBe('internal');
+    }
+
+    // Nothing ran: no orphan session, no rotation, the user is still signed in.
+    expect(login).not.toHaveBeenCalled();
+    expect(reauthenticate).not.toHaveBeenCalled();
+    expect(logout).not.toHaveBeenCalled();
+    await expect(browser.client.me.query()).resolves.toMatchObject({ email: EMAIL });
+  });
+
   it('answers a thrown error with internal and no message or stack', async () => {
     const browser = await start();
     const error = await failure(browser.client.boom.query());
