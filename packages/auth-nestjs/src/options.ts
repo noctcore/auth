@@ -13,6 +13,7 @@ import {
   type Duration,
   type RequestMeta,
   type StoredSession,
+  toMilliseconds,
 } from '@noctcore/auth';
 
 /**
@@ -145,6 +146,11 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
   if (!HEADER.test(headerName))
     throw new AuthConfigError(`Invalid CSRF header name: ${headerName}`);
 
+  const shutdownTimeout = options.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT;
+
+  if (!(shutdownMilliseconds(shutdownTimeout) > 0))
+    throw new AuthConfigError('shutdownTimeout must be a duration longer than zero');
+
   // The session cookie is `__Host-` prefixed exactly when it is Secure, and
   // the CSRF cookies follow it, so one setting decides all three.
   const secure = auth.cookieName.startsWith('__Host-');
@@ -154,7 +160,7 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     trustedHops,
     roles: options.roles as ResolvedOptions['roles'],
     secure,
-    shutdownTimeout: options.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT,
+    shutdownTimeout,
     csrf: {
       secrets,
       allowedOrigins: [...csrf.allowedOrigins],
@@ -165,4 +171,13 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
       preSessionCookieName: secure ? '__Host-presession' : 'presession',
     },
   };
+}
+
+/** The shutdown bound in milliseconds, or `NaN` when it is not a duration. */
+function shutdownMilliseconds(timeout: Duration): number {
+  try {
+    return toMilliseconds(timeout);
+  } catch {
+    return Number.NaN;
+  }
 }

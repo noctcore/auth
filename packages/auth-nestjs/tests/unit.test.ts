@@ -54,6 +54,16 @@ describe('resolveOptions', () => {
     expect(resolveOptions(options({ shutdownTimeout: '2s' })).shutdownTimeout).toBe('2s');
   });
 
+  it('refuses a shutdown timeout that is not a duration longer than zero', () => {
+    for (const shutdownTimeout of ['0s', 0, -1, 'soon', Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => resolveOptions(options({ shutdownTimeout: shutdownTimeout as never }))).toThrow(
+        AuthConfigError,
+      );
+    }
+
+    expect(resolveOptions(options({ shutdownTimeout: 1 })).shutdownTimeout).toBe(1);
+  });
+
   it('refuses a missing auth instance', () => {
     expect(() => resolveOptions(options({ auth: undefined as never }))).toThrow(AuthConfigError);
   });
