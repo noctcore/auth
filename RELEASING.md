@@ -27,6 +27,9 @@ milestone come release candidates during a soak, then 1.0.0. The first real rele
    version goes to npm with provenance, and the workflow pushes a `@noctcore/<name>@<version>` tag
    and creates a GitHub release for it.
 
+The release job runs only on `main`: dispatching the workflow from any other branch does nothing, so
+a manual dispatch is only for re-running a release from `main`.
+
 Never run `npm publish` by hand and never push release tags by hand. If a run fails halfway,
 re-run the failed workflow: `changeset publish` skips versions that already exist on npm.
 
