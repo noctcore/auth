@@ -10,8 +10,8 @@ import {
 import { PrismaTokenStore, PrismaUserStore, prismaStores } from '../src';
 import { PrismaClient } from './generated/prisma/client';
 
-const url = process.env.DATABASE_URL;
-const required = process.env.AUTH_REQUIRE_SERVICES === '1';
+const url = process.env['DATABASE_URL'];
+const required = process.env['AUTH_REQUIRE_SERVICES'] === '1';
 
 if (!url && required) throw new Error('DATABASE_URL is required when AUTH_REQUIRE_SERVICES=1');
 
@@ -51,10 +51,10 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
       select: { displayName: true },
       createData: () => ({ displayName: 'New member' }),
       toUser: (row) => ({
-        id: String(row.id),
-        email: String(row.email),
-        emailVerified: Boolean(row.emailVerified),
-        displayName: String(row.displayName),
+        id: String(row['id']),
+        email: String(row['email']),
+        emailVerified: Boolean(row['emailVerified']),
+        displayName: String(row['displayName']),
       }),
     });
 

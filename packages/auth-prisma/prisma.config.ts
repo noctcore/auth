@@ -5,6 +5,6 @@ import { defineConfig } from 'prisma/config';
 export default defineConfig({
   schema: 'tests/prisma/schema.prisma',
   datasource: {
-    url: process.env.DATABASE_URL ?? 'postgresql://auth:auth@localhost:5440/auth',
+    url: process.env['DATABASE_URL'] ?? 'postgresql://auth:auth@localhost:5440/auth',
   },
 });

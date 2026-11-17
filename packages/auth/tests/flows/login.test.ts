@@ -454,7 +454,7 @@ describe('login', () => {
     let letThrough = 0;
 
     for (let i = 0; i < 50; i++) {
-      const deviceToken = fresh[i % fresh.length];
+      const deviceToken = fresh[i % fresh.length] ?? null;
 
       const r = await env.auth.login({
         email: EMAIL,
@@ -472,7 +472,7 @@ describe('login', () => {
     const owner = await env.auth.login({
       email: EMAIL,
       password: NEW_PASSWORD,
-      deviceToken: fresh[0],
+      deviceToken: fresh[0] ?? null,
       meta: meta('198.18.1.1'),
     });
 
@@ -481,7 +481,7 @@ describe('login', () => {
 
   it('never spends a device budget on correct logins while the account is unlocked', async () => {
     const { auth, clock } = await registered();
-    let deviceToken: string | undefined;
+    let deviceToken: string | null = null;
 
     for (let i = 0; i < 10; i++) {
       const r = await auth.login({ email: EMAIL, password: PASSWORD, deviceToken, meta: meta() });
@@ -566,7 +566,7 @@ describe('login', () => {
     const owner = await auth.login({
       email: EMAIL,
       password: PASSWORD,
-      deviceToken: tokens[0],
+      deviceToken: tokens[0] ?? null,
       meta: meta('203.0.113.50'),
     });
 
@@ -580,7 +580,7 @@ describe('login', () => {
         auth.login({
           email: EMAIL,
           password: `wrong guess ${String(i).padStart(3, '0')}!`,
-          deviceToken: tokens[i % 4],
+          deviceToken: tokens[i % 4] ?? null,
           meta: meta(`198.18.${i}.1`),
         }),
       ),

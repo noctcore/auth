@@ -209,8 +209,8 @@ export function createApp(options: AppOptions) {
 
       case 'POST /api/register': {
         const result = await auth.register({
-          email: str(body.email),
-          password: str(body.password),
+          email: str(body['email']),
+          password: str(body['password']),
           meta,
         });
 
@@ -221,9 +221,9 @@ export function createApp(options: AppOptions) {
 
       case 'POST /api/login': {
         const result = await auth.login({
-          email: str(body.email),
-          password: str(body.password),
-          rememberMe: body.rememberMe === true,
+          email: str(body['email']),
+          password: str(body['password']),
+          rememberMe: body['rememberMe'] === true,
           deviceToken: auth.readDeviceToken(req.headers.cookie),
           meta,
         });
@@ -246,7 +246,7 @@ export function createApp(options: AppOptions) {
         if (!session)
           return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
 
-        const result = await auth.verifyEmailCode({ session, code: str(body.code), meta });
+        const result = await auth.verifyEmailCode({ session, code: str(body['code']), meta });
 
         if (!result.ok) return failure(res, result);
         if (!result.value.session) return send(res, 200, { verified: true });

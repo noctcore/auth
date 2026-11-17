@@ -4,7 +4,10 @@
     "noEmit": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    // Readers copy these samples into apps that read request bodies and the
+    // environment with dot access, so the samples keep that style.
+    "noPropertyAccessFromIndexSignature": false
   },
   "include": ["**/*.ts"]
 }

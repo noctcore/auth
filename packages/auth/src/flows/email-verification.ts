@@ -173,7 +173,7 @@ async function finish<U extends AuthUser, A>(
   }
 
   const user = await core.users.findById(redemption.userId);
-  const sentTo = normalizeEmail(redemption.data.email);
+  const sentTo = normalizeEmail(redemption.data['email']);
 
   // The address changed since the mail was sent: the proof is for an old address.
   if (!user || !sentTo || user.email !== sentTo) {
