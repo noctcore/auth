@@ -8,11 +8,15 @@
  *   the internal `reason` (`unknown_email`, `locked`, ...) is never the
  *   message, the cause or any field, so "no such account", "wrong password"
  *   and "locked" stay one answer.
- * - `authErrorFormatter` also covers what tRPC builds itself: an input that
- *   fails validation is answered with the paths and issue codes only (never
- *   the submitted value or a message that could quote it), and any other
- *   internal error with `internal` and no stack, since a store error can carry
- *   a session key or an address.
+ * - `authErrorFormatter` also covers what tRPC builds itself. It never sends
+ *   a stack, in development or not. An input that fails validation is
+ *   answered with the paths and issue codes only (never the submitted value or
+ *   a message that could quote it); any other `BAD_REQUEST` (a body that is
+ *   not JSON, whose parser message quotes the body) and the other request
+ *   errors tRPC raises are answered with a fixed message; any internal error
+ *   with `internal`, since a store error can carry a session key or an
+ *   address. Errors your own procedures throw with another code keep the
+ *   message you gave them.
  *
  * Guide: Learn, "Enumeration".
  */
@@ -109,6 +113,18 @@ function inputIssues(cause: unknown): PublicInputIssue[] | null {
   }));
 }
 
+/**
+ * Request errors tRPC raises with a message that can quote the request (a
+ * JSON parser's message quotes the body). They go out with these instead.
+ */
+const FIXED_MESSAGES: Readonly<Partial<Record<TRPC_ERROR_CODE_KEY, string>>> = {
+  BAD_REQUEST: 'bad_request',
+  PARSE_ERROR: 'parse_error',
+  METHOD_NOT_SUPPORTED: 'method_not_supported',
+  UNSUPPORTED_MEDIA_TYPE: 'unsupported_media_type',
+  PAYLOAD_TOO_LARGE: 'payload_too_large',
+};
+
 /** The shape tRPC hands a formatter, as far as this one reads it. */
 interface ShapeLike {
   readonly message: string;
@@ -118,7 +134,6 @@ interface ShapeLike {
 export type AuthErrorShape<TShape extends ShapeLike> = Omit<TShape, 'data' | 'message'> & {
   readonly message: string;
   readonly data: Omit<TShape['data'], 'stack'> & {
-    readonly stack?: string | undefined;
     /** Set on an auth refusal: the public code, and when to retry on `rate_limited`. */
     readonly auth: PublicAuthError | null;
     /** Set when the input failed validation: where and what kind, never the value. */
@@ -136,7 +151,8 @@ export function authErrorFormatter<TShape extends ShapeLike>(opts: {
   error: TRPCError;
 }): AuthErrorShape<TShape> {
   const { shape, error } = opts;
-  const { stack, ...rest } = shape.data;
+  // Never sent: a stack holds absolute paths and, from a parser, the input.
+  const { stack: _stack, ...rest } = shape.data;
   const data = rest as Omit<TShape['data'], 'stack'>;
 
   if (error instanceof AuthTRPCError) {
@@ -159,6 +175,7 @@ export function authErrorFormatter<TShape extends ShapeLike>(opts: {
 
   return {
     ...shape,
-    data: { ...data, ...(stack === undefined ? {} : { stack }), auth: null, input: null },
+    message: FIXED_MESSAGES[error.code] ?? shape.message,
+    data: { ...data, auth: null, input: null },
   };
 }

@@ -5,8 +5,14 @@
 // error that echoes a password ends up in client logs, error trackers and
 // screenshots.
 //
+// A body that is not JSON does the same through the parser's message
+// (`Unexpected token 'S', "SECRETTOKE"...`), and a stack, which tRPC adds in
+// development (any NODE_ENV but production, edge runtimes included), carries
+// absolute paths.
+//
 // Stopped by: auth-trpc src/errors.ts: `authErrorFormatter` answers an input
-//   error with `invalid_input` and the paths and issue codes only.
+//   error with `invalid_input` and the paths and issue codes only, a body
+//   that does not parse with the fixed `bad_request`, and never sends a stack.
 // Learn: Build, "Use with tRPC" (/auth/build/trpc/)
 import { afterEach, describe, expect, it } from 'vitest';
 import { authErrorFormatter } from '../../src';
@@ -33,6 +39,33 @@ describe('A035 secret echoed in a validation error', () => {
     expect(error.data?.input).toEqual([{ path: ['note'], code: 'too_big' }]);
     expect(JSON.stringify(error.shape)).not.toContain(secret);
   });
+
+  it.each(['fetch', 'node'] as const)(
+    'answers a body that is not JSON with a fixed message and no stack (%s)',
+    async (transport) => {
+      booted = await boot({ transport });
+
+      const browser = new Browser(booted);
+
+      await browser.signIn();
+
+      const secret = 'SECRETTOKEN-0987654321';
+
+      const response = await browser.fetch(`${booted.url}/echo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: `${secret}{`,
+      });
+
+      const text = await response.text();
+      const body = JSON.parse(text) as { error: { message: string; data: object } };
+
+      expect(response.status).toBe(400);
+      expect(body.error.message).toBe('bad_request');
+      expect(body.error.data).not.toHaveProperty('stack');
+      expect(text).not.toContain('SECRET');
+    },
+  );
 
   it('reads issues defensively', () => {
     const shape = {
