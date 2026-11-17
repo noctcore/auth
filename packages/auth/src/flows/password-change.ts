@@ -65,6 +65,19 @@ export async function changePassword<U extends AuthUser, A>(
 
   const user = proved.value;
 
+  // The new password is checked before the hooks, so one the policy refuses
+  // does not spend what a hook asked for (a second factor's code, say).
+  const hashed = await core.hashNewPassword(input.newPassword, meta);
+
+  if (!hashed.ok) {
+    await core.emit(
+      { type: 'password.change_failed', userId: user.id, reason: hashed.reason },
+      meta,
+    );
+
+    return hashed;
+  }
+
   const refusal = await firstRefusal(core.hooks.beforePasswordChange, {
     user,
     session,
@@ -79,17 +92,6 @@ export async function changePassword<U extends AuthUser, A>(
     );
 
     return fail(refusal.code, refusal.reason);
-  }
-
-  const hashed = await core.hashNewPassword(input.newPassword, meta);
-
-  if (!hashed.ok) {
-    await core.emit(
-      { type: 'password.change_failed', userId: user.id, reason: hashed.reason },
-      meta,
-    );
-
-    return hashed;
   }
 
   const written = await core.users.setPasswordHash(user.id, hashed.value);
