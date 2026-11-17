@@ -27,12 +27,13 @@ NestJS 11 and 12 are supported, on the Express platform, for HTTP controllers. G
 
 <Code code={mailModuleTs} lang="ts" title="src/mail.module.ts" />
 
-`AuthModule.forRootAsync` (or `forRoot` with the options directly) does four things, and none of them can be switched off:
+`AuthModule.forRootAsync` (or `forRoot` with the options directly) does five things, and none of them can be switched off:
 
 - provides the `createAuth` result under the `AUTH` token, for your controllers and services;
 - registers `SessionGuard` as a global guard;
 - applies `CsrfMiddleware` to every route;
-- provides `SessionCookies`, which writes a new or ended session onto the response.
+- provides `SessionCookies`, which writes a new or ended session onto the response;
+- calls `auth.flush()` in `beforeApplicationShutdown`, so mail sends still in flight finish before your own `onApplicationShutdown` hooks close the database and Redis connections. Nest runs it on `app.close()`, and on SIGTERM once `main.ts` calls `app.enableShutdownHooks()`.
 
 The module is global, so feature modules get the guard, the decorators and `AUTH` without importing it again. Boot fails on a CSRF secret shorter than 32 bytes, an empty origin allowlist, or a hop count that is not a whole number from 0 to 16. It also fails on a route whose decorators contradict each other: `@Public()` (on the route or its controller) together with `@RequireRole()` or `@RequireFreshAuth()`, or `@RequireRole()` without the `roles` option. The error names each route.
 
