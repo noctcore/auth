@@ -431,7 +431,7 @@ describe('through createAuth', () => {
     expect(await isSettled(flushed)).toBe(true);
   });
 
-  it('runs a reset job without enqueue as one task, and flush waits until its send settled', async () => {
+  it('runs a reset job without enqueue, and flush waits until its send settled', async () => {
     const t = app();
 
     await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: { ip: '1' } });
@@ -529,6 +529,44 @@ describe('through createAuth', () => {
       'Background task dropped: verification mail',
       'Background task dropped: mail lockout',
     ]);
+  });
+
+  it('drops only the mail of a detached reset job under the cap: its audit rows are still written', async () => {
+    const t = app({ maxPending: 1 });
+
+    t.mailer.send = () => new Promise<void>(() => undefined);
+
+    // The hung verification mail takes the only slot.
+    await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: { ip: '1' } });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const userId = t.audit.events.find((e) => e.type === 'register.created')?.userId;
+
+    await t.auth.requestPasswordReset({ email: 'nobody@example.com', meta: { ip: '2' } });
+
+    for (let i = 0; i < 4; i++)
+      await t.auth.requestPasswordReset({ email: 'ada@example.com', meta: { ip: '3' } });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const ignored = t.audit.events
+      .filter((e) => e.type === 'password.reset_request_ignored')
+      .map((e) => (e as { reason?: string }).reason);
+
+    expect(ignored).toEqual(['unknown_user', 'mail_limit']);
+
+    const drops = t.errors.flatMap((e, i) =>
+      e.startsWith('Background task dropped') ? [[e, t.contexts[i]]] : [],
+    );
+
+    expect(drops).toEqual(
+      Array.from({ length: 3 }, () => [
+        'Background task dropped: mail password-reset',
+        { pending: 1, userId },
+      ]),
+    );
+
+    expect(userId).toEqual(expect.any(String));
   });
 
   it('sends the lock notice even while the audit sink hangs', async () => {
