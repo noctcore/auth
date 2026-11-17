@@ -1,4 +1,4 @@
-// A071: inviting without the right, or accepting after the inviter lost it.
+// A072: inviting without the right, or accepting after the inviter lost it.
 //
 // A plugin that lets any signed-in user invite lets anyone into any
 // organisation. And an invitation sent by an admin who was then demoted, or
@@ -18,7 +18,7 @@ import { invitations } from '../../src/plugins/invitations';
 import { MemoryInvitationStore } from '../../src/testing';
 import { invitationApp, meta, SCOPE } from '../invitations/setup';
 
-describe('A071: inviting without the right, or accepting after the inviter lost it', () => {
+describe('A072: inviting without the right, or accepting after the inviter lost it', () => {
   it('refuses to start without a permission check', () => {
     expect(() =>
       invitations({

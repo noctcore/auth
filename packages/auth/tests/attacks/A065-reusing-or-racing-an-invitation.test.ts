@@ -1,4 +1,4 @@
-// A064: reusing an invitation, or racing two accepts of one.
+// A065: reusing an invitation, or racing two accepts of one.
 //
 // The invitee clicks twice, opens the link in two browsers, or an attacker who
 // saw the link replays it after the invitee accepted. An invitation checked and
@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { invitationApp, meta, PASSWORD, SCOPE } from '../invitations/setup';
 
-describe('A064: reusing an invitation, or racing two accepts of one', () => {
+describe('A065: reusing an invitation, or racing two accepts of one', () => {
   it('accepts once, then refuses the same link', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });

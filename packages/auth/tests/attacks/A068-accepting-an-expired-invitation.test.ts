@@ -1,4 +1,4 @@
-// A067: accepting an invitation after it expired.
+// A068: accepting an invitation after it expired.
 //
 // A link found months later in an old mailbox, a backup or a leaked log still
 // grants a seat if invitations never expire, long after the inviter forgot it.
@@ -13,7 +13,7 @@ import { invitations } from '../../src/plugins/invitations';
 import { MemoryInvitationStore } from '../../src/testing';
 import { invitationApp, meta, PASSWORD } from '../invitations/setup';
 
-describe('A067: accepting an invitation after it expired', () => {
+describe('A068: accepting an invitation after it expired', () => {
   it('refuses accept and register at the expiry, with the answer of an unknown token', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });
