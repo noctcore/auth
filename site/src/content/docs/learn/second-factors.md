@@ -59,6 +59,6 @@ The guide's MFA page asks for RFC 6238 codes from a 160-bit random secret, a con
 
 ## Further reading
 
-- [Multi-factor authentication](https://auth.pilcrowonpaper.com/mfa) in Pilcrow's auth guide.
+- [Multi-factor authentication](https://thecopenhagenbook.com/mfa) in The Copenhagen Book, also by Pilcrow (the auth guide has no page on it).
 - [RFC 6238: TOTP](https://www.rfc-editor.org/rfc/rfc6238) and [RFC 4226: HOTP](https://www.rfc-editor.org/rfc/rfc4226).
 - [OWASP Multifactor Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html).
