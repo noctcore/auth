@@ -22,8 +22,10 @@
 //   HMAC work the same for malformed input; the result is decided afterwards.
 // - http/csrf.ts:
 //   - the regex `/[a-z]+/` vs `/[a-z]/` (same result);
-//   - `toLowerCase()` on the origin (URL already lowercases scheme and host,
-//     and both sides go through it);
+//   - `toLowerCase()` turned into `toUpperCase()` on the origin: both sides go
+//     through the same fold, so either direction matches the same pairs.
+//     The fold itself is needed (a custom scheme keeps its host's case:
+//     `new URL('app://APP').host` is 'APP'), and a test pins that;
 //   - the `!origin || origin === 'null'` guard (an absent or 'null' origin
 //     fails URL parsing anyway);
 //   - the empty-secrets guard (no secret, no match);
