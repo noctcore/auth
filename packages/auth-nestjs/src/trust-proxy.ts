@@ -13,6 +13,7 @@
  */
 import type { INestApplication } from '@nestjs/common';
 import { AuthConfigError, parseTrustProxy } from '@noctcore/auth';
+import { MAX_TRUSTED_HOPS } from './options';
 
 /** The environment variables read: pass `process.env`. */
 export interface TrustProxyEnv {
@@ -24,7 +25,7 @@ export interface TrustProxyEnv {
  * The number of trusted proxy hops from `TRUST_PROXY`. Unset (or empty) is 0
  * outside production and refused in production; `false` is 0 anywhere; `true`
  * and anything that is not a hop count (an address list, `loopback`) are
- * refused, because the core counts hops.
+ * refused, because the core counts hops, and so is a count above 16.
  */
 export function trustedHopsFromEnv(env: TrustProxyEnv): number {
   const raw = env.TRUST_PROXY;
@@ -43,8 +44,10 @@ export function trustedHopsFromEnv(env: TrustProxyEnv): number {
 
   if (parsed === false) return 0;
 
-  if (typeof parsed !== 'number') {
-    throw new AuthConfigError('TRUST_PROXY must be a number of proxy hops, such as 1');
+  if (typeof parsed !== 'number' || !Number.isSafeInteger(parsed) || parsed > MAX_TRUSTED_HOPS) {
+    throw new AuthConfigError(
+      `TRUST_PROXY must be a number of proxy hops from 0 to ${MAX_TRUSTED_HOPS}, such as 1`,
+    );
   }
 
   return parsed;

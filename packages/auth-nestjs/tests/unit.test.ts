@@ -48,7 +48,7 @@ describe('resolveOptions', () => {
   });
 
   it('refuses a hop count that is not a whole number of proxies', () => {
-    for (const trustedHops of [-1, 1.5, Number.NaN]) {
+    for (const trustedHops of [-1, 1.5, Number.NaN, 17, Number.MAX_SAFE_INTEGER + 2]) {
       expect(() => resolveOptions(options({ trustedHops }))).toThrow(AuthConfigError);
     }
   });
@@ -116,6 +116,15 @@ describe('trustedHopsFromEnv', () => {
     expect(() => trustedHopsFromEnv({ NODE_ENV: 'production' })).toThrow(/must be set/u);
 
     expect(() => trustedHopsFromEnv({ NODE_ENV: 'production', TRUST_PROXY: '' })).toThrow(
+      AuthConfigError,
+    );
+  });
+
+  it('accepts up to 16 hops and refuses more, or a count past the safe integers', () => {
+    expect(trustedHopsFromEnv({ TRUST_PROXY: '16' })).toBe(16);
+    expect(() => trustedHopsFromEnv({ TRUST_PROXY: '17' })).toThrow(/from 0 to 16/u);
+
+    expect(() => trustedHopsFromEnv({ TRUST_PROXY: '99999999999999999999' })).toThrow(
       AuthConfigError,
     );
   });
