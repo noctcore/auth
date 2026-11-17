@@ -13,8 +13,10 @@
 //   any password is hashed; the lockout never lapses, and the owner's revert
 //   link lives as long), flows/email-change.ts (the
 //   revert sets the lockout right after the write that removed the password,
-//   and a finished revert ends it), create-auth.ts (`clearEmailRevertLockout`
-//   for support, `isAddressHeld` for the app's own user-creating paths).
+//   and a finished revert ends it; a link refuses once the account no longer
+//   names the address it moved to), create-auth.ts (`clearEmailRevertLockout`
+//   for support, which also voids the revert link and the hold, and
+//   `isAddressHeld` for the app's own user-creating paths).
 // Learn: Email change (/auth/learn/email-change/)
 import { describe, expect, it, vi } from 'vitest';
 
@@ -148,6 +150,61 @@ describe('A062: resetting the password at the intruder address after a refused r
     await t.stores.users.setEmail(squatterId, 'elsewhere@example.com' as never);
 
     expect((await t.auth.revertEmailChange({ token: revert, meta: meta() })).ok).toBe(true);
+    expect(await t.auth.context.tokens.findLive('email-revert-lockout', userId)).toBeNull();
+  });
+
+  it('support settling the account kills the owner link, even once the old address comes free years later', async () => {
+    const { t, userId, revert, squatterId } = await refusedRevert();
+    const SAFE = 'ada.safe@example.com';
+
+    // Support moves the account to an address the owner proved to them, sets
+    // a password with the owner, and clears the lockout.
+    await t.stores.users.setEmail(userId, SAFE as never);
+    await t.stores.users.setPasswordHash(userId, await t.auth.context.hasher.hash(PASSWORD));
+    await t.auth.clearEmailRevertLockout({ userId, meta: meta() });
+
+    expect(await t.auth.context.tokens.findLive('email-revert', userId)).toBeNull();
+    expect(await t.auth.isAddressHeld(OWNER)).toBe(false);
+
+    t.clock.advance(3 * 365 * 24 * 60 * 60_000);
+    await t.stores.users.setEmail(squatterId, 'elsewhere@example.com' as never);
+
+    expect(await t.auth.revertEmailChange({ token: revert, meta: meta() })).toMatchObject({
+      ok: false,
+      code: 'invalid_token',
+    });
+
+    expect(await t.stores.users.findCredentialById(userId)).toMatchObject({
+      email: SAFE,
+      passwordHash: expect.stringMatching(/./u) as unknown,
+    });
+
+    expect(await t.auth.context.tokens.findLive('email-revert-lockout', userId)).toBeNull();
+  });
+
+  it('a link clicked after support moved the account, before any clear, changes nothing and locks nothing', async () => {
+    const { t, userId, revert } = await refusedRevert();
+    const SAFE = 'ada.safe@example.com';
+
+    await t.stores.users.setEmail(userId, SAFE as never);
+    await t.stores.users.setPasswordHash(userId, await t.auth.context.hasher.hash(PASSWORD));
+    await t.auth.clearEmailRevertLockout({ userId, meta: meta() });
+
+    // Even a link that somehow survived the clear refuses once the account left the intruder address.
+    const stray = await t.auth.context.tokens.issueLink('email-revert', userId, 60_000, {
+      email: OWNER,
+      to: INTRUDER,
+    });
+
+    for (const token of [revert, stray.token]) {
+      expect(await t.auth.revertEmailChange({ token, meta: meta() })).toMatchObject({
+        ok: false,
+        code: 'invalid_token',
+      });
+    }
+
+    expect(t.audit.events.at(-1)).toMatchObject({ reason: 'email_revert_address_moved' });
+    expect((await t.stores.users.findCredentialById(userId))?.passwordHash).not.toBeNull();
     expect(await t.auth.context.tokens.findLive('email-revert-lockout', userId)).toBeNull();
   });
 
