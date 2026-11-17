@@ -9,6 +9,9 @@ import type { AuthUser } from '../ports/stores';
 import { toMilliseconds } from '../shared/duration';
 import { AuthConfigError } from '../shared/errors';
 
+/** The shortest revert window allowed: the old address's owner may be away for a week. */
+export const MIN_REVERT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPlugin[]>(
   config: AuthConfig<U, A, P>,
 ): FlowSettings {
@@ -19,6 +22,8 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
     config.emailVerification?.ttl ?? (verificationKind === 'code' ? '15m' : '24h');
 
   const resetTtl = config.passwordReset?.ttl ?? (resetKind === 'code' ? '15m' : '1h');
+  const changeKind = config.emailChange?.kind ?? 'code';
+  const changeTtl = config.emailChange?.ttl ?? (changeKind === 'code' ? '15m' : '1h');
 
   const settings: FlowSettings = {
     revealExisting: config.registration?.revealExisting ?? false,
@@ -38,7 +43,20 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
       markEmailVerified: config.passwordReset?.markEmailVerified ?? true,
       enqueue: config.passwordReset?.enqueue,
     },
-    urls: { verifyEmail: config.urls?.verifyEmail, resetPassword: config.urls?.resetPassword },
+    emailChange: {
+      kind: changeKind,
+      ttlMs: toMilliseconds(changeTtl),
+      digits: config.emailChange?.digits ?? 8,
+      maxAttempts: config.emailChange?.maxAttempts ?? 5,
+      revertTtlMs: toMilliseconds(config.emailChange?.revertTtl ?? '7d'),
+      blockAfterRevertMs: toMilliseconds(config.emailChange?.blockAfterRevert ?? '30d'),
+    },
+    urls: {
+      verifyEmail: config.urls?.verifyEmail,
+      resetPassword: config.urls?.resetPassword,
+      confirmEmailChange: config.urls?.confirmEmailChange,
+      revertEmailChange: config.urls?.revertEmailChange,
+    },
     freshAuthAgeMs: toMilliseconds(config.session?.freshAuthAge ?? '10m'),
   };
 
@@ -59,9 +77,15 @@ function assertSafeSettings(settings: FlowSettings): void {
   if (settings.reset.kind === 'link' && !settings.urls.resetPassword)
     throw new AuthConfigError('urls.resetPassword is required for link resets');
 
+  if (settings.emailChange.kind === 'link' && !settings.urls.confirmEmailChange)
+    throw new AuthConfigError('urls.confirmEmailChange is required for link email changes');
+  if (settings.emailChange.revertTtlMs < MIN_REVERT_TTL_MS)
+    throw new AuthConfigError('emailChange.revertTtl must be at least 7 days');
+
   const codeLengths = [
     ['emailVerification.digits', settings.verification.digits],
     ['passwordReset.digits', settings.reset.digits],
+    ['emailChange.digits', settings.emailChange.digits],
   ] as const;
 
   for (const [name, digits] of codeLengths) {

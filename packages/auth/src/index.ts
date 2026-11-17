@@ -70,6 +70,7 @@ export type {
   AuthUser,
   CounterStore,
   CounterWindow,
+  EmailChangeResult,
   SessionStore,
   StoredSession,
   StoredToken,
@@ -118,4 +119,9 @@ export type { IssuedSession, IssueOptions, PluginContext } from './core/plugin-c
 export type { LoginInput, LoginOutcome } from './flows/login';
 export type { RegisterInput, RegisterOutcome } from './flows/register';
 export type { VerifiedEmail } from './flows/email-verification';
+export type {
+  ChangedEmail,
+  EmailChangeRequested,
+  RequestEmailChangeInput,
+} from './flows/email-change';
 export type { SessionSummary } from './flows/session-management';

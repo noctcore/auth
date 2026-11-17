@@ -175,6 +175,25 @@ export class OneTimeTokens {
     return { status: 'valid', userId, data: consumed.data };
   }
 
+  /**
+   * The data and expiry of the user's unexpired token of that purpose, without
+   * consuming it; null when there is none. For tokens whose presence is the
+   * point (a live revert link, a block), never to check a secret.
+   */
+  async findLive(
+    purpose: string,
+    userId: string,
+  ): Promise<{
+    readonly data: Readonly<Record<string, string>>;
+    readonly expiresAt: number;
+  } | null> {
+    const found = await this.store.findByUser(purpose, userId);
+
+    if (!found || found.expiresAt <= this.clock.now()) return null;
+
+    return { data: found.data, expiresAt: found.expiresAt };
+  }
+
   revokeAll(userId: string, purposes: readonly string[]): Promise<void> {
     return this.store.deleteByUser(userId, purposes);
   }

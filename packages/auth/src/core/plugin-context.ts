@@ -43,7 +43,7 @@ export interface IssueOptions<A> {
   /**
    * The session this one replaces: its attributes, remember-me and cookie
    * shape carry over. The re-issue vias (`password-change`, `reauthenticate`,
-   * `revoke-others`, `email-verified`) are for the core's own flows: they
+   * `revoke-others`, `email-verified`, `email-changed`) are for the core's own flows: they
    * require an `inherit` the core itself read live from the store, for the
    * same user, before the flow revoked anything, and refuse every other value.
    */

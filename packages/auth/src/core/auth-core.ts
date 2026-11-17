@@ -44,6 +44,7 @@ const REISSUE_VIAS: ReadonlySet<IssueVia> = new Set([
   'reauthenticate',
   'revoke-others',
   'email-verified',
+  'email-changed',
 ]);
 
 export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {

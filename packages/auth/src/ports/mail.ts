@@ -63,6 +63,51 @@ export type AuthMailEvent =
       readonly until: Date;
       readonly dedupeKey: string;
     }
+  /** An email change: the code or link that proves the new address, sent to that address. */
+  | {
+      readonly type: 'email-change-confirm';
+      readonly to: string;
+      readonly userId: string;
+      /** Set for link confirmation. */
+      readonly url?: string;
+      /** Set for code confirmation. */
+      readonly code?: string;
+      readonly expiresAt: Date;
+      readonly dedupeKey: string;
+    }
+  /**
+   * An email change to an address that already has an account: the uniform
+   * answer's mail, sent to that address. `userId` is the account that holds the address.
+   */
+  | {
+      readonly type: 'email-change-in-use';
+      readonly to: string;
+      readonly userId: string;
+      readonly dedupeKey: string;
+    }
+  /**
+   * An email change was confirmed: sent to the address it replaced. `revertUrl`
+   * undoes it until `revertExpiresAt`; it is absent when an earlier change's
+   * revert link is still live (that one stays the only one).
+   */
+  | {
+      readonly type: 'email-changed';
+      readonly to: string;
+      readonly userId: string;
+      readonly newEmail: string;
+      readonly at: Date;
+      readonly revertUrl?: string;
+      readonly revertExpiresAt?: Date;
+      readonly dedupeKey: string;
+    }
+  /** A revert link was used: the address is back, every session ended and the password must be reset. */
+  | {
+      readonly type: 'email-change-reverted';
+      readonly to: string;
+      readonly userId: string;
+      readonly at: Date;
+      readonly dedupeKey: string;
+    }
   /** The two-factor plugin: a second factor was turned on for the account. */
   | {
       readonly type: 'two-factor-enabled';
