@@ -439,7 +439,10 @@ export async function revertEmailChange<U extends AuthUser, A>(
 
   if (!restore) return revertFailed(core, link.userId, fail('invalid_token', 'user_missing'), meta);
 
-  const outcome = await restoreAddress(core, support, link.userId, restore);
+  const outcome = await restoreAddress(core, support, link.userId, {
+    restore,
+    from: normalizeEmail(link.data['to']),
+  });
 
   if (!outcome.ok) return revertFailed(core, link.userId, outcome, meta);
 
@@ -519,14 +522,22 @@ async function restoreAddress<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   support: ReturnType<typeof requireSupport>,
   userId: string,
-  restore: NormalizedEmail,
+  change: { restore: NormalizedEmail; from: NormalizedEmail | null },
 ): Promise<AuthResult<{ user: U; lost: NormalizedEmail; restored: boolean }>> {
+  const { restore } = change;
   let taken = false;
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const user = await core.users.findById(userId);
 
     if (!user) return fail('invalid_token', 'user_missing');
+
+    // The link undoes the move to the address it names. Once the account is
+    // somewhere else (support moved it), there is nothing left to undo: a
+    // revert would move it off an address someone settled it on. Only the
+    // first read decides; a retry after a lost race keeps going.
+    if (attempt === 0 && user.email !== change.from)
+      return fail('invalid_token', 'email_revert_address_moved');
 
     const lost = user.email as NormalizedEmail;
 

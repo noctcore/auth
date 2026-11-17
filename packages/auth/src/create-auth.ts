@@ -211,8 +211,9 @@ export function createAuth<
      */
     isAddressHeld: (email: string) => isAddressHeld(core, email),
     /**
-     * Ends the lockout left by a revert that could not restore the address.
-     * For support, once the account is on an address its owner controls.
+     * Ends the lockout left by a revert that could not restore the address,
+     * and voids the owner's revert link and the hold on the old address with
+     * it. For support, once the account is on an address its owner controls.
      */
     clearEmailRevertLockout: (input: { userId: string; meta: RequestMeta }) =>
       clearEmailRevertLockout(core, input),

@@ -12,7 +12,8 @@
  * It never lapses: the account names the intruder's address until someone
  * moves it, so time alone must not hand that address a working reset. It ends
  * only when the owner's revert finishes (the link is kept alive as long) or
- * when support calls `auth.clearEmailRevertLockout`. The marker and the link
+ * when support calls `auth.clearEmailRevertLockout`, which voids that link
+ * and the hold on the old address too. The marker and the link
  * are stored with the latest expiry every store can hold (LOCKOUT_EXPIRES_AT),
  * not renewed: a renewal would rely on something running before it lapsed.
  *
@@ -58,12 +59,23 @@ export async function endLockout<U extends AuthUser, A>(
  * address its owner controls (or the old address is free and the owner's
  * revert link can finish instead). Calling it while the account still names
  * the intruder's address hands that address a working password reset.
+ *
+ * Settling the account by hand also ends what the refused revert kept alive:
+ * the owner's revert link (stretched to the lockout's expiry) and the hold on
+ * the old address. Left alive, the link would move the account back to the
+ * old address, password cleared, whenever that address came free, and while
+ * it stayed taken each click would remove the password and lock the account
+ * out again.
  */
 export async function clearEmailRevertLockout<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   input: { userId: string; meta: RequestMeta },
 ): Promise<void> {
-  await endLockout(core, input.userId);
+  await core.tokens.revokeAll(input.userId, [
+    PURPOSE.emailRevertLockout,
+    PURPOSE.emailRevert,
+    PURPOSE.emailReserved,
+  ]);
 
   await core.emit(
     { type: 'email.revert_lockout_cleared', userId: input.userId, data: { review: true } },
