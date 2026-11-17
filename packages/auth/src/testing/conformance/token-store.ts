@@ -122,7 +122,7 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
           userId,
           purpose: 'email-revert',
           expiresAt: systemClock.now() + week + 60_000,
-          data: { email: 'old@example.com', to: 'new@example.com', since: '1' },
+          data: { email: 'old@example.com', to: 'new@example.com' },
         });
 
         const block = sampleToken({ userId, purpose: 'email-change-block' });
@@ -137,9 +137,12 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
         assert.equal(await store.consume(revert.purpose, revert.hash), null);
 
         // A hold on an address is filed under its owner and found by its hash
-        // alone; a revert lockout sits beside it.
+        // alone; a revert lockout sits beside it. A lockout, and the revert
+        // link it keeps, never lapse: both are stored to expire at the start
+        // of 9999-12-31 UTC, which the store must keep exactly.
+        const never = Date.UTC(9999, 11, 31);
         const hold = sampleToken({ userId, purpose: 'email-reserved' });
-        const lockout = sampleToken({ userId, purpose: 'email-revert-lockout' });
+        const lockout = sampleToken({ userId, purpose: 'email-revert-lockout', expiresAt: never });
 
         await Promise.all([store.put(hold), store.put(lockout)]);
         assert.deepEqual(await store.find('email-reserved', hold.hash), hold);
