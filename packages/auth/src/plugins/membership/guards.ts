@@ -11,10 +11,12 @@
  * 3. The write is one atomic, guarded step in the store: it refuses to leave
  *    the scope without an admin (`last_admin`) and to apply a decision made on
  *    a role that changed meanwhile.
- * 4. Only with `revokeSessionsOnChange`: when a role really changed, or a
- *    member was removed, every session of the member is revoked through the
- *    epoch fence, once before the write and once after it. A revocation that
- *    fails before the write leaves nothing changed. The bump after the write
+ * 4. Only with `revokeSessionsOnChange`: for an attempted change to another
+ *    role, or a removal, every session of the member is revoked through the
+ *    epoch fence, once before the write and once after it. The first bump runs
+ *    before the store decides, so an attempt it refuses (`last_admin`, a stale
+ *    or missing target) has still revoked them. A revocation that fails before
+ *    the write leaves nothing changed. The bump after the write
  *    catches a login that read the old role between the two: the fence refuses
  *    it at mint, or it was minted on the first bump's epoch and dies now.
  *    Adding a member and setting the role a member already holds never revoke.

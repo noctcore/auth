@@ -35,8 +35,9 @@ export interface MembershipOptions {
    */
   readonly canManage?: (context: ManageContext) => boolean | Promise<boolean>;
   /**
-   * Revoke every session of a member whose role changed or who was removed.
-   * Default false: the guards read roles from the store on every call, so
+   * Revoke every session of a member on an attempted change to another role,
+   * or a removal, before and after the write: an attempt the store refuses
+   * (`last_admin`, a stale or missing target) has still revoked. Default false: the guards read roles from the store on every call, so
    * they never need it. Turn it on when the app copies roles into session
    * attributes or caches them per session. The epoch is per user, so the
    * member is signed out everywhere, in every scope, and with the two-factor

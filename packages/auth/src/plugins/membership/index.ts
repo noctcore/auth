@@ -4,8 +4,9 @@
  * scope can be neither demoted nor removed (decided atomically by the store, so
  * two admins demoting each other at once cannot leave none), and the acting
  * user's role is read from the store on every call. Apps that copy roles into
- * sessions turn on `revokeSessionsOnChange`, so a real role change or a removal
- * revokes the member's sessions through the epoch fence.
+ * sessions turn on `revokeSessionsOnChange`, so an attempted role change or a
+ * removal revokes the member's sessions through the epoch fence, even one the
+ * store then refuses.
  *
  * It is a plugin: flows under `auth.membership`, never HTTP endpoints. It does
  * not scope data: filtering every query by tenant stays in the app.

@@ -38,7 +38,7 @@ Your own store, on your own member table, must pass `membershipStoreConformance`
 | `store` | required | |
 | `adminRoles` | required | At least one role. The last member holding one of them in a scope can be neither demoted to another role nor removed. |
 | `canManage` | the actor holds an admin role | `({ actor, action, userId, from, to }) => boolean`. `actor` is the acting user's membership, read from the store. `from` is the target's role now (undefined when adding), `to` the role being given (undefined when removing). Throwing refuses. The default lets an admin act on an owner; the snippet above keeps the owner role to owners. |
-| `revokeSessionsOnChange` | `false` | Revoke every session of a member whose role really changed, or who was removed. Turn it on only if your app copies roles into session attributes or caches them per session: see [Revocation](#revocation). |
+| `revokeSessionsOnChange` | `false` | Revoke every session of a member on an attempted change to another role, or a removal, including one the store then refuses (`last_admin`, a stale or missing target). Turn it on only if your app copies roles into session attributes or caches them per session: see [Revocation](#revocation). |
 
 ## The routes
 
