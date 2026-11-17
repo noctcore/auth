@@ -97,6 +97,46 @@ describe('PrismaUserStore errors', () => {
     expect(await taken.create({ email, passwordHash: 'x' })).toBeNull();
     await expect(down.create({ email, passwordHash: 'x' })).rejects.toBe(outage);
   });
+
+  it('inserts with skipDuplicates when the delegate has createManyAndReturn, and never calls create', async () => {
+    const seen: unknown[] = [];
+    const row = { id: 'u1', email, emailVerified: false };
+    let rows: unknown[] = [row];
+
+    const store = new PrismaUserStore({
+      delegate: delegate({
+        create: async () => {
+          throw new Error('create must not be called');
+        },
+        createManyAndReturn: async (args) => (seen.push(args), rows),
+      }),
+      createData: () => ({ tenant: 't1' }),
+    });
+
+    expect(await store.create({ email, passwordHash: 'x' })).toEqual(row);
+
+    expect(seen).toEqual([
+      {
+        data: [{ tenant: 't1', email, passwordHash: 'x' }],
+        skipDuplicates: true,
+        select: { id: true, email: true, emailVerified: true },
+      },
+    ]);
+
+    // A taken address: the insert skips the duplicate and returns no row.
+    rows = [];
+    expect(await store.create({ email, passwordHash: 'x' })).toBeNull();
+
+    const down = new PrismaUserStore({
+      delegate: delegate({
+        createManyAndReturn: async () => {
+          throw outage;
+        },
+      }),
+    });
+
+    await expect(down.create({ email, passwordHash: 'x' })).rejects.toBe(outage);
+  });
 });
 
 describe('PrismaTwoFactorStore errors', () => {

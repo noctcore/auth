@@ -110,6 +110,38 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     expect(await twoFactor.countRecoveryCodes(userId)).toBe(2);
   });
 
+  it('answers a taken address with a skipped insert, not a failed statement', async () => {
+    const { users } = prismaStores({ delegate: prisma.user, tokenDelegate: prisma.authToken });
+    const email = `${uniqueId('dup')}@example.com` as NormalizedEmail;
+    const create = prisma.user.create.bind(prisma.user);
+    let creates = 0;
+
+    prisma.user.create = ((args: never) => (creates++, create(args))) as never;
+
+    try {
+      expect(await users.create({ email, passwordHash: 'h' })).toMatchObject({ email });
+      expect(await users.create({ email, passwordHash: 'h2' })).toBeNull();
+      expect(creates).toBe(0);
+      expect(await users.findCredentialByEmail(email)).toMatchObject({ passwordHash: 'h' });
+    } finally {
+      prisma.user.create = create as never;
+    }
+  });
+
+  it('falls back to create and a unique violation on a delegate without createManyAndReturn', async () => {
+    const delegate = {
+      findFirst: prisma.user.findFirst.bind(prisma.user),
+      create: prisma.user.create.bind(prisma.user),
+      updateMany: prisma.user.updateMany.bind(prisma.user),
+    };
+
+    const users = new PrismaUserStore({ delegate });
+    const email = `${uniqueId('fallback')}@example.com` as NormalizedEmail;
+
+    expect(await users.create({ email, passwordHash: 'h' })).toMatchObject({ email });
+    expect(await users.create({ email, passwordHash: 'h2' })).toBeNull();
+  });
+
   it('maps extra columns into a richer user type', async () => {
     interface Member extends AuthUser {
       readonly displayName: string;
