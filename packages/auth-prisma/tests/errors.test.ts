@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { NormalizedEmail } from '@noctcore/auth';
 import {
+  PrismaInvitationStore,
   PrismaMembershipStore,
   PrismaTokenStore,
   PrismaTwoFactorStore,
@@ -349,5 +350,63 @@ describe('PrismaMembershipStore errors', () => {
 
     await expect(losing.changeRole(input)).rejects.toThrow('lost the race 50 times');
     expect(calls).toBe(50);
+  });
+});
+
+describe('PrismaInvitationStore errors', () => {
+  const invitation = {
+    id: 'i1',
+    hash: 'h'.repeat(64),
+    scope: 's1',
+    email: 'bob@example.com',
+    inviterId: 'u1',
+    payload: {},
+    createdAt: Date.UTC(2026, 0, 1),
+    expiresAt: Date.UTC(2026, 0, 8),
+  };
+
+  function store(transaction: () => Promise<unknown>, remove: () => Promise<unknown>) {
+    return new PrismaInvitationStore({
+      client: { $transaction: transaction },
+      invitation: delegate({
+        findUnique: async () => null,
+        findMany: async () => [],
+        create: async () => ({}),
+        delete: remove,
+        deleteMany: async () => ({ count: 0 }),
+      }),
+    });
+  }
+
+  it('rethrows an outage from a create and from a consume', async () => {
+    const failing = store(
+      async () => {
+        throw outage;
+      },
+      async () => {
+        throw outage;
+      },
+    );
+
+    await expect(failing.create(invitation, invitation.createdAt)).rejects.toBe(outage);
+    await expect(failing.consume(invitation.hash)).rejects.toBe(outage);
+  });
+
+  it('gives up after losing the create race to rows that keep vanishing', async () => {
+    let calls = 0;
+
+    const racing = store(
+      async () => {
+        calls++;
+        throw prismaError('P2002');
+      },
+      async () => ({}),
+    );
+
+    await expect(racing.create(invitation, invitation.createdAt)).rejects.toThrow(
+      'Invitation create lost the race 5 times; try again',
+    );
+
+    expect(calls).toBe(5);
   });
 });

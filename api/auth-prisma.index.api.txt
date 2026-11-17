@@ -16,6 +16,7 @@
 }
 
 ## runtime exports
+PrismaInvitationStore
 PrismaMembershipStore
 PrismaTokenStore
 PrismaTwoFactorStore
@@ -29,6 +30,18 @@ PrismaAuthTokenDelegate [interface]
     findUnique(args: any): PromiseLike<any>
     update(args: any): PromiseLike<any>
     upsert(args: any): PromiseLike<any>
+PrismaInvitationDelegates [interface]
+    readonly client: { $transaction(operations: any[]): PromiseLike<unknown>; }
+    readonly invitation: { findUnique(args: any): PromiseLike<any>; findMany(args: any): PromiseLike<any[]>; create(args: any): PromiseLike<any>; delete(args: any): PromiseLike<any>; deleteMany(args: any): PromiseLike<{ count: number; }>; }
+PrismaInvitationStore [class]
+    (new) (delegates: PrismaInvitationDelegates): PrismaInvitationStore
+    consume(hash: string): Promise<StoredInvitation | null>
+    create(invitation: StoredInvitation, now: number): Promise<boolean>
+    deleteByInviter(inviterId: string): Promise<void>
+    findByHash(hash: string): Promise<StoredInvitation | null>
+    listByScope(scope: string, now: number): Promise<StoredInvitation[]>
+    private readonly delegates
+    revoke(scope: string, id: string): Promise<boolean>
 PrismaMembershipDelegates [interface]
     readonly client: { $transaction(operations: any[]): PromiseLike<unknown>; }
     readonly member: { findUnique(args: any): PromiseLike<any>; findMany(args: any): PromiseLike<any[]>; count(args: any): PromiseLike<number>; create(args: any): PromiseLike<any>; update(args: any): PromiseLike<any>; delete(args: any): PromiseLike<any>; }
