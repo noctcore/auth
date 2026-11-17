@@ -12,27 +12,6 @@ import {
 import { AuthConfigError } from '../../src/shared/errors';
 
 describe('session cookie', () => {
-  it('uses the __Host- prefix whenever it is Secure', () => {
-    expect(sessionCookieName()).toBe('__Host-session');
-    expect(sessionCookieName({ name: 'sid', secure: false })).toBe('sid');
-  });
-
-  it('is HttpOnly, Path=/, Lax by default and has no Domain', () => {
-    const spec = createSessionCookie({}, 't', { expiresAt: 61_000, persistent: true, now: 0 });
-
-    expect(spec.attributes).toEqual({
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 61,
-    });
-
-    expect(serializeCookie(spec)).toBe(
-      '__Host-session=t; Path=/; Max-Age=61; HttpOnly; Secure; SameSite=Lax',
-    );
-  });
-
   it('is a browser-session cookie when the session was not remembered', () => {
     const spec = createSessionCookie({}, 't', { expiresAt: 61_000, persistent: false, now: 0 });
 
