@@ -2,6 +2,22 @@
 
 This is authentication code, so most bugs in it are security bugs. Please report privately.
 
+What the library defends against, and what it leaves to the app, is in the
+[threat model](docs/THREAT_MODEL.md) (also on the
+[docs site](https://noctcore.github.io/auth/security/threat-model/)).
+
+## Supported versions
+
+During 0.x only the latest release gets fixes. A fix ships as a patch on top of the latest minor;
+older 0.x lines are not patched, so upgrade to the latest release to get it. From 1.0 on, the latest
+minor of the current major gets fixes, and the previous major gets security fixes for six months
+after the next one is released.
+
+| Version | Security fixes |
+|---|---|
+| Latest 0.x release | Yes |
+| Older 0.x releases | No |
+
 ## Reporting
 
 Use GitHub's private vulnerability reporting for this repository:
@@ -14,6 +30,21 @@ report, need a private channel", with no details, and the maintainer will reply 
 Include the package and version, what an attacker needs, and what they get. There is no bounty. You
 get a reply, a fix released as a patch with a changelog entry that credits you unless you ask
 otherwise, and the details published once consumers have had the fix for a day.
+
+## How a report is handled
+
+1. **Acknowledged** within 3 working days, in the draft advisory.
+2. **Triaged** against the threat model: in scope or not, severity (CVSS), affected versions. You
+   hear the outcome and the reasoning either way.
+3. **Fixed in private**, in a temporary private fork attached to the advisory, with an attack test
+   in `packages/auth/tests/attacks/` that fails before the fix. You are invited to review it.
+4. **Released** as a patch with a changeset that describes the impact. A CVE is requested through
+   the GitHub advisory when the severity warrants one.
+5. **Published**: the advisory goes public once consumers have had the fixed release for a day,
+   crediting you unless you ask otherwise.
+
+The aim is a released fix within 30 days of the report for high and critical issues. If that cannot
+be met, you hear why and when.
 
 ## What counts
 
