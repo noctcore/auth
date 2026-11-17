@@ -1,6 +1,6 @@
 {
   "name": "@noctcore/auth-prisma",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Prisma user and one-time token stores for @noctcore/auth.",
   "license": "MIT",
   "type": "module",
@@ -54,7 +54,7 @@
     "generate": "prisma generate"
   },
   "dependencies": {
-    "@noctcore/auth": "0.3.0"
+    "@noctcore/auth": "0.4.0"
   },
   "devDependencies": {
     "@prisma/adapter-pg": "7.10.1",
