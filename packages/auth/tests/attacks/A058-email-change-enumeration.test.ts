@@ -1,4 +1,4 @@
-// A077: learning whether an address has an account through the email change answer.
+// A058: learning whether an address has an account through the email change answer.
 //
 // A signed-in attacker asks to change their own email to address after
 // address and watches the answer, the expiry and the store round trips: any
@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { meta, PASSWORD, recordStoreCalls, setup } from './support';
 
-describe('A077: learning whether an address has an account through the email change answer', () => {
+describe('A058: learning whether an address has an account through the email change answer', () => {
   it('answers a taken and a free address the same, with the same store calls', async () => {
     const t = setup();
     const { session } = await t.signedInUser('eve@example.com');

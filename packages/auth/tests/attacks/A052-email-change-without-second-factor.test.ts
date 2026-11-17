@@ -1,4 +1,4 @@
-// A071: changing the email of a two-factor account without the factor.
+// A052: changing the email of a two-factor account without the factor.
 //
 // An attacker with the password (and so a fresh session) but not the phone
 // moves the account to their address, then disables everything from there.
@@ -32,7 +32,7 @@ async function freshWithoutStepUp(t: ReturnType<typeof twoFactorApp>) {
   return { secret, session: fresh.value.session };
 }
 
-describe('A071: changing the email of a two-factor account without the factor', () => {
+describe('A052: changing the email of a two-factor account without the factor', () => {
   it('refuses a fresh session with no step-up and no code', async () => {
     const t = twoFactorApp();
     const { session } = await freshWithoutStepUp(t);

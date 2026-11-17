@@ -1,4 +1,4 @@
-// A073: reusing an email change code or link.
+// A054: reusing an email change code or link.
 //
 // A code or link that already moved the account is replayed: after the owner
 // changed back, or from a mail copy the attacker kept, to move the account
@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { meta, setup } from './support';
 import { requestCode, tokenOf } from '../flows/email-change-support';
 
-describe('A073: reusing an email change code or link', () => {
+describe('A054: reusing an email change code or link', () => {
   it('a code works once', async () => {
     const t = setup();
     const { session } = await t.signedInUser();

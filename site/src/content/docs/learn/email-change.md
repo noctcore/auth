@@ -11,19 +11,19 @@ Three weaker versions of the same flow help them further: a change that applies 
 
 ## The rule
 
-**Fresh authentication, and the factor when there is one.** Asking for a change needs a session whose last password proof is inside `session.freshAuthAge`, 10 minutes by default. A stolen cookie on its own is refused (A070). With the two-factor plugin and a confirmed factor, the request also needs a step-up held by the session or a code with the request, the same rule as a password change (A071).
+**Fresh authentication, and the factor when there is one.** Asking for a change needs a session whose last password proof is inside `session.freshAuthAge`, 10 minutes by default. A stolen cookie on its own is refused (A051). With the two-factor plugin and a confirmed factor, the request also needs a step-up held by the session or a code with the request, the same rule as a password change (A052).
 
-**Nothing changes until the new address proves itself.** The old address stays the login. An 8-digit code goes to the new address; it lives 15 minutes, is stored as an HMAC bound to the user, allows 5 wrong guesses counted before each comparison (A072), and is single use (A073). The stored row holds the new address and the one it replaces: a new request replaces the code, and a code for a change from an address the account no longer has is refused (A074). Like email verification, the code is typed in a signed-in session of the same account, and a link (if you choose links) only works in one.
+**Nothing changes until the new address proves itself.** The old address stays the login. An 8-digit code goes to the new address; it lives 15 minutes, is stored as an HMAC bound to the user, allows 5 wrong guesses counted before each comparison (A053), and is single use (A054). The stored row holds the new address and the one it replaces: a new request replaces the code, and a code for a change from an address the account no longer has is refused (A055). Like email verification, the code is typed in a signed-in session of the same account, and a link (if you choose links) only works in one.
 
-**The same answer for a taken address.** A change to an address that already has an account answers exactly like a change to a free one, after the same store calls; that address's owner gets an "in use" mail instead of a code (A077).
+**The same answer for a taken address.** A change to an address that already has an account answers exactly like a change to a free one, after the same store calls; that address's owner gets an "in use" mail instead of a code (A058).
 
-**Unique at the moment it applies.** The store moves the address in one compare-and-set on the old address, and the unique email column decides races: of two accounts confirming one address at once, exactly one gets it (A078).
+**Unique at the moment it applies.** The store moves the address in one compare-and-set on the old address, and the unique email column decides races: of two accounts confirming one address at once, exactly one gets it (A059).
 
 **A confirmed change ends every other session and tells the old address at once.** Every session of the account is revoked through the epoch fence and the caller's is re-issued. Reset and verification tokens that went to the old address die. The old address is mailed the new one and a revert link.
 
-**The old address can undo it.** The revert link is 32 random bytes stored as SHA-256, single use (A076), valid for 7 days or more, sent only to the old address and bound to it. Using it moves the account back, removes the password so the next sign-in needs a reset (mailed to the restored address), revokes every session and with them the two-factor plugin's trusted devices, voids every outstanding reset, verification and change token, and writes an audit row flagged for review. A password change or a reset does not void the link (A075), and neither does a second change: while a revert link is live it is never replaced, so a later change gets none (A079).
+**The old address can undo it.** The revert link is 32 random bytes stored as SHA-256, single use (A057), valid for 7 days or more, sent only to the old address and bound to it. Using it moves the account back, removes the password so the next sign-in needs a reset (mailed to the restored address), revokes every session and with them the two-factor plugin's trusted devices, voids every outstanding reset, verification and change token, and writes an audit row flagged for review. A password change or a reset does not void the link (A056), and neither does a second change: while a revert link is live it is never replaced, so a later change gets none (A060).
 
-**A repeat takeover is slower.** After a revert, the account may not change to the address it lost for 30 days (A079).
+**A repeat takeover is slower.** After a revert, the account may not change to the address it lost for 30 days (A060).
 
 ## Where the package and the guide differ
 

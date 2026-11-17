@@ -1,4 +1,4 @@
-// A072: brute forcing the email change code.
+// A053: brute forcing the email change code.
 //
 // The new address gets an 8-digit code. An attacker who started a change to
 // an address they do not control (to take over its use, or to make the account
@@ -20,7 +20,7 @@ const wrongFor = (code: string, i: number) => {
   return guess === code ? '99999999' : guess;
 };
 
-describe('A072: brute forcing the email change code', () => {
+describe('A053: brute forcing the email change code', () => {
   it('kills the code after 5 wrong guesses, so the right one no longer works', async () => {
     const t = setup();
     const { session } = await t.signedInUser();

@@ -1,4 +1,4 @@
-// A070: changing the email from a session without a fresh credential proof.
+// A051: changing the email from a session without a fresh credential proof.
 //
 // An attacker holding a stolen session cookie, hours after the owner last
 // typed the password, moves the account to an address they control and then
@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import { meta, PASSWORD, setup } from './support';
 
-describe('A070: changing the email from a session without a fresh credential proof', () => {
+describe('A051: changing the email from a session without a fresh credential proof', () => {
   it('refuses a session whose credential proof is older than freshAuthAge, and mails nothing', async () => {
     const t = setup();
     const { session } = await t.signedInUser();
