@@ -12,8 +12,10 @@
 //   plugins/membership/options.ts (revocation is off by default: the guards read roles
 //   from the store on every call and never need it).
 // Not stopped: with `revokeSessionsOnChange` on, an admin of any scope the victim
-//   belongs to can sign them out by a real role change or a removal. Adding members
-//   without their consent is app policy; the invitations plugin is the consent path.
+//   belongs to can sign them out by a role change or a removal, even one the store
+//   then refuses (the first revocation runs before the write). So with the option on,
+//   this attack is stopped only where adding a member needs the user's consent:
+//   adding without consent is app policy; the invitations plugin is the consent path.
 // Learn: Build, Membership guards (/auth/build/membership/)
 import { describe, expect, it } from 'vitest';
 
