@@ -12,11 +12,12 @@
  *   a stack, in development or not. An input that fails validation is
  *   answered with the paths and issue codes only (never the submitted value or
  *   a message that could quote it); any other `BAD_REQUEST` (a body that is
- *   not JSON, whose parser message quotes the body) and the other request
- *   errors tRPC raises are answered with a fixed message; any internal error
- *   with `internal`, since a store error can carry a session key or an
- *   address. Errors your own procedures throw with another code keep the
- *   message you gave them.
+ *   not JSON, whose parser message quotes the body), `PARSE_ERROR`,
+ *   `METHOD_NOT_SUPPORTED`, `UNSUPPORTED_MEDIA_TYPE`, `PAYLOAD_TOO_LARGE` and
+ *   `NOT_FOUND` (tRPC's quotes the requested path) are answered with a fixed
+ *   message, whoever raised them; any internal error with `internal`, since a
+ *   store error can carry a session key or an address. Errors your own
+ *   procedures throw with any other code keep the message you gave them.
  *
  * Guide: Learn, "Enumeration".
  */
@@ -123,6 +124,8 @@ const FIXED_MESSAGES: Readonly<Partial<Record<TRPC_ERROR_CODE_KEY, string>>> = {
   METHOD_NOT_SUPPORTED: 'method_not_supported',
   UNSUPPORTED_MEDIA_TYPE: 'unsupported_media_type',
   PAYLOAD_TOO_LARGE: 'payload_too_large',
+  // tRPC's "No procedure found on path ..." quotes the path the client sent.
+  NOT_FOUND: 'not_found',
 };
 
 /** The shape tRPC hands a formatter, as far as this one reads it. */

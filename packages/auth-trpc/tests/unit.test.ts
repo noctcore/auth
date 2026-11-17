@@ -240,18 +240,18 @@ describe('the cookie writers', () => {
 
 describe('authErrorFormatter', () => {
   const shape = (stack?: string) => ({
-    message: 'No such post',
-    code: -32004,
-    data: { code: 'NOT_FOUND', httpStatus: 404, stack },
+    message: 'That name is taken',
+    code: -32009,
+    data: { code: 'CONFLICT', httpStatus: 409, stack },
   });
 
   it('keeps an app error of its own and its message, never its stack', () => {
-    const error = new TRPCError({ code: 'NOT_FOUND', message: 'No such post' });
+    const error = new TRPCError({ code: 'CONFLICT', message: 'That name is taken' });
 
     expect(authErrorFormatter({ shape: shape('/srv/app/dist/router.js:12:7'), error })).toEqual({
-      message: 'No such post',
-      code: -32004,
-      data: { code: 'NOT_FOUND', httpStatus: 404, auth: null, input: null },
+      message: 'That name is taken',
+      code: -32009,
+      data: { code: 'CONFLICT', httpStatus: 409, auth: null, input: null },
     });
   });
 
@@ -262,6 +262,7 @@ describe('authErrorFormatter', () => {
       ['METHOD_NOT_SUPPORTED', 'method_not_supported'],
       ['UNSUPPORTED_MEDIA_TYPE', 'unsupported_media_type'],
       ['PAYLOAD_TOO_LARGE', 'payload_too_large'],
+      ['NOT_FOUND', 'not_found'],
     ] as const) {
       const error = new TRPCError({ code, message: `Unexpected token 'S', "SECRETTOKE"...` });
       const formatted = authErrorFormatter({ shape: shape('trace'), error });
