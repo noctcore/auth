@@ -159,4 +159,33 @@ describe('A048: getting a session past the second factor through another flow', 
 
     expect(login.ok && login.value.kind).toBe('challenge');
   });
+
+  it('refuses a re-issue label without the session it re-issues', async () => {
+    const t = twoFactorApp();
+    const { userId, session } = await t.enrolled();
+    const other = await t.signedIn('grace@example.com');
+    const user = await t.stores.users.findById(userId);
+
+    if (!user) throw new Error('user');
+
+    for (const via of ['password-change', 'reauthenticate', 'revoke-others', 'email-verified']) {
+      const bare = await t.auth.context.issueSession(user, { via, meta: meta() });
+      const foreign = await t.auth.context.issueSession(user, {
+        via,
+        meta: meta(),
+        inherit: other.session,
+      });
+
+      expect(bare).toMatchObject({ ok: false, reason: `reissue_without_session:${via}` });
+      expect(foreign).toMatchObject({ ok: false, reason: `reissue_without_session:${via}` });
+    }
+
+    const own = await t.auth.context.issueSession(user, {
+      via: 'reauthenticate',
+      meta: meta(),
+      inherit: session,
+    });
+
+    expect(own.ok).toBe(true);
+  });
 });

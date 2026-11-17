@@ -5,7 +5,7 @@
 import { runInBackground } from './background';
 import { DEFAULT_DOOR_LIMITS, type Door } from './config';
 import type { CoreDependencies } from './dependencies';
-import { firstRefusal, type HookLists, type RevocationReason } from './hooks';
+import { firstRefusal, type HookLists, type IssueVia, type RevocationReason } from './hooks';
 import type { IssuedSession, IssueOptions, PluginContext, SessionAccess } from './plugin-context';
 import { narrowSessions } from './session-access';
 import { resolveSessionAttributes } from './session-attributes';
@@ -37,6 +37,14 @@ import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** Vias that re-issue a session the user already holds: they must pass it as `inherit`. */
+const REISSUE_VIAS: ReadonlySet<IssueVia> = new Set([
+  'password-change',
+  'reauthenticate',
+  'revoke-others',
+  'email-verified',
+]);
 
 export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   readonly users: UserStore<U>;
@@ -192,6 +200,15 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   }
 
   async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
+    // A re-issue names the session it replaces, and that session is this
+    // user's: hooks (a second factor's enforcement, say) let re-issues through
+    // on the strength of that, so a call that only claims the label is refused.
+    if (REISSUE_VIAS.has(options.via) && options.inherit?.userId !== user.id) {
+      await this.#loginFailure(user, `reissue_without_session:${options.via}`, options);
+
+      return fail('session_expired', `reissue_without_session:${options.via}`);
+    }
+
     const resolved = await resolveSessionAttributes(
       { hooks: this.hooks, schema: this.#deps.attributeSchema, logger: this.logger },
       user,
