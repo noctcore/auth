@@ -24,8 +24,14 @@ export async function sendVerification<U extends AuthUser, A>(
   settings: FlowSettings,
   user: U,
   meta: RequestMeta | undefined,
+  inline = false,
 ): Promise<void> {
   const data = { email: user.email };
+
+  // Inside a background task (`inline`) the send belongs to that task and is
+  // awaited; on the response path it is handed over and not awaited.
+  const send = (event: Parameters<typeof core.deliver>[0]) =>
+    inline ? core.deliver(event) : core.mail(event);
 
   if (settings.verification.kind === 'code') {
     const { code, expiresAt } = await core.tokens.issueCode(
@@ -36,7 +42,7 @@ export async function sendVerification<U extends AuthUser, A>(
       data,
     );
 
-    core.mail({
+    await send({
       type: 'verify-email',
       to: user.email,
       userId: user.id,
@@ -55,7 +61,7 @@ export async function sendVerification<U extends AuthUser, A>(
       data,
     );
 
-    core.mail({
+    await send({
       type: 'verify-email',
       to: user.email,
       userId: user.id,
