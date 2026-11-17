@@ -426,6 +426,31 @@ describe('through createAuth', () => {
     expect(t.errors.filter((e) => e.startsWith('Background task dropped'))).toEqual([]);
   });
 
+  it('sends both sign-up mails as one task each under maxPending: 1, and flush waits for them', async () => {
+    const t = app({ maxPending: 1 });
+    const sent: string[] = [];
+    const release = deferred();
+
+    t.mailer.send = async (event) => {
+      await release.promise;
+      sent.push(event.type);
+    };
+
+    await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: { ip: '1' } });
+
+    const flushed = t.auth.flush();
+
+    expect(await isSettled(flushed)).toBe(false);
+    release.resolve();
+    await flushed;
+
+    await t.auth.register({ email: 'ada@example.com', password: PASSWORD, meta: { ip: '2' } });
+    await t.auth.flush();
+
+    expect(sent).toEqual(['verify-email', 'account-exists']);
+    expect(t.errors.filter((e) => e.startsWith('Background task dropped'))).toEqual([]);
+  });
+
   it('sends the lock notice even while the audit sink hangs', async () => {
     const t = app({}, { lockout: { perAccount: { limit: 2, window: '15m' } } });
     const sent: string[] = [];
@@ -465,7 +490,7 @@ describe('through createAuth', () => {
       expect(answer.ok).toBe(true);
     }
 
-    expect(t.errors.filter((e) => e === 'Background task dropped: mail verify-email')).toHaveLength(
+    expect(t.errors.filter((e) => e === 'Background task dropped: verification mail')).toHaveLength(
       2,
     );
   });

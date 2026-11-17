@@ -99,12 +99,16 @@ export async function register<U extends AuthUser, A>(
     core.background('existing address notice', async () => {
       const existing = (await core.users.findCredentialByEmail(email)) ?? held;
 
-      if (existing) core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
-
-      await core.emit(
+      const audit = core.emit(
         { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },
         meta,
       );
+
+      await Promise.all([
+        audit,
+        existing &&
+          core.deliver({ type: 'account-exists', to: existing.email, userId: existing.id }),
+      ]);
     });
 
     return ok({ session: null });
@@ -114,12 +118,16 @@ export async function register<U extends AuthUser, A>(
 
   // The audit write and the mail run side by side: a slow or hung audit sink
   // must not hold back the verification mail (`emit` never throws).
-  core.background('verification mail', async () => {
-    await Promise.all([
-      core.emit({ type: 'register.created', userId: user.id }, meta),
-      sendVerification(core, settings, user, meta),
-    ]);
-  });
+  core.background(
+    'verification mail',
+    async () => {
+      await Promise.all([
+        core.emit({ type: 'register.created', userId: user.id }, meta),
+        sendVerification(core, settings, user, meta, true),
+      ]);
+    },
+    { userId: user.id },
+  );
 
   if (!settings.autoLogin) return ok({ session: null });
 
