@@ -1,0 +1,79 @@
+{
+  "name": "@noctcore/auth-trpc",
+  "version": "0.2.0",
+  "description": "tRPC middlewares for @noctcore/auth: a session context, closed procedures, CSRF on mutations, safe error mapping and Zod schemas for the auth procedures.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "noctcore",
+    "auth",
+    "trpc",
+    "nestjs-trpc",
+    "sessions",
+    "csrf"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noctcore/auth.git",
+    "directory": "packages/auth-trpc"
+  },
+  "homepage": "https://noctcore.github.io/auth/",
+  "bugs": "https://github.com/noctcore/auth/issues",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@noctcore/auth": "0.2.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": "12.5.0",
+    "@nestjs/core": "12.5.0",
+    "@nestjs/platform-express": "12.5.0",
+    "@nestjs/testing": "12.5.0",
+    "@trpc/client": "11.28.0",
+    "@trpc/server": "11.28.0",
+    "@types/node": "^22.20.5",
+    "@vitest/coverage-v8": "^5.1.0",
+    "nestjs-trpc": "2.14.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "tsup": "^9.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0",
+    "zod": "4.6.7"
+  },
+  "peerDependencies": {
+    "@trpc/server": ">=11.22.1 <12",
+    "zod": ">=4.3.0 <5"
+  }
+}

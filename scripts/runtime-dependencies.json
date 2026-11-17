@@ -18,5 +18,10 @@
     "dependencies": ["@noctcore/auth"],
     "optionalDependencies": [],
     "peerDependencies": ["@nestjs/common", "@nestjs/core"]
+  },
+  "@noctcore/auth-trpc": {
+    "dependencies": ["@noctcore/auth"],
+    "optionalDependencies": [],
+    "peerDependencies": ["@trpc/server", "zod"]
   }
 }
