@@ -61,6 +61,35 @@ const padding = [
 // dependency on the flows that use them, and session, tokens and throttle
 // stay independent of one another. `index.ts` and `create-auth.ts` at the top
 // are the composition root and may import anything.
+const BARREL_IMPORTS = ['..', '../..', '../../..'].map((name) => ({
+  name,
+  message: 'Import the module itself, not the public barrel.',
+}));
+
+const CONSTANT_TIME_IMPORT = {
+  name: '@oslojs/crypto/subtle',
+  message: 'Compare secrets with hexDigestsEqual or secretsEqual from crypto/hash.ts.',
+};
+
+const SECRET_NAME = '/(?:hash|token|secret|digest|mac)$/i';
+const SECRET_MESSAGE =
+  'Do not compare a secret with ===, !== or Buffer.compare: use hexDigestsEqual or secretsEqual from crypto/hash.ts.';
+
+const SECRET_COMPARISONS = [
+  ...['left', 'right'].flatMap((side) => {
+    const other = side === 'left' ? 'right' : 'left';
+    const equality = `BinaryExpression[operator=/^[!=]==?$/]:not([${other}.type='Literal']):not([${other}.name='undefined']):not([${other}.type='UnaryExpression'])`;
+
+    return [
+      `${equality}[${side}.type='Identifier'][${side}.name=${SECRET_NAME}]`,
+      `${equality}[${side}.type='MemberExpression'][${side}.property.name=${SECRET_NAME}]`,
+    ];
+  }),
+  "CallExpression[callee.object.name='Buffer'][callee.property.name='compare']",
+  "CallExpression[callee.property.name='timingSafeEqual']",
+  "CallExpression[callee.name='timingSafeEqual']",
+].map((selector) => ({ selector, message: SECRET_MESSAGE }));
+
 const LAYERS = {
   shared: [],
   crypto: ['shared'],
@@ -252,18 +281,29 @@ export default tseslint.config(
   {
     // `..` and `../..` name the barrel too. The layered rule matches parent
     // paths, so it cannot ban these without banning every relative import;
-    // the core rule matches them exactly.
+    // the core rule matches them exactly. The constant-time primitive is
+    // banned here too, so every comparison of a secret goes through
+    // crypto/hash.ts (the override below lets that one module import it).
     files: ['packages/auth/src/*/**/*.ts'],
     rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: ['..', '../..', '../../..'].map((name) => ({
-            name,
-            message: 'Import the module itself, not the public barrel.',
-          })),
-        },
-      ],
+      'no-restricted-imports': ['error', { paths: [...BARREL_IMPORTS, CONSTANT_TIME_IMPORT] }],
     },
+  },
+  {
+    files: ['packages/auth/src/crypto/hash.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: BARREL_IMPORTS }] },
+  },
+  {
+    // A secret compared with `===` or `Buffer.compare` returns at the first
+    // byte that differs, so the time it takes leaks how much of a guess was
+    // right. Library code compares hashes, tokens, digests, MACs and secrets
+    // only through hexDigestsEqual or secretsEqual in crypto/hash.ts. The
+    // check is by name: a value named like a secret on either side of an
+    // equality, unless the other side is a literal or undefined (a shape or
+    // presence check, not a comparison of two secrets). The in-memory test
+    // stores are exempt: they stand in for a database lookup by key.
+    files: ['packages/*/src/**/*.ts'],
+    ignores: ['packages/auth/src/crypto/hash.ts', 'packages/auth/src/testing/**'],
+    rules: { 'no-restricted-syntax': ['error', ...SECRET_COMPARISONS] },
   },
 );
