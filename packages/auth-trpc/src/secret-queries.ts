@@ -71,8 +71,10 @@ const zodDef = (schema: unknown): ZodDef | undefined =>
   (schema as { _zod?: { def?: ZodDef } } | null | undefined)?._zod?.def;
 
 /**
- * Schemas that hold no keys of their own. A `transform` is one too: it only
- * runs on a value its pipe's other side already read.
+ * Schemas that hold no keys of their own. A `transform` is one too, on the
+ * output side of a pipe (`.transform()`), where it only runs on a value the
+ * pipe's input side already read. On the input side (`z.preprocess`) it sees
+ * the raw client input first, so that pipe is unreadable (see `secretKeys`).
  */
 const LEAVES = new Set([
   'string',
@@ -128,7 +130,8 @@ function keyValues(def: ZodDef | undefined): string[] {
  * The secret-named keys anywhere in a Zod 4 schema, or null when the schema
  * holds anything this cannot read. That fails closed: `z.any()`,
  * `z.unknown()` (a loose object's catch-all among them), `z.custom()`,
- * `z.instanceof()`, a function schema, a type this list does not know (a
+ * `z.instanceof()`, `z.preprocess()` (its function sees the raw input), a
+ * function schema, a type this list does not know (a
  * newer Zod's), and anything that is not Zod 4 all answer null.
  *
  * Every child is walked: object shapes and catch-alls, array elements, tuple
@@ -148,6 +151,8 @@ export function secretKeys(schema: unknown, seen = new Set<unknown>()): string[]
 
   if (LEAVES.has(def.type)) return [];
   if (!CONTAINERS.has(def.type)) return null;
+  // `z.preprocess`: a function reads the raw input before any schema does.
+  if (def.type === 'pipe' && zodDef(def.in)?.type === 'transform') return null;
 
   const children: unknown[] = [];
   const found: string[] = [];
