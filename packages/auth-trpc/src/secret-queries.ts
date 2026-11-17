@@ -10,9 +10,11 @@
  * `findSecretQueries(router)` walks every procedure and lists each query or
  * subscription whose input has a key that names a secret (any word of the
  * key is `password`, `passphrase`, `passcode`, `secret`, `token`, `otp`,
- * `totp`, `code` or `pin`, at any depth). It fails closed: an input it cannot
- * read (a validator that is not Zod 4) and a lazy router it cannot load
- * synchronously are listed too, unless their path is in `allow`.
+ * `totp`, `code` or `pin`, at any depth, see `secretKeys`). It fails closed:
+ * an input it cannot read (a validator that is not Zod 4, or a Zod schema that
+ * can hold any key, such as `z.unknown()` or `z.custom()`) and a lazy router
+ * it cannot load synchronously are listed too, unless their path is in
+ * `allow`.
  * `assertNoSecretQueries` throws on any finding; call it in a test, or at
  * boot.
  */
@@ -48,6 +50,7 @@ export const isSecretKey = (key: string): boolean =>
 interface ZodDef {
   readonly type: string;
   readonly shape?: Readonly<Record<string, unknown>>;
+  readonly catchall?: unknown;
   readonly innerType?: unknown;
   readonly in?: unknown;
   readonly out?: unknown;
@@ -55,7 +58,12 @@ interface ZodDef {
   readonly left?: unknown;
   readonly right?: unknown;
   readonly element?: unknown;
+  readonly items?: readonly unknown[];
+  readonly rest?: unknown;
+  readonly keyType?: unknown;
   readonly valueType?: unknown;
+  readonly entries?: Readonly<Record<string, unknown>>;
+  readonly values?: readonly unknown[];
   readonly getter?: () => unknown;
 }
 
@@ -63,8 +71,72 @@ const zodDef = (schema: unknown): ZodDef | undefined =>
   (schema as { _zod?: { def?: ZodDef } } | null | undefined)?._zod?.def;
 
 /**
+ * Schemas that hold no keys of their own. A `transform` is one too: it only
+ * runs on a value its pipe's other side already read.
+ */
+const LEAVES = new Set([
+  'string',
+  'number',
+  'bigint',
+  'boolean',
+  'date',
+  'enum',
+  'literal',
+  'nan',
+  'never',
+  'null',
+  'undefined',
+  'void',
+  'symbol',
+  'template_literal',
+  'file',
+  'transform',
+]);
+
+/** Schemas whose children are listed in their def, by the def fields named. */
+const CONTAINERS = new Set([
+  'object',
+  'array',
+  'tuple',
+  'record',
+  'map',
+  'set',
+  'union',
+  'intersection',
+  'optional',
+  'nullable',
+  'default',
+  'prefault',
+  'catch',
+  'readonly',
+  'nonoptional',
+  'success',
+  'promise',
+  'pipe',
+  'lazy',
+]);
+
+/** The values an enum or literal key schema allows, as strings. Zod 4 always sets both fields. */
+function keyValues(def: ZodDef | undefined): string[] {
+  if (def?.type === 'enum') return Object.values(def.entries as object).map(String);
+  if (def?.type === 'literal') return (def.values as readonly unknown[]).map(String);
+
+  return [];
+}
+
+/**
  * The secret-named keys anywhere in a Zod 4 schema, or null when the schema
- * is not one this can read.
+ * holds anything this cannot read. That fails closed: `z.any()`,
+ * `z.unknown()` (a loose object's catch-all among them), `z.custom()`,
+ * `z.instanceof()`, a function schema, a type this list does not know (a
+ * newer Zod's), and anything that is not Zod 4 all answer null.
+ *
+ * Every child is walked: object shapes and catch-alls, array elements, tuple
+ * items and rest, record and map keys and values, set values, both sides of
+ * a union, an intersection and a pipe, wrapped and lazy schemas. A record key
+ * schema that is an enum or literal is checked by its values. A record keyed
+ * by `z.string()` is readable but accepts any key name; this check cannot
+ * know which ones a client will send.
  */
 export function secretKeys(schema: unknown, seen = new Set<unknown>()): string[] | null {
   const def = zodDef(schema);
@@ -74,18 +146,22 @@ export function secretKeys(schema: unknown, seen = new Set<unknown>()): string[]
 
   seen.add(schema);
 
+  if (LEAVES.has(def.type)) return [];
+  if (!CONTAINERS.has(def.type)) return null;
+
   const children: unknown[] = [];
   const found: string[] = [];
 
-  if (def.shape) {
-    for (const [key, child] of Object.entries(def.shape)) {
-      if (isSecretKey(key)) found.push(key);
+  for (const [key, child] of Object.entries(def.shape ?? {})) {
+    if (isSecretKey(key)) found.push(key);
 
-      children.push(child);
-    }
+    children.push(child);
   }
 
+  if (def.type === 'record') found.push(...keyValues(zodDef(def.keyType)).filter(isSecretKey));
+
   children.push(
+    def.catchall,
     def.innerType,
     def.in,
     def.out,
@@ -93,12 +169,16 @@ export function secretKeys(schema: unknown, seen = new Set<unknown>()): string[]
     def.left,
     def.right,
     def.element,
+    ...(def.items ?? []),
+    def.rest,
+    def.keyType,
     def.valueType,
     def.getter?.(),
   );
 
   for (const child of children) {
-    if (child === undefined) continue;
+    // An absent field, and the null a tuple without a rest holds.
+    if (child === undefined || child === null) continue;
 
     const nested = secretKeys(child, seen);
 
@@ -174,7 +254,7 @@ export function assertNoSecretQueries(
       ? `${f.path}: a query whose input carries ${f.keys.join(', ')}; make it a mutation`
       : f.problem === 'lazy_router'
         ? `${f.path}: a lazy router this check cannot load; check it on its own or allow it`
-        : `${f.path}: an input this check cannot read (not Zod 4); allow it once checked by hand`,
+        : `${f.path}: an input this check cannot read (not Zod 4, or a schema that takes any key such as z.unknown() or z.custom()); allow it once checked by hand`,
   );
 
   throw new AuthConfigError(`Secrets must never travel in a query:\n${lines.join('\n')}`);
