@@ -12,12 +12,14 @@ The membership plugin, `@noctcore/auth/membership`, guards the three admin actio
 ## What it guarantees
 
 - **Nobody acts on themselves.** Every flow refuses `self_target` when the session's user id is the target's. Ids are compared, never email addresses.
-- **The actor's right comes from the store.** The acting user's membership is read from the store on every call, never from the session, and `canManage` decides on it. A demoted admin loses the right at once, even with a session that still claims the old role.
+- **The actor's right comes from the store.** Every flow first reads the acting session live from the store (a revoked, expired or idle session acts on nothing), then reads the acting user's membership from the store, never from the session, and `canManage` decides on it. A demoted admin loses the right at once, even with a session that still claims the old role.
 - **The last admin stays.** A role change from an admin role to a non-admin one, or the removal of an admin, is refused with `last_admin` when no other member of the scope holds an admin role. The store checks and writes in one atomic step, so two admins demoting or removing each other at the same moment leave one admin, never none. The conformance suite proves it under concurrency for every store, and the Prisma and Redis stores run it against Postgres and Redis.
-- **A demoted or removed member is signed out.** After a role change or a removal, every session of the member is revoked through the [epoch fence](/auth/learn/revocation-races/). The write comes first and the revocation second, so a login racing the change either reads the new role or is refused when it mints its session.
+- **Sessions are revoked only when you ask, and only for a real change.** With `revokeSessionsOnChange` on, a role change to another role, or a removal, revokes every session of the member through the [epoch fence](/auth/learn/revocation-races/), once before the write and once after, so a login racing the change either reads the new role or is refused when it mints its session. Adding a member and setting the role a member already holds never revoke anything, with or without the option (attack A073).
 - **The guards fail closed.** A member lookup that throws, an actor who is not a member of the scope, and a `canManage` that throws all refuse with `forbidden`. A refusal is a typed failure with a code; its reason is only in the audit row, never an exception carrying membership data.
 
 ## What it does not do
+
+It does not ask the user before `add`: adding someone by user id is your app's policy. Letting any user add anyone means any user can put anyone into a scope they own; an invitation the user accepts is the consent path (the invitations plugin, [#26](https://github.com/noctcore/auth/issues/26)).
 
 It does not scope your data. Filtering every query by organisation, and checking on every request that the signed-in user is a member of the organisation the request is about, stays in your app: the plugin only answers who is a member and with which role, and guards the changes. It also does not decide what each role may do in your app; `adminRoles` only names the roles that keep an organisation manageable.
 
@@ -35,7 +37,8 @@ Your own store, on your own member table, must pass `membershipStoreConformance`
 | --- | --- | --- |
 | `store` | required | |
 | `adminRoles` | required | At least one role. The last member holding one of them in a scope can be neither demoted to another role nor removed. |
-| `canManage` | the actor holds an admin role | `({ actor, action, userId, from, to }) => boolean`. `actor` is the acting user's membership, read from the store. `from` is the target's role now (undefined when adding), `to` the role being given (undefined when removing). Throwing refuses. |
+| `canManage` | the actor holds an admin role | `({ actor, action, userId, from, to }) => boolean`. `actor` is the acting user's membership, read from the store. `from` is the target's role now (undefined when adding), `to` the role being given (undefined when removing). Throwing refuses. The default lets an admin act on an owner; the snippet above keeps the owner role to owners. |
+| `revokeSessionsOnChange` | `false` | Revoke every session of a member whose role really changed, or who was removed. Turn it on only if your app copies roles into session attributes or caches them per session: see [Revocation](#revocation). |
 
 ## The routes
 
@@ -45,16 +48,18 @@ The flows take the session your app validated, the scope id, the target's user i
 
 | Flow | Refusals | Revokes the target's sessions |
 | --- | --- | --- |
-| `add({ session, scope, userId, role, meta })` | `self_target`, `forbidden` | no: nothing was taken away |
-| `changeRole({ session, scope, userId, role, meta })` | `self_target`, `last_admin`, `forbidden` | yes |
-| `remove({ session, scope, userId, meta })` | `self_target`, `last_admin`, `forbidden` | yes |
+| `add({ session, scope, userId, role, meta })` | `self_target`, `session_expired`, `forbidden` | never |
+| `changeRole({ session, scope, userId, role, meta })` | `self_target`, `session_expired`, `last_admin`, `forbidden` | with `revokeSessionsOnChange`, when the role differs |
+| `remove({ session, scope, userId, meta })` | `self_target`, `session_expired`, `last_admin`, `forbidden` | with `revokeSessionsOnChange` |
 
 `forbidden` covers an actor who is not a member or whom `canManage` refuses, a target who is missing (or, for `add`, already a member), an empty role, a role that changed between the check and the write, and a lookup that failed; the audit row names which. Every change and every refusal writes an audit row (`membership.added`, `membership.role_changed`, `membership.removed`, `membership.refused`) with the actor as `userId` and the scope, target and roles in `data`.
 
 The first member of a scope has nobody to add them: create the first owner straight through the store, as `createOrganisation` does above.
 
-## Revocation in practice
+## Revocation
 
-A role change or a removal signs the member out on every device, in every organisation: the epoch fence is per user. The revocation reason your `onSessionsRevoked` hook sees is `membership-changed`. With the two-factor plugin on, the epoch bump also voids the member's trusted devices, so their next sign-in asks for a code.
+The guards never need revocation: every call reads the acting user's role from the store, so a demoted admin's next action is judged on the new role while their session stays signed in. Turn on `revokeSessionsOnChange` when your app copies roles into session attributes, or caches them per session, and must not keep serving the old role.
 
-Setting the role a member already holds writes nothing but still revokes. If the session store fails after the write, the call throws: the change stands and the sessions were not revoked. Retry the same `changeRole`, which revokes again; after a removal, call `auth.context.revokeAllSessions(userId, 'membership-changed')`.
+It has a cost. The epoch fence is per user, so a revocation signs the member out on every device and in every organisation, and with the two-factor plugin on it also voids their trusted devices, so their next sign-in asks for a code. An admin of any organisation a user belongs to can therefore sign that user out everywhere, by a real role change or a removal. The revocation reason your `onSessionsRevoked` hook sees is `membership-changed`, twice per change (before and after the write).
+
+If the session store fails before the write, the call throws and nothing changed. If it fails after the write, the call throws and the change stands: every session the member held before the change was already revoked by the first bump, and only a login that ran between the two bumps can still be live. Finish with `auth.context.revokeAllSessions(userId, 'membership-changed')`; retrying the same `changeRole` does nothing, because the member already holds the role.

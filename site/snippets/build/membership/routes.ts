@@ -10,6 +10,7 @@ interface Reply {
 const STATUS: Record<string, number> = {
   self_target: 403,
   last_admin: 409,
+  session_expired: 401,
   forbidden: 403,
 };
 
@@ -26,7 +27,7 @@ export async function changeRole(
 
   if (!result.ok) return { status: STATUS[result.code] ?? 400, body: toPublicError(result) };
 
-  // The member's sessions are already revoked: they sign in again under the new role.
+  // The member's next request is judged on the new role: roles are read from the store.
   return { status: 200, body: { member: result.value } };
 }
 
