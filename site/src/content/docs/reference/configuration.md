@@ -103,6 +103,19 @@ Source: `flows/resolve-settings.ts`, `flows/password-reset-request.ts`.
 | `passwordReset.enqueue` | none | Puts the request on your queue; your worker calls `auth.jobs.processPasswordReset(job)`. Without it the job runs detached in-process, which keeps the response time independent of the address but is lost if the process dies. |
 | `passwordReset.markEmailVerified` | `true` | A completed reset proves the mailbox, so it marks the address verified. |
 
+## Email change
+
+Source: `flows/resolve-settings.ts`, `flows/email-change.ts`. The flows also need `urls.revertEmailChange` and a user store with `changeEmail`, and throw an `AuthConfigError` on the first call without them. See [Email change](/auth/build/email-change/).
+
+| Key | Default | Why |
+| --- | --- | --- |
+| `emailChange.kind` | `'code'` | A code typed in the signed-in session of the same account. `'link'` needs `urls.confirmEmailChange`, and the link works only in such a session. |
+| `emailChange.ttl` | `'15m'` for codes, `'1h'` for links | |
+| `emailChange.digits` | `8` | Must be 6 to 9. |
+| `emailChange.maxAttempts` | `5` | Wrong guesses per code, counted atomically before each comparison. |
+| `emailChange.revertTtl` | `'7d'` | How long the revert link mailed to the old address works. Shorter is refused: the owner may be away for a week. |
+| `emailChange.blockAfterRevert` | `'30d'` | After a revert, how long the account may not change to the address it lost. |
+
 ## URLs
 
 Source: `core/config.ts`, `flows/resolve-settings.ts`.
@@ -111,6 +124,8 @@ Source: `core/config.ts`, `flows/resolve-settings.ts`.
 | --- | --- | --- |
 | `urls.verifyEmail` | none | `(token) => string`. Required for link verification. |
 | `urls.resetPassword` | none | `(token) => string`. Required for link resets, which are the default, so most apps set it. |
+| `urls.confirmEmailChange` | none | `(token) => string`. Required for link email changes. |
+| `urls.revertEmailChange` | none | `(token) => string`. The revert link of an email change; the email change flows throw without it. |
 
 Put the token in the path or the fragment, not the query string, and send `Referrer-Policy: no-referrer` on those pages so the token does not leak to other sites.
 
@@ -149,6 +164,10 @@ Each rule is `{ limit, window }`; a part you leave out keeps its default.
 | `email-verification-request` | 3 per `'1h'` | user: verification mails one account can request |
 | `password-change` | 5 per `'5m'` | user |
 | `reauthenticate` | 5 per `'5m'` | user |
+| `email-change-request` | 3 per `'1h'` | user: email change requests one account can make |
+| `email-change-address` | 3 per `'1h'` | address: email change requests naming one new address, from every account |
+| `email-change` | 10 per `'1m'` | IP: confirming an email change |
+| `email-change-revert` | 10 per `'1m'` | IP: using a revert link |
 
 The per-address door has a trade-off: anyone who knows an address can spend its budget and block that address's code-mode reset for 15 minutes. Link-mode reset, the default, does not use it.
 
@@ -160,7 +179,7 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 | --- | --- | --- |
 | `captcha` | none | A `CaptchaVerifier`, checked on login, register and the reset request. Fails closed: a provider outage refuses the request with `captcha_unavailable`. `turnstile(options)` builds one for Cloudflare Turnstile. |
 | `audit` | none | An `AuditSink`. Every flow emits an event for each success and each refusal, with the internal `reason`. Events that record a grant are awaited before the grant is returned; a failing sink never fails the flow. |
-| `hooks` | none | Functions the flows call at fixed points, such as `sessionAttributes`, `beforeSessionCreate`, `beforePasswordReset` and `afterRegister`. A hook can refuse with `refuse(code, reason)`. `afterRegister` is awaited and runs only for a new address, so its time shows in sign-up timing: queue slow work instead of awaiting it. |
+| `hooks` | none | Functions the flows call at fixed points, such as `sessionAttributes`, `beforeSessionCreate`, `beforePasswordReset`, `beforeEmailChange` and `afterRegister`. A hook can refuse with `refuse(code, reason)`. `afterRegister` is awaited and runs only for a new address, so its time shows in sign-up timing: queue slow work instead of awaiting it. |
 | `plugins` | `[]` | Plugins add hooks and flows, never endpoints. A plugin's flows appear on the auth object under its `id`. The two-factor plugin (`twoFactor` from `@noctcore/auth/two-factor`) is configured on its own; its options are in [Two-factor](/auth/build/two-factor/#wiring-the-plugin). |
 | `logger` | silent | Where the package reports what it cannot return: a failed breach check, a mailer or audit sink that threw. Messages never carry secrets. |
 | `metrics` | no-op | Counters such as breach check outages and door refusals. Labels never carry user input. |
@@ -178,8 +197,9 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 - `session.touchInterval` is not shorter than a fixed `idleTimeout`;
 - `session.absoluteTtl` or `rememberMeTtl` is longer than the session store's `maxSessionTtlMs`;
 - `registration.autoLogin` is set without `revealExisting`;
-- link verification or link reset is chosen without its `urls` function;
-- `emailVerification.digits` or `passwordReset.digits` is outside 6 to 9;
+- link verification, link reset or link email change is chosen without its `urls` function;
+- `emailVerification.digits`, `passwordReset.digits` or `emailChange.digits` is outside 6 to 9;
+- `emailChange.revertTtl` is shorter than 7 days;
 - a plugin requires `captcha` and none is configured.
 
 Sources: `create-auth.ts`, `flows/resolve-settings.ts`, `session/session-manager.ts`, `http/cookie.ts`, `core/plugins.ts`.

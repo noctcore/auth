@@ -18,6 +18,7 @@ The interfaces are in `packages/auth/src/ports/stores.ts`, with the guarantee ea
 - `create` returns `null` when the email is taken, even under 20 concurrent creates of one address. It never throws on a unique violation.
 - `setPasswordHash` is guarded: it writes nothing and returns `false` for a missing or soft-deleted user. With `expected`, it is a compare-and-set in one statement, so a rehash on login can never overwrite a password changed meanwhile.
 - `markEmailVerified` writes only while the stored email still equals the one given, so a stale code cannot verify a changed address.
+- `changeEmail` (optional; the email change flows need it) moves the user from `from` to `to`, marks the address verified and, with `clearPassword`, removes the hash, in one statement guarded on the stored email still equalling `from`. It answers `stale` when that guard fails or the user is missing or soft-deleted, and `taken` when another user (soft-deleted ones included) holds `to`, never throwing on the unique violation: of 10 users racing for one address, exactly one gets `changed`.
 - The `find*` methods return live users only: a soft-deleted user is not found.
 
 **`TokenStore`** (one-time codes and links, as hashes)
