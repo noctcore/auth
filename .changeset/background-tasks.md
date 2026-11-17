@@ -12,6 +12,14 @@ Background work (every mail, lock notices, and a password reset job run without 
 
 Timeouts and drops are counted on `metrics` as `auth_background_task` (exported as `BACKGROUND_METRIC`), with `task` and `outcome` labels. All three options are off by default, and behaviour without them is unchanged. One small exception: a detached reset job that throws is now logged as `Background task failed: password reset job` instead of `Detached password reset job failed`.
 
-The library's own background work (the lock notice, and a reset job run without `enqueue`) now sends its mail inside its own task instead of starting a second one, so it takes one slot under `maxPending` and `flush` waits for the send. The lock notice also no longer waits for its audit write before sending the mail. A reset job run by your queue worker through `auth.jobs.processPasswordReset` still hands the mail to the mailer and returns, as before. Drops, timeouts and failures go to the configured `logger`, which is silent by default.
+Task labels, as they appear in these logs and in the `task` label of the metric:
 
-Under `maxPending` only mail is dropped: the audit rows that sign-up and a new lock write off the response path (`register.created`, `register.existing`, `account.locked`) run as tasks the cap never drops and never counts.
+- `mail <type>` (such as `mail lockout` or `mail password-reset`): one per mail, capped.
+- `verification mail`: a sign-up's verification code and mail, capped.
+- `audit <type>`: the `register.created` and `account.locked` rows, uncapped.
+- `existing address notice`: the owner lookup and the `register.existing` row of a sign-up with a taken address, uncapped; its mail is a `mail account-exists` task.
+- `password reset job`: a reset job run without `enqueue`, uncapped; its mail is a `mail password-reset` or `mail password-reset-code` task.
+
+The `lockout notice` label is gone: a lock notice is now an `audit account.locked` task plus a `mail lockout` task, so the mail no longer waits for the audit write, and a failure that was logged as `Background task failed: lockout notice` is now logged under one of those two labels (a failed send still as `Mailer failed`). Update any alert that matches the old label. A reset job run by your queue worker through `auth.jobs.processPasswordReset` hands the mail to the mailer and returns, as before. Drops, timeouts and failures go to the configured `logger`, which is silent by default.
+
+Under `maxPending` only mail is dropped, plus the `email.verification_sent` row of a dropped verification mail (a dropped mail was not sent). Every other audit row written off the response path (`register.created`, `register.existing`, `account.locked`, `password.reset_request_ignored`) is in a task the cap never drops and never counts. Those tasks take no slots, so a hung audit sink, or a user store that hangs during the lookup of a taken-address sign-up or a detached reset job, still grows memory as before.
