@@ -168,22 +168,31 @@ describe('authErrorFormatter', () => {
     data: { code: 'NOT_FOUND', httpStatus: 404, stack },
   });
 
-  it('keeps an app error of its own, with its stack when tRPC added one', () => {
+  it('keeps an app error of its own and its message, never its stack', () => {
     const error = new TRPCError({ code: 'NOT_FOUND', message: 'No such post' });
 
-    expect(authErrorFormatter({ shape: shape('trace'), error })).toEqual({
+    expect(authErrorFormatter({ shape: shape('/srv/app/dist/router.js:12:7'), error })).toEqual({
       message: 'No such post',
       code: -32004,
-      data: { code: 'NOT_FOUND', httpStatus: 404, stack: 'trace', auth: null, input: null },
+      data: { code: 'NOT_FOUND', httpStatus: 404, auth: null, input: null },
     });
-
-    expect(authErrorFormatter({ shape: shape(), error }).data).not.toHaveProperty('stack');
   });
 
-  it('keeps a bad request that is not an input error', () => {
-    const error = new TRPCError({ code: 'BAD_REQUEST', message: 'nope' });
+  it('gives the request errors tRPC raises a fixed message, never the parser text', () => {
+    for (const [code, message] of [
+      ['BAD_REQUEST', 'bad_request'],
+      ['PARSE_ERROR', 'parse_error'],
+      ['METHOD_NOT_SUPPORTED', 'method_not_supported'],
+      ['UNSUPPORTED_MEDIA_TYPE', 'unsupported_media_type'],
+      ['PAYLOAD_TOO_LARGE', 'payload_too_large'],
+    ] as const) {
+      const error = new TRPCError({ code, message: `Unexpected token 'S', "SECRETTOKE"...` });
+      const formatted = authErrorFormatter({ shape: shape('trace'), error });
 
-    expect(authErrorFormatter({ shape: shape(), error }).message).toBe('No such post');
+      expect(formatted.message).toBe(message);
+      expect(JSON.stringify(formatted)).not.toContain('SECRET');
+      expect(formatted.data).not.toHaveProperty('stack');
+    }
   });
 });
 

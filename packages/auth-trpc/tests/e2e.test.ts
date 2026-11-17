@@ -193,7 +193,7 @@ describe.each(['fetch', 'node'] as const)('tRPC on the %s adapter', (transport) 
 
     expect(error.message).toBe('internal');
     expect(JSON.stringify(error.shape)).not.toContain('4f2a');
-    expect(error.data?.stack).toBeUndefined();
+    expect(error.data).not.toHaveProperty('stack');
   });
 
   it('answers a store failure while resolving the session with internal', async () => {
