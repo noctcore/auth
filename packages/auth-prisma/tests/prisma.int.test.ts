@@ -84,6 +84,25 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     expect(await twoFactor.countRecoveryCodes(userId)).toBe(0);
   });
 
+  it('never starts the recovery code version over, so an old spend cannot match a new set', async () => {
+    const userId = uniqueId('user');
+
+    await twoFactor.replaceRecoveryCodes(userId, ['old']);
+
+    const before = await prisma.authRecoveryCodes.findUnique({ where: { userId } });
+
+    // Turned off, then on again with a new set.
+    await twoFactor.replaceRecoveryCodes(userId, []);
+    expect(await twoFactor.countRecoveryCodes(userId)).toBe(0);
+    await twoFactor.replaceRecoveryCodes(userId, ['new']);
+
+    const after = await prisma.authRecoveryCodes.findUnique({ where: { userId } });
+
+    expect(after?.version).toBeGreaterThan(before?.version ?? 0);
+    expect(await twoFactor.consumeRecoveryCode(userId, 'old')).toBe(false);
+    expect(await twoFactor.consumeRecoveryCode(userId, 'new')).toBe(true);
+  });
+
   it('skips stored recovery codes that are not strings', async () => {
     const userId = uniqueId('user');
 

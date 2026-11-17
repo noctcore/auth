@@ -5,8 +5,9 @@
  * the database decides which of two concurrent callers wins: a time step only
  * moves forward, and a pending factor is confirmed only against the secret it
  * still holds. The recovery codes of a user are one row, replaced by one
- * upsert, and a code is spent by an update guarded on the row's version,
- * retried when another write got there first.
+ * upsert (an empty set too, so the version never starts over), and a code is
+ * spent by an update guarded on the row's version, retried when another write
+ * got there first.
  */
 import type {
   StoredStepUp,
@@ -134,12 +135,9 @@ export class PrismaTwoFactorStore implements TwoFactorStore {
   }
 
   async replaceRecoveryCodes(userId: string, hashes: readonly string[]): Promise<void> {
-    if (hashes.length === 0) {
-      await this.delegates.recoveryCodes.deleteMany({ where: { userId } });
-
-      return;
-    }
-
+    // An empty set is written as an empty row, never a delete: the version only
+    // grows for as long as the user exists, so a spend that read an old set
+    // can never match a newer row that happens to start at the same version.
     const args = {
       where: { userId },
       create: { userId, hashes: [...hashes], version: 0 },
