@@ -38,6 +38,7 @@ export type IssueVia =
   | 'second-factor'
   | 'password-change'
   | 'email-verified'
+  | 'email-changed'
   | 'revoke-others'
   | 'reauthenticate'
   | (string & {});
@@ -50,6 +51,8 @@ export type RevocationReason =
   | 'password-reset'
   | 'password-change'
   | 'email-verified'
+  | 'email-changed'
+  | 'email-reverted'
   | 'evicted'
   | (string & {});
 
@@ -98,6 +101,19 @@ export interface AuthHooks<U extends AuthUser, A> {
     meta: RequestMeta;
   }) => MaybePromise<HookResult>;
   /**
+   * Before an email change is requested, after the fresh-auth check: a
+   * second-factor plugin demands its step-up or code here. `newEmail` is the
+   * normalised address asked for; refuse with a code that does not say whether
+   * it is taken.
+   */
+  beforeEmailChange: (context: {
+    user: U;
+    session: StoredSession<A>;
+    newEmail: string;
+    secondFactor: string | undefined;
+    meta: RequestMeta;
+  }) => MaybePromise<HookResult>;
+  /**
    * After a new account is created, before its verification mail. Awaited on
    * the response path and run only for a new address, so its duration shows in
    * sign-up timing against a taken address: keep it fast, and hand slow work
@@ -131,6 +147,7 @@ const HOOK_NAMES: readonly HookName[] = [
   'beforePasswordResetRequest',
   'beforePasswordReset',
   'beforePasswordChange',
+  'beforeEmailChange',
   'afterRegister',
   'onSessionsRevoked',
 ];

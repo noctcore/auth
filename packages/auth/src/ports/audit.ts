@@ -23,6 +23,13 @@ export type AuthEventType =
   | 'email.verification_sent'
   | 'email.verified'
   | 'email.verification_failed'
+  /** Email change: a request (uniform whether or not the new address is taken), a refusal, a confirmed change. */
+  | 'email.change_requested'
+  | 'email.change_failed'
+  | 'email.changed'
+  /** A revert link restored the old address. Carries `review: true`: look at the account. */
+  | 'email.change_reverted'
+  | 'email.change_revert_failed'
   | 'password.reset_requested'
   | 'password.reset_request_ignored'
   | 'password.reset_code_verified'

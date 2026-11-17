@@ -11,6 +11,7 @@ import type { PluginContext } from './core/plugin-context';
 import { checkPlugins, namespacePluginFlows, type PluginFlows } from './core/plugins';
 import { deriveKey, toSecret } from './crypto/keys';
 import { cryptoRandom } from './crypto/random';
+import * as emailChange from './flows/email-change';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
 import { changePassword, reauthenticate } from './flows/password-change';
@@ -176,6 +177,24 @@ export function createAuth<
       secondFactor?: string;
       meta: RequestMeta;
     }) => changePassword(core, input),
+    /** Starts an email change: fresh authentication (and a step-up with a factor), then a code to the new address. */
+    requestEmailChange: (input: emailChange.RequestEmailChangeInput<A>) =>
+      emailChange.requestEmailChange(core, settings, input),
+    /** Confirms an email change with the code, in a signed-in session of the same account. */
+    confirmEmailChangeCode: (input: {
+      session: StoredSession<A>;
+      code: string;
+      meta: RequestMeta;
+    }) => emailChange.confirmEmailChangeCode(core, settings, input),
+    /** Confirms an email change with the link, in a signed-in session of the same account. */
+    confirmEmailChangeLink: (input: {
+      token: string;
+      session: StoredSession<A> | null;
+      meta: RequestMeta;
+    }) => emailChange.confirmEmailChangeLink(core, settings, input),
+    /** Undoes an email change from the link mailed to the old address. No session needed. */
+    revertEmailChange: (input: { token: string; meta: RequestMeta }) =>
+      emailChange.revertEmailChange(core, settings, input),
     sessions: {
       list: (session: StoredSession<A>) => listSessions(core, session),
       revoke: (input: { session: StoredSession<A>; id: string; meta: RequestMeta }) =>

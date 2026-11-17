@@ -45,6 +45,8 @@ export function setup(overrides: Overrides = {}) {
     urls: {
       resetPassword: (token) => `https://app.example/reset#${token}`,
       verifyEmail: (token) => `https://app.example/verify#${token}`,
+      confirmEmailChange: (token) => `https://app.example/email/confirm#${token}`,
+      revertEmailChange: (token) => `https://app.example/email/revert#${token}`,
     },
     mailer,
     audit,

@@ -41,7 +41,18 @@ export type Door =
    * that address's code-mode reset for 15 minutes. Link-mode reset (the
    * default) does not use this door and is unaffected.
    */
-  | 'password-reset-code-address';
+  | 'password-reset-code-address'
+  /** Per user: email change requests one account can make. */
+  | 'email-change-request'
+  /**
+   * Per address: email change requests naming one new address, from every
+   * account. Keyed like the lockout, on a hash of the normalised address.
+   */
+  | 'email-change-address'
+  /** Confirming an email change with a code or a link. */
+  | 'email-change'
+  /** Using a revert link. */
+  | 'email-change-revert';
 
 export const DEFAULT_DOOR_LIMITS: Readonly<Record<Door, RateLimitRule>> = {
   login: { limit: 10, window: '1m' },
@@ -55,6 +66,10 @@ export const DEFAULT_DOOR_LIMITS: Readonly<Record<Door, RateLimitRule>> = {
   'password-change': { limit: 5, window: '5m' },
   reauthenticate: { limit: 5, window: '5m' },
   'password-reset-code-address': { limit: 5, window: '15m' },
+  'email-change-request': { limit: 3, window: '1h' },
+  'email-change-address': { limit: 3, window: '1h' },
+  'email-change': { limit: 10, window: '1m' },
+  'email-change-revert': { limit: 10, window: '1m' },
 };
 
 export interface PasswordResetJob {
@@ -139,11 +154,27 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
     /** A completed reset proves the mailbox, so it marks the address verified. Default true. */
     readonly markEmailVerified?: boolean;
   };
+  readonly emailChange?: {
+    /** Default `code`: 8 digits typed by the signed-in user, bound to the account and the new address. */
+    readonly kind?: 'code' | 'link';
+    /** Default 15 min for codes, 1 h for links. */
+    readonly ttl?: Duration;
+    readonly digits?: number;
+    readonly maxAttempts?: number;
+    /** How long the revert link mailed to the old address works. Default 7 days, the minimum. */
+    readonly revertTtl?: Duration;
+    /** After a revert, how long the account may not change to the address it lost. Default 30 days. */
+    readonly blockAfterRevert?: Duration;
+  };
   readonly urls?: {
     /** Required for link verification. Put the token in the path or fragment and set `Referrer-Policy: no-referrer`. */
     readonly verifyEmail?: (token: string) => string;
     /** Required for link resets. */
     readonly resetPassword?: (token: string) => string;
+    /** Required for link confirmation of an email change. */
+    readonly confirmEmailChange?: (token: string) => string;
+    /** Required to use the email change flows: the revert link mailed to the old address. */
+    readonly revertEmailChange?: (token: string) => string;
   };
   readonly throttle?: {
     readonly lockout?: LockoutOptions;

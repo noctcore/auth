@@ -6,6 +6,12 @@ export const PURPOSE = {
   emailVerification: 'email-verification',
   passwordReset: 'password-reset',
   passwordResetTicket: 'password-reset-ticket',
+  /** The code or link that proves a new address. One per user: a new request replaces it. */
+  emailChange: 'email-change',
+  /** The revert link mailed to the old address. One per user: a live one is never replaced. */
+  emailRevert: 'email-revert',
+  /** Not a secret: remembers, after a revert, the address the account may not change to for a while. */
+  emailChangeBlock: 'email-change-block',
 } as const;
 
 export const RESET_PURPOSES: readonly string[] = [
@@ -31,9 +37,19 @@ export interface FlowSettings {
     readonly markEmailVerified: boolean;
     readonly enqueue: ((job: PasswordResetJob) => Promise<void>) | undefined;
   };
+  readonly emailChange: {
+    readonly kind: 'code' | 'link';
+    readonly ttlMs: number;
+    readonly digits: number;
+    readonly maxAttempts: number;
+    readonly revertTtlMs: number;
+    readonly blockAfterRevertMs: number;
+  };
   readonly urls: {
     readonly verifyEmail: ((token: string) => string) | undefined;
     readonly resetPassword: ((token: string) => string) | undefined;
+    readonly confirmEmailChange: ((token: string) => string) | undefined;
+    readonly revertEmailChange: ((token: string) => string) | undefined;
   };
   readonly freshAuthAgeMs: number;
 }
