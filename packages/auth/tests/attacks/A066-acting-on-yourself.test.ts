@@ -1,4 +1,4 @@
-// A062: acting on yourself through the membership flows.
+// A066: acting on yourself through the membership flows.
 //
 // A member promotes themselves to admin, or the last admin demotes or removes
 // themselves by mistake, or a member adds themselves to a scope they do not
@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { acting, membershipApp } from '../membership/setup';
 
-describe('A062: acting on yourself through the membership flows', () => {
+describe('A066: acting on yourself through the membership flows', () => {
   it('refuses self-promotion, even when the app allows every actor', async () => {
     const t = membershipApp({ canManage: () => true });
     const member = await t.member('member');

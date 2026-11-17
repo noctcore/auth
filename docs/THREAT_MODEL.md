@@ -2,7 +2,7 @@ The threat model of `@noctcore/auth`: what it protects, who it protects it from,
 
 ## What the library is
 
-A server-side library. A consuming app calls it from its own HTTP handlers to register, log in, validate a session, reset or change a password, and verify or change an email address. The library never handles HTTP itself: the app passes in the request metadata (client IP, user agent, origin) and turns results into responses. Everything it stores goes through four store ports (users, sessions, one-time tokens, counters), with adapters for Redis and Prisma, and every mail goes through a mailer port. The optional two-factor plugin (`@noctcore/auth/two-factor`) adds a fifth store (factors, recovery codes, trusted devices, step-up proofs) and a cipher port for TOTP secrets. The optional membership plugin (`@noctcore/auth/membership`) adds a membership store (who holds which role in which scope) and guards the changes to it.
+A server-side library. A consuming app calls it from its own HTTP handlers to register, log in, validate a session, reset or change a password, and verify or change an email address. The library never handles HTTP itself: the app passes in the request metadata (client IP, user agent, origin) and turns results into responses. Everything it stores goes through four store ports (users, sessions, one-time tokens, counters), with adapters for Redis and Prisma, and every mail goes through a mailer port. The optional two-factor plugin (`@noctcore/auth/two-factor`) adds a fifth store (factors, recovery codes, trusted devices, step-up proofs) and a cipher port for TOTP secrets.
 
 ## Assets
 
@@ -130,12 +130,9 @@ The library defends against: guessing passwords and codes; locking the owner out
 | Registering the old address so the revert fails | The old address is held for its owner while the revert link lives and gets the taken-address answer; if it has an account anyway, the revert still removes the password and sessions and the link stays usable | A061 |
 | Resetting the password at the intruder's address after a refused revert | A refused revert locks the account out: no session, no reset mail, reset links refused, each with the usual answer and no password hashed; it never lapses, ending only when the revert finishes or support clears it, which also voids the revert link and the hold; a link refuses once the account left the intruder's address | A062 |
 | Stripping the owner's second factor with an email revert | A revert never removes a second factor, so a reset from the old mailbox still asks for the owner's | A063 |
-| Leaving a scope without an admin by concurrent demotions or removals (membership plugin) | The store checks the other admins and writes in one atomic step | A060 |
-| Acting on yourself through the membership flows | User ids compared before any lookup; the actor's role read from the store | A061 |
-| Keeping a role or a scope after it was taken away | Every session revoked after the write; the epoch fence refuses a racing login | A062 |
-| Leaving a scope without an admin by concurrent demotions or removals (membership plugin) | The store checks the other admins and writes in one atomic step | A061 |
-| Acting on yourself through the membership flows | User ids compared before any lookup; the actor's role read from the store | A062 |
-| Keeping a role or a scope after it was taken away | The actor's role read from the store on every call; with `revokeSessionsOnChange`, every session revoked before and after the write, and the epoch fence refuses a racing login | A063 |
-| Signing a stranger out of everything through the membership flows | No revocation by default; never on an add or a same-role change. With `revokeSessionsOnChange` on, only consent to joining stops it | A073 |
+| Leaving a scope without an admin by concurrent demotions or removals (membership plugin) | The store checks the other admins and writes in one atomic step | A065 |
+| Acting on yourself through the membership flows | User ids compared before any lookup; the actor's role read from the store | A066 |
+| Keeping a role or a scope after it was taken away | The actor's role read from the store on every call; with `revokeSessionsOnChange`, every session revoked before and after the write, and the epoch fence refuses a racing login | A067 |
+| Signing a stranger out of everything through the membership flows | No revocation by default; never on an add or a same-role change. With `revokeSessionsOnChange` on, only consent to joining stops it | A068 |
 
 A report that breaks one of these defenses, or shows an attack the table misses, is a vulnerability: see [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md).

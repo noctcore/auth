@@ -1,4 +1,4 @@
-// A073: signing a stranger out of everything through the membership flows.
+// A068: signing a stranger out of everything through the membership flows.
 //
 // Any user creates a scope of their own, adds the victim by user id (no consent
 // is asked), then sets the victim's role to the one they already hold, or
@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 
 import { acting, membershipApp } from '../membership/setup';
 
-describe('A073: signing a stranger out of everything through the membership flows', () => {
+describe('A068: signing a stranger out of everything through the membership flows', () => {
   it('keeps the victim signed in through add, a same-role change and a removal, by default', async () => {
     const t = membershipApp();
     const attacker = await t.member('owner', 'attacker_org');

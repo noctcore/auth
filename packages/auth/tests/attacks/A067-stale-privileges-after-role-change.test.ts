@@ -1,4 +1,4 @@
-// A063: keeping a role, or a scope, after it was taken away.
+// A067: keeping a role, or a scope, after it was taken away.
 //
 // An admin is demoted or removed, but the session they already hold keeps
 // working: it carries the old role in its attributes, or it simply stays
@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest';
 
 import { acting, membershipApp, meta, PASSWORD } from '../membership/setup';
 
-describe('A063: keeping a role, or a scope, after it was taken away', () => {
+describe('A067: keeping a role, or a scope, after it was taken away', () => {
   it("refuses a demoted admin's next action, though the session stays signed in", async () => {
     const t = membershipApp();
     const owner = await t.member('owner');
