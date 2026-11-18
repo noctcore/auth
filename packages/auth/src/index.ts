@@ -67,7 +67,20 @@ export {
 } from './http/csrf';
 export type { CaptchaDoor, CaptchaVerdict, CaptchaVerifier } from './ports/captcha';
 export { turnstile, type TurnstileOptions } from './http/turnstile';
-export { clientIp, maskIp, parseTrustProxy } from './http/ip';
+export {
+  clientIp,
+  maskIp,
+  parseTrustProxy,
+  resolveClientIpHeader,
+  resolveTrustedHops,
+  type TrustedHops,
+} from './http/ip';
+export {
+  isTrustedAddress,
+  resolveTrustedProxies,
+  TRUST_PROXY_PRESETS,
+  type TrustProxyPreset,
+} from './http/ip-ranges';
 export type {
   AuthUser,
   CounterStore,
