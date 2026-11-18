@@ -37,7 +37,7 @@ import type { FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { IssuedSession } from '../core/plugin-context';
 import type { AuthUser } from '../ports/stores';
-import { normalizeEmail, type NormalizedEmail } from '../shared/email';
+import type { NormalizedEmail } from '../shared/email';
 import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
@@ -68,9 +68,11 @@ export async function register<U extends AuthUser, A>(
 
   if (limited) return limited;
 
-  const email = normalizeEmail(input.email);
+  const parsed = core.parseEmail(input.email);
 
-  if (!email) return refused(core, fail('invalid_email', 'invalid_email'), meta);
+  if (!parsed.ok) return refused(core, parsed, meta);
+
+  const email = parsed.value;
 
   const hashed = await core.hashNewPassword(input.password, meta);
 

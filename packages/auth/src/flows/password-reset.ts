@@ -14,7 +14,7 @@
 import { PURPOSE, PASSWORD_PURPOSES, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
-import { normalizeEmail, type NormalizedEmail } from '../shared/email';
+import type { NormalizedEmail } from '../shared/email';
 import { fail, ok, type AuthErrorCode, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
@@ -30,7 +30,7 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
 
   if (limited) return limited;
 
-  const email = normalizeEmail(input.email);
+  const email = core.normalizeEmail(input.email);
 
   // Guesses are also counted per address, whether or not it has an account or
   // a code outstanding, so spreading guesses over many IPs does not help.

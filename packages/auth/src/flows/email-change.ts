@@ -44,7 +44,7 @@ import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
 import type { IssuedSession } from '../core/plugin-context';
 import type { AuthUser, EmailChangeResult, StoredSession, UserStore } from '../ports/stores';
-import { normalizeEmail, type NormalizedEmail } from '../shared/email';
+import type { NormalizedEmail } from '../shared/email';
 import { AuthConfigError, fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
@@ -112,10 +112,11 @@ export async function requestEmailChange<U extends AuthUser, A>(
 
   if (locked) return changeFailed(core, session.userId, locked, meta);
 
-  const newEmail = normalizeEmail(input.newEmail);
+  const parsed = core.parseEmail(input.newEmail);
 
-  if (!newEmail)
-    return changeFailed(core, session.userId, fail('invalid_email', 'invalid_email'), meta);
+  if (!parsed.ok) return changeFailed(core, session.userId, parsed, meta);
+
+  const newEmail = parsed.value;
 
   const user = await core.users.findById(session.userId);
 
@@ -313,8 +314,8 @@ async function finishChange<U extends AuthUser, A>(
     );
 
   const user = await core.users.findById(redemption.userId);
-  const to = normalizeEmail(redemption.data['email']);
-  const from = normalizeEmail(redemption.data['from']);
+  const to = core.normalizeEmail(redemption.data['email']);
+  const from = core.normalizeEmail(redemption.data['from']);
 
   // The proof is for a change from an address the account does not have now.
   if (!user || !to || !from || user.email !== from)
@@ -448,13 +449,13 @@ export async function revertEmailChange<U extends AuthUser, A>(
       meta,
     );
 
-  const restore = normalizeEmail(link.data['email']);
+  const restore = core.normalizeEmail(link.data['email']);
 
   if (!restore) return revertFailed(core, link.userId, fail('invalid_token', 'user_missing'), meta);
 
   const outcome = await restoreAddress(core, support, link.userId, {
     restore,
-    from: normalizeEmail(link.data['to']),
+    from: core.normalizeEmail(link.data['to']),
   });
 
   if (!outcome.ok) return revertFailed(core, link.userId, outcome, meta);
