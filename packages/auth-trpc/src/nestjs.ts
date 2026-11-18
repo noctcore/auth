@@ -15,7 +15,7 @@
  * The context class must return `createAuthContext(...).node(opts)` (spread
  * into your own context if you add to it).
  */
-import type { Duration, RateLimitRule } from '@noctcore/auth';
+import type { Duration } from '@noctcore/auth';
 import {
   authedBody,
   csrfBody,
@@ -25,6 +25,7 @@ import {
   writesCookiesBody,
   roleBody,
   type MiddlewareCall,
+  type TrpcRateLimitRule,
 } from './middlewares';
 
 /** A nestjs-trpc middleware: the shape `@UseMiddlewares` accepts. */
@@ -74,9 +75,16 @@ export const FreshAuthMiddleware = (maxAge?: Duration): NestTrpcMiddlewareClass 
 export const RoleMiddleware = (...roles: readonly string[]): NestTrpcMiddlewareClass =>
   middlewareClass(roleBody(roles));
 
-/** A fixed window per client IP under `trpc:<name>`; refuses when the counter store is down. */
-export const RateLimitMiddleware = (name: string, rule?: RateLimitRule): NestTrpcMiddlewareClass =>
-  middlewareClass(rateLimitedBody(name, rule));
+/**
+ * A fixed window under `trpc:<name>`, per client IP unless `rule.keyBy` is
+ * `user`; skipped on a procedure whose meta says `rateLimit: 'exempt'`.
+ * Refuses when the counter store is down. A tier is a rule constant passed
+ * to each class that shares it.
+ */
+export const RateLimitMiddleware = (
+  name: string,
+  rule?: TrpcRateLimitRule,
+): NestTrpcMiddlewareClass => middlewareClass(rateLimitedBody(name, rule));
 
 /**
  * For every procedure that writes cookies: refuses it on a streamed batch

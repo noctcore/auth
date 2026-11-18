@@ -271,6 +271,55 @@ describe.each(['fetch', 'node'] as const)('tRPC on the %s adapter', (transport) 
     });
   });
 
+  it('rate limits a signed-in caller by user across IPs, and an anonymous one by IP', async () => {
+    const browser = await start();
+
+    await browser.signIn();
+    await browser.client.perUser.query();
+    await browser.client.perUser.query();
+
+    expect((await failure(browser.client.perUser.query())).message).toBe('rate_limited');
+
+    // The same session from another IP shares the user's budget.
+    const roaming = new Browser(env, '198.51.100.9');
+
+    for (const [name, value] of browser.cookies) roaming.cookies.set(name, value);
+
+    expect((await failure(roaming.client.perUser.query())).message).toBe('rate_limited');
+
+    // An anonymous caller behind the user's IP counts by that IP, apart from the user.
+    const anonymous = new Browser(env);
+
+    await expect(anonymous.client.perUser.query()).resolves.toEqual({ pong: true });
+    await expect(anonymous.client.perUser.query()).resolves.toEqual({ pong: true });
+    expect((await failure(anonymous.client.perUser.query())).message).toBe('rate_limited');
+  });
+
+  it('shares a tier between procedures under one name, apart from other names', async () => {
+    const browser = await start();
+
+    await browser.client.tierA.query();
+    await browser.client.tierB.query();
+
+    expect((await failure(browser.client.tierA.query())).message).toBe('rate_limited');
+    expect((await failure(browser.client.tierB.query())).message).toBe('rate_limited');
+
+    // The tier's own name is another budget.
+    await expect(browser.client.perUser.query()).resolves.toEqual({ pong: true });
+  });
+
+  it('never counts a procedure whose meta says rateLimit: exempt', async () => {
+    const browser = await start();
+
+    await browser.client.sharedLimited.query();
+
+    expect((await failure(browser.client.sharedLimited.query())).message).toBe('rate_limited');
+
+    for (let i = 0; i < 5; i += 1) {
+      await expect(browser.client.sharedExempt.query()).resolves.toEqual({ pong: true });
+    }
+  });
+
   it('refuses a cookie-writing procedure on a streamed batch before the flow runs', async () => {
     const browser = await start();
 
