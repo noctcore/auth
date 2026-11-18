@@ -30,6 +30,12 @@ export interface IssuedSession<A> {
   readonly cookie: CookieSpec;
   /** The trusted-device cookie: set it with the session cookie. Voided by a password change, reset or revoke-all. */
   readonly deviceCookie: CookieSpec;
+  /**
+   * Ids of the user's older sessions deleted to keep within
+   * `session.maxPerUser`, oldest first; empty when none were. The same ids, in
+   * the same form, reach `onSessionsRevoked` with reason `evicted`.
+   */
+  readonly evicted: readonly string[];
 }
 
 export interface IssueOptions<A> {

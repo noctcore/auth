@@ -332,6 +332,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       options.meta,
     );
 
+    // Neither `emit` nor `notifyRevoked` throws, so every eviction reaches the hooks.
     if (minted.evicted.length > 0) await this.notifyRevoked(user.id, minted.evicted, 'evicted');
 
     const cookie = createSessionCookie(this.cookie, minted.token, {
@@ -345,7 +346,13 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     // bound to the user and the epoch the session was stamped with.
     const device = this.#deviceCookie(user.id, minted.session.epoch, options.meta.origin);
 
-    return ok({ token: minted.token, session: minted.session, cookie, deviceCookie: device });
+    return ok({
+      token: minted.token,
+      session: minted.session,
+      cookie,
+      deviceCookie: device,
+      evicted: minted.evicted,
+    });
   }
 
   /** The audit row for a sign-in that got this far and was still refused. */

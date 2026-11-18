@@ -133,7 +133,12 @@ export interface AuthHooks<U extends AuthUser, A> {
     email: string;
     meta: RequestMeta;
   }) => MaybePromise<void>;
-  /** Sessions ended: close their sockets, drop caches. Errors are logged, never thrown into the flow. */
+  /**
+   * Sessions ended: close their sockets, drop caches. Errors are logged, never
+   * thrown into the flow. Reason `evicted`: a new session pushed these past
+   * `session.maxPerUser`; it fires once per issued session that evicted any,
+   * with the ids that issue removed (the same ids `IssuedSession.evicted` holds).
+   */
   onSessionsRevoked: (context: {
     userId: string;
     /** The internal store keys of the ended sessions. Server-side only: never send them to a client. */
