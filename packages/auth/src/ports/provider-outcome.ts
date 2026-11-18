@@ -28,8 +28,9 @@ export interface UnavailableOutcome {
 }
 
 /**
- * Called once for every outcome. Awaited by nobody: a slow hook does not hold
- * the request up, and its result is ignored. A throw or a rejection is logged
+ * Called once for every outcome. Awaited by nobody: a slow promise does not
+ * hold the request up, and its result is ignored. The synchronous part still
+ * runs on the request path, so keep it cheap. A throw or a rejection is logged
  * (the message only) and never reaches the flow.
  */
 export type OutcomeHook<O> = (outcome: O) => void | Promise<void>;
@@ -43,8 +44,14 @@ export function reportOutcome<O>(
 ): void {
   if (!hook) return;
 
+  // Guarded itself: an app logger that throws must not turn a failing hook
+  // into a failed request, or into an unhandled rejection.
   const failed = (error: unknown): void => {
-    logger.error('onResult hook failed', { provider, error: describeError(error) });
+    try {
+      logger.error('onResult hook failed', { provider, error: describeError(error) });
+    } catch {
+      // Nowhere left to report it.
+    }
   };
 
   try {
@@ -58,7 +65,14 @@ export function reportOutcome<O>(
 
 /** The cause of a failed fetch or body read: our own timeout, or the network. */
 export function failureReason(error: unknown): 'timeout' | 'network-error' {
-  const name = error instanceof Error ? error.name : '';
+  // Read `name` off any object: a runtime's DOMException is not always an `Error`.
+  let name: unknown;
+
+  try {
+    name = typeof error === 'object' && error !== null ? (error as { name?: unknown }).name : '';
+  } catch {
+    name = '';
+  }
 
   return name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'network-error';
 }
