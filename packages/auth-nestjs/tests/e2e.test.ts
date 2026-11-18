@@ -332,3 +332,67 @@ describe('shutting down', () => {
     t = { ...t, app: { close: async () => undefined } as never };
   });
 });
+
+describe('session handles', () => {
+  it('lists handles, never store keys, and revokes another device by its handle', async () => {
+    t = await boot();
+    const laptop = new Browser(t.app);
+    const phone = new Browser(t.app, '198.51.100.8');
+
+    await laptop.signIn();
+    await phone.signIn();
+
+    const keys = (await t.stores.sessions.listByUser(t.userId)).map((s) => s.id);
+    const listed = await laptop.send('GET', '/api/sessions');
+    const sessions = listed.body['sessions'] as { handle: string; current: boolean }[];
+
+    expect(keys).toHaveLength(2);
+    expect(sessions).toHaveLength(2);
+
+    for (const key of keys) expect(JSON.stringify(listed.body)).not.toContain(key);
+
+    const other = sessions.find((s) => !s.current);
+
+    expect(other?.handle).toMatch(/^[\w-]{43}$/u);
+
+    for (const handle of [...keys, 'not-a-handle', 42]) {
+      const answer = await laptop.send('POST', '/api/sessions/revoke', { handle });
+
+      expect(answer).toMatchObject({ status: 201, body: { revoked: false } });
+    }
+
+    expect((await phone.send('GET', '/api/me')).status).toBe(200);
+
+    const revoked = await laptop.send('POST', '/api/sessions/revoke', { handle: other?.handle });
+
+    expect(revoked).toMatchObject({ status: 201, body: { revoked: true } });
+    expect((await phone.send('GET', '/api/me')).status).toBe(401);
+  });
+
+  it("answers another user's session handle like an unknown one", async () => {
+    t = await boot();
+    const ada = new Browser(t.app);
+    const eve = new Browser(t.app, '198.51.100.9');
+
+    await ada.signIn();
+
+    await t.auth.register({
+      email: 'eve@example.com',
+      password: PASSWORD,
+      meta: { ip: '203.0.113.2' },
+    });
+
+    await eve.signIn('eve@example.com');
+
+    const listed = await ada.send('GET', '/api/sessions');
+    const [adaSession] = listed.body['sessions'] as { handle: string }[];
+
+    for (const handle of [adaSession?.handle, 'not-a-handle']) {
+      const answer = await eve.send('POST', '/api/sessions/revoke', { handle });
+
+      expect(answer).toMatchObject({ status: 201, body: { revoked: false } });
+    }
+
+    expect((await ada.send('GET', '/api/me')).status).toBe(200);
+  });
+});
