@@ -29,6 +29,7 @@ export const AUTH_ERROR_TRPC_CODES: Readonly<Record<AuthErrorCode, TRPC_ERROR_CO
   invalid_credentials: 'UNAUTHORIZED',
   invalid_token: 'BAD_REQUEST',
   invalid_email: 'BAD_REQUEST',
+  email_not_ascii: 'BAD_REQUEST',
   weak_password: 'BAD_REQUEST',
   password_too_long: 'BAD_REQUEST',
   breached_password: 'BAD_REQUEST',
