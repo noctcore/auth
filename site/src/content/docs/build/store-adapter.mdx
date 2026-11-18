@@ -30,7 +30,7 @@ The interfaces are in `packages/auth/src/ports/stores.ts`, with the guarantee ea
 **`SessionStore`** (sessions and revocation epochs)
 
 - `touch` replaces a session only if it still exists, keeping its TTL, and never brings back a deleted one, even when racing the delete on another connection.
-- `delete` returns the ids it removed (the ones that still existed), so that of two deletes racing on one session exactly one reports it. The per-user cap reports its evictions from this list. A store that returns nothing still works, but sign-ins racing at the cap may then report a session to `onSessionsRevoked` twice.
+- `delete` returns the ids it removed (the ones that still existed), so that of two deletes racing on one session exactly one reports it. Evictions, sign-outs and revocations report to `onSessionsRevoked` from this list. A store that returns nothing still works, but a session two of them race on may then be reported twice. Run the conformance suite with `deleteReportsRemoved: false` for such a store: the delete cases are then listed as skipped instead of failing.
 - `bumpEpoch` is an atomic increment, and the epoch must outlive every session it guards. A store that can only guard sessions up to some age says so in `maxSessionTtlMs`, and `createAuth` refuses longer sessions.
 - Every record expires with its session: the session at its TTL, its index entry with it.
 
@@ -58,7 +58,7 @@ Under Vitest or Jest, pass the runner's own functions: `runConformance('my store
 | --- | --- |
 | `userStoreConformance(store, options)` | `softDelete(id)`: soft-deletes a user, if your store supports soft deletion. Without it that case is left out. |
 | `tokenStoreConformance(store)` | none |
-| `sessionStoreConformance(store, options)` | `secondary`: a second instance of your store on its own connection, so the touch-versus-delete race really crosses connections. `epochTtlMs(userId)`: the remaining TTL of a user's epoch, for stores that expire epochs; enables the check that the epoch outlives the longest session. `advanceTime`, as below. |
+| `sessionStoreConformance(store, options)` | `secondary`: a second instance of your store on its own connection, so the touch-versus-delete race really crosses connections. `epochTtlMs(userId)`: the remaining TTL of a user's epoch, for stores that expire epochs; enables the check that the epoch outlives the longest session. `deleteReportsRemoved: false`: for a store whose `delete` cannot return the ids it removed; the three delete cases are listed as skipped. `advanceTime`, as below. |
 | `counterStoreConformance(store, context)` | `advanceTime`, as below. |
 | `membershipStoreConformance(store)` | none. For the membership plugin: a role change and a removal apply only to the role the caller decided on, and never leave a scope without an admin, checked with concurrent demotions and removals ([Membership guards](/auth/build/membership/#the-store)). |
 | `invitationStoreConformance(store)` | none. For the invitations plugin: `consume` gives an invitation to exactly one of many concurrent callers, and `create` keeps one live invitation per scope and address, also under concurrent creates ([Invitations](/auth/build/invitations/#the-store)). |
