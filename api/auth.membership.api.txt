@@ -323,6 +323,7 @@ Throttle [class]
     private held
     private lock
     private permanentKey
+    private racingRefusal
     private readonly baseLockMs
     private readonly clock
     private readonly counters
