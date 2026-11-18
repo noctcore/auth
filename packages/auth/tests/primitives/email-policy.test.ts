@@ -217,7 +217,7 @@ describe('a custom normaliser', () => {
     expect(normalize('ctl@example.com')).toEqual({ ok: false, reason: 'invalid_email' });
     expect(onError).toHaveBeenCalledTimes(3);
 
-    for (const [message] of onError.mock.calls) expect(message).not.toMatch(/example\.com/u);
+    for (const [message] of onError.mock.calls) expect(message).not.toContain('example.com');
   });
 });
 
