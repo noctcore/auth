@@ -153,14 +153,14 @@ requestPasswordResetInput [const]: z.ZodObject<{ email: z.ZodString; captchaToke
 resetPasswordInput [const]: z.ZodObject<{ token: z.ZodString; password: z.ZodString; secondFactor: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 resetTicketOutput [const]: z.ZodObject<{ ticket: z.ZodString; expiresAt: z.ZodNumber; }, z.core.$strip>
 revokedOutput [const]: z.ZodObject<{ revoked: z.ZodBoolean; }, z.core.$strip>
-revokeSessionInput [const]: z.ZodObject<{ id: z.ZodString; }, z.core.$strip>
+revokeSessionInput [const]: z.ZodObject<{ handle: z.ZodString; }, z.core.$strip>
 RoleMiddleware [const]: (...roles: readonly string[]) => NestTrpcMiddlewareClass
 SecretQueryFinding [interface]
     readonly keys: readonly string[]
     readonly path: string
     readonly problem: 'secret_in_query' | 'unreadable_input' | 'lazy_router'
-sessionListOutput [const]: z.ZodArray<z.ZodObject<{ id: z.ZodString; current: z.ZodBoolean; createdAt: z.ZodNumber; lastActiveAt: z.ZodNumber; expiresAt: z.ZodNumber; ip: z.ZodString; userAgent: z.ZodString; }, z.core.$strip>>
-sessionSummaryOutput [const]: z.ZodObject<{ id: z.ZodString; current: z.ZodBoolean; createdAt: z.ZodNumber; lastActiveAt: z.ZodNumber; expiresAt: z.ZodNumber; ip: z.ZodString; userAgent: z.ZodString; }, z.core.$strip>
+sessionListOutput [const]: z.ZodArray<z.ZodObject<{ handle: z.ZodString; current: z.ZodBoolean; createdAt: z.ZodNumber; lastActiveAt: z.ZodNumber; expiresAt: z.ZodNumber; ip: z.ZodString; userAgent: z.ZodString; }, z.core.$strip>>
+sessionSummaryOutput [const]: z.ZodObject<{ handle: z.ZodString; current: z.ZodBoolean; createdAt: z.ZodNumber; lastActiveAt: z.ZodNumber; expiresAt: z.ZodNumber; ip: z.ZodString; userAgent: z.ZodString; }, z.core.$strip>
 toTRPCError [function]: (failure: Pick<AuthFailure, "code" | "retryAfterSeconds">) => AuthTRPCError
 TrpcAuth [interface]<U extends AuthUser = AuthUser, A = unknown>
     logout(input: { token: string | null | undefined; meta: RequestMeta; }): Promise<{ cookie: CookieSpec; }>
