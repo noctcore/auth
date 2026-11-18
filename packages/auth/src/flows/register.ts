@@ -87,7 +87,7 @@ export async function register<U extends AuthUser, A>(
 
   if (!user) {
     if (settings.revealExisting) {
-      const existing = (await core.users.findCredentialByEmail(email)) ?? held;
+      const existing = (await core.findCredentialByEmail(email)) ?? held;
 
       await core.emit(
         {
@@ -108,7 +108,7 @@ export async function register<U extends AuthUser, A>(
     core.background(
       'existing address notice',
       async () => {
-        const existing = (await core.users.findCredentialByEmail(email)) ?? held;
+        const existing = (await core.findCredentialByEmail(email)) ?? held;
 
         if (existing)
           core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });

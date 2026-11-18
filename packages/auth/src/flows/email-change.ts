@@ -150,7 +150,7 @@ export async function requestEmailChange<U extends AuthUser, A>(
   // the answer are the same. A taken or held address gets a token nobody is
   // ever shown, and the "in use" mail goes to its owner instead of a code to
   // the requester.
-  const account = await core.users.findCredentialByEmail(newEmail);
+  const account = await core.findCredentialByEmail(newEmail);
   const heldBy = await addressHolder(core, newEmail);
   const holder = account ?? heldFor(heldBy, user.id, newEmail);
   const issued = await issueConfirmation(core, settings, user.id, user.email, newEmail);

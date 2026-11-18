@@ -73,7 +73,7 @@ export async function processPasswordReset<U extends AuthUser, A>(
 ): Promise<void> {
   const meta: RequestMeta = { ip: job.ip };
   const email = core.normalizeEmail(job.email);
-  const credential = email ? await core.users.findCredentialByEmail(email) : null;
+  const credential = email ? await core.findCredentialByEmail(email) : null;
 
   if (!credential) {
     await ignored(core, undefined, 'unknown_user', meta);

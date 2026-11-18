@@ -16,7 +16,7 @@ import type { CaptchaDoor } from '../ports/captcha';
 import type { Clock } from '../ports/clock';
 import type { Logger, Metrics } from '../ports/logger';
 import type { AuthMailEvent } from '../ports/mail';
-import type { AuthUser, StoredSession, UserStore } from '../ports/stores';
+import type { AuthUser, StoredSession, UserStore, WithPasswordHash } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
 import type { NormalizedEmail } from '../shared/email';
 import type { AuthFailure, AuthResult } from '../shared/errors';
@@ -122,6 +122,14 @@ export interface PluginContext<U extends AuthUser, A> {
    * code (`invalid_email`, or `email_not_ascii` under the `ascii` policy).
    */
   parseEmail(input: unknown): AuthResult<NormalizedEmail>;
+  /**
+   * `users.findCredentialByEmail`, but a row whose stored `email` is not
+   * exactly `email` counts as not found. A store whose lookup goes through a
+   * case- or accent-insensitive collation would otherwise hand one account to
+   * several spellings, each with its own lockout and rate-limit keys. Every
+   * lookup by address goes through this.
+   */
+  findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>;
   /** Refuses (`fresh_auth_required`) when the session's last credential proof is older than `session.freshAuthAge`. */
   requireFreshAuth(session: StoredSession<A>): AuthResult<void>;
   /**

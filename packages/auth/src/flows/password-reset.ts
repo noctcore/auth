@@ -42,7 +42,7 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
 
   if (perAddress) return perAddress;
 
-  const user = await core.users.findCredentialByEmail(email ?? ('' as NormalizedEmail));
+  const user = await core.findCredentialByEmail(email ?? ('' as NormalizedEmail));
 
   const redemption = await core.tokens.redeemCode(
     PURPOSE.passwordReset,
