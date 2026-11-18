@@ -71,6 +71,8 @@ Never verify on a GET or when the page loads: mail scanners fetch links in mail,
 
 <Code code={accountControllerTs} lang="ts" title="src/account.controller.ts" />
 
+The sessions routes name each session by its public `handle`, which is what `sessions.revoke` takes; a store key never reaches the response. A handle that names none of the caller's sessions, another user's included, answers `{ revoked: false }`. See [Session handles](/auth/learn/sessions-and-expiry/#session-handles).
+
 `@RequireRole('a', 'b')` accepts a user with either role. On a controller and a handler both, each list must be satisfied.
 
 ## The trust-proxy rule

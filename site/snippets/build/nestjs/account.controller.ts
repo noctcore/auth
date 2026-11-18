@@ -26,6 +26,28 @@ export class AccountController {
     return { id: user.id, email: user.email };
   }
 
+  // Each session is named by its public handle, never its store key.
+  @Get('sessions')
+  async sessions(@CurrentSession() session: Session) {
+    return { sessions: await this.auth.sessions.list(session) };
+  }
+
+  // Signs out one device by the handle the list showed. Another device needs a
+  // fresh password proof; a handle that names none of the caller's sessions
+  // answers { revoked: false }.
+  @Post('sessions/revoke')
+  async revokeSession(
+    @Body() body: { handle: string },
+    @CurrentSession() session: Session,
+    @AuthMeta() meta: RequestMeta,
+  ) {
+    const result = await this.auth.sessions.revoke({ session, handle: body.handle, meta });
+
+    if (!result.ok) throw new HttpException({ error: toPublicError(result) }, 403);
+
+    return result.value;
+  }
+
   // Proving the password again rotates the session.
   @Post('reauthenticate')
   async reauthenticate(
