@@ -25,7 +25,7 @@ import type { CaptchaDoor } from '../ports/captcha';
 import type { Clock } from '../ports/clock';
 import type { Logger, Metrics } from '../ports/logger';
 import type { AuthMailEvent } from '../ports/mail';
-import type { AuthUser, StoredSession, UserStore } from '../ports/stores';
+import type { AuthUser, StoredSession, UserStore, WithPasswordHash } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
 import type { MintInput, MintResult } from '../session/session-types';
 import { describeError } from '../shared/describe-error';
@@ -103,6 +103,12 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     const verdict = this.#deps.emails(input);
 
     return verdict.ok ? ok(verdict.email) : fail(verdict.reason, verdict.reason);
+  }
+
+  async findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null> {
+    const found = await this.users.findCredentialByEmail(email);
+
+    return found?.email === email ? found : null;
   }
 
   requireFreshAuth(session: StoredSession<A>): AuthResult<void> {

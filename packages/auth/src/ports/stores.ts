@@ -30,7 +30,12 @@ export type WithPasswordHash<U> = U & { readonly passwordHash: string | null };
 export type EmailChangeResult = 'changed' | 'taken' | 'stale';
 
 export interface UserStore<U extends AuthUser = AuthUser> {
-  /** Live users only: a soft-deleted user is not found. */
+  /**
+   * Live users only: a soft-deleted user is not found. Must match the address
+   * exactly, byte for byte: a case- or accent-insensitive lookup (a database
+   * collation) would find one row under several spellings. The core also
+   * treats a row whose `email` differs from the address asked for as not found.
+   */
   findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>;
   findCredentialById(id: string): Promise<WithPasswordHash<U> | null>;
   findById(id: string): Promise<U | null>;

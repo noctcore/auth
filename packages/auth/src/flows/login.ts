@@ -81,7 +81,7 @@ export async function login<U extends AuthUser, A>(
   // Known and unknown addresses, locked or not, make the same store calls and
   // pay for the same password verify.
   const account = accountKey(email);
-  const found = await core.users.findCredentialByEmail(email);
+  const found = await core.findCredentialByEmail(email);
   const epoch = await core.sessions.readEpoch(found?.id ?? NO_SUCH_USER_ID);
   const credential = await core.users.findCredentialById(found?.id ?? NO_SUCH_USER_ID);
   const deviceId = core.verifyDevice(credential?.id ?? NO_SUCH_USER_ID, epoch, input.deviceToken);

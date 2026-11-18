@@ -101,7 +101,7 @@ export async function registerByInvitation<A>(
   if (!hashed.ok) return refused(r, hashed.code, hashed.reason, null, meta);
 
   // Not spent: the owner of the address signs in and calls `accept`.
-  if (await r.core.users.findCredentialByEmail(email))
+  if (await r.core.findCredentialByEmail(email))
     return refused(r, 'email_in_use', 'email_in_use', null, meta);
 
   const spent = await spend(r, invitation, null, meta);

@@ -39,7 +39,7 @@ async function resolve<U extends AuthUser, A>(
 
   if (!email) return null;
 
-  const user = await core.users.findCredentialByEmail(email);
+  const user = await core.findCredentialByEmail(email);
 
   return user ? { account: accountKey(email), userId: user.id } : { account: accountKey(email) };
 }
