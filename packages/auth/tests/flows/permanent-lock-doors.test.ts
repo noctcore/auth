@@ -123,6 +123,17 @@ describe('permanent lock with trusted devices (the default)', () => {
   });
 });
 
+describe('session validation under a permanent lock with trusted devices', () => {
+  it('reads no permanent marker, so the default mode pays nothing per request', async () => {
+    const t = app({ permanent: { afterLocks: 1 } });
+    const before = await owner(t);
+    const get = vi.spyOn(t.stores.counters, 'get');
+
+    expect(await alive(t, before.token)).toBe(true);
+    expect(get).not.toHaveBeenCalled();
+  });
+});
+
 describe('an email change started before the permanent lock', () => {
   it('cannot be confirmed after it, by code, and the code is left unspent', async () => {
     const t = app({ permanent: { afterLocks: 1 } });
@@ -169,6 +180,22 @@ describe('permanent lock without trusted devices', () => {
     expect(await t.stores.sessions.getEpoch(before.userId)).toBe(epoch + 1);
     expect(revoked).toHaveBeenCalledWith(expect.objectContaining({ reason: 'locked-permanently' }));
     expect(await signIn(t, { deviceToken: before.deviceToken })).toBeNull();
+  });
+
+  it('refuses a session the background revocation failed to end, on its next request', async () => {
+    const t = app(strict);
+    const before = await owner(t);
+
+    // The store refuses the epoch bump: the revocation task fails and is logged.
+    t.stores.sessions.bumpEpoch = () => Promise.reject(new Error('store down'));
+    await lockForGood(t);
+    await settled();
+
+    const answer = await t.auth.validateRequest({ token: before.token, meta: meta() });
+
+    expect(!answer.ok && answer.reason).toBe('permanently_locked');
+    // Refused once, revoked with it: the token is gone for good.
+    expect(await t.stores.sessions.get(before.session.id)).toBeNull();
   });
 
   it('refuses every session door, and issuing a session by any path', async () => {
