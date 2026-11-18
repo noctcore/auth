@@ -428,6 +428,89 @@ describe('SessionManager cap and revocation edges', () => {
     expect(second.evicted).toEqual([first.session.id]);
   });
 
+  it.each([
+    ['a count', 1],
+    ['an object', { deleted: 1 }],
+  ])('falls back to the chosen ids when delete answers with %s', async (_, answer) => {
+    const m = manager({ maxPerUser: 1 });
+    const first = await mintFor(m);
+
+    if (!first.ok) throw new Error('mint failed');
+
+    const remove = store.delete.bind(store);
+
+    // A plain JS store outside the type contract: the sign-in must not fail.
+    store.delete = async (userId: string, ids: readonly string[]) => {
+      await remove(userId, ids);
+
+      return answer as never;
+    };
+
+    clock.advance(1000);
+    const second = await mintFor(m);
+
+    if (!second.ok) throw new Error('mint failed');
+
+    expect(second.evicted).toEqual([first.session.id]);
+    expect(await m.revoke('u1', [second.session.id])).toEqual([second.session.id]);
+  });
+
+  it('reports a session an eviction and a logout race to delete under only one of them', async () => {
+    const m = manager({ maxPerUser: 1 });
+    const oldest = await mintFor(m);
+
+    if (!oldest.ok) throw new Error('mint failed');
+
+    clock.advance(1000);
+
+    // Hold both deletes until both are pending, so both have read the session.
+    const remove = store.delete.bind(store);
+    let waiting: (() => void)[] = [];
+
+    store.delete = async (userId: string, ids: readonly string[]) => {
+      await new Promise<void>((resolve) => {
+        waiting.push(resolve);
+
+        if (waiting.length < 2) return;
+
+        for (const release of waiting) release();
+
+        waiting = [];
+      });
+
+      return remove(userId, ids);
+    };
+
+    const [minted, loggedOut] = await Promise.all([mintFor(m), m.revokeToken(oldest.token)]);
+
+    if (!minted.ok) throw new Error('mint failed');
+
+    const reports = [...minted.evicted, ...(loggedOut ? [loggedOut.id] : [])];
+
+    expect(reports).toEqual([oldest.session.id]);
+  });
+
+  it('reports from revoke-all only the sessions its own delete removed', async () => {
+    const m = manager({ maxPerUser: null });
+    const a = await mintFor(m);
+    const b = await mintFor(m);
+
+    if (!a.ok || !b.ok) throw new Error('mint failed');
+
+    const listByUser = store.listByUser.bind(store);
+
+    // The walk lists both, but one is gone before its delete runs.
+    store.listByUser = async (userId) => {
+      const listed = await listByUser(userId);
+
+      await store.delete(userId, [a.session.id]);
+
+      return listed;
+    };
+
+    expect(await m.revokeAll('u1')).toEqual([b.session.id]);
+  });
+
   it('evicts nothing under the cap, and accepts a cap of one', async () => {
     const atCap = manager({ maxPerUser: 2 });
 
