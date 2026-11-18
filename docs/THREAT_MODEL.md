@@ -146,5 +146,6 @@ The library defends against: guessing passwords and codes; locking the owner out
 | Mail bombing through repeated invitations | One live invitation per scope and address; per-address, per-inviter and per-IP limits | A075 |
 | Inviting without the right, or accepting after the inviter lost it | `authorize` required and asked on every create and again on accept; revoke-all deletes an inviter's invitations | A076 |
 | Passing a captcha with a token solved elsewhere, or while the provider is down | Hostname and action checked when configured; an outage, timeout or malformed answer refuses the request, before the rate limit and any account work | A077 |
+| Learning a secret from how long its comparison takes | Hashes, MACs and tokens compared only through the constant-time helpers: Node's `crypto.timingSafeEqual` where the runtime has it, a loop that never stops early elsewhere; a length mismatch is refused before either runs, and every caller compares fixed-length digests | A078 |
 
 A report that breaks one of these defenses, or shows an attack the table misses, is a vulnerability: see [SECURITY.md](https://github.com/noctcore/auth/blob/main/SECURITY.md).
