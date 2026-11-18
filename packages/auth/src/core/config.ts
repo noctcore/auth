@@ -113,8 +113,10 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
   };
   /**
    * Server secret, at least 32 bytes. Separate keys are derived from it for
-   * code HMACs and trusted-device tokens. Rotating it invalidates outstanding
-   * codes and device cookies, never sessions. Keep it apart from your CSRF secret.
+   * code HMACs, trusted-device tokens and session handles. Rotating it
+   * invalidates outstanding codes and device cookies, never sessions, and
+   * changes every session handle (`sessions.list`), so a client holding an
+   * old handle must list again. Keep it apart from your CSRF secret.
    */
   readonly secret: Uint8Array | string;
   readonly registration?: {
