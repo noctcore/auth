@@ -1,4 +1,5 @@
 // Every setting read once, at boot, and checked before the app listens.
+import type { TrustedHops } from '@noctcore/auth';
 import { trustedHopsFromEnv } from '@noctcore/auth-nestjs';
 
 export interface AppConfig {
@@ -10,8 +11,8 @@ export interface AppConfig {
   readonly authSecret: string;
   /** At least 32 bytes, and different from `authSecret`: signs CSRF tokens only. */
   readonly csrfSecret: string;
-  /** Reverse proxies in front of the app; refused unset in production. */
-  readonly trustedHops: number;
+  /** Reverse proxies in front of the app, or their addresses; refused unset in production. */
+  readonly trustedHops: TrustedHops;
   /** False only for plain-HTTP local development and tests. */
   readonly secureCookies: boolean;
   /** Key prefix in Redis, so several apps can share one. */

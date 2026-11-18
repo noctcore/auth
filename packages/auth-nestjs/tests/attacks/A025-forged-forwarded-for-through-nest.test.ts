@@ -8,7 +8,8 @@
 // Stopped by: auth-nestjs src/request.ts: RequestMeta comes from the core's
 //   clientIp with the configured hop count, counted from the right, never from
 //   req.ip. src/trust-proxy.ts: trustedHopsFromEnv refuses "true", anything
-//   that is not a hop count, and an unset value in production.
+//   that is not a hop count or a valid proxy list, and an unset value in
+//   production.
 // Learn: Build, "Use with NestJS" (/auth/build/nestjs/); core attack A011
 import { AuthConfigError } from '@noctcore/auth';
 import { afterEach, describe, expect, it } from 'vitest';
