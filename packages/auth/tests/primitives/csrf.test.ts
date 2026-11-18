@@ -183,18 +183,35 @@ describe('verifyFetchSite', () => {
 
 describe('assertExactOrigins', () => {
   it('keeps exact origins of any scheme', () => {
-    expect(assertExactOrigins(['app://desktop', 'https://app.example:8443'], 'opt')).toEqual([
-      'app://desktop',
-      'https://app.example:8443',
-    ]);
+    expect(
+      assertExactOrigins(
+        ['app://desktop', 'https://app.example:8443', 'https://app.example/'],
+        'opt',
+      ),
+    ).toEqual(['app://desktop', 'https://app.example:8443', 'https://app.example/']);
   });
 
-  it.each(['*', 'https://*.example.com', 'app://*', 'null', '', 'not an origin', 'https://'])(
-    'refuses %j at boot',
-    (origin) => {
-      expect(() => assertExactOrigins([origin], 'csrf.crossSiteOrigins')).toThrow(AuthConfigError);
-    },
-  );
+  it.each([
+    '*',
+    'https://*.example.com',
+    'app://*',
+    'null',
+    '',
+    'not an origin',
+    'https://',
+    'app:desktop',
+    'app://',
+    'javascript:x',
+    'https://a.com/path',
+    'https://a.com/?q=1',
+    'https://a.com/#top',
+    'https://a.com?',
+    'https://a.com#',
+    'https://user@a.com',
+    'https://user:pass@a.com',
+  ])('refuses %j at boot', (origin) => {
+    expect(() => assertExactOrigins([origin], 'csrf.crossSiteOrigins')).toThrow(AuthConfigError);
+  });
 });
 
 describe('csrf token hardening', () => {
