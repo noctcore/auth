@@ -62,7 +62,10 @@ describe('createAuthContext boot checks', () => {
 
   it('falls back to Lax cookies for a stand-in auth with no cookie config', () => {
     const real = makeAuth().auth;
-    const standIn = { ...real, context: { ...real.context, cookie: undefined } };
+    const { cookie, ...context } = real.context;
+    const standIn = { ...real, context };
+
+    expect(cookie).toEqual({ secure: false });
 
     expect(resolveOptions(options({ auth: standIn })).cookie).toEqual({ secure: false });
   });
