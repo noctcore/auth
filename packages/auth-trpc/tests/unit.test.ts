@@ -528,9 +528,14 @@ describe('trusted proxies by address and the client IP header', () => {
       AuthConfigError,
     );
 
-    expect(() => createAuthContext(options({ clientIpHeader: 'X-Forwarded-For' }))).toThrow(
-      AuthConfigError,
-    );
+    expect(() =>
+      createAuthContext(options({ trustedHops: ['loopback'], clientIpHeader: 'X-Forwarded-For' })),
+    ).toThrow(AuthConfigError);
+
+    // A hop count never checks the socket, so a direct client could set the header.
+    expect(() =>
+      createAuthContext(options({ trustedHops: 1, clientIpHeader: 'cf-connecting-ip' })),
+    ).toThrow(/list of your edge/u);
   });
 
   it('reads the header on the Node adapters only through a trusted proxy', async () => {
