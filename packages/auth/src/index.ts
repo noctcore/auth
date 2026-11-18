@@ -71,6 +71,7 @@ export {
   turnstile,
   type TurnstileOptions,
   type TurnstileOutcome,
+  type TurnstileOutcomeBase,
   type TurnstileRefusalReason,
   type TurnstileVerifier,
 } from './http/turnstile';
