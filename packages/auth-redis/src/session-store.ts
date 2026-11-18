@@ -83,18 +83,26 @@ export class RedisSessionStore implements SessionStore {
     return result === 'OK';
   }
 
-  async delete(userId: string, ids: readonly string[]): Promise<void> {
-    if (ids.length === 0) return;
+  async delete(userId: string, ids: readonly string[]): Promise<string[]> {
+    const unique = [...new Set(ids)];
 
-    const results = await this.redis
-      .multi()
-      .del(...ids.map((id) => this.sessionKey(id)))
-      .zrem(this.userKey(userId), ...ids)
-      .exec();
+    if (unique.length === 0) return [];
 
-    const failure = results?.find(([error]) => error)?.[0];
+    // One DEL per key inside one MULTI: each reply says whether that key still
+    // existed, so of two racing deletes exactly one reports a session.
+    const transaction = this.redis.multi();
+
+    for (const id of unique) transaction.del(this.sessionKey(id));
+
+    const results = await transaction.zrem(this.userKey(userId), ...unique).exec();
+
+    if (!results) throw new Error('Redis aborted the session delete transaction');
+
+    const failure = results.find(([error]) => error)?.[0];
 
     if (failure) throw failure;
+
+    return unique.filter((_, index) => results[index]?.[1] === 1);
   }
 
   async listByUser(userId: string): Promise<StoredSession[]> {
