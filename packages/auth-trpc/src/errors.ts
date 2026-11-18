@@ -34,6 +34,7 @@ export const AUTH_ERROR_TRPC_CODES: Readonly<Record<AuthErrorCode, TRPC_ERROR_CO
   breached_password: 'BAD_REQUEST',
   password_not_set: 'BAD_REQUEST',
   email_in_use: 'CONFLICT',
+  account_locked: 'FORBIDDEN',
   captcha_failed: 'BAD_REQUEST',
   captcha_unavailable: 'SERVICE_UNAVAILABLE',
   rate_limited: 'TOO_MANY_REQUESTS',
@@ -50,7 +51,7 @@ export const AUTH_ERROR_TRPC_CODES: Readonly<Record<AuthErrorCode, TRPC_ERROR_CO
 export interface PublicAuthError {
   /** A public auth code, or `internal` for anything the mapping does not know. */
   readonly code: AuthErrorCode | 'internal';
-  /** Set on `rate_limited`: when the window that refused ends. */
+  /** Set on `rate_limited` and a temporary `account_locked`: when the refusal ends. */
   readonly retryAfterSeconds?: number;
 }
 

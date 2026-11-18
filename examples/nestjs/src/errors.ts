@@ -7,6 +7,7 @@ const STATUS: Record<string, number> = {
   invalid_credentials: 401,
   session_expired: 401,
   rate_limited: 429,
+  account_locked: 423,
   fresh_auth_required: 403,
   forbidden: 403,
   captcha_unavailable: 503,
