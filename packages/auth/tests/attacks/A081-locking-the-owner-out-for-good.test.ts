@@ -1,4 +1,4 @@
-// A078: locking the owner out for good through the permanent lockout tier.
+// A081: locking the owner out for good through the permanent lockout tier.
 //
 // An attacker who knows an address fails on purpose from many IPs, lock after
 // lock, so a permanent tier locks the owner out until an admin steps in, or
@@ -34,7 +34,7 @@ async function attackRound(t: Env, round: number) {
 
 const app = (lockout: LockoutOptions = {}) => registered({ throttle: { lockout } });
 
-describe('A078: locking the owner out for good', () => {
+describe('A081: locking the owner out for good', () => {
   it('cannot lock anyone out for good by default: a day of rounds, and the lock still lapses', async () => {
     const t = await app();
 
