@@ -7,6 +7,7 @@ import {
   assertExactOrigins,
   AuthConfigError,
   createCsrfToken,
+  resolveSameSite,
   type AuthResult,
   type AuthUser,
   type Clock,
@@ -178,13 +179,20 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
   // The session cookie is `__Host-` prefixed exactly when it is Secure, and
   // the CSRF cookies follow it, so one setting decides all three.
   const secure = auth.cookieName.startsWith('__Host-');
+  // The adapter's cookies are Secure exactly when the session cookie is, so
+  // SameSite resolves against that, never against a config that disagrees:
+  // `None` without Secure is refused here for a fixed value, and by
+  // `resolveSameSite` (before any cookie is built) for a function.
+  const cookie: SessionCookieConfig = { ...auth.context.cookie, secure };
+
+  if (typeof cookie.sameSite !== 'function') resolveSameSite(cookie, undefined);
 
   return {
     auth,
     trustedHops,
     roles: options.roles as ResolvedOptions['roles'],
     secure,
-    cookie: auth.context.cookie ?? { secure },
+    cookie,
     shutdownTimeout,
     csrf: {
       secrets,
