@@ -206,7 +206,7 @@ describe('turnstile outcome', () => {
 
     expect(outcome).toMatchObject({ verdict: 'unavailable', door: 'login', ...expected });
 
-    expect('status' in outcome).toBe(expected.reason === 'http-status');
+    expect('status' in outcome).toBe(expected['reason'] === 'http-status');
   });
 
   it('says why a token was refused, with the error codes', async () => {
