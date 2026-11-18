@@ -1,4 +1,4 @@
-// A079: riding the cross-site origin allowlist against a tRPC endpoint.
+// A080: riding the cross-site origin allowlist against a tRPC endpoint.
 //
 // An app that serves a desktop shell from its own scheme lists the shell's
 // origin in `csrf.crossSiteOrigins`, so the shell's `Sec-Fetch-Site:
@@ -48,7 +48,7 @@ const withShell = {
 const sameSiteOf = (lines: readonly string[], name: string) =>
   /SameSite=(\w+)/u.exec(lines.find((line) => line.startsWith(`${name}=`)) ?? '')?.[1];
 
-describe('A079: riding the cross-site origin allowlist against a tRPC endpoint', () => {
+describe('A080: riding the cross-site origin allowlist against a tRPC endpoint', () => {
   let booted: Booted | undefined;
 
   afterEach(async () => {

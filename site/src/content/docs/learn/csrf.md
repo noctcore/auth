@@ -31,4 +31,4 @@ The guide's first recommendation is the `Sec-Fetch-Site` check, then `Origin`, t
 
 - [Cross-site request forgery](https://auth.pilcrowonpaper.com/csrf) in Pilcrow's auth guide.
 - [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
-- Attack tests for the cross-site origin allowlist: [A078, through the Nest adapter](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A078-cross-site-origin-allowlist-through-nest.test.ts) and [A079, through the tRPC adapter](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A079-cross-site-origin-allowlist-through-trpc.test.ts).
+- Attack tests for the cross-site origin allowlist: [A079, through the Nest adapter](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A079-cross-site-origin-allowlist-through-nest.test.ts) and [A080, through the tRPC adapter](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A080-cross-site-origin-allowlist-through-trpc.test.ts).
