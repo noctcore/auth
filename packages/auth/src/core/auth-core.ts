@@ -332,7 +332,9 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       options.meta,
     );
 
-    // Neither `emit` nor `notifyRevoked` throws, so every eviction reaches the hooks.
+    // `emit` logs a failing audit sink and `notifyRevoked` logs a failing hook,
+    // so neither stops the evictions reaching the hooks or fails the sign-in.
+    // The hooks are awaited here, on the sign-in path.
     if (minted.evicted.length > 0) await this.notifyRevoked(user.id, minted.evicted, 'evicted');
 
     const cookie = createSessionCookie(this.cookie, minted.token, {
