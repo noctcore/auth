@@ -87,14 +87,16 @@ export function verifyFetchSite(input: {
   if (input.secFetchSite === 'same-origin') return true;
   if (input.allowSameSite === true && input.secFetchSite === 'same-site') return true;
 
-  return (
-    input.secFetchSite === 'cross-site' &&
-    verifyRequestOrigin({
-      method: input.method,
-      origin: input.origin,
-      allowedOrigins: input.crossSiteOrigins ?? [],
-    })
-  );
+  // Only relaxes this one check: callers still require the Origin allowlist
+  // and the double-submit token. Both headers are set by the browser, and a
+  // client that forges them has no victim's cookies to send.
+  const listedOrigin = verifyRequestOrigin({
+    method: input.method,
+    origin: input.origin,
+    allowedOrigins: input.crossSiteOrigins ?? [],
+  });
+
+  return listedOrigin && input.secFetchSite === 'cross-site';
 }
 
 /**
