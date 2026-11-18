@@ -195,7 +195,7 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 | `clock` | system clock | Injectable so tests move time instead of sleeping. |
 | `random` | `crypto.getRandomValues` | Injectable for tests. |
 
-`turnstile(options)` takes `secret`, `expectedHostnames`, `checkAction`, `timeoutMs` (default `5000`), `fetch`, `onResult` and `logger` (default silent). `onResult` is called with every outcome (`{ verdict, door, errorCodes, reason?, status? }`) to log or count it; it is not awaited, cannot change the verdict, and a throw is reported to `logger`. Outcomes never carry the token or the secret. The verifier's `check(token, context)` returns the same outcome. The reasons are listed in [Captcha](/auth/learn/captcha/#the-rule).
+`turnstile(options)` takes `secret`, `expectedHostnames`, `checkAction`, `timeoutMs` (default `5000`), `fetch`, `onResult` and `logger` (default silent). `onResult` is called with every outcome (`{ verdict, door, errorCodes, reason?, status? }`) to log or count it; it is not awaited (keep its synchronous part cheap, since that still runs on the request path), cannot change the verdict, and a throw is reported to `logger`. Outcomes never carry the token or the secret. The verifier's `check(token, context)` returns the same outcome. The reasons are listed in [Captcha](/auth/learn/captcha/#the-rule).
 
 ## Startup checks
 

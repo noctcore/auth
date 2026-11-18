@@ -32,7 +32,7 @@ Rate limits count requests per IP, per account and per address. A bot farm with 
 | `reject` | `hostname-mismatch` | Solved on a hostname outside `expectedHostnames` |
 | `reject` | `action-mismatch` | Solved for another door, with `checkAction` |
 
-An outcome never carries the token or the secret. The hook is not awaited and cannot change the verdict: the outcome it gets is frozen, and a hook that throws or rejects is reported to the verifier's `logger` option (silent by default) with the error message only. The `unavailable` reasons are a shared type, `UnavailableReason`, meant for every provider check the package makes.
+An outcome never carries the token or the secret. The hook is not awaited and cannot change the verdict, but its synchronous part runs on the request path, so keep it cheap and hand slow work (a network call to a metrics service) to a promise or a queue: the outcome it gets is frozen, and a hook that throws or rejects is reported to the verifier's `logger` option (silent by default) with the error message only. The `unavailable` reasons are a shared type, `UnavailableReason`, meant for every provider check the package makes.
 
 **Why the captcha fails closed when the breach check fails open.** The [breach check](/auth/learn/passwords/) judges a password the user chose; skipping it during an outage accepts one password that might have leaked, and the outage is logged. The captcha is a gate against automated traffic; skipping it during an outage opens the gate to exactly that traffic, at a moment an attacker can choose. The cost is real and the package accepts it: while the provider is down, nobody can sign in, sign up or request a reset on an app with a captcha configured.
 
