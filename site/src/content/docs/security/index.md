@@ -17,14 +17,14 @@ Addresses are trimmed and their ASCII letters lowercased; an address with any no
 
 ## Lockout
 
-- There is no permanent lockout, because a permanent lock lets an attacker lock a victim out.
+- There is no permanent lockout by default, because a permanent lock lets an attacker lock a victim out. An app can opt into a permanent tier that only an admin clears (`throttle.lockout.permanent`), accepting that trade-off.
 - Attempt budgets are keyed on account plus IP, and on the account as a whole.
 - Backoff is exponential, capped at 1 hour, and resets only after a quiet day with no new lock.
 - A correct password returns only the budget of the source that proved it, never the account-wide one.
 - A browser that completed a full login carries a signed device cookie. It is used only while the account is locked, where it lets a correct password through; correct logins never spend a device budget, and wrong guesses count against a failure budget shared by all of the account's devices and against the account. The cookie is refused after 30 days and voided by a password change, a reset or signing out everywhere. A distributed attack cannot keep the owner out, and holding many cookies adds no guesses.
 - The owner is mailed when the account locks; the mail is sent off the response path.
-- A password reset lifts the lock.
-- A locked account is answered exactly like a wrong password, after the same work: the same store calls and a full password verify.
+- A password reset lifts a temporary lock. A permanent one (opt-in) is lifted only by an admin.
+- A locked account is answered exactly like a wrong password, after the same work: the same store calls and a full password verify. An app can opt into an explicit `account_locked` answer (`throttle.lockout.revealLocked`), which tells anyone the address is locked.
 
 ## Sessions
 
