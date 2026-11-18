@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { clientIp, resolveClientIpHeader, resolveTrustedHops } from '../../src/http/ip';
-import {
-  isIp,
-  isTrustedAddress,
-  resolveTrustedProxies,
-  TRUST_PROXY_PRESETS,
-} from '../../src/http/ip-ranges';
+import type { TRUST_PROXY_PRESETS } from '../../src/http/ip-ranges';
+import { isIp, isTrustedAddress, resolveTrustedProxies } from '../../src/http/ip-ranges';
 import { AuthConfigError } from '../../src/shared/errors';
 
 describe('isIp', () => {
@@ -52,6 +48,7 @@ describe('resolveTrustedProxies', () => {
   it('expands each Express preset to the ranges Express gives it', () => {
     expect(resolveTrustedProxies('loopback')).toEqual(['127.0.0.1/8', '::1/128']);
     expect(resolveTrustedProxies('linklocal')).toEqual(['169.254.0.0/16', 'fe80::/10']);
+
     expect(resolveTrustedProxies('uniquelocal')).toEqual([
       '10.0.0.0/8',
       '172.16.0.0/12',
@@ -66,6 +63,7 @@ describe('resolveTrustedProxies', () => {
     expect(resolveTrustedProxies(' loopback, 203.0.113.0/24 ,2001:db8::/32, 198.51.100.9')).toEqual(
       expected,
     );
+
     expect(
       resolveTrustedProxies(['loopback', '203.0.113.0/24', '2001:db8::/32', '198.51.100.9']),
     ).toEqual(expected);
@@ -154,14 +152,23 @@ describe('clientIp with a trusted proxy list', () => {
 
   it('ignores X-Forwarded-For when the socket address is not a trusted proxy', () => {
     expect(
-      clientIp({ remoteAddress: '203.0.113.50', forwardedFor: '198.51.100.1', trustedHops: proxies }),
+      clientIp({
+        remoteAddress: '203.0.113.50',
+        forwardedFor: '198.51.100.1',
+        trustedHops: proxies,
+      }),
     ).toBe('203.0.113.50');
   });
 
   it('takes the leftmost address when every hop is trusted', () => {
     expect(
-      clientIp({ remoteAddress: '10.0.0.2', forwardedFor: '10.0.0.9, 10.0.0.8', trustedHops: proxies }),
+      clientIp({
+        remoteAddress: '10.0.0.2',
+        forwardedFor: '10.0.0.9, 10.0.0.8',
+        trustedHops: proxies,
+      }),
     ).toBe('10.0.0.9');
+
     expect(clientIp({ remoteAddress: '10.0.0.2', trustedHops: proxies })).toBe('10.0.0.2');
   });
 
@@ -169,6 +176,7 @@ describe('clientIp with a trusted proxy list', () => {
     expect(
       clientIp({ remoteAddress: undefined, forwardedFor: '198.51.100.1', trustedHops: proxies }),
     ).toBeUndefined();
+
     expect(
       clientIp({ remoteAddress: '10.0.0.2', forwardedFor: '198.51.100.1', trustedHops: [] }),
     ).toBe('10.0.0.2');
@@ -242,6 +250,7 @@ describe('resolveTrustedHops', () => {
   it('passes a hop count in range and expands a list', () => {
     expect(resolveTrustedHops(0, 16)).toBe(0);
     expect(resolveTrustedHops(16, 16)).toBe(16);
+
     expect(resolveTrustedHops(['loopback', '203.0.113.0/24'], 16)).toEqual([
       '127.0.0.1/8',
       '::1/128',
