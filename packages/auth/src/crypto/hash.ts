@@ -6,6 +6,9 @@
  * (6 to 9 digits) is different: its whole space can be hashed in milliseconds,
  * so codes are stored as an HMAC under a server secret instead.
  *
+ * Comparisons run on Node's `crypto.timingSafeEqual` where the runtime has it,
+ * and on a JavaScript loop everywhere else.
+ *
  * Guide: Learn, "Sessions and expiry".
  */
 import { hmac } from '@oslojs/crypto/hmac';
@@ -26,6 +29,51 @@ export function hmacSha256Hex(key: Uint8Array, message: string): string {
   return encodeHexLowerCase(hmac(SHA256, key, encoder.encode(message)));
 }
 
+/** Compares two byte arrays of the same length in constant time. */
+export type BytesEqual = (a: Uint8Array, b: Uint8Array) => boolean;
+
+type BuiltinHost = {
+  readonly process?: { readonly getBuiltinModule?: (id: string) => unknown };
+};
+
+/**
+ * Node's `crypto.timingSafeEqual` when the runtime has it, otherwise undefined.
+ *
+ * It is found through `process.getBuiltinModule` instead of an import, so a
+ * bundler for an edge or browser runtime never sees `node:crypto`, and a
+ * runtime without `process`, without `getBuiltinModule` (Node before 22.3) or
+ * without the function gets undefined instead of a throw. Bun and Deno answer
+ * like Node.
+ */
+export function findNativeTimingSafeEqual(host: unknown = globalThis): BytesEqual | undefined {
+  try {
+    const crypto = (host as BuiltinHost).process?.getBuiltinModule?.('node:crypto') as
+      { readonly timingSafeEqual?: unknown } | undefined;
+
+    const native = crypto?.timingSafeEqual;
+
+    return typeof native === 'function' ? (native as BytesEqual) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A constant-time byte comparison over `native` when given, otherwise over a
+ * JavaScript loop. Arrays of different lengths are unequal straight away: only
+ * whether the lengths match is learned from the time, as before, and
+ * `timingSafeEqual` (which throws on a length mismatch) only ever sees equal
+ * lengths. Every caller here compares fixed-length digests, so the length is
+ * no secret.
+ */
+export function bytesEqualWith(native: BytesEqual | undefined): BytesEqual {
+  const compare = native ?? constantTimeEqual;
+
+  return (a, b) => a.byteLength === b.byteLength && compare(a, b);
+}
+
+const bytesEqual = bytesEqualWith(findNativeTimingSafeEqual());
+
 /**
  * Whether two lowercase hex digests are equal, in constant time. Anything that
  * is not well-formed hex is simply unequal (a lenient decoder could map two
@@ -34,7 +82,7 @@ export function hmacSha256Hex(key: Uint8Array, message: string): string {
 export function hexDigestsEqual(a: string, b: string): boolean {
   if (!HEX.test(a) || !HEX.test(b)) return false;
 
-  return constantTimeEqual(decodeHex(a), decodeHex(b));
+  return bytesEqual(decodeHex(a), decodeHex(b));
 }
 
 /**
@@ -43,5 +91,5 @@ export function hexDigestsEqual(a: string, b: string): boolean {
  * lengths.
  */
 export function secretsEqual(a: string, b: string): boolean {
-  return constantTimeEqual(sha256(encoder.encode(a)), sha256(encoder.encode(b)));
+  return bytesEqual(sha256(encoder.encode(a)), sha256(encoder.encode(b)));
 }
