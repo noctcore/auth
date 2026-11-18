@@ -173,6 +173,7 @@ IssuedSession [interface]<A>
     readonly cookie: CookieSpec
     readonly deviceCookie: CookieSpec
     readonly evicted: readonly string[]
+    readonly evictedHandles: readonly string[]
     readonly session: StoredSession<A>
     readonly token: string
 IssueOptions [interface]<A>
@@ -213,7 +214,7 @@ MintInput [interface]<A>
     readonly persistentCookie: boolean
     readonly rememberMe: boolean
     readonly userId: string
-MintResult [type]<A> = { readonly ok: true; readonly token: string; readonly session: StoredSession<A>; /** Ids of the user's older sessions this mint deleted to stay within `maxPerUser`, oldest first. */ readonly evicted: readonly string[]; } | { readonly ok: false; readonly reason: 'epoch_fence'; }
+MintResult [type]<A> = { readonly ok: true; readonly token: string; readonly session: StoredSession<A>; /** * Store keys of the user's older sessions this mint deleted to stay * within `maxPerUser`, oldest first. Server-side only: the core maps them * to public handles (`IssuedSession.evictedHandles`). */ readonly evicted: readonly string[]; } | { readonly ok: false; readonly reason: 'epoch_fence'; }
 NewLock [interface]
     readonly permanent?: true
     readonly until: number
