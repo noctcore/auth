@@ -137,7 +137,8 @@ export interface AuthHooks<U extends AuthUser, A> {
    * Sessions ended: close their sockets, drop caches. Errors are logged, never
    * thrown into the flow. Reason `evicted`: a new session pushed these past
    * `session.maxPerUser`; it fires once per issued session that evicted any,
-   * with the ids that issue removed (the same ids `IssuedSession.evicted` holds).
+   * with the ids that issue removed (`IssuedSession.evicted`, and their handles
+   * as `IssuedSession.evictedHandles`).
    * Awaited on the response path (on sign-in when the cap evicts): keep it fast
    * and queue slow work.
    */
