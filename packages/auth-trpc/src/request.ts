@@ -7,13 +7,15 @@
  * - The Node adapters (standalone, Express, nestjs-trpc on Express) hand over
  *   the Node request and response.
  *
- * The client IP always comes from the core's `clientIp`, counting the
- * configured hops from the right of `X-Forwarded-For`; no framework's own IP
- * guess (`req.ip` and its trust-proxy setting) is read. A fetch `Request` has
+ * The client IP always comes from the core's `clientIp`, through the
+ * configured trusted proxies (and the trusted client IP header, when one is
+ * set); no framework's own IP guess (`req.ip` and its trust-proxy setting) is
+ * read. A fetch `Request` has
  * no socket, so on that adapter the server passes the peer address itself.
  */
 import type { IncomingHttpHeaders } from 'node:http';
 import { clientIp, serializeCookie, type CookieSpec, type RequestMeta } from '@noctcore/auth';
+import type { ResolvedOptions } from './options';
 
 /** What the adapter reads from a request. */
 export interface HttpRequest {
@@ -91,7 +93,10 @@ export function fromNode(input: NodeContextInput): { request: HttpRequest; write
   };
 }
 
-export function requestMeta(request: HttpRequest, trustedHops: number): RequestMeta {
+export function requestMeta(
+  request: HttpRequest,
+  trust: Pick<ResolvedOptions, 'trustedHops' | 'clientIpHeader'>,
+): RequestMeta {
   const origin = request.header('origin');
 
   return {
@@ -99,7 +104,9 @@ export function requestMeta(request: HttpRequest, trustedHops: number): RequestM
       clientIp({
         remoteAddress: request.remoteAddress,
         forwardedFor: request.forwardedFor,
-        trustedHops,
+        trustedHops: trust.trustedHops,
+        trustedHeader:
+          trust.clientIpHeader === undefined ? undefined : request.header(trust.clientIpHeader),
       }) ?? 'unknown',
     userAgent: request.header('user-agent') ?? '',
     ...(origin === undefined ? {} : { origin }),
