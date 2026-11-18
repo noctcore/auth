@@ -19,8 +19,10 @@
 // Learn: Sessions and expiry (/auth/learn/sessions-and-expiry/)
 import { describe, expect, it } from 'vitest';
 
+import { createAuth } from '../../src';
 import { sha256Hex } from '../../src/crypto/hash';
-import { EMAIL, meta, PASSWORD, setup } from './support';
+import { plainHasher, recordingMailer } from '../../src/testing';
+import { EMAIL, meta, PASSWORD, SECRET, setup } from './support';
 
 async function twoAccounts() {
   const t = setup();
@@ -59,6 +61,40 @@ describe('A087: reading a session store key through the session list', () => {
       expect(Object.keys(entry)).not.toContain('id');
       expect(entry.handle).toMatch(/^[\w-]{43}$/u);
     }
+  });
+
+  it('derives the same handle on every instance that shares the secret', async () => {
+    const t = await twoAccounts();
+
+    // A second server: its own createAuth over the same stores and secret.
+    const peer = createAuth({
+      stores: t.stores,
+      password: { hasher: plainHasher(), breachCheck: false },
+      secret: SECRET,
+      urls: { resetPassword: (token) => `https://app.example/reset#${token}` },
+      mailer: recordingMailer(),
+      clock: t.clock,
+    });
+
+    expect(peer.sessions.handle(t.phone.session.id)).toBe(
+      t.auth.sessions.handle(t.phone.session.id),
+    );
+
+    const fromOne = await t.auth.sessions.list(t.laptop.session);
+
+    expect(await peer.sessions.list(t.laptop.session)).toEqual(fromOne);
+
+    // A handle listed by one instance revokes through the other.
+    const phone = fromOne.find((s) => !s.current);
+
+    const revoked = await peer.sessions.revoke({
+      session: t.laptop.session,
+      handle: phone?.handle ?? '',
+      meta: meta(),
+    });
+
+    expect(revoked).toEqual({ ok: true, value: { revoked: true } });
+    expect(await t.sessionOf(t.phone.token)).toBeNull();
   });
 
   it('derives a different handle under a different secret', async () => {
