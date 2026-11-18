@@ -60,6 +60,7 @@ The flows return `AuthResult` values. A refusal has a public `code` and an inter
 - **Answers that reveal nothing.** Register and the reset request answer `202` whatever the address. The reset request does no per-account work on the response path: the lookup and the mail run in a job, detached in-process here, on your queue once you set `passwordReset.enqueue`.
 - **The reset link** points at `/reset-password#<token>`. The fragment never reaches a server log or a `Referer`; the page reads it and posts it with the new password. A completed reset revokes every session and lifts a lockout.
 - **Verification can rotate the session**, because verifying an address signs out the account's other sessions; when it does, the response carries the new session cookie and a new CSRF token.
+- **A devices page** lists `auth.sessions.list(session)` and signs one out with `auth.sessions.revoke({ session, handle, meta })`. Each entry carries a public `handle`, never the session's store key; see [Session handles](/auth/learn/sessions-and-expiry/#session-handles). `examples/basic` has both routes.
 - **Sign-in sets the device cookie** (`__Host-device`) beside the session. It matters only while the account is locked, where it lets the owner's correct password through; see [Brute force and lockout](/auth/learn/brute-force-and-lockout/).
 
 ## Before going live

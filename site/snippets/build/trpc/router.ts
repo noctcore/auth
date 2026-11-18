@@ -9,6 +9,8 @@ import {
   reauthenticateInput,
   registerInput,
   requestPasswordResetInput,
+  revokedOutput,
+  revokeSessionInput,
   sessionListOutput,
   toTRPCError,
   userOutput,
@@ -109,9 +111,28 @@ export function createAppRouter(auth: AppAuth) {
     // The output schema strips everything but id, email and emailVerified.
     me: protectedProcedure.output(userOutput).query(({ ctx }) => ctx.user),
 
+    // Each session is named by its public handle, never its store key.
     sessions: protectedProcedure
       .output(sessionListOutput)
       .query(({ ctx }) => auth.sessions.list(ctx.session)),
+
+    // Signs out one device by the handle the list showed. Another device needs
+    // a fresh password proof; a handle that names none of the caller's
+    // sessions answers { revoked: false }. Revoking the current one? Use logout.
+    revokeSession: protectedProcedure
+      .input(revokeSessionInput)
+      .output(revokedOutput)
+      .mutation(async ({ ctx, input }) => {
+        const result = await auth.sessions.revoke({
+          session: ctx.session,
+          handle: input.handle,
+          meta: ctx.auth.meta,
+        });
+
+        if (!result.ok) throw toTRPCError(result);
+
+        return result.value;
+      }),
 
     // Re-entering the password rotates the session: setSession writes the new
     // cookie and a CSRF token bound to it.

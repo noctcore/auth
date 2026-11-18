@@ -98,6 +98,8 @@ Sign-in answers an unknown email and a wrong password with the same error, and s
 
 The package exports a Zod input and output for every auth flow. The outputs are plain objects that strip every key they do not name: `userOutput` sends `id`, `email` and `emailVerified`, whatever your user record grows. Declare `output:` on every procedure that returns a record.
 
+`sessionListOutput` names each session by its public `handle`, never its store key, and strips a store key a procedure returns by mistake. `revokeSessionInput` takes that handle (`{ handle }`); see [Session handles](/auth/learn/sessions-and-expiry/#session-handles) for what revoke answers.
+
 The inputs check shape and size only; whether an email is valid or a password long enough is the flow's answer, with its public code. Every input that carries a secret belongs to a mutation, since tRPC sends a query's input in the URL, where access logs, proxies and browser history keep it.
 
 ## Checks for a test
