@@ -506,3 +506,69 @@ describe('the schema walker', () => {
     expect(secretKeys(schema)).toBeNull();
   });
 });
+
+describe('trusted proxies by address and the client IP header', () => {
+  const nodeMeta = async (
+    overrides: Partial<AuthContextOptions>,
+    remoteAddress: string,
+    headers: Record<string, string>,
+  ) => {
+    const res = { getHeader: () => undefined, setHeader: () => undefined };
+
+    const { auth } = await createAuthContext(options(overrides)).node({
+      req: { headers, socket: { remoteAddress } },
+      res,
+    });
+
+    return auth.meta.ip;
+  };
+
+  it('refuses an unknown preset and X-Forwarded-For as the header at boot', () => {
+    expect(() => createAuthContext(options({ trustedHops: ['localhost'] }))).toThrow(
+      AuthConfigError,
+    );
+
+    expect(() => createAuthContext(options({ clientIpHeader: 'X-Forwarded-For' }))).toThrow(
+      AuthConfigError,
+    );
+  });
+
+  it('reads the header on the Node adapters only through a trusted proxy', async () => {
+    const trust = { trustedHops: ['uniquelocal'], clientIpHeader: 'CF-Connecting-IP' };
+
+    expect(await nodeMeta(trust, '10.0.0.2', { 'cf-connecting-ip': '198.51.100.7' })).toBe(
+      '198.51.100.7',
+    );
+
+    expect(await nodeMeta(trust, '203.0.113.50', { 'cf-connecting-ip': '198.51.100.7' })).toBe(
+      '203.0.113.50',
+    );
+
+    expect(
+      await nodeMeta(trust, '10.0.0.2', {
+        'cf-connecting-ip': '198.51.100.7, 198.51.100.8',
+        'x-forwarded-for': '203.0.113.9',
+      }),
+    ).toBe('203.0.113.9');
+  });
+
+  it('reads the header on the fetch adapter only from a trusted peer address', async () => {
+    const context = createAuthContext(
+      options({ trustedHops: ['loopback'], clientIpHeader: 'cf-connecting-ip' }),
+    );
+
+    const ip = async (remoteAddress: string) =>
+      (
+        await context.fetch(
+          {
+            req: new Request(ORIGIN, { headers: { 'cf-connecting-ip': '198.51.100.7' } }),
+            resHeaders: new Headers(),
+          },
+          { remoteAddress },
+        )
+      ).auth.meta.ip;
+
+    expect(await ip('127.0.0.1')).toBe('198.51.100.7');
+    expect(await ip('203.0.113.50')).toBe('203.0.113.50');
+  });
+});

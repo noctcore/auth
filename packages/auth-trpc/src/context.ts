@@ -268,7 +268,7 @@ async function resolveState(
   write: CookieWriter,
 ): Promise<AuthState> {
   const { auth, csrf } = options;
-  const meta = requestMeta(request, options.trustedHops);
+  const meta = requestMeta(request, options);
   const cookieHeader = request.header('cookie');
   const token = auth.readSessionToken(cookieHeader);
   const validated = token === null ? null : await auth.validateRequest({ token, meta });
