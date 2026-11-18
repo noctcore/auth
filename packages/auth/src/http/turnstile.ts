@@ -33,7 +33,8 @@ import {
 export type TurnstileRefusalReason =
   'missing-token' | 'token-too-long' | 'provider-refused' | 'hostname-mismatch' | 'action-mismatch';
 
-interface TurnstileOutcomeBase {
+/** The fields every `TurnstileOutcome` carries. */
+export interface TurnstileOutcomeBase {
   readonly door: CaptchaDoor;
   /** The `error-codes` siteverify answered with, if any. Empty when it was not called. */
   readonly errorCodes: readonly string[];
@@ -55,7 +56,8 @@ export interface TurnstileOptions {
   readonly fetch?: typeof fetch;
   /**
    * Called with every outcome (pass, reject and unavailable), to log or count
-   * it. Not awaited; it cannot change the verdict, and a throw is logged.
+   * it. Not awaited; it cannot change the verdict, and a throw is logged. Its
+   * synchronous part still runs on the request path: keep it cheap.
    */
   readonly onResult?: OutcomeHook<TurnstileOutcome>;
   /** Where a failing `onResult` is reported. Default silent. */
@@ -82,13 +84,15 @@ type Verdict = (
   | UnavailableOutcome
 ) & { readonly errorCodes?: readonly string[] };
 
+/** The string error codes, before they are bounded for the outcome. */
 function errorCodesOf(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
+  return Array.isArray(value)
+    ? value.filter((code): code is string => typeof code === 'string')
+    : [];
+}
 
-  return value
-    .filter((code): code is string => typeof code === 'string')
-    .slice(0, MAX_ERROR_CODES)
-    .map((code) => code.slice(0, MAX_ERROR_CODE_LENGTH));
+function boundedCodes(codes: readonly string[]): string[] {
+  return codes.slice(0, MAX_ERROR_CODES).map((code) => code.slice(0, MAX_ERROR_CODE_LENGTH));
 }
 
 export function turnstile(options: TurnstileOptions): TurnstileVerifier {
@@ -149,10 +153,12 @@ export function turnstile(options: TurnstileOptions): TurnstileVerifier {
       'error-codes'?: unknown;
     };
 
-    const errorCodes = errorCodesOf(body['error-codes']);
+    const allCodes = errorCodesOf(body['error-codes']);
+    const errorCodes = boundedCodes(allCodes);
 
     if (!body.success) {
-      return errorCodes.includes('internal-error')
+      // Looked up before bounding, so a long list cannot hide an outage.
+      return allCodes.includes('internal-error')
         ? { verdict: 'unavailable', reason: 'provider-error', errorCodes }
         : { verdict: 'reject', reason: 'provider-refused', errorCodes };
     }
