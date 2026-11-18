@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { LOCKOUT_EXPIRES_AT } from '../../src/shared/duration';
 import { manualClock, MemoryCounterStore, type ManualClock } from '../../src/testing';
 import { createDeviceToken, verifyDeviceToken } from '../../src/throttle/device-token';
 import { accountKey } from '../../src/throttle/counter-keys';
@@ -514,5 +515,87 @@ describe('a failure recorded outside login', () => {
 
     expect((await counters.get(`acct:${victim}`))?.count).toBe(8);
     expect((await counters.get(`tier:${victim}`))?.count).toBe(1);
+  });
+});
+
+describe('permanent tier', () => {
+  const small = { perAccount: { limit: 1, window: '15m' }, permanent: { afterLocks: 1 } } as const;
+
+  /** Two attempts from fresh sources: the second crosses the limit of 1. */
+  async function lockOnce(t: Throttle) {
+    await t.gateLogin(victim, 'a');
+
+    return t.gateLogin(victim, 'b');
+  }
+
+  it('escalates the lock after `afterLocks` and holds it past the quiet period', async () => {
+    const t = new Throttle(counters, clock, small);
+
+    expect(await lockOnce(t)).toMatchObject({ reason: 'locked', newLock: {} });
+    clock.advance(5 * MIN);
+
+    expect(await lockOnce(t)).toMatchObject({
+      reason: 'permanently_locked',
+      newLock: { permanent: true },
+    });
+
+    clock.advance(30 * 24 * 60 * MIN);
+
+    expect(await t.gateLogin(victim, 'c')).toEqual({
+      allowed: false,
+      reason: 'permanently_locked',
+    });
+
+    expect(await t.lockState(victim)).toEqual({ locked: true, permanent: true, until: null });
+  });
+
+  it('never escalates a second-factor lock, whatever its scope', async () => {
+    const t = new Throttle(counters, clock, small);
+    const rule = { limit: 1, window: '15m' } as const;
+
+    for (let round = 0; round < 4; round++) {
+      await t.gateFactor(victim, rule);
+      expect((await t.gateFactor(victim, rule)).allowed).toBe(false);
+      clock.advance(60 * MIN);
+    }
+
+    expect((await t.gateFactor(victim, rule)).allowed).toBe(true);
+    expect((await t.gateLogin(victim, 'a')).allowed).toBe(true);
+  });
+
+  it('escalates a lock reached through recordFailure (a wrong current password)', async () => {
+    const t = new Throttle(counters, clock, small);
+
+    await lockOnce(t);
+    clock.advance(5 * MIN);
+    await t.recordFailure(victim);
+
+    expect(await t.recordFailure(victim)).toEqual({
+      newLock: { until: LOCKOUT_EXPIRES_AT, permanent: true },
+    });
+  });
+
+  it('reads no permanent marker while the tier is off', async () => {
+    const get = vi.spyOn(counters, 'get');
+
+    await throttle.gateLogin(victim, 'a');
+    expect(get.mock.calls.map(([key]) => key.split(':')[0])).toEqual(['lock']);
+  });
+
+  it('clearPermanent lifts every lock and the backoff, and reports what it found', async () => {
+    const t = new Throttle(counters, clock, small);
+
+    await lockOnce(t);
+    clock.advance(5 * MIN);
+    await lockOnce(t);
+
+    expect(await t.clearPermanent(victim)).toEqual({ locked: true, permanent: true, until: null });
+
+    // A fresh budget and the first tier again: one allowed attempt, then a 5 minute lock.
+    expect(await lockOnce(t)).toEqual({
+      allowed: false,
+      reason: 'locked',
+      newLock: { until: clock.now() + 5 * MIN },
+    });
   });
 });
