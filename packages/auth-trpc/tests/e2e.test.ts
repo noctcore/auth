@@ -56,6 +56,22 @@ describe.each(['fetch', 'node'] as const)('tRPC on the %s adapter', (transport) 
     await expect(browser.client.meta.query()).resolves.toMatchObject({ ip: '198.51.100.7' });
   });
 
+  it('sends no raw evicted session id to the client when the cap evicts', async () => {
+    env = await boot({ transport, maxPerUser: 1 });
+    const laptop = new Browser(env);
+    const phone = new Browser(env, '198.51.100.8');
+
+    await laptop.signIn();
+    const [evicted = ''] = (await env.stores.sessions.listByUser(env.userId)).map((s) => s.id);
+    const answer = await phone.signIn();
+
+    expect(evicted).toMatch(/^[0-9a-f]{64}$/u);
+    expect(await env.stores.sessions.get(evicted)).toBeNull();
+    // Neither the answer nor any cookie the sign-in set names the evicted session.
+    expect(JSON.stringify([answer, phone.lastSetCookies])).not.toContain(evicted);
+    expect((await failure(laptop.client.me.query())).data?.code).toBe('UNAUTHORIZED');
+  });
+
   it('lists session handles, never store keys, and revokes another device by its handle', async () => {
     const laptop = await start();
     const phone = new Browser(env, '198.51.100.8');
