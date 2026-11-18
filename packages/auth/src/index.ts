@@ -50,6 +50,7 @@ export {
   createBlankSessionCookie,
   createSessionCookie,
   parseCookieHeader,
+  resolveSameSite,
   serializeCookie,
   sessionCookieName,
   type CookieAttributes,
@@ -58,6 +59,7 @@ export {
   type SessionCookieConfig,
 } from './http/cookie';
 export {
+  assertExactOrigins,
   createCsrfToken,
   verifyCsrfToken,
   verifyFetchSite,

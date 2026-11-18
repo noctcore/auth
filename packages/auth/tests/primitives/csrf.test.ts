@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   createCsrfToken,
   verifyCsrfToken,
+  assertExactOrigins,
   verifyFetchSite,
   verifyRequestOrigin,
 } from '../../src/http/csrf';
+import { AuthConfigError } from '../../src/shared/errors';
 
 const allowed = ['https://app.example.com', 'app://app'];
 
@@ -140,6 +142,59 @@ describe('verifyFetchSite', () => {
       verifyFetchSite({ method: 'POST', secFetchSite: 'same-site', allowSameSite: true }),
     ).toBe(true);
   });
+
+  it('accepts cross-site only from an origin on crossSiteOrigins, matched exactly', () => {
+    const crossSiteOrigins = ['app://desktop'];
+
+    const site = (origin: string | undefined, secFetchSite = 'cross-site') =>
+      verifyFetchSite({ method: 'POST', secFetchSite, origin, crossSiteOrigins });
+
+    expect(site('app://desktop')).toBe(true);
+    expect(site('APP://DESKTOP')).toBe(true);
+
+    for (const origin of [
+      undefined,
+      'null',
+      'https://evil.example',
+      'app://desktop.evil',
+      'app://desktop:1',
+      'app2://desktop',
+    ])
+      expect(site(origin), String(origin)).toBe(false);
+
+    // The allowlist widens `cross-site` only: `none` (typed into the address
+    // bar) and a missing header still fail.
+    expect(site('app://desktop', 'none')).toBe(false);
+
+    expect(
+      verifyFetchSite({
+        method: 'POST',
+        secFetchSite: undefined,
+        origin: 'app://desktop',
+        crossSiteOrigins,
+      }),
+    ).toBe(false);
+
+    expect(
+      verifyFetchSite({ method: 'POST', secFetchSite: 'cross-site', origin: 'app://desktop' }),
+    ).toBe(false);
+  });
+});
+
+describe('assertExactOrigins', () => {
+  it('keeps exact origins of any scheme', () => {
+    expect(assertExactOrigins(['app://desktop', 'https://app.example:8443'], 'opt')).toEqual([
+      'app://desktop',
+      'https://app.example:8443',
+    ]);
+  });
+
+  it.each(['*', 'https://*.example.com', 'app://*', 'null', '', 'not an origin', 'https://'])(
+    'refuses %j at boot',
+    (origin) => {
+      expect(() => assertExactOrigins([origin], 'csrf.crossSiteOrigins')).toThrow(AuthConfigError);
+    },
+  );
 });
 
 describe('csrf token hardening', () => {

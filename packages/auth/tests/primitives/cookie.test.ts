@@ -6,6 +6,7 @@ import {
   deviceCookie,
   deviceCookieName,
   parseCookieHeader,
+  resolveSameSite,
   serializeCookie,
   sessionCookieName,
 } from '../../src/http/cookie';
@@ -85,5 +86,28 @@ describe('cookie edges', () => {
     expect([...cookies.entries()]).toEqual([['a', '1']]);
     expect(parseCookieHeader(undefined).size).toBe(0);
     expect(parseCookieHeader(null).size).toBe(0);
+  });
+});
+
+describe('resolveSameSite', () => {
+  it('gives the same answer the session cookie gets, for a fixed value or a function', () => {
+    const sameSite = (origin: string | undefined) => (origin === 'app://desktop' ? 'none' : 'lax');
+
+    expect(resolveSameSite({}, undefined)).toBe('lax');
+    expect(resolveSameSite({ sameSite: 'strict' }, 'app://desktop')).toBe('strict');
+    expect(resolveSameSite({ sameSite }, 'app://desktop')).toBe('none');
+    expect(resolveSameSite({ sameSite }, 'https://app.example')).toBe('lax');
+
+    for (const origin of ['app://desktop', undefined])
+      expect(resolveSameSite({ sameSite }, origin)).toBe(
+        createSessionCookie({ sameSite }, 't', { expiresAt: 1, persistent: false, now: 0, origin })
+          .attributes.sameSite,
+      );
+  });
+
+  it('refuses None without Secure', () => {
+    expect(() =>
+      resolveSameSite({ secure: false, sameSite: () => 'none' }, 'app://desktop'),
+    ).toThrow(AuthConfigError);
   });
 });

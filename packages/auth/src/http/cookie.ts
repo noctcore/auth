@@ -51,19 +51,31 @@ export function sessionCookieName(config: SessionCookieConfig = {}): string {
   return (config.secure ?? true) ? `__Host-${base}` : base;
 }
 
+/**
+ * The session cookie's `SameSite` for a request with this `Origin`. Every
+ * cookie that has to travel with the session cookie (the trusted-device
+ * cookie, an adapter's CSRF and pre-session cookies, the blank cookie that
+ * clears it) takes its value from here, so a shell that gets `None` for the
+ * session gets `None` for the rest too. `None` without Secure is refused.
+ */
+export function resolveSameSite(config: SessionCookieConfig, origin: string | undefined): SameSite {
+  const sameSite =
+    typeof config.sameSite === 'function' ? config.sameSite(origin) : (config.sameSite ?? 'lax');
+
+  if (sameSite === 'none' && !(config.secure ?? true)) {
+    throw new AuthConfigError('SameSite=None requires a Secure cookie');
+  }
+
+  return sameSite;
+}
+
 function attributes(
   config: SessionCookieConfig,
   origin: string | undefined,
   maxAge?: number,
 ): CookieAttributes {
   const secure = config.secure ?? true;
-
-  const sameSite =
-    typeof config.sameSite === 'function' ? config.sameSite(origin) : (config.sameSite ?? 'lax');
-
-  if (sameSite === 'none' && !secure) {
-    throw new AuthConfigError('SameSite=None requires a Secure cookie');
-  }
+  const sameSite = resolveSameSite(config, origin);
 
   return maxAge === undefined
     ? { httpOnly: true, secure, sameSite, path: '/' }
