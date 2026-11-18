@@ -363,6 +363,7 @@ OneTimeTokens [class]
     redeemCode(purpose: string, userId: string | null, code: unknown, maxAttempts: number): Promise<TokenRedemption>
     redeemLink(purpose: string, token: unknown): Promise<TokenRedemption>
     revokeAll(userId: string, purposes: readonly string[]): Promise<void>
+OutcomeHook [type]<O> = (outcome: O) => void | Promise<void>
 parseCookieHeader [function]: (header: string | null | undefined) => Map<string, string>
 parseTrustProxy [function]: (raw: string | undefined) => number | string | false
 PasswordHasher [interface]
@@ -603,13 +604,20 @@ toSeconds [function]: (duration: Duration) => number
 TRUST_PROXY_PRESETS [const]: { readonly loopback: readonly ["127.0.0.1/8", "::1/128"]; readonly linklocal: readonly ["169.254.0.0/16", "fe80::/10"]; readonly uniquelocal: readonly ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]; }
 TrustedHops [type] = number | readonly string[]
 TrustProxyPreset [type] = keyof typeof TRUST_PROXY_PRESETS
-turnstile [function]: (options: TurnstileOptions) => CaptchaVerifier
+turnstile [function]: (options: TurnstileOptions) => TurnstileVerifier
 TurnstileOptions [interface]
     readonly checkAction?: boolean
     readonly expectedHostnames?: readonly string[]
     readonly fetch?: typeof fetch
+    readonly logger?: Logger
+    readonly onResult?: OutcomeHook<TurnstileOutcome>
     readonly secret: string
     readonly timeoutMs?: number
+TurnstileOutcome [type] = (TurnstileOutcomeBase & { readonly verdict: 'pass'; }) | (TurnstileOutcomeBase & { readonly verdict: 'reject'; readonly reason: TurnstileRefusalReason; }) | (TurnstileOutcomeBase & UnavailableOutcome)
+TurnstileRefusalReason [type] = 'missing-token' | 'token-too-long' | 'provider-refused' | 'hostname-mismatch' | 'action-mismatch'
+TurnstileVerifier [interface]
+    check(token: string | undefined, context: { ip?: string; door: CaptchaDoor; }): Promise<TurnstileOutcome>
+    verify(token: string | undefined, context: { ip?: string; door: CaptchaDoor; }): Promise<CaptchaVerdict>
 TwoFactorStore [interface]
     addTrustedDevice(device: StoredTrustedDevice, maxPerUser: number): Promise<void>
     advanceStep(userId: string, step: number): Promise<boolean>
@@ -624,6 +632,11 @@ TwoFactorStore [interface]
     putPendingFactor(factor: { readonly userId: string; readonly secret: string; readonly createdAt: number; }): Promise<boolean>
     putStepUp(stepUp: StoredStepUp): Promise<void>
     replaceRecoveryCodes(userId: string, hashes: readonly string[]): Promise<void>
+UnavailableOutcome [interface]
+    readonly reason: UnavailableReason
+    readonly status?: number
+    readonly verdict: 'unavailable'
+UnavailableReason [type] = 'timeout' | 'network-error' | 'http-status' | 'unparsable-body' | 'provider-error'
 UserStore [interface]<U extends AuthUser = AuthUser>
     changeEmail?(id: string, change: { readonly from: NormalizedEmail; readonly to: NormalizedEmail; readonly clearPassword?: boolean; }): Promise<EmailChangeResult>
     create(input: { email: NormalizedEmail; passwordHash: string; }): Promise<U | null>
@@ -655,4 +668,7 @@ DistributiveOmit [type]<T, K extends PropertyKey> = T extends unknown ? Omit<T, 
 HookLists [type]<U extends AuthUser, A> = { readonly [K in keyof AuthHooks<U, A>]: ReadonlyArray<AuthHooks<U, A>[K]>; }
 MaybePromise [type]<T> = T | Promise<T>
 SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
+TurnstileOutcomeBase [interface]
+    readonly door: CaptchaDoor
+    readonly errorCodes: readonly string[]
 UnionToIntersection [type]<T> = (T extends unknown ? (value: T) => void : never) extends (value: infer I) => void ? I : never
