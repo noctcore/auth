@@ -104,6 +104,19 @@ describe('the unicode policy', () => {
     expect(valueOf('unicode', plain)).toBe(plain);
   });
 
+  it('keeps a typed final sigma in the domain, as IDNA2008 does, and lowercases a capital one to the plain', () => {
+    const final = 'x@\u03B1\u03C2.gr';
+    const plain = 'x@\u03B1\u03C3.gr';
+
+    expect(valueOf('unicode', final)).toBe(final);
+    expect(valueOf('unicode', plain)).toBe(plain);
+    // A capital sigma lowercases to the plain one whatever follows it.
+    expect(valueOf('unicode', 'x@\u0391\u03A3.GR')).toBe(plain);
+    expect(valueOf('unicode', 'x@\u0391\u03A3\u0391.gr')).toBe('x@\u03B1\u03C3\u03B1.gr');
+    // The local part still folds a typed final sigma.
+    expect(valueOf('unicode', '\u03B1\u03C2@\u03B1\u03C2.gr')).toBe('\u03B1\u03C3@\u03B1\u03C2.gr');
+  });
+
   it('refuses a part that mixes scripts, the classic homoglyph spoof', () => {
     for (const input of [
       `${CYRILLIC_A}da@example.com`,
@@ -175,7 +188,7 @@ describe('a custom normaliser', () => {
 
   it('is refused at startup when it is not deterministic', () => {
     let calls = 0;
-    const flaky: EmailNormalizer = (email) => `${email.trim()}${String(++calls % 2)}@x.io`;
+    const flaky: EmailNormalizer = () => `user${String(++calls % 2)}@x.io`;
 
     expect(() => resolveEmailNormalizer(flaky, quiet)).toThrow(/deterministic/u);
   });
@@ -186,12 +199,57 @@ describe('a custom normaliser', () => {
     };
 
     expect(() => resolveEmailNormalizer(throws, quiet)).toThrow(AuthConfigError);
-    expect(() => resolveEmailNormalizer(() => '', quiet)).toThrow(/non-empty/u);
+    expect(() => resolveEmailNormalizer(() => '', quiet)).toThrow(/exactly one @/u);
     expect(() => resolveEmailNormalizer(() => 'a@b\r\nBcc: x@y', quiet)).toThrow(/control/u);
+
+    for (const output of [
+      'a@b@c.com',
+      '@example.com',
+      'ada@',
+      'a da@example.com',
+      'ada@example.com,eve@example.com',
+      'Ada <ada@example.com>',
+      `${'a'.repeat(250)}@b.com`,
+    ])
+      expect(() => resolveEmailNormalizer(() => output, quiet)).toThrow(AuthConfigError);
 
     expect(() => resolveEmailNormalizer((() => 42) as unknown as EmailNormalizer, quiet)).toThrow(
       AuthConfigError,
     );
+  });
+
+  it('is refused at startup when it merges different mailboxes', () => {
+    const constant: EmailNormalizer = () => 'everyone@example.com';
+    const domainOnly: EmailNormalizer = (email) => {
+      const at = email.lastIndexOf('@');
+
+      return at > 0
+        ? `user@${email
+            .slice(at + 1)
+            .trim()
+            .toLowerCase()}`
+        : null;
+    };
+    const localOnly: EmailNormalizer = (email) => {
+      const at = email.lastIndexOf('@');
+
+      return at > 0 ? `${email.slice(0, at).trim().toLowerCase()}@example.com` : null;
+    };
+
+    for (const merges of [constant, domainOnly, localOnly])
+      expect(() => resolveEmailNormalizer(merges, quiet)).toThrow(/different mailboxes/u);
+  });
+
+  it('may refuse whole domains: only addresses it accepts must stay apart', () => {
+    const companyOnly: EmailNormalizer = (email) => {
+      const value = email.trim().toLowerCase();
+
+      return value.endsWith('@example.com') && value.indexOf('@') === value.lastIndexOf('@')
+        ? value
+        : null;
+    };
+
+    expect(() => resolveEmailNormalizer(companyOnly, quiet)).not.toThrow();
   });
 
   it('refuses, and reports, an address it misbehaves on after startup', () => {
@@ -218,6 +276,12 @@ describe('a custom normaliser', () => {
     expect(onError).toHaveBeenCalledTimes(3);
 
     for (const [message] of onError.mock.calls) expect(message).not.toContain('example.com');
+
+    // A throw is reported by its class name only: its message could quote the address.
+    expect(onError).toHaveBeenCalledWith('email.normalize threw; refusing the address', {
+      errorName: 'Error',
+    });
+    expect(JSON.stringify(onError.mock.calls)).not.toContain('later');
   });
 });
 
