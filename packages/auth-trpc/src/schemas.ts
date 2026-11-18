@@ -47,7 +47,8 @@ export const changePasswordInput = z.object({
 export const reauthenticateInput = z.object({ password });
 export const verifyEmailCodeInput = z.object({ code });
 export const verifyEmailLinkInput = z.object({ token });
-export const revokeSessionInput = z.object({ id: z.string().min(1).max(128) });
+/** Revoking one session: its public `handle` from the session list, never a store key. */
+export const revokeSessionInput = z.object({ handle: z.string().min(1).max(128) });
 
 /** The user as the client sees it: these three keys and nothing else. */
 export const userOutput = z.object({
@@ -56,9 +57,13 @@ export const userOutput = z.object({
   emailVerified: z.boolean(),
 });
 
-/** One of the user's sessions, for a "where you're signed in" page. */
+/**
+ * One of the user's sessions, for a "where you're signed in" page. `handle`
+ * is the public handle `sessions.revoke` takes; the store key is not a field,
+ * so the output schema strips it even if a procedure returns it.
+ */
 export const sessionSummaryOutput = z.object({
-  id: z.string(),
+  handle: z.string(),
   current: z.boolean(),
   createdAt: z.number(),
   lastActiveAt: z.number(),
