@@ -296,6 +296,7 @@ SessionManager [class]<A>
     findActive(id: string): Promise<StoredSession<A> | null>
     listActive(userId: string): Promise<StoredSession<A>[]>
     mint(input: MintInput<A>): Promise<MintResult<A>>
+    private deleteAndReport
     private evictOverCap
     private idleTimeoutMs
     private parse

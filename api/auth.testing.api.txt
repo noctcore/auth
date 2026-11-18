@@ -148,6 +148,7 @@ runConformance [function]: (title: string, cases: readonly ConformanceCase[], ap
 sessionStoreConformance [function]: (store: SessionStore, context?: SessionStoreConformanceOptions) => ConformanceCase[]
 SessionStoreConformanceOptions [interface]
     readonly advanceTime?: (ms: number) => Promise<void>
+    readonly deleteReportsRemoved?: boolean
     readonly epochTtlMs?: (userId: string) => Promise<number>
     readonly secondary?: SessionStore
 sleep [const]: (ms: number) => Promise<void>
