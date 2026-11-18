@@ -48,7 +48,7 @@ results instead of throwing HTTP errors, and plugins add flows (functions), neve
 | Sessions | Stolen or forgotten sessions: opaque 32-byte tokens stored only as a SHA-256, idle and absolute expiry, and revocation that a racing login cannot undo (the epoch fence) |
 | Passwords | Offline cracking and credential stuffing: Argon2id with rehash on login, a length-only policy (12 to 256), and a k-anonymity breached-password check |
 | One-time tokens | Replayed or guessed links and codes: single use, purpose bound, hashed at rest, codes HMACed with an attempt cap enforced before the comparison |
-| Throttle | Brute force and lockout abuse: per-door rate limits that fail closed, two lockout budgets, capped exponential backoff with no permanent lock, trusted devices |
+| Throttle | Brute force and lockout abuse: per-door rate limits that fail closed, two lockout budgets, capped exponential backoff with no permanent lock by default (an admin-cleared tier is opt-in), trusted devices |
 | CSRF | Cross-site requests riding the user's cookies: `Sec-Fetch-Site`, an Origin allowlist and a signed double-submit token bound to the session |
 | Client IP | Spoofed `X-Forwarded-For`: trust exactly as many proxy hops as you run, counted from the right |
 | Captcha | Bots on the login, register and reset doors: a Turnstile verifier that checks hostname and action, and treats an outage as a failure, never a pass |

@@ -141,12 +141,17 @@ The login lockout. Source: `throttle/rules.ts`, `throttle/throttle.ts`; the reas
 | `throttle.lockout.perAccountIp` | 5 per `'15m'` | Stops one source guessing at one account without touching the owner on another network. |
 | `throttle.lockout.perAccount` | 10 per `'15m'` | Against guessing spread over many sources: close to one attempt a minute. Spending it locks the account. |
 | `throttle.lockout.baseLock` | `'5m'` | The first lock. Each further lock multiplies it by 3. |
-| `throttle.lockout.maxLock` | `'1h'` | Cap on a single lock. There is no permanent lock, because a permanent lock lets an attacker lock the owner out. |
+| `throttle.lockout.maxLock` | `'1h'` | Cap on a single temporary lock. There is no permanent lock unless you opt into `permanent`, because a permanent lock lets an attacker lock the owner out. |
 | `throttle.lockout.quietPeriod` | `'24h'` | The backoff resets only after this long without a new lock. |
 | `throttle.lockout.perDevice` | 5 per `'15m'` | Under a lock, the attempts a trusted device gets, and also the budget all of an account's devices share. Holding many device cookies adds no guesses. |
 | `throttle.lockout.deviceMaxAge` | `'30d'` | The oldest trusted-device cookie accepted, checked on use. |
+| `throttle.lockout.permanent` | off | Opt in to a permanent tier: `{ afterLocks, trustedDevices? }`. After `afterLocks` temporary locks in a row (each within `quietPeriod` of the last), the next lock holds until an admin calls `auth.lockout.clear`; a password reset does not lift it. `afterLocks` must be a whole number of at least 1. Trade-off: anyone who knows an address can lock its owner out on purpose (denial of service). Pair it with a captcha and per-IP rate limits. |
+| `throttle.lockout.permanent.trustedDevices` | `true` | Whether the owner's trusted-device cookie still lets a correct password through a permanent lock, with the usual device budgets. `false` makes the lock hold against the owner too. |
+| `throttle.lockout.revealLocked` | `false` | Answer `account_locked` from login while the address is locked, with `retryAfterSeconds` for a temporary lock, instead of `invalid_credentials`. Unknown addresses lock and answer the same, but the answer tells anyone that the address is locked and when it lifts: an enumeration signal the generic answer does not give. Pair it with a captcha and per-IP rate limits. |
 
 Each rule is `{ limit, window }`; a part you leave out keeps its default.
+
+`auth.lockout.inspect({ email })` or `({ userId })` returns `{ locked, permanent, until }` for an address, and `auth.lockout.clear({ email | userId, meta })` lifts every lock on it, the permanent one included, resets its backoff, returns the state it found and writes an `account.lock_cleared` audit row. Both answer for any address, known or not, so expose them only on admin routes. The `onPermanentLock` hook (`{ userId, email, meta }`) runs off the response path when the permanent tier locks an account, beside the `account.locked_permanently` audit row and a `lockout` mail with `permanent: true`. Source: `flows/lockout-admin.ts`, `flows/lock-notice.ts`.
 
 ### Door limits
 
@@ -180,7 +185,7 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 | --- | --- | --- |
 | `captcha` | none | A `CaptchaVerifier`, checked on login, register and the reset request. Fails closed: a provider outage refuses the request with `captcha_unavailable`. `turnstile(options)` builds one for Cloudflare Turnstile. |
 | `audit` | none | An `AuditSink`. Every flow emits an event for each success and each refusal, with the internal `reason`. Events that record a grant are awaited before the grant is returned; a failing sink never fails the flow. |
-| `hooks` | none | Functions the flows call at fixed points, such as `sessionAttributes`, `beforeSessionCreate`, `beforePasswordReset`, `beforeEmailChange` and `afterRegister`. A hook can refuse with `refuse(code, reason)`. `afterRegister` is awaited and runs only for a new address, so its time shows in sign-up timing: queue slow work instead of awaiting it. |
+| `hooks` | none | Functions the flows call at fixed points, such as `sessionAttributes`, `beforeSessionCreate`, `beforePasswordReset`, `beforeEmailChange`, `afterRegister` and `onPermanentLock`. A hook can refuse with `refuse(code, reason)`. `afterRegister` is awaited and runs only for a new address, so its time shows in sign-up timing: queue slow work instead of awaiting it. |
 | `plugins` | `[]` | Plugins add hooks and flows, never endpoints. A plugin's flows appear on the auth object under its `id`. The two-factor plugin (`twoFactor` from `@noctcore/auth/two-factor`) is configured on its own; its options are in [Two-factor](/auth/build/two-factor/#wiring-the-plugin). The membership plugin (`membership` from `@noctcore/auth/membership`) is configured the same way; its options are in [Membership guards](/auth/build/membership/#wiring-the-plugin). So is the invitations plugin (`invitations` from `@noctcore/auth/invitations`), in [Invitations](/auth/build/invitations/#wiring-the-plugin). |
 | `logger` | silent | Where the package reports what it cannot return: a failed breach check, a mailer or audit sink that threw. Messages never carry secrets. |
 | `metrics` | no-op | Counters such as breach check outages and door refusals. Labels never carry user input. |
