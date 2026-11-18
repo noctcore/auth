@@ -584,9 +584,14 @@ describe('trusted proxies by address and the client IP header', () => {
 
     expect(() => resolveOptions(options({ trustedHops: ['localhost'] }))).toThrow(AuthConfigError);
 
-    expect(() => resolveOptions(options({ clientIpHeader: 'x-forwarded-for' }))).toThrow(
-      AuthConfigError,
-    );
+    expect(() =>
+      resolveOptions(options({ trustedHops: ['loopback'], clientIpHeader: 'x-forwarded-for' })),
+    ).toThrow(AuthConfigError);
+
+    // A hop count never checks the socket, so a direct client could set the header.
+    expect(() =>
+      resolveOptions(options({ trustedHops: 1, clientIpHeader: 'cf-connecting-ip' })),
+    ).toThrow(/list of your edge/u);
   });
 
   it('reads the header through a trusted hop and ignores it from any other peer', () => {
