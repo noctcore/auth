@@ -233,6 +233,94 @@ function sessionCases(
       },
     },
     {
+      name: 'delete reports the ids it removed, if it reports any',
+      async run() {
+        const userId = uniqueId('user');
+        const a = sampleSession({ userId });
+        const b = sampleSession({ userId });
+
+        await Promise.all([store.create(a, 60_000), store.create(b, 60_000)]);
+        const removed = await store.delete(userId, [a.id, uniqueId('missing'), a.id]);
+
+        // A store may return nothing; the cap then reports every id it chose.
+        if (removed === undefined) return;
+
+        assert.deepEqual([...removed], [a.id]);
+        assert.deepEqual([...((await store.delete(userId, [a.id])) ?? [])], []);
+      },
+    },
+    {
+      name: 'of deletes racing on one session, exactly one reports it',
+      async run() {
+        for (let i = 0; i < 25; i++) {
+          const session = sampleSession();
+
+          await store.create(session, 60_000);
+
+          const results = await Promise.all([
+            store.delete(session.userId, [session.id]),
+            other.delete(session.userId, [session.id]),
+          ]);
+
+          if (results.some((removed) => removed === undefined)) return;
+
+          const reporters = results.filter((removed) => removed?.includes(session.id));
+
+          assert.equal(reporters.length, 1, `iteration ${i}`);
+        }
+      },
+    },
+    {
+      name: 'logins racing at the per-user cap report each eviction once',
+      async run() {
+        // Exactly once needs a delete that says what it removed.
+        if ((await store.delete(uniqueId('user'), [])) === undefined) return;
+
+        for (let i = 0; i < 10; i++) {
+          const options = { maxPerUser: 2 };
+
+          const managers = [store, other, store, other].map(
+            (s) => new SessionManager(s, options, systemClock, cryptoRandom, silentLogger),
+          );
+
+          const userId = uniqueId('user');
+
+          const mint = (manager: SessionManager<unknown>) =>
+            manager.mint({
+              userId,
+              attributes: {},
+              rememberMe: false,
+              persistentCookie: false,
+              authenticatedAt: systemClock.now(),
+              meta: { ip: '203.0.113.7' },
+            });
+
+          const created: string[] = [];
+
+          for (const manager of managers.slice(0, 2)) {
+            const minted = await mint(manager);
+
+            if (minted.ok) created.push(minted.session.id);
+          }
+
+          const raced = await Promise.all(managers.map(mint));
+          const reported: string[] = [];
+
+          for (const minted of raced) {
+            assert.ok(minted.ok, `iteration ${i}: mint refused`);
+            created.push(minted.session.id);
+            reported.push(...minted.evicted);
+          }
+
+          const live = new Set((await store.listByUser(userId)).map((s) => s.id));
+          const gone = created.filter((id) => !live.has(id)).sort();
+
+          assert.ok(live.size <= 2, `iteration ${i}: ${live.size} sessions over a cap of 2`);
+          assert.deepEqual([...reported].sort(), gone, `iteration ${i}: evictions misreported`);
+        }
+      },
+    },
+    {
       name: 'epochs start at 0 and every concurrent bump gets a distinct value',
       async run() {
         const userId = uniqueId('user');

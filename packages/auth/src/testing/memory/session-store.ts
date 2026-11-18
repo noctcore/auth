@@ -55,13 +55,19 @@ export class MemorySessionStore implements SessionStore {
     return true;
   }
 
-  async delete(userId: string, ids: readonly string[]): Promise<void> {
+  async delete(userId: string, ids: readonly string[]): Promise<string[]> {
     const index = this.byUser.get(userId);
+    const removed: string[] = [];
 
-    for (const id of ids) {
+    for (const id of new Set(ids)) {
+      // An entry past its TTL is already gone for every reader.
+      if (this.read(id)) removed.push(id);
+
       this.sessions.delete(id);
       index?.delete(id);
     }
+
+    return removed;
   }
 
   async listByUser(userId: string): Promise<StoredSession[]> {
