@@ -44,7 +44,9 @@ describe('A030 hash field in an output', () => {
 
     expect(Object.keys(user)).toEqual(['id', 'email', 'emailVerified']);
 
+    // A session's store key (`id`) is not a field: only the public handle goes out.
     const summary = sessionSummaryOutput.parse({
+      handle: 'h',
       id: 's',
       current: true,
       createdAt: 1,
@@ -56,6 +58,7 @@ describe('A030 hash field in an output', () => {
       epoch: 3,
     });
 
+    expect(summary).not.toHaveProperty('id');
     expect(summary).not.toHaveProperty('userId');
     expect(summary).not.toHaveProperty('epoch');
   });
