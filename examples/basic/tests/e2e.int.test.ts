@@ -167,7 +167,20 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
     const after = await browser.request('GET', '/api/me');
 
     expect(after.json['user']).toMatchObject({ email, emailVerified: true });
-    expect((await browser.request('GET', '/api/sessions')).json['sessions']).toHaveLength(1);
+
+    // One session, named by its public handle, never its store key.
+    const listed = (await browser.request('GET', '/api/sessions')).json['sessions'] as {
+      handle: string;
+      current: boolean;
+    }[];
+
+    expect(listed.map((s) => s.current)).toEqual([true]);
+    expect(listed[0]?.handle).toMatch(/^[\w-]{43}$/u);
+    expect(listed[0]).not.toHaveProperty('id');
+
+    const unknown = await browser.request('POST', '/api/sessions/revoke', { handle: 'nope' });
+
+    expect(unknown).toMatchObject({ status: 200, json: { revoked: false } });
 
     expect((await browser.request('POST', '/api/logout')).status).toBe(200);
     expect(browser.cookies.has('session')).toBe(false);

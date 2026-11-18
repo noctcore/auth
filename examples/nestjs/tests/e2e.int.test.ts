@@ -64,7 +64,16 @@ describe.skipIf(!databaseUrl || !redisUrl)('NestJS example end to end', () => {
 
     const sessions = await browser.send('GET', '/account/sessions');
 
-    expect(sessions.body['sessions']).toHaveLength(1);
+    const listed = sessions.body['sessions'] as { handle: string; current: boolean }[];
+
+    // One session, named by its public handle, never its store key.
+    expect(listed.map((s) => s.current)).toEqual([true]);
+    expect(listed[0]?.handle).toMatch(/^[\w-]{43}$/u);
+    expect(listed[0]).not.toHaveProperty('id');
+
+    const unknown = await browser.send('POST', '/account/sessions/revoke', { handle: 'nope' });
+
+    expect(unknown).toMatchObject({ status: 201, body: { revoked: false } });
 
     const before = browser.cookies.get('session');
 
