@@ -40,6 +40,8 @@ export interface CoreDependencies<U extends AuthUser, A> {
   readonly attributeSchema: AttributeSchema<A> | undefined;
   /** Key for trusted-device tokens, derived from the server secret. */
   readonly deviceKey: Uint8Array;
+  /** Key for the public session handles, derived from the server secret. */
+  readonly handleKey: Uint8Array;
   /** Root of the per-purpose keys behind `keyedHash`, derived from the server secret. */
   readonly pluginKey: Uint8Array;
   /** How recent a credential proof must be for a sensitive action. */

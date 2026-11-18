@@ -180,7 +180,7 @@ describe('session management', () => {
     const list = await t.auth.sessions.list(t.phone.session);
 
     expect(list).toHaveLength(2);
-    expect(list.find((s) => s.current)?.id).toBe(t.phone.session.id);
+    expect(list.find((s) => s.current)?.handle).toBe(t.auth.sessions.handle(t.phone.session.id));
     expect(list.map((s) => s.ip).sort()).toEqual(['198.51.100.2', '203.0.113.7']);
   });
 
@@ -191,7 +191,7 @@ describe('session management', () => {
 
     const stale = await t.auth.sessions.revoke({
       session: t.laptop.session,
-      id: t.phone.session.id,
+      handle: t.auth.sessions.handle(t.phone.session.id),
       meta: meta(),
     });
 
@@ -207,7 +207,7 @@ describe('session management', () => {
 
     const revoked = await t.auth.sessions.revoke({
       session: renewed.value.session,
-      id: t.phone.session.id,
+      handle: t.auth.sessions.handle(t.phone.session.id),
       meta: meta(),
     });
 
@@ -216,7 +216,7 @@ describe('session management', () => {
 
     const self = await t.auth.sessions.revoke({
       session: renewed.value.session,
-      id: renewed.value.session.id,
+      handle: t.auth.sessions.handle(renewed.value.session.id),
       meta: meta(),
     });
 
@@ -232,7 +232,7 @@ describe('session management', () => {
 
     const result = await t.auth.sessions.revoke({
       session: claimed,
-      id: t.phone.session.id,
+      handle: t.auth.sessions.handle(t.phone.session.id),
       meta: meta(),
     });
 
@@ -247,7 +247,7 @@ describe('session management', () => {
 
     const relabelled = await t.auth.sessions.revoke({
       session: borrowed,
-      id: t.phone.session.id,
+      handle: t.auth.sessions.handle(t.phone.session.id),
       meta: meta(),
     });
 
@@ -257,7 +257,7 @@ describe('session management', () => {
 
     const dead = await t.auth.sessions.revoke({
       session: t.laptop.session,
-      id: t.phone.session.id,
+      handle: t.auth.sessions.handle(t.phone.session.id),
       meta: meta(),
     });
 
@@ -271,7 +271,7 @@ describe('session management', () => {
 
     const result = await t.auth.sessions.revoke({
       session: eve.session,
-      id: t.phone.session.id,
+      handle: t.auth.sessions.handle(t.phone.session.id),
       meta: meta(),
     });
 
@@ -334,22 +334,81 @@ describe('session management', () => {
 
   it('evicts the oldest session over the per-user cap and reports it to the hooks', async () => {
     const evicted: string[][] = [];
+    const evictedHandles: string[][] = [];
 
     const t = setup({
       session: { maxPerUser: 2 },
       hooks: {
-        onSessionsRevoked: ({ sessionIds, reason }) =>
-          void (reason === 'evicted' && evicted.push([...sessionIds])),
+        onSessionsRevoked: ({ sessionIds, sessionHandles, reason }) => {
+          if (reason !== 'evicted') return;
+
+          evicted.push([...sessionIds]);
+          evictedHandles.push([...sessionHandles]);
+        },
       },
     });
 
     const first = await t.signedInUser();
+    const [listed] = await t.auth.sessions.list(first.session);
 
     t.clock.advance(1000);
     await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
     t.clock.advance(1000);
     await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
     expect(evicted).toEqual([[first.session.id]]);
+    expect(evictedHandles).toEqual([[listed?.handle]]);
     expect(await t.sessionOf(first.token)).toBeNull();
+  });
+
+  it('tells the hooks the handle the list showed for a revoked session', async () => {
+    const heard: { sessionIds: readonly string[]; sessionHandles: readonly string[] }[] = [];
+
+    const t = await twoDevices({
+      hooks: {
+        onSessionsRevoked: ({ sessionIds, sessionHandles, reason }) =>
+          void (reason === 'revoke-one' && heard.push({ sessionIds, sessionHandles })),
+      },
+    });
+
+    const phone = (await t.auth.sessions.list(t.laptop.session)).find((s) => !s.current);
+
+    const result = await t.auth.sessions.revoke({
+      session: t.laptop.session,
+      handle: phone?.handle ?? '',
+      meta: meta(),
+    });
+
+    expect(result).toEqual({ ok: true, value: { revoked: true } });
+    expect(heard).toEqual([{ sessionIds: [t.phone.session.id], sessionHandles: [phone?.handle] }]);
+    expect(t.auth.sessions.handle(t.phone.session.id)).toBe(phone?.handle);
+  });
+
+  it('keeps a handle stable across touches and re-lists, and distinct per session', async () => {
+    const t = await twoDevices();
+    const before = await t.auth.sessions.list(t.laptop.session);
+
+    t.clock.advance(2 * 60_000);
+    await t.sessionOf(t.phone.token);
+
+    const after = await t.auth.sessions.list(t.laptop.session);
+
+    expect(after.map((s) => s.handle).sort()).toEqual(before.map((s) => s.handle).sort());
+    expect(new Set(after.map((s) => s.handle)).size).toBe(2);
+  });
+
+  it('answers a handle that names nothing with revoked: false and revokes nothing', async () => {
+    const t = await twoDevices();
+
+    for (const handle of ['', 'garbage', t.phone.session.id]) {
+      const result = await t.auth.sessions.revoke({
+        session: t.laptop.session,
+        handle,
+        meta: meta(),
+      });
+
+      expect(result).toEqual({ ok: true, value: { revoked: false } });
+    }
+
+    expect(await t.auth.sessions.list(t.laptop.session)).toHaveLength(2);
   });
 });

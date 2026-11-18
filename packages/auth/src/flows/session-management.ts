@@ -7,6 +7,9 @@
  * credential proof, so a stolen session cannot keep signing the owner out.
  * Signing out of the current device, or everywhere including it, needs none.
  * Signing out of other devices or everywhere also voids a pending email change.
+ *
+ * A client only ever sees a session's public handle (`AuthCore.sessionHandle`),
+ * never its store key: the list shows handles and revoke takes one.
  */
 import { requireFreshAuth } from './session-validation';
 import { PURPOSE, type FlowSettings } from './settings';
@@ -24,7 +27,11 @@ import type { RequestMeta } from '../shared/meta';
 const SIGN_OUT_PURPOSES: readonly string[] = [PURPOSE.emailChange];
 
 export interface SessionSummary {
-  readonly id: string;
+  /**
+   * The session's public handle: an HMAC of its store key under a key derived
+   * from the server secret. Pass it to `sessions.revoke`. Never the store key.
+   */
+  readonly handle: string;
   readonly current: boolean;
   readonly createdAt: number;
   readonly lastActiveAt: number;
@@ -42,7 +49,7 @@ export async function listSessions<U extends AuthUser, A>(
   return active
     .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
     .map((s) => ({
-      id: s.id,
+      handle: core.sessionHandle(s.id),
       current: s.id === session.id,
       createdAt: s.createdAt,
       lastActiveAt: s.lastActiveAt,
@@ -52,29 +59,42 @@ export async function listSessions<U extends AuthUser, A>(
     }));
 }
 
-/** Revokes one session of the caller. Another device's session needs fresh authentication. */
+/**
+ * Revokes the caller's session that `handle` names. Another device's session
+ * needs fresh authentication. A handle that names none of the caller's live
+ * sessions (garbage, stale, or another user's) answers `{ revoked: false }`,
+ * the same as a session that is already gone, so revoke cannot be used to
+ * learn whether a handle belongs to anyone.
+ */
 export async function revokeSession<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
-  input: { session: StoredSession<A>; id: string; meta: RequestMeta },
+  input: { session: StoredSession<A>; handle: string; meta: RequestMeta },
 ): Promise<AuthResult<{ revoked: boolean }>> {
+  const userId = input.session.userId;
+
   // Another device's session is high privilege: freshness is read from the
-  // live copy of the caller's session, not from the object passed in.
-  if (input.id !== input.session.id) {
+  // live copy of the caller's session, not from the object passed in. The
+  // check comes before any lookup, so a stale session gets the same refusal
+  // for every handle that is not its own.
+  if (input.handle !== core.sessionHandle(input.session.id)) {
     const fresh = await core.requireFreshLiveSession(input.session);
 
     if (!fresh.ok) return fresh;
   }
 
-  const ids = await core.sessions.revoke(input.session.userId, [input.id]);
+  // Only the caller's own sessions are searched: a handle is never resolved
+  // across users, so another user's handle finds nothing here.
+  const target = (await core.sessions.listActive(userId)).find(
+    (s) => core.sessionHandle(s.id) === input.handle,
+  );
+
+  const ids = target ? await core.sessions.revoke(userId, [target.id]) : [];
 
   if (ids.length > 0) {
-    await core.emit(
-      { type: 'session.revoked', userId: input.session.userId, reason: 'revoke-one' },
-      input.meta,
-    );
+    await core.emit({ type: 'session.revoked', userId, reason: 'revoke-one' }, input.meta);
 
-    await core.notifyRevoked(input.session.userId, ids, 'revoke-one');
+    await core.notifyRevoked(userId, ids, 'revoke-one');
   }
 
   return ok({ revoked: ids.length > 0 });

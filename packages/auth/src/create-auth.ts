@@ -85,6 +85,7 @@ export function createAuth<
   const codeKey = deriveKey(secret, 'codes');
   const deviceKey = deriveKey(secret, 'device');
   const pluginKey = deriveKey(secret, 'plugins');
+  const handleKey = deriveKey(secret, 'session-handles');
 
   checkPlugins(plugins, { captcha: Boolean(config.captcha) });
 
@@ -142,6 +143,7 @@ export function createAuth<
     cookie,
     attributeSchema: config.session?.attributes,
     deviceKey,
+    handleKey,
     pluginKey,
     freshAuthAgeMs: settings.freshAuthAgeMs,
     clock,
@@ -245,9 +247,20 @@ export function createAuth<
       clear: (input: LockTarget & { meta: RequestMeta }) => clearLock(core, input),
     },
     sessions: {
+      /** The caller's live sessions, newest activity first, each named by its public `handle`. */
       list: (session: StoredSession<A>) => listSessions(core, session),
-      revoke: (input: { session: StoredSession<A>; id: string; meta: RequestMeta }) =>
+      /**
+       * Revokes the caller's session with this `handle` (from `list`). Another
+       * device's session needs fresh authentication. A handle that names no
+       * session of the caller, another user's included, answers `{ revoked: false }`.
+       */
+      revoke: (input: { session: StoredSession<A>; handle: string; meta: RequestMeta }) =>
         revokeSession(core, settings, input),
+      /**
+       * The public handle of a session id (`session.id`, or an id from
+       * `onSessionsRevoked`), to match it against the handles `list` showed.
+       */
+      handle: (sessionId: string) => core.sessionHandle(sessionId),
       revokeOthers: (input: { session: StoredSession<A>; meta: RequestMeta }) =>
         revokeOtherSessions(core, settings, input),
       revokeAll: (input: { session: StoredSession<A>; meta: RequestMeta }) =>

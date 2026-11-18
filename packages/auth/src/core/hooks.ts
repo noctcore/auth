@@ -136,7 +136,13 @@ export interface AuthHooks<U extends AuthUser, A> {
   /** Sessions ended: close their sockets, drop caches. Errors are logged, never thrown into the flow. */
   onSessionsRevoked: (context: {
     userId: string;
+    /** The internal store keys of the ended sessions. Server-side only: never send them to a client. */
     sessionIds: readonly string[];
+    /**
+     * The public handles of the same sessions, in the same order: what
+     * `sessions.list` showed for them, so a client's list can drop them.
+     */
+    sessionHandles: readonly string[];
     reason: RevocationReason;
     /** The scope a scoped change concerns (a membership change in that scope); absent otherwise. */
     scope?: string;

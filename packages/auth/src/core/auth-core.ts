@@ -8,7 +8,7 @@ import { firstRefusal, type HookLists, type IssueVia, type RevocationReason } fr
 import type { IssuedSession, IssueOptions, PluginContext, SessionAccess } from './plugin-context';
 import { narrowSessions } from './session-access';
 import { resolveSessionAttributes } from './session-attributes';
-import { hmacSha256Hex } from '../crypto/hash';
+import { hmacSha256Base64url, hmacSha256Hex } from '../crypto/hash';
 import { deriveKey } from '../crypto/keys';
 import { generateToken, type RandomSource } from '../crypto/random';
 import {
@@ -82,6 +82,10 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     this.logger = deps.logger;
     this.metrics = deps.metrics;
     this.cookie = deps.cookie;
+  }
+
+  sessionHandle(sessionId: string): string {
+    return hmacSha256Base64url(this.#deps.handleKey, sessionId);
   }
 
   keyedHash(purpose: string, message: string): string {
@@ -420,10 +424,12 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     reason: RevocationReason,
     options: { scope?: string } = {},
   ): Promise<void> {
+    const sessionHandles = sessionIds.map((id) => this.sessionHandle(id));
+
     const context =
       options.scope === undefined
-        ? { userId, sessionIds, reason }
-        : { userId, sessionIds, reason, scope: options.scope };
+        ? { userId, sessionIds, sessionHandles, reason }
+        : { userId, sessionIds, sessionHandles, reason, scope: options.scope };
 
     for (const hook of this.hooks.onSessionsRevoked) {
       try {
