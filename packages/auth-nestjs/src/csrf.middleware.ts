@@ -124,15 +124,17 @@ export class CsrfMiddleware implements NestMiddleware {
         allowedOrigins: csrf.allowedOrigins,
       });
 
-      const siteOk =
-        secFetchSite === undefined ||
-        verifyFetchSite({
-          method,
-          secFetchSite,
-          allowSameSite: csrf.allowSameSite,
-          origin,
-          crossSiteOrigins: csrf.crossSiteOrigins,
-        });
+      // Fetch metadata, when the browser sends it. A client that sends none (an
+      // old browser, a native client) still needs the allowed Origin and the token.
+      const fetchSiteOk = verifyFetchSite({
+        method,
+        secFetchSite,
+        allowSameSite: csrf.allowSameSite,
+        origin,
+        crossSiteOrigins: csrf.crossSiteOrigins,
+      });
+
+      const siteOk = fetchSiteOk || secFetchSite === undefined;
 
       const tokenOk = csrfTokenValid(this.options, {
         cookieToken,
