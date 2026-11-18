@@ -18,6 +18,7 @@ import { Test } from '@nestjs/testing';
 import {
   createAuth,
   toPublicError,
+  type AuthConfig,
   type AuthUser,
   type RequestMeta,
   type SessionCookieConfig,
@@ -43,8 +44,16 @@ export const EMAIL = 'ada@example.com';
 export const PASSWORD = 'correct horse battery staple';
 export const CSRF_SECRET = 'csrf-secret-that-is-at-least-32-bytes-long';
 
-/** `cookie` replaces the session cookie config (plain HTTP, `Lax`, by default). */
-export function makeAuth(cookie: SessionCookieConfig = { secure: false }) {
+type Verification = AuthConfig<AuthUser, Record<string, never>, []>['emailVerification'];
+
+/**
+ * `cookie` replaces the session cookie config (plain HTTP, `Lax`, by default);
+ * `emailVerification` replaces the core's verification settings (codes by default).
+ */
+export function makeAuth(
+  cookie: SessionCookieConfig = { secure: false },
+  emailVerification?: Verification,
+) {
   const clock = manualClock();
   const stores = memoryStores(clock);
   const mailer = recordingMailer();
@@ -55,7 +64,11 @@ export function makeAuth(cookie: SessionCookieConfig = { secure: false }) {
     password: { hasher: plainHasher(), breachCheck: false },
     session: { cookie },
     secret: 'auth-secret-that-is-at-least-32-bytes-long',
-    urls: { resetPassword: (token) => `${ORIGIN}/reset#${token}` },
+    urls: {
+      resetPassword: (token) => `${ORIGIN}/reset#${token}`,
+      verifyEmail: (token) => `${ORIGIN}/verify#${token}`,
+    },
+    ...(emailVerification ? { emailVerification } : {}),
     mailer,
   });
 
@@ -166,6 +179,38 @@ export class AccountController {
   }
 }
 
+/**
+ * The verification link's page POSTs the token from its fragment on a click.
+ * `@Public()` still resolves the request's session, which is passed on so a
+ * link for another account is refused.
+ */
+@Public()
+@Controller('api')
+export class VerificationController {
+  constructor(
+    @Inject(AUTH) private readonly auth: TestAuth,
+    @Inject(SessionCookies) private readonly cookies: SessionCookies,
+  ) {}
+
+  @Post('verify-email-link')
+  async verify(
+    @Body() body: { token?: string },
+    @CurrentSession() session: StoredSession<Record<string, never>> | null,
+    @AuthMeta() meta: RequestMeta,
+    @Res({ passthrough: true }) res: unknown,
+  ) {
+    const result = await this.auth.verifyEmailLink({ token: body.token ?? '', session, meta });
+
+    if (!result.ok) failure(result);
+
+    const issued = result.value.session;
+
+    if (!issued) return { verified: true, signedIn: false };
+
+    return { verified: true, signedIn: true, ...this.cookies.set(res, issued) };
+  }
+}
+
 @RequireRole('staff', 'admin')
 @Controller(['staff', 'team'])
 export class StaffController {
@@ -231,6 +276,8 @@ export interface BootOptions {
   readonly globalPrefix?: { readonly prefix: string; readonly exclude: string[] };
   /** The session cookie config, in place of plain HTTP with `Lax`. */
   readonly cookie?: SessionCookieConfig;
+  /** The core's verification settings, in place of codes. */
+  readonly emailVerification?: Verification;
 }
 
 /** Under a global prefix: a handler at the prefix root, and a route excluded from the prefix. */
@@ -268,7 +315,7 @@ export class ExcludedController {
 }
 
 export async function boot(overrides: BootOptions = {}) {
-  const env = makeAuth(overrides.cookie);
+  const env = makeAuth(overrides.cookie, overrides.emailVerification);
   const roles = overrides.roles ?? new Map<string, readonly string[]>();
 
   const base: AuthModuleOptions = {
