@@ -87,6 +87,15 @@ export interface PluginContext<U extends AuthUser, A> {
    * the core; two purposes never share one.
    */
   keyedHash(purpose: string, message: string): string;
+  /**
+   * The public handle of the session stored under `sessionId`: an HMAC of the
+   * store key under a key derived from the server secret, as unpadded
+   * base64url. `sessions.list` shows it, `sessions.revoke` takes it and
+   * `onSessionsRevoked` passes it as `sessionHandles`, so a client never sees
+   * a store key. Stable while the server secret is; rotating the secret
+   * changes every handle (never a session).
+   */
+  sessionHandle(sessionId: string): string;
   /** Refuses (`fresh_auth_required`) when the session's last credential proof is older than `session.freshAuthAge`. */
   requireFreshAuth(session: StoredSession<A>): AuthResult<void>;
   /**

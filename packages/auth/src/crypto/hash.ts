@@ -14,7 +14,7 @@
 import { hmac } from '@oslojs/crypto/hmac';
 import { SHA256, sha256 } from '@oslojs/crypto/sha2';
 import { constantTimeEqual } from '@oslojs/crypto/subtle';
-import { decodeHex, encodeHexLowerCase } from '@oslojs/encoding';
+import { decodeHex, encodeBase64urlNoPadding, encodeHexLowerCase } from '@oslojs/encoding';
 
 const encoder = new TextEncoder();
 const HEX = /^(?:[0-9a-f]{2})+$/u;
@@ -27,6 +27,11 @@ export function sha256Hex(value: string): string {
 /** HMAC-SHA-256 of `message` under `key`, as lowercase hex. */
 export function hmacSha256Hex(key: Uint8Array, message: string): string {
   return encodeHexLowerCase(hmac(SHA256, key, encoder.encode(message)));
+}
+
+/** HMAC-SHA-256 of `message` under `key`, as unpadded base64url (43 characters). */
+export function hmacSha256Base64url(key: Uint8Array, message: string): string {
+  return encodeBase64urlNoPadding(hmac(SHA256, key, encoder.encode(message)));
 }
 
 /** Compares two byte arrays of the same length in constant time. */

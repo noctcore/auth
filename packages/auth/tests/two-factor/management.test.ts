@@ -484,9 +484,9 @@ describe('configuration', () => {
     const plugin = twoFactor({ store, cipher, issuer: 'Acme' });
     const hook = plugin.hooks?.onSessionsRevoked as (context: object) => Promise<void>;
 
-    await expect(hook({ userId: 'u', sessionIds: [], reason: 'revoke-all' })).rejects.toThrow(
-      /createAuth/u,
-    );
+    await expect(
+      hook({ userId: 'u', sessionIds: [], sessionHandles: [], reason: 'revoke-all' }),
+    ).rejects.toThrow(/createAuth/u);
   });
 
   it('tries the stand-in secret again after the cipher failed once', async () => {

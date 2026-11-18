@@ -445,7 +445,7 @@ describe('the core hooks', () => {
 
     await t.auth.sessions.revoke({
       session: passed.value.session.session,
-      id: other.session.id,
+      handle: t.auth.sessions.handle(other.session.id),
       meta: meta(),
     });
 
