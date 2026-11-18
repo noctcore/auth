@@ -1,5 +1,6 @@
 /**
- * UserStore conformance: unique violations returned as null, guarded writes
+ * UserStore conformance: exact (byte for byte) lookups by address, unique
+ * violations returned as null, guarded writes
  * refusing deleted users and, for a store with `changeEmail`, an address
  * change that is a compare-and-set and keeps the address unique.
  *
@@ -36,6 +37,33 @@ export function userStoreConformance(
         assert.equal((await store.findCredentialById(user.id))?.passwordHash, 'hash-1');
         assert.equal(await store.findCredentialByEmail(email()), null);
         assert.equal(await store.findById(uniqueId('missing')), null);
+      },
+    },
+    {
+      // A case- or accent-insensitive lookup (a database collation such as
+      // MySQL's utf8mb4_0900_ai_ci) would hand one account to several
+      // spellings, each with its own lockout and rate-limit keys. The core
+      // refuses such a match too, but the store must not make it.
+      name: 'different spellings must not match',
+      async run() {
+        const id = uniqueId('zoe');
+        const address = `${id}@example.com` as NormalizedEmail;
+        const user = await store.create({ email: address, passwordHash: 'h' });
+
+        assert.ok(user);
+
+        for (const spelling of [
+          `${id.toUpperCase()}@example.com`,
+          `${id}@EXAMPLE.COM`,
+          `${id.replace('o', '\u00F3')}@example.com`,
+          `${id.replace('o', '\u00F6')}@example.com`,
+          `${id} @example.com`,
+        ])
+          assert.equal(
+            await store.findCredentialByEmail(spelling as NormalizedEmail),
+            null,
+            `found ${address} under ${JSON.stringify(spelling)}`,
+          );
       },
     },
     {
