@@ -16,9 +16,13 @@
  *   without touching the owner on another network, and a larger account-wide
  *   one against distributed guessing.
  * - Spending the account-wide budget locks the account with exponential
- *   backoff, capped (1 h by default). There is no permanent tier. The tier
- *   resets only after a quiet period (24 h by default) with no new lock. A new
- *   lock mails the owner.
+ *   backoff, capped (1 h by default). The tier resets only after a quiet
+ *   period (24 h by default) with no new lock. A new lock mails the owner.
+ * - Opt-in permanent tier (`lockout.permanent`): after `afterLocks` temporary
+ *   locks in a row, the next lock never lapses; only `clearPermanent` (an
+ *   admin) lifts it, not a password reset. It is keyed on the address like
+ *   the rest, so unknown addresses reach it too. Trusted devices still get
+ *   through it unless `trustedDevices` is false.
  * - A correct password returns only the budget of the source that proved it
  *   (its per-(account, IP) or per-device budget), never the account-wide one.
  * - Trusted devices: every issued session carries a signed device token bound
@@ -47,13 +51,16 @@ import {
   type FactorGate,
   type Hit,
   type LockoutOptions,
+  type LockState,
   type LoginGate,
+  type NewLock,
   type RateLimitRule,
   type WindowRule,
 } from './rules';
 import type { Clock } from '../ports/clock';
 import type { CounterStore } from '../ports/stores';
-import { toMilliseconds } from '../shared/duration';
+import { AuthConfigError } from '../shared/errors';
+import { LOCKOUT_EXPIRES_AT, toMilliseconds } from '../shared/duration';
 
 export class Throttle {
   private readonly perAccountIp: WindowRule;
@@ -64,6 +71,11 @@ export class Throttle {
   private readonly baseLockMs: number;
   private readonly maxLockMs: number;
   private readonly quietPeriodMs: number;
+  /** Temporary locks in a row before the next is permanent; undefined when the tier is off. */
+  private readonly permanentAfter: number | undefined;
+  private readonly permanentDevices: boolean;
+  /** Whether login may answer `account_locked` for a locked account. */
+  readonly revealLocked: boolean;
 
   constructor(
     private readonly counters: CounterStore,
@@ -77,6 +89,9 @@ export class Throttle {
     this.baseLockMs = toMilliseconds(lockout.baseLock ?? '5m');
     this.maxLockMs = toMilliseconds(lockout.maxLock ?? '1h');
     this.quietPeriodMs = toMilliseconds(lockout.quietPeriod ?? '24h');
+    this.permanentAfter = permanentAfter(lockout);
+    this.permanentDevices = lockout.permanent?.trustedDevices ?? true;
+    this.revealLocked = lockout.revealLocked ?? false;
   }
 
   /** One hit on a fixed window. Throws when the store fails (fail closed). */
@@ -103,13 +118,33 @@ export class Throttle {
    * `loginSucceeded` hands both slots back.
    */
   async gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate> {
+    // With the tier off, its key is never read: the store calls stay as they were.
+    const permanent =
+      this.permanentAfter !== undefined &&
+      (await this.counters.get(keys.permanent(account))) !== null;
+
+    if (permanent) {
+      const held = this.held({ permanent: true });
+
+      if (!deviceId || !this.permanentDevices)
+        return { allowed: false, reason: 'permanently_locked', ...held };
+
+      const gate = await reserveDeviceSlots(this.counters, this.perDevice, account, deviceId);
+
+      return gate.allowed ? gate : { ...gate, ...held };
+    }
+
     const lock = await this.counters.get(keys.lock(account));
     const locked = lock !== null && lock.count > 0;
 
     if (locked) {
-      if (!deviceId) return { allowed: false, reason: 'locked' };
+      const held = this.held({ until: lock.resetAt });
 
-      return reserveDeviceSlots(this.counters, this.perDevice, account, deviceId);
+      if (!deviceId) return { allowed: false, reason: 'locked', ...held };
+
+      const gate = await reserveDeviceSlots(this.counters, this.perDevice, account, deviceId);
+
+      return gate.allowed ? gate : { ...gate, ...held };
     }
 
     const pair = await this.counters.increment(
@@ -125,12 +160,43 @@ export class Throttle {
     if (all.count > this.perAccount.limit) {
       // Only the attempt that crossed the limit locks; a parallel one that also
       // got past the lock check above is refused here without a second lock.
-      if (!locksAt(all.count, this.perAccount.limit)) return { allowed: false, reason: 'locked' };
+      if (!locksAt(all.count, this.perAccount.limit))
+        return { allowed: false, reason: 'locked', ...(await this.runningLock(account)) };
 
-      return { allowed: false, reason: 'locked', ...(await this.lock(account, all.count)) };
+      const { newLock } = await this.lock(account, all.count, true);
+
+      if (!newLock)
+        return { allowed: false, reason: 'locked', ...(await this.runningLock(account)) };
+
+      return {
+        allowed: false,
+        reason: newLock.permanent ? 'permanently_locked' : 'locked',
+        newLock,
+        ...this.held(newLock.permanent ? { permanent: true } : { until: newLock.until }),
+      };
     }
 
     return { allowed: true };
+  }
+
+  /**
+   * The lock detail of a refusal, attached only when login may reveal it
+   * (`revealLocked`), so the default answers stay exactly as they were.
+   */
+  private held(lock: { until?: number; permanent?: true }): { lock?: typeof lock } {
+    return this.revealLocked ? { lock } : {};
+  }
+
+  /**
+   * The end of a lock set by a parallel request, read only when login may
+   * reveal it (`revealLocked`), so the default path makes no extra store call.
+   */
+  private async runningLock(account: string): Promise<{ lock?: { until?: number } }> {
+    if (!this.revealLocked) return {};
+
+    const running = await this.counters.get(keys.lock(account));
+
+    return { lock: running ? { until: running.resetAt } : {} };
   }
 
   /**
@@ -152,7 +218,7 @@ export class Throttle {
     if (all.count > rule.limit) {
       if (!locksAt(all.count, rule.limit)) return { allowed: false };
 
-      return { allowed: false, ...(await this.lock(scope, all.count)) };
+      return { allowed: false, ...(await this.lock(scope, all.count, false)) };
     }
 
     return { allowed: true };
@@ -164,19 +230,19 @@ export class Throttle {
   }
 
   /** A failed proof outside login (a wrong current password) still spends the account-wide budget. */
-  async recordFailure(account: string): Promise<{ newLock?: { until: number } }> {
+  async recordFailure(account: string): Promise<{ newLock?: NewLock }> {
     const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
 
     if (!locksAt(all.count, this.perAccount.limit)) return {};
 
-    return this.lock(account, all.count);
+    return this.lock(account, all.count, true);
   }
 
   /**
    * A wrong password let through a lock by a device token: its reserved device
    * slots stay spent, and it also counts against the account-wide budget.
    */
-  async deviceFailed(account: string): Promise<{ newLock?: { until: number } }> {
+  async deviceFailed(account: string): Promise<{ newLock?: NewLock }> {
     return this.recordFailure(account);
   }
 
@@ -192,8 +258,17 @@ export class Throttle {
    * lock already running, from a parallel burst or a wrong password let
    * through by a device token, leaves the tier, the lock's end and the owner's
    * mailbox alone: one tier step and one notice per lock.
+   *
+   * With the permanent tier on and `escalates` (an account's password lock,
+   * never a second factor's), the new lock that brings the tier past
+   * `afterLocks` also sets the permanent marker, stored with the far-future
+   * expiry so it never lapses on its own.
    */
-  private async lock(account: string, count: number): Promise<{ newLock?: { until: number } }> {
+  private async lock(
+    account: string,
+    count: number,
+    escalates: boolean,
+  ): Promise<{ newLock?: NewLock }> {
     const previous = await this.counters.get(keys.tier(account));
     const tier = (previous?.count ?? 0) + 1;
     const backoffMs = this.baseLockMs * 3 ** Math.min(tier - 1, 20);
@@ -213,6 +288,12 @@ export class Throttle {
     // quiet period without one.
     await this.counters.set(keys.tier(account), tier, this.quietPeriodMs);
 
+    if (escalates && this.permanentAfter !== undefined && tier > this.permanentAfter) {
+      await this.counters.set(keys.permanent(account), 1, LOCKOUT_EXPIRES_AT - this.clock.now());
+
+      return { newLock: { until: LOCKOUT_EXPIRES_AT, permanent: true } };
+    }
+
     return { newLock: { until: lock.resetAt } };
   }
 
@@ -228,12 +309,57 @@ export class Throttle {
     await this.counters.decrement(keys.devices(account));
   }
 
-  /** A completed password reset proves the mailbox: lift the lock and its history. */
+  /**
+   * A completed password reset proves the mailbox: lift the temporary lock and
+   * its history. A permanent lock stays: only an admin lifts it.
+   */
   async clearAccount(account: string): Promise<void> {
     await this.counters.reset(keys.lock(account));
     await this.counters.reset(keys.tier(account));
     await this.counters.reset(keys.account(account));
   }
+
+  /** The account's lock state, for an admin. Reads the permanent marker whether or not the tier is on. */
+  async lockState(account: string): Promise<LockState> {
+    const permanent = (await this.counters.get(keys.permanent(account))) !== null;
+    const lock = await this.counters.get(keys.lock(account));
+    const temporary = lock !== null && lock.count > 0;
+
+    return {
+      locked: permanent || temporary,
+      permanent,
+      until: !permanent && temporary ? new Date(lock.resetAt) : null,
+    };
+  }
+
+  /**
+   * An admin lifts every lock on the account, the permanent one included, and
+   * its history: the backoff tier and the account-wide budget start over.
+   * Returns the state it found.
+   */
+  async clearPermanent(account: string): Promise<LockState> {
+    const before = await this.lockState(account);
+
+    await this.counters.reset(keys.permanent(account));
+    await this.clearAccount(account);
+
+    return before;
+  }
+}
+
+/** The validated `permanent.afterLocks`, or undefined when the tier is off. */
+function permanentAfter(lockout: LockoutOptions): number | undefined {
+  if (!lockout.permanent) return undefined;
+
+  const { afterLocks } = lockout.permanent;
+
+  if (!Number.isInteger(afterLocks) || afterLocks < 1) {
+    throw new AuthConfigError(
+      'throttle.lockout.permanent.afterLocks must be an integer of at least 1',
+    );
+  }
+
+  return afterLocks;
 }
 
 /**

@@ -118,7 +118,16 @@ export type {
 export { OneTimeTokens, type TokenRedemption } from './tokens/one-time-tokens';
 export { Throttle } from './throttle/throttle';
 export { accountKey } from './throttle/counter-keys';
-export type { FactorGate, Hit, LockoutOptions, LoginGate, RateLimitRule } from './throttle/rules';
+export type {
+  FactorGate,
+  Hit,
+  LockoutOptions,
+  LockState,
+  LoginGate,
+  NewLock,
+  PermanentLockOptions,
+  RateLimitRule,
+} from './throttle/rules';
 export type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './core/config';
 export { DEFAULT_DOOR_LIMITS } from './core/config';
 export { BACKGROUND_METRIC, type BackgroundOptions } from './core/background';
@@ -135,6 +144,7 @@ export {
 } from './core/hooks';
 export type { IssuedSession, IssueOptions, PluginContext } from './core/plugin-context';
 export type { LoginInput, LoginOutcome } from './flows/login';
+export type { LockTarget } from './flows/lockout-admin';
 export type { RegisterInput, RegisterOutcome } from './flows/register';
 export type { VerifiedEmail } from './flows/email-verification';
 export type {

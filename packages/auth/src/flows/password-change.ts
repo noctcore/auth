@@ -144,7 +144,7 @@ async function proveCurrentPassword<U extends AuthUser, A>(
   if (!correct) {
     const { newLock } = await core.throttle.recordFailure(accountKey(credential.email));
 
-    if (newLock) await sendLockNotice(core, credential, newLock.until, meta);
+    if (newLock) await sendLockNotice(core, credential, newLock, meta);
 
     await core.emit(
       { type: 'password.change_failed', userId: credential.id, reason: `wrong_password:${door}` },

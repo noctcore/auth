@@ -5,7 +5,9 @@
  * `invalid_credentials`: an unknown address, a wrong password, a locked
  * account and an account a hook refused all look the same, and known and
  * unknown addresses do the same work (the lockout counters are keyed on the
- * address, and an unknown address pays for a full password verify).
+ * address, and an unknown address pays for a full password verify). The one
+ * opt-in exception is `throttle.lockout.revealLocked`, which answers
+ * `account_locked` for a locked address, known or not, after the same work.
  *
  * Order matters:
  * 1. the lockout gate reserves an attempt BEFORE the password is checked, so
@@ -28,9 +30,10 @@ import type { AuthCore } from '../core/auth-core';
 import type { IssuedSession } from '../core/plugin-context';
 import { NO_SUCH_USER_ID, type AuthUser } from '../ports/stores';
 import { normalizeEmail } from '../shared/email';
-import { fail, ok, type AuthResult } from '../shared/errors';
+import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
+import type { LoginGate, NewLock } from '../throttle/rules';
 
 export interface LoginInput {
   readonly email: string;
@@ -89,7 +92,7 @@ export async function login<U extends AuthUser, A>(
 
     await emitFailure(core, credential, gate.reason, meta);
 
-    return fail('invalid_credentials', gate.reason);
+    return refusal(core, gate);
   }
 
   if (!credential || !verified) {
@@ -155,14 +158,34 @@ async function emitFailure<U extends AuthUser, A>(
   );
 }
 
+/**
+ * The answer to a refused gate: `invalid_credentials`, or with `revealLocked`
+ * and a refusal that is the account's lock, `account_locked` (with
+ * `retryAfterSeconds` when a temporary lock's end is known).
+ */
+function refusal<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  gate: Extract<LoginGate, { allowed: false }>,
+): AuthFailure {
+  if (!core.throttle.revealLocked || !gate.lock) return fail('invalid_credentials', gate.reason);
+
+  const { until } = gate.lock;
+
+  if (gate.lock.permanent || until === undefined) return fail('account_locked', gate.reason);
+
+  const retryAfterSeconds = Math.max(1, Math.ceil((until - core.clock.now()) / 1000));
+
+  return fail('account_locked', gate.reason, { retryAfterSeconds });
+}
+
 /** A new lock's notice, off the response path so a known account answers no slower. */
 function notifyLock<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   credential: Credential,
-  newLock: { until: number } | undefined,
+  newLock: NewLock | undefined,
   meta: RequestMeta,
 ): void {
   if (!newLock || !credential) return;
 
-  void sendLockNotice(core, credential, newLock.until, meta, true);
+  void sendLockNotice(core, credential, newLock, meta, true);
 }

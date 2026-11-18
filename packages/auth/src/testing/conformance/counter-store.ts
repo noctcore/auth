@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { systemClock } from '../../ports/clock';
 import type { CounterStore } from '../../ports/stores';
+import { LOCKOUT_EXPIRES_AT } from '../../shared/duration';
 import {
   advance,
   times,
@@ -122,6 +123,26 @@ export function counterStoreConformance(
         );
 
         assert.equal((await store.increment(key, 1000)).count, 8);
+      },
+    },
+    {
+      // The opt-in permanent lockout tier stores its marker this way.
+      name: 'set holds a counter with the far-future lockout expiry',
+      async run() {
+        const key = uniqueId('counter');
+
+        await store.set(key, 1, LOCKOUT_EXPIRES_AT - systemClock.now());
+        const window = await store.get(key);
+
+        assert.equal(window?.count, 1);
+
+        assert.ok(
+          Math.abs((window?.resetAt ?? 0) - LOCKOUT_EXPIRES_AT) < 60_000,
+          'the expiry must be kept, not clamped or overflowed',
+        );
+
+        await store.reset(key);
+        assert.equal(await store.get(key), null);
       },
     },
     {

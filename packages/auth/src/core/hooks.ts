@@ -120,6 +120,17 @@ export interface AuthHooks<U extends AuthUser, A> {
    * (a welcome mail, a CRM call) to your queue instead of awaiting it here.
    */
   afterRegister: (context: { user: U; meta: RequestMeta }) => MaybePromise<void>;
+  /**
+   * The opt-in permanent lockout tier just locked this account; it stays
+   * locked until an admin calls `auth.lockout.clear`. Alert support or the
+   * owner here. Runs off the response path, only for an address with an
+   * account; errors are logged, never thrown into the flow.
+   */
+  onPermanentLock: (context: {
+    userId: string;
+    email: string;
+    meta: RequestMeta;
+  }) => MaybePromise<void>;
   /** Sessions ended: close their sockets, drop caches. Errors are logged, never thrown into the flow. */
   onSessionsRevoked: (context: {
     userId: string;
@@ -151,6 +162,7 @@ const HOOK_NAMES: readonly HookName[] = [
   'beforePasswordChange',
   'beforeEmailChange',
   'afterRegister',
+  'onPermanentLock',
   'onSessionsRevoked',
 ];
 

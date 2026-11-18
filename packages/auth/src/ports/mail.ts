@@ -56,11 +56,17 @@ export type AuthMailEvent =
       readonly userId: string;
       readonly dedupeKey: string;
     }
+  /**
+   * A new lock on the account. With `permanent` (the opt-in permanent tier)
+   * it holds until an admin clears it and `until` is only the far-future
+   * expiry it is stored with: say so instead of printing the date.
+   */
   | {
       readonly type: 'lockout';
       readonly to: string;
       readonly userId: string;
       readonly until: Date;
+      readonly permanent?: true;
       readonly dedupeKey: string;
     }
   /** An email change: the code or link that proves the new address, sent to that address. */

@@ -44,6 +44,10 @@ export type AuthEventType =
   /** The breached-password check could not answer; the password was accepted unchecked. */
   | 'password.breach_check_unavailable'
   | 'account.locked'
+  /** The opt-in permanent tier locked the account; only an admin clears it. */
+  | 'account.locked_permanently'
+  /** An admin cleared the account's lock (`auth.lockout.clear`). */
+  | 'account.lock_cleared'
   | 'rate_limit.exceeded'
   /** The two-factor plugin's events. */
   | 'two_factor.enrollment_started'

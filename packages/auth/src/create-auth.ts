@@ -18,6 +18,7 @@ import { clearEmailRevertLockout, lockoutHooks } from './flows/email-lockout';
 import { isAddressHeld } from './flows/email-reservation';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
+import { clearLock, inspectLock, type LockTarget } from './flows/lockout-admin';
 import { changePassword, reauthenticate } from './flows/password-change';
 import { resetPassword, verifyPasswordResetCode } from './flows/password-reset';
 import { processPasswordReset, requestPasswordReset } from './flows/password-reset-request';
@@ -224,6 +225,19 @@ export function createAuth<
      */
     clearEmailRevertLockout: (input: { userId: string; meta: RequestMeta }) =>
       clearEmailRevertLockout(core, input),
+    /**
+     * Admin tools for the login lockout. Admin-only routes: they answer for
+     * any address, so a public route would reveal which addresses are locked.
+     */
+    lockout: {
+      /** An address's (or an account's) lock state: temporary, permanent or none. */
+      inspect: (target: LockTarget) => inspectLock(core, target),
+      /**
+       * Lifts every lock, the permanent tier included, and resets the backoff.
+       * Returns the state it found; audits `account.lock_cleared` when it lifted one.
+       */
+      clear: (input: LockTarget & { meta: RequestMeta }) => clearLock(core, input),
+    },
     sessions: {
       list: (session: StoredSession<A>) => listSessions(core, session),
       revoke: (input: { session: StoredSession<A>; id: string; meta: RequestMeta }) =>
