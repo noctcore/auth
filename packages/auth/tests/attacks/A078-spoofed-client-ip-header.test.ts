@@ -7,10 +7,11 @@
 // bucket each time. A garbage value tries to put everyone in one bucket.
 //
 // Stopped by: http/ip.ts: clientIp honors the trusted header only when the
-//   request came through a trusted hop (a hop count above 0, or a socket
-//   address inside the trusted proxy list) and only when it holds exactly one
-//   valid IP; otherwise the X-Forwarded-For rule decides.
-//   resolveClientIpHeader refuses X-Forwarded-For as the header.
+//   proxies are trusted by address and the socket address is inside that
+//   list, and only when it holds exactly one valid IP; otherwise the
+//   X-Forwarded-For rule decides. A hop count never checks the socket, so
+//   resolveClientIpHeader refuses the header at boot unless trustedHops is a
+//   list, and refuses X-Forwarded-For as the header.
 //   Unit and property tests: tests/primitives/ip-ranges.test.ts,
 //   tests/property/ip-ranges.property.test.ts.
 // Learn: Trust proxy and client IPs (/auth/learn/trust-proxy-and-client-ips/); core attack A011
@@ -32,10 +33,20 @@ describe('A078: choosing your own IP with a spoofed edge header', () => {
     }
   });
 
-  it('ignores the header when no proxy is trusted at all', () => {
+  it('ignores the header when no proxy is trusted at all, or the proxies are only counted', () => {
     expect(
       clientIp({ remoteAddress: '203.0.113.50', trustedHops: 0, trustedHeader: '198.51.100.11' }),
     ).toBe('203.0.113.50');
+
+    // A direct client, taken for the one counted proxy, still cannot use the header.
+    expect(
+      clientIp({ remoteAddress: '203.0.113.50', trustedHops: 1, trustedHeader: '198.51.100.11' }),
+    ).toBe('203.0.113.50');
+  });
+
+  it('refuses the header at boot unless the proxies are trusted by address', () => {
+    expect(() => resolveClientIpHeader('cf-connecting-ip', 1)).toThrow(AuthConfigError);
+    expect(resolveClientIpHeader('cf-connecting-ip', edge)).toBe('cf-connecting-ip');
   });
 
   it('uses the header the edge set when the request came through the trusted proxy', () => {
@@ -58,7 +69,7 @@ describe('A078: choosing your own IP with a spoofed edge header', () => {
   });
 
   it('refuses X-Forwarded-For as the trusted header', () =>
-    expect(() => resolveClientIpHeader('X-Forwarded-For')).toThrow(AuthConfigError));
+    expect(() => resolveClientIpHeader('X-Forwarded-For', edge)).toThrow(AuthConfigError));
 
   it('keeps a direct client rotating spoofed headers in one per-IP budget', async () => {
     const { auth } = await registered();

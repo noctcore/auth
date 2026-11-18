@@ -76,16 +76,29 @@ export function resolveTrustedHops(value: TrustedHops, maxHops: number): Trusted
 const HEADER_NAME = /^[a-z0-9-]+$/u;
 
 /**
- * Checks a `clientIpHeader` setting at boot and returns it lowercased. Refuses
+ * Checks a `clientIpHeader` setting at boot and returns it lowercased.
+ *
+ * Refused unless `trustedHops` is a proxy list: a hop count never looks at
+ * the socket address, so a client that reaches the server directly would be
+ * taken for the edge and could write the header itself. Also refuses
  * `x-forwarded-for` (a list the hop rule already reads, never one address)
  * and anything that is not a header name.
  */
-export function resolveClientIpHeader(name: string | undefined): string | undefined {
+export function resolveClientIpHeader(
+  name: string | undefined,
+  trustedHops: TrustedHops,
+): string | undefined {
   if (name === undefined) return undefined;
 
-  const lower = name.trim().toLowerCase();
+  const lower = String(name).trim().toLowerCase();
 
   if (!HEADER_NAME.test(lower)) throw new AuthConfigError(`Invalid client IP header name: ${name}`);
+
+  if (!Array.isArray(trustedHops)) {
+    throw new AuthConfigError(
+      'clientIpHeader needs trustedHops as a list of your edge proxy addresses or ranges: with a hop count, a client that reaches the server directly could set the header',
+    );
+  }
 
   if (lower === 'x-forwarded-for') {
     throw new AuthConfigError(
@@ -121,11 +134,12 @@ function singleAddress(raw: string | readonly string[] | null | undefined): stri
  * the trusted proxies. With 0 hops (or an empty list) the header is ignored.
  *
  * `trustedHeader` is the value of a single-address header your edge sets,
- * such as `cf-connecting-ip`. It wins only when the request came through a
- * trusted proxy (a hop count above 0, or a socket address inside the trusted
- * list) and holds exactly one valid IP; otherwise it is ignored and the
+ * such as `cf-connecting-ip`. It wins only when `trustedHops` is a proxy
+ * list, the socket address is inside it and the value is exactly one valid
+ * IP; otherwise (a hop count included) it is ignored and the
  * `X-Forwarded-For` rule decides, so a client that reaches the server
- * directly cannot pick its IP with it.
+ * directly cannot pick its IP with it. The list must name the edge itself,
+ * or hops that accept traffic only from the edge.
  */
 export function clientIp(input: {
   remoteAddress: string | undefined;
@@ -139,7 +153,9 @@ export function clientIp(input: {
   const peerTrusted =
     typeof hops === 'number' ? hops > 0 : remote !== undefined && isTrustedAddress(remote, hops);
 
-  const fromHeader = peerTrusted ? singleAddress(input.trustedHeader) : undefined;
+  // A hop count never checks the socket, so the header needs a list.
+  const fromHeader =
+    peerTrusted && typeof hops !== 'number' ? singleAddress(input.trustedHeader) : undefined;
 
   if (fromHeader !== undefined) return fromHeader;
 
