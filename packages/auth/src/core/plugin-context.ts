@@ -18,6 +18,7 @@ import type { Logger, Metrics } from '../ports/logger';
 import type { AuthMailEvent } from '../ports/mail';
 import type { AuthUser, StoredSession, UserStore } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
+import type { NormalizedEmail } from '../shared/email';
 import type { AuthFailure, AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import type { Throttle } from '../throttle/throttle';
@@ -109,6 +110,18 @@ export interface PluginContext<U extends AuthUser, A> {
    * changes every handle (never a session).
    */
   sessionHandle(sessionId: string): string;
+  /**
+   * The address in the one spelling the configured `email.normalize` policy
+   * gives, or null when the policy refuses it. Every comparison of two
+   * addresses, every address written to a store and every counter key derived
+   * from one goes through this, never through a fixed function.
+   */
+  normalizeEmail(input: unknown): NormalizedEmail | null;
+  /**
+   * `normalizeEmail` for input from a request: the refusal carries the public
+   * code (`invalid_email`, or `email_not_ascii` under the `ascii` policy).
+   */
+  parseEmail(input: unknown): AuthResult<NormalizedEmail>;
   /** Refuses (`fresh_auth_required`) when the session's last credential proof is older than `session.freshAuthAge`. */
   requireFreshAuth(session: StoredSession<A>): AuthResult<void>;
   /**
