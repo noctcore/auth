@@ -20,6 +20,8 @@ A session is a bearer credential: whoever holds the value is the user. Two thing
 
 **Refreshing last-active without resurrecting.** Validating a session would otherwise write on every request. Instead, the stored last-active time is refreshed at most once per interval. The write is update-only-if-exists and keeps the record's remaining TTL. That detail matters: a plain "set" could recreate a record that was revoked a moment earlier, between the read and the write. Update-only-if-exists means a revoked session can never be resurrected by a late refresh, and keeping the TTL means a refresh never extends the absolute expiry.
 
+**A cap per user, and word of what it ends.** A user holds at most `session.maxPerUser` sessions (10 by default). Issuing one more evicts the oldest, after the new session is written, so sign-ins racing at the cap still end up within it. An evicted session is gone like a revoked one, but whatever the app holds for it (an open socket, a cache entry) is not, so the library names it: the issued session carries the ids in `evicted`, and `onSessionsRevoked` fires with reason `evicted` and the same ids. Each eviction is reported once: when two racing sign-ins both pick the same oldest session, only the one whose delete removed it reports it.
+
 ## Session handles
 
 A "where you're signed in" page needs a name for each session, so the user can sign one out. The store key would do, but it is the storage identity of a bearer secret: anything that reads the page (a script injected into it, a browser extension, a shared screen, a client log) would learn the key of every session on the account, and could match those keys against a leaked session store.

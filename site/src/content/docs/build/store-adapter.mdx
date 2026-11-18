@@ -30,6 +30,7 @@ The interfaces are in `packages/auth/src/ports/stores.ts`, with the guarantee ea
 **`SessionStore`** (sessions and revocation epochs)
 
 - `touch` replaces a session only if it still exists, keeping its TTL, and never brings back a deleted one, even when racing the delete on another connection.
+- `delete` returns the ids it removed (the ones that still existed), so that of two deletes racing on one session exactly one reports it. The per-user cap reports its evictions from this list. A store that returns nothing still works, but sign-ins racing at the cap may then report a session to `onSessionsRevoked` twice.
 - `bumpEpoch` is an atomic increment, and the epoch must outlive every session it guards. A store that can only guard sessions up to some age says so in `maxSessionTtlMs`, and `createAuth` refuses longer sessions.
 - Every record expires with its session: the session at its TTL, its index entry with it.
 
