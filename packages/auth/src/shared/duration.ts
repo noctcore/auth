@@ -30,3 +30,11 @@ export function toMilliseconds(duration: Duration): number {
 export function toSeconds(duration: Duration): number {
   return Math.ceil(toMilliseconds(duration) / 1000);
 }
+
+/**
+ * The latest expiry every store can hold, for a record that must never lapse
+ * on its own (an email revert lockout, a permanent login lock): the start of
+ * 9999-12-31 UTC, within every SQL date column (MySQL's DATETIME stops at
+ * year 9999) and a JavaScript Date, and as a Redis TTL far below its limit.
+ */
+export const LOCKOUT_EXPIRES_AT = Date.UTC(9999, 11, 31);
