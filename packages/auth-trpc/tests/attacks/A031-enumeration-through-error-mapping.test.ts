@@ -77,7 +77,7 @@ describe('A031 enumeration through error mapping', () => {
     expect(error.cause).toBeUndefined();
     expect(JSON.stringify(error.auth)).not.toContain('locked');
 
-    for (const code of ['account_locked', 'constructor', '__proto__', 42, undefined]) {
+    for (const code of ['account_suspended', 'constructor', '__proto__', 42, undefined]) {
       const unknown = toTRPCError({ code } as never);
 
       expect(unknown).toBeInstanceOf(AuthTRPCError);
@@ -88,5 +88,13 @@ describe('A031 enumeration through error mapping', () => {
     expect(AUTH_ERROR_TRPC_CODES.invalid_credentials).toBe(
       AUTH_ERROR_TRPC_CODES.invalid_second_factor,
     );
+  });
+
+  it('sends the opt-in account_locked answer with its retry time and nothing else', () => {
+    const error = toTRPCError({ code: 'account_locked', retryAfterSeconds: 300 });
+
+    expect(error.code).toBe('FORBIDDEN');
+    expect(error.message).toBe('account_locked');
+    expect(error.auth).toEqual({ code: 'account_locked', retryAfterSeconds: 300 });
   });
 });
