@@ -76,6 +76,7 @@ SessionManager
 TOKEN_BYTES
 Throttle
 accountKey
+assertExactOrigins
 checkPasswordPolicy
 clientIp
 createAuth
@@ -102,6 +103,7 @@ parseTrustProxy
 pwnedPasswords
 randomBytes
 refuse
+resolveSameSite
 secretsEqual
 serializeCookie
 sessionCookieName
@@ -119,6 +121,7 @@ verifyRequestOrigin
 
 ## declarations
 accountKey [function]: (normalizedEmail: string) => string
+assertExactOrigins [function]: (origins: readonly string[], option: string) => readonly string[]
 AttributeSchema [interface]<A>
     parse(value: unknown): A
 AuditSink [interface]
@@ -415,6 +418,7 @@ RequestMeta [interface]
     readonly ip: string
     readonly origin?: string | undefined
     readonly userAgent?: string | undefined
+resolveSameSite [function]: (config: SessionCookieConfig, origin: string | undefined) => SameSite
 RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'email-changed' | 'email-reverted' | 'evicted' | (string & {})
 SameSite [type] = 'lax' | 'strict' | 'none'
 SecretCipher [interface]
@@ -594,7 +598,7 @@ VerifiedEmail [interface]<A>
     readonly session: IssuedSession<A> | null
 verifyCsrfToken [function]: (input: { cookieToken: string | null | undefined; headerToken: string | null | undefined; binding: string; secrets: readonly Uint8Array[]; }) => boolean
 verifyDeviceToken [function]: (key: Uint8Array, token: unknown, check: DeviceCheck) => string | null
-verifyFetchSite [function]: (input: { method: string; secFetchSite: string | null | undefined; allowSameSite?: boolean; }) => boolean
+verifyFetchSite [function]: (input: { method: string; secFetchSite: string | null | undefined; allowSameSite?: boolean; origin?: string | null | undefined; crossSiteOrigins?: readonly string[]; }) => boolean
 verifyRequestOrigin [function]: (input: { method: string; origin: string | null | undefined; allowedOrigins: readonly string[]; }) => boolean
 WithPasswordHash [type]<U> = U & { readonly passwordHash: string | null; }
 

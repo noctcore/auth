@@ -64,6 +64,7 @@ CsrfMiddleware [class]
 CsrfOptions [interface]
     readonly allowSameSite?: boolean
     readonly allowedOrigins: readonly string[]
+    readonly crossSiteOrigins?: readonly string[]
     readonly exempt?: readonly (string | RegExp)[]
     readonly headerName?: string
     readonly secrets: readonly (string | Uint8Array)[]
@@ -74,7 +75,7 @@ NestAuth [interface]<U extends AuthUser = AuthUser>
     flush?(options?: { readonly timeout?: Duration; }): Promise<void>
     logout(input: { token: string | null | undefined; meta: RequestMeta; }): Promise<{ cookie: CookieSpec; }>
     readSessionToken(cookieHeader: string | null | undefined): string | null
-    readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; }
+    readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; /** * The session cookie config. The CSRF, pre-session and blank session * cookies take their `SameSite` from it, per request `Origin`, exactly as * the session cookie does. Missing (a hand-made stand-in): `Lax`. */ readonly cookie?: SessionCookieConfig; }
     readonly cookieName: string
     requireFreshAuth(session: StoredSession<unknown>): AuthResult<void>
     validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<StoredSession<unknown>>>
@@ -110,7 +111,8 @@ TrustProxyEnv [interface]
 ## types reached through the exports (not exported by name)
 ResolvedOptions [interface]
     readonly auth: NestAuth
-    readonly csrf: { readonly secrets: readonly Uint8Array[]; readonly allowedOrigins: readonly string[]; readonly allowSameSite: boolean; readonly exempt: readonly (string | RegExp)[]; readonly headerName: string; readonly cookieName: string; readonly preSessionCookieName: string; }
+    readonly cookie: SessionCookieConfig
+    readonly csrf: { readonly secrets: readonly Uint8Array[]; /** `allowedOrigins` and `crossSiteOrigins` together: every origin the Origin check accepts. */ readonly allowedOrigins: readonly string[]; readonly crossSiteOrigins: readonly string[]; readonly allowSameSite: boolean; readonly exempt: readonly (string | RegExp)[]; readonly headerName: string; readonly cookieName: string; readonly preSessionCookieName: string; }
     readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined
     readonly secure: boolean
     readonly shutdownTimeout: Duration
