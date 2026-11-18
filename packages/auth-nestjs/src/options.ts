@@ -96,8 +96,10 @@ export interface AuthModuleOptions<U extends AuthUser = AuthUser> {
   readonly trustedHops: TrustedHops;
   /**
    * A single-address header your edge sets, such as `cf-connecting-ip`.
-   * Read only when the request came through a trusted proxy and the value is
-   * exactly one IP; otherwise `X-Forwarded-For` decides. Off by default.
+   * Needs `trustedHops` as a list naming the edge (or hops that accept
+   * traffic only from it); read only when the socket address is inside that
+   * list and the value is exactly one IP, otherwise `X-Forwarded-For`
+   * decides. Off by default.
    */
   readonly clientIpHeader?: string;
   readonly csrf: CsrfOptions;
@@ -157,7 +159,7 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
   }
 
   const hops = resolveTrustedHops(trustedHops, MAX_TRUSTED_HOPS);
-  const clientIpHeader = resolveClientIpHeader(options.clientIpHeader);
+  const clientIpHeader = resolveClientIpHeader(options.clientIpHeader, hops);
 
   if (csrf.secrets.length === 0)
     throw new AuthConfigError('csrf.secrets needs at least one secret');
