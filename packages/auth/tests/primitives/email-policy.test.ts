@@ -220,6 +220,7 @@ describe('a custom normaliser', () => {
 
   it('is refused at startup when it merges different mailboxes', () => {
     const constant: EmailNormalizer = () => 'everyone@example.com';
+
     const domainOnly: EmailNormalizer = (email) => {
       const at = email.lastIndexOf('@');
 
@@ -230,6 +231,7 @@ describe('a custom normaliser', () => {
             .toLowerCase()}`
         : null;
     };
+
     const localOnly: EmailNormalizer = (email) => {
       const at = email.lastIndexOf('@');
 
@@ -281,6 +283,7 @@ describe('a custom normaliser', () => {
     expect(onError).toHaveBeenCalledWith('email.normalize threw; refusing the address', {
       errorName: 'Error',
     });
+
     expect(JSON.stringify(onError.mock.calls)).not.toContain('later');
   });
 });
