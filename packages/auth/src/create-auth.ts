@@ -19,6 +19,7 @@ import { isAddressHeld } from './flows/email-reservation';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
 import { clearLock, inspectLock, type LockTarget } from './flows/lockout-admin';
+import { permanentLockHooks } from './flows/permanent-lock';
 import { changePassword, reauthenticate } from './flows/password-change';
 import { resetPassword, verifyPasswordResetCode } from './flows/password-reset';
 import { processPasswordReset, requestPasswordReset } from './flows/password-reset-request';
@@ -116,15 +117,20 @@ export function createAuth<
 
   const tokens = new OneTimeTokens(config.stores.tokens, clock, random, codeKey);
 
+  const throttle = new Throttle(config.stores.counters, clock, config.throttle?.lockout);
+
   // Only a store that can change emails can have an account in revert lockout.
-  const coreHooks =
-    typeof config.stores.users.changeEmail === 'function' ? [lockoutHooks(tokens)] : [];
+  // A permanent lock without trusted devices refuses every session for the account.
+  const coreHooks = [
+    ...(typeof config.stores.users.changeEmail === 'function' ? [lockoutHooks(tokens)] : []),
+    ...(throttle.permanentTier && !throttle.permanentDevices ? [permanentLockHooks(throttle)] : []),
+  ];
 
   const core = new AuthCore<U, A>({
     users: config.stores.users,
     sessions,
     tokens,
-    throttle: new Throttle(config.stores.counters, clock, config.throttle?.lockout),
+    throttle,
     hasher: config.password.hasher,
     policy,
     breachCheck: config.password.breachCheck || undefined,

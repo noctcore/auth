@@ -54,6 +54,8 @@ export type RevocationReason =
   | 'email-changed'
   | 'email-reverted'
   | 'evicted'
+  /** The opt-in permanent lockout tier locked the account. */
+  | 'locked-permanently'
   | (string & {});
 
 export interface AuthHooks<U extends AuthUser, A> {

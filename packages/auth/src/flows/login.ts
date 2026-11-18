@@ -84,7 +84,7 @@ export async function login<U extends AuthUser, A>(
   const epoch = await core.sessions.readEpoch(found?.id ?? NO_SUCH_USER_ID);
   const credential = await core.users.findCredentialById(found?.id ?? NO_SUCH_USER_ID);
   const deviceId = core.verifyDevice(credential?.id ?? NO_SUCH_USER_ID, epoch, input.deviceToken);
-  const gate = await core.throttle.gateLogin(account, meta.ip, deviceId);
+  const gate = await core.throttle.gateLogin(account, meta.ip, deviceId, credential?.id);
   const verified = await core.verifyPassword(credential?.passwordHash, input.password);
 
   if (!gate.allowed) {
@@ -99,7 +99,7 @@ export async function login<U extends AuthUser, A>(
     // A device token lets only a correct password through a lock; a wrong one
     // counts against the devices' shared failures and the account-wide budget.
     if (gate.viaDevice) {
-      const { newLock } = await core.throttle.deviceFailed(account);
+      const { newLock } = await core.throttle.deviceFailed(account, credential?.id);
 
       notifyLock(core, credential, newLock, meta);
     }
@@ -161,19 +161,16 @@ async function emitFailure<U extends AuthUser, A>(
 /**
  * The answer to a refused gate: `invalid_credentials`, or with `revealLocked`
  * and a refusal that is the account's lock, `account_locked` (with
- * `retryAfterSeconds` when a temporary lock's end is known).
+ * `retryAfterSeconds` unless the lock is permanent).
  */
 function refusal<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   gate: Extract<LoginGate, { allowed: false }>,
 ): AuthFailure {
   if (!core.throttle.revealLocked || !gate.lock) return fail('invalid_credentials', gate.reason);
+  if ('permanent' in gate.lock) return fail('account_locked', gate.reason);
 
-  const { until } = gate.lock;
-
-  if (gate.lock.permanent || until === undefined) return fail('account_locked', gate.reason);
-
-  const retryAfterSeconds = Math.max(1, Math.ceil((until - core.clock.now()) / 1000));
+  const retryAfterSeconds = Math.max(1, Math.ceil((gate.lock.until - core.clock.now()) / 1000));
 
   return fail('account_locked', gate.reason, { retryAfterSeconds });
 }

@@ -16,6 +16,7 @@
  * session is issued, so the link alone never signs anyone in. Nothing is
  * required of the epoch on the way in: there is no session to check it against.
  */
+import { permanentLockRefusal } from './permanent-lock';
 import { PURPOSE, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { IssuedSession } from '../core/plugin-context';
@@ -132,6 +133,10 @@ export async function verifyEmailCode<U extends AuthUser, A>(
 
   if (limited) return limited;
 
+  const locked = await permanentLockRefusal(core, input.session.userId, 'session');
+
+  if (locked) return locked;
+
   const redemption = await core.tokens.redeemCode(
     PURPOSE.emailVerification,
     input.session.userId,
@@ -172,6 +177,12 @@ export async function verifyEmailLink<U extends AuthUser, A>(
 
     return fail('session_expired', 'verification_session_required');
   }
+
+  const locked = input.session
+    ? await permanentLockRefusal(core, input.session.userId, 'session')
+    : null;
+
+  if (locked) return locked;
 
   const redemption = await core.tokens.redeemLink(PURPOSE.emailVerification, input.token);
 
