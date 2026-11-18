@@ -5,9 +5,12 @@
  * task (`inline`) it is sent beside the audit write and awaited, so a hung
  * audit sink cannot hold it back and the task's slot covers the send.
  *
- * A lock in the opt-in permanent tier also runs the `onPermanentLock` hooks,
- * always off the response path, so a known account answers no slower.
+ * A lock in the opt-in permanent tier also ends the account's sessions (see
+ * permanent-lock.ts) and then runs the `onPermanentLock` hooks: off the
+ * response path on login, so a known account answers no slower, and awaited
+ * where the caller already holds the account's session (`inline` false).
  */
+import { endSessionsForPermanentLock } from './permanent-lock';
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
 import { describeError } from '../shared/describe-error';
@@ -35,7 +38,7 @@ export async function sendLockNotice<U extends AuthUser, A>(
     ? ({ type: 'account.locked_permanently', userId: owner.id } as const)
     : ({ type: 'account.locked', userId: owner.id, data: { until: lock.until } } as const);
 
-  if (permanent) runPermanentLockHooks(core, owner, meta);
+  if (permanent) await onPermanentLock(core, owner, meta, inline);
 
   // Off the response path (`inline`): the audit row and the mail are separate
   // tasks, so a hung audit sink cannot hold the mail back and `maxPending`
@@ -49,6 +52,31 @@ export async function sendLockNotice<U extends AuthUser, A>(
 
   await core.emit(audited, meta);
   core.mail(event);
+}
+
+/** Ends the sessions, then runs the hooks; in the background (never dropped) when `inline`. */
+async function onPermanentLock<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  owner: { readonly id: string; readonly email: string },
+  meta: RequestMeta,
+  inline: boolean,
+): Promise<void> {
+  if (!inline) {
+    await endSessionsForPermanentLock(core, owner.id);
+    runPermanentLockHooks(core, owner, meta);
+
+    return;
+  }
+
+  core.background(
+    'permanent lock',
+    async () => {
+      await endSessionsForPermanentLock(core, owner.id);
+      runPermanentLockHooks(core, owner, meta);
+    },
+    { userId: owner.id },
+    { uncapped: true },
+  );
 }
 
 function runPermanentLockHooks<U extends AuthUser, A>(

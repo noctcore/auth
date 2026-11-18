@@ -4,6 +4,7 @@
  * password spends the account-wide lockout budget, like a failed login.
  */
 import { sendLockNotice } from './lock-notice';
+import { permanentLockRefusal } from './permanent-lock';
 import { PASSWORD_PURPOSES, publicUser } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
@@ -134,6 +135,10 @@ async function proveCurrentPassword<U extends AuthUser, A>(
 
   if (limited) return limited;
 
+  const locked = await permanentLockRefusal(core, session.userId, 'session');
+
+  if (locked) return locked;
+
   const credential = await core.users.findCredentialById(session.userId);
 
   if (!credential) return fail('session_expired', 'user_missing');
@@ -142,7 +147,10 @@ async function proveCurrentPassword<U extends AuthUser, A>(
   const correct = await core.verifyPassword(credential.passwordHash, password);
 
   if (!correct) {
-    const { newLock } = await core.throttle.recordFailure(accountKey(credential.email));
+    const { newLock } = await core.throttle.recordFailure(
+      accountKey(credential.email),
+      credential.id,
+    );
 
     if (newLock) await sendLockNotice(core, credential, newLock, meta);
 

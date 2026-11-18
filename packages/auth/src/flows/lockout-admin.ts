@@ -4,9 +4,10 @@
  * here; a temporary lock lifts on its own or with a completed password reset,
  * and this lifts it too.
  *
- * Locks are keyed on the normalised address, so an address with no account
- * can be locked and inspected as well. Pass `userId` to target an account by
- * its current address. Call these only from an admin-only route: they answer
+ * Temporary locks are keyed on the normalised address, a permanent lock on
+ * the account's user id (on the address when it has no account), so an
+ * address with no account can be locked and inspected as well. Pass
+ * `userId` to target an account by its current address. Call these only from an admin-only route: they answer
  * for any address, so a public route would be an enumeration oracle.
  *
  * Guide: Learn, "Brute force and lockout".
@@ -50,13 +51,14 @@ export async function inspectLock<U extends AuthUser, A>(
 ): Promise<LockState> {
   const resolved = await resolve(core, target);
 
-  return resolved ? core.throttle.lockState(resolved.account) : UNLOCKED;
+  return resolved ? core.throttle.lockState(resolved.account, resolved.userId) : UNLOCKED;
 }
 
 /**
  * Lifts every lock on the target, the permanent one included, and resets its
  * backoff history. Returns the state it found, and writes an
- * `account.lock_cleared` audit row when there was a lock to lift.
+ * `account.lock_cleared` audit row when there was a lock to lift. Not atomic
+ * against a burst of failures running meanwhile, which can lock it again.
  */
 export async function clearLock<U extends AuthUser, A>(
   core: AuthCore<U, A>,
@@ -66,7 +68,7 @@ export async function clearLock<U extends AuthUser, A>(
 
   if (!resolved) return UNLOCKED;
 
-  const before = await core.throttle.clearPermanent(resolved.account);
+  const before = await core.throttle.clearPermanent(resolved.account, resolved.userId);
 
   if (before.locked) {
     await core.emit(

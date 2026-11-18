@@ -27,6 +27,7 @@ export interface LockoutOptions {
   /**
    * Opt in to a permanent tier: an account that keeps getting locked stays
    * locked until an admin clears it (`auth.lockout.clear`). Off by default.
+   * The count is of locks in a row, reset by a successful sign-in.
    *
    * Trade-off: anyone who knows an address can spread failures over many IPs
    * and lock its owner out for good on purpose (denial of service). Pair it
@@ -49,16 +50,24 @@ export interface LockoutOptions {
 
 export interface PermanentLockOptions {
   /**
-   * How many temporary locks in a row (each within `quietPeriod` of the last)
-   * an account may take: the next lock is permanent. At least 1.
+   * How many temporary locks in a row (each within `quietPeriod` of the last,
+   * with no successful sign-in between) an account may take: the next lock
+   * is permanent. At least 1.
    */
   readonly afterLocks: number;
   /**
-   * Whether the owner's trusted-device cookie still lets a correct password
-   * through a permanent lock, with the same device budgets as under a
-   * temporary one. Default true: an attacker can then lock out everyone but
-   * the owner on a device they signed in from. False makes the lock hold
-   * against every login until an admin clears it.
+   * Default true: the owner's trusted-device cookie still lets a correct
+   * password through a permanent lock, with the same device budgets as under
+   * a temporary one, so an attacker can lock out everyone but the owner on a
+   * device they signed in from. The lock deletes the account's sessions but
+   * keeps the device cookies; sessions from a device sign-in may
+   * reauthenticate and change the password, but no session may change the
+   * email until an admin clears the lock.
+   *
+   * False: the lock holds against every login. It bumps the revocation epoch
+   * (ending every session and device cookie), and refuses every session
+   * door (issuing a session by any path, reauthentication, password change,
+   * email change, email verification) until an admin clears it.
    */
   readonly trustedDevices?: boolean;
 }
@@ -96,11 +105,11 @@ export type LoginGate =
       readonly reason: 'locked' | 'permanently_locked' | 'account_ip_budget' | 'device_budget';
       readonly newLock?: NewLock;
       /**
-       * Set when the refusal is the account's lock, not one source's budget:
-       * `permanent` for the permanent tier, else `until` when the lock ends
-       * (when known).
+       * Set (only with `revealLocked`) when the refusal is the account's lock,
+       * not one source's budget: `permanent` for the permanent tier, else
+       * `until`, when the temporary lock ends.
        */
-      readonly lock?: { readonly until?: number; readonly permanent?: true };
+      readonly lock?: { readonly until: number } | { readonly permanent: true };
     };
 
 /** A second-factor attempt: let through, or refused (locked now or already). */

@@ -38,6 +38,7 @@
  */
 import { endLockout, lockOut } from './email-lockout';
 import { addressHolder, releaseAddress, reserveAddress } from './email-reservation';
+import { permanentLockRefusal } from './permanent-lock';
 import { PURPOSE, RESET_PURPOSES, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
@@ -107,6 +108,9 @@ export async function requestEmailChange<U extends AuthUser, A>(
   if (!checked.ok) return changeFailed(core, input.session.userId, checked, meta);
 
   const session = checked.value;
+  const locked = await permanentLockRefusal(core, session.userId, 'email-change');
+
+  if (locked) return changeFailed(core, session.userId, locked, meta);
 
   const newEmail = normalizeEmail(input.newEmail);
 
@@ -233,6 +237,11 @@ export async function confirmEmailChangeCode<U extends AuthUser, A>(
       input.meta,
     );
 
+  // A permanently locked account cannot finish a change either; the code is left unspent.
+  const locked = await permanentLockRefusal(core, live.userId, 'email-change');
+
+  if (locked) return changeFailed(core, live.userId, locked, input.meta);
+
   const redemption = await core.tokens.redeemCode(
     PURPOSE.emailChange,
     live.userId,
@@ -277,6 +286,10 @@ export async function confirmEmailChangeLink<U extends AuthUser, A>(
 
     return fail('session_expired', 'email_change_session_required');
   }
+
+  const locked = await permanentLockRefusal(core, live.userId, 'email-change');
+
+  if (locked) return changeFailed(core, live.userId, locked, input.meta);
 
   const redemption = await core.tokens.redeemLink(PURPOSE.emailChange, input.token);
 

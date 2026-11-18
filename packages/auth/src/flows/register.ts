@@ -40,6 +40,7 @@ import type { AuthUser } from '../ports/stores';
 import { normalizeEmail, type NormalizedEmail } from '../shared/email';
 import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
+import { accountKey } from '../throttle/counter-keys';
 
 export interface RegisterInput {
   readonly email: string;
@@ -77,6 +78,10 @@ export async function register<U extends AuthUser, A>(
 
   const held = await heldAddress(core, email);
   const user = held ? null : await core.users.create({ email, passwordHash: hashed.value });
+
+  // A permanent lock the address took while it had no account does not pass
+  // to its new owner. Run for a taken address too, so both do the same work.
+  await core.throttle.addressSignedUp(accountKey(email));
 
   if (!user) {
     if (settings.revealExisting) {
