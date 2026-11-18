@@ -334,6 +334,22 @@ describe('shutting down', () => {
 });
 
 describe('session handles', () => {
+  it('sends no raw evicted session id to the client when the cap evicts', async () => {
+    t = await boot({ maxPerUser: 1 });
+    const laptop = new Browser(t.app);
+    const phone = new Browser(t.app, '198.51.100.8');
+
+    await laptop.signIn();
+    const [evicted = ''] = (await t.stores.sessions.listByUser(t.userId)).map((s) => s.id);
+    const answer = await phone.signIn();
+
+    expect(evicted).toMatch(/^[0-9a-f]{64}$/u);
+    expect(await t.stores.sessions.get(evicted)).toBeNull();
+    // Neither the body nor any cookie the sign-in set names the evicted session.
+    expect(JSON.stringify([answer.body, answer.setCookies])).not.toContain(evicted);
+    expect((await laptop.send('GET', '/api/me')).status).toBe(401);
+  });
+
   it('lists handles, never store keys, and revokes another device by its handle', async () => {
     t = await boot();
     const laptop = new Browser(t.app);
