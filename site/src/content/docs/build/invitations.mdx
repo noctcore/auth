@@ -55,7 +55,7 @@ The mail is the `invitation` event: `to`, `scope`, `inviterId`, `url` and `expir
 
 | Flow | Answers | Refusals |
 | --- | --- | --- |
-| `create({ session, scope, email, payload?, meta })` | `{ invitation }`, or `{ invitation: null }` when one is already pending | `invalid_email`, `forbidden`, `rate_limited` |
+| `create({ session, scope, email, payload?, meta })` | `{ invitation }`, or `{ invitation: null }` when one is already pending | `invalid_email` (or `email_not_ascii` under the `ascii` email policy), `forbidden`, `rate_limited` |
 | `list({ session, scope, meta })` | the scope's live invitations | `forbidden` |
 | `revoke({ session, scope, id, meta })` | | `forbidden` (also for an unknown id) |
 | `accept({ session, token, meta })` | the invitation | `invalid_token`, `forbidden`, `rate_limited` |

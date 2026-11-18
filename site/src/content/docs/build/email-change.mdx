@@ -48,6 +48,7 @@ For support: find the account from the `email.change_revert_failed` row, free th
 | `fresh_auth_required` | request | the password prompt, then retry |
 | `second_factor_required`, `invalid_second_factor` | request | the code prompt, then retry |
 | `invalid_email` | request | "enter a valid address" (also for the account's current address) |
+| `email_not_ascii` | request | "use an address without accents or non-Latin letters" (only with `email.normalize: 'ascii'`) |
 | `forbidden` | request | an earlier change can still be reverted, the address was blocked after a revert, or one of your hooks refused |
 | `invalid_token` | confirm, revert | "the code or link is wrong or expired" |
 | `email_in_use` | confirm, revert | the address was taken meanwhile |
