@@ -1,4 +1,4 @@
-// A079: learning account state from the explicit locked answer.
+// A082: learning account state from the explicit locked answer.
 //
 // An app that turns on `revealLocked` answers `account_locked` for a locked
 // address. An attacker locks addresses on purpose and reads the answer, its
@@ -35,7 +35,7 @@ async function lock(t: Env, email: string) {
   await settled();
 }
 
-describe('A079: learning account state from the locked answer', () => {
+describe('A082: learning account state from the locked answer', () => {
   it('is off by default: a locked account answers like a wrong password', async () => {
     const t = await registered();
 
