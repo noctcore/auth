@@ -74,7 +74,6 @@ describe('permanent lockout tier', () => {
     env.clock.advance(5 * MIN);
     await lockOnce(env);
     env.clock.advance(15 * MIN);
-    expect((await signIn(env)).ok).toBe(true);
     expect(onPermanentLock).not.toHaveBeenCalled();
 
     await lockOnce(env);

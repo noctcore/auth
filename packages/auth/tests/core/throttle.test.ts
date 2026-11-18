@@ -495,7 +495,7 @@ describe('a lock holds the attempt counter', () => {
     ]);
   });
 
-  it('with revealLocked, leaves the end out when no running lock can be read', async () => {
+  it('with revealLocked, answers a lock it cannot read as a temporary one of baseLock, never permanent', async () => {
     const reveal = new Throttle(counters, clock, {
       perAccount: { limit: 1, window: '15m' },
       perAccountIp: { limit: 100, window: '15m' },
@@ -509,9 +509,11 @@ describe('a lock holds the attempt counter', () => {
     for (let i = 0; i < 4; i++) gates.push(await reveal.gateLogin(victim, `ip-${i}`));
 
     // The third attempt is refused under the lock; the fourth crosses again and finds it running.
+    const until = clock.now() + 5 * MIN;
+
     expect(gates.slice(2)).toEqual([
-      { allowed: false, reason: 'locked', lock: {} },
-      { allowed: false, reason: 'locked', lock: {} },
+      { allowed: false, reason: 'locked', lock: { until } },
+      { allowed: false, reason: 'locked', lock: { until } },
     ]);
   });
 
