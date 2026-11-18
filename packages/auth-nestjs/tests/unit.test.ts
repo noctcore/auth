@@ -4,7 +4,7 @@
 import 'reflect-metadata';
 import type { ExecutionContext, INestApplication } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthConfigError } from '@noctcore/auth';
+import { AuthConfigError, resolveSameSite, type SessionCookieConfig } from '@noctcore/auth';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { authMeta, currentSession, currentUser } from '../src/decorators';
 import { CsrfMiddleware } from '../src/csrf.middleware';
@@ -107,6 +107,22 @@ describe('resolveOptions', () => {
     const resolved = resolveOptions(options({ auth: standIn }));
 
     expect(resolved.cookie).toEqual({ secure: false });
+  });
+
+  it('refuses SameSite=None when the adapter cookies are not Secure, whatever the config claims', () => {
+    const real = makeAuth().auth;
+
+    const claims = (sameSite: NonNullable<SessionCookieConfig['sameSite']>) => ({
+      ...real,
+      context: { ...real.context, cookie: { secure: true, sameSite } },
+    });
+
+    expect(() => resolveOptions(options({ auth: claims('none') }))).toThrow(AuthConfigError);
+
+    const resolved = resolveOptions(options({ auth: claims(() => 'none') }));
+
+    expect(resolved.cookie.secure).toBe(false);
+    expect(() => resolveSameSite(resolved.cookie, 'app://desktop')).toThrow(AuthConfigError);
   });
 
   it('accepts a desktop-only allowlist, with crossSiteOrigins and no allowedOrigins', () => {
