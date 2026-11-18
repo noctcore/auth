@@ -314,6 +314,110 @@ describe('turnstile outcome', () => {
     expect(logger.error).toHaveBeenCalledTimes(3);
   });
 
+  describe('a hook failure that cannot even be logged', () => {
+    const unhandled = vi.fn();
+
+    afterEach(() => {
+      process.off('unhandledRejection', unhandled);
+      unhandled.mockClear();
+    });
+
+    const throwingLogger = {
+      warn: vi.fn(),
+      error: vi.fn(() => {
+        throw new Error('logger down');
+      }),
+    };
+
+    it.each<[string, Partial<TurnstileOptions>]>([
+      [
+        'a sync throw of a null-prototype object',
+        {
+          onResult: () => {
+            throw Object.create(null) as unknown;
+          },
+        },
+      ],
+      [
+        'a rejection with a null-prototype object',
+        {
+          onResult: async () => {
+            throw Object.create(null) as unknown;
+          },
+        },
+      ],
+      [
+        'a sync throw, with a logger that throws',
+        {
+          logger: throwingLogger,
+          onResult: () => {
+            throw new Error('meter down');
+          },
+        },
+      ],
+      [
+        'a rejection, with a logger that throws',
+        { logger: throwingLogger, onResult: () => Promise.reject(new Error('meter down')) },
+      ],
+    ])('%s leaves the verdict alone', async (_name, options) => {
+      process.on('unhandledRejection', unhandled);
+
+      const logger = { warn: vi.fn(), error: vi.fn() };
+
+      const verifier = turnstile({
+        secret: SECRET,
+        fetch: reply({ success: true }),
+        logger,
+        ...options,
+      });
+
+      expect(await verifier.verify(TOKEN, ctx)).toBe('pass');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).not.toHaveBeenCalled();
+
+      expect(
+        logger.error.mock.calls.length + throwingLogger.error.mock.calls.length,
+      ).toBeGreaterThan(0);
+
+      throwingLogger.error.mockClear();
+    });
+
+    it('logs a null-prototype throw with a placeholder', async () => {
+      const logger = { warn: vi.fn(), error: vi.fn() };
+
+      const verifier = turnstile({
+        secret: SECRET,
+        fetch: reply({ success: true }),
+        logger,
+        onResult: () => {
+          throw Object.create(null) as unknown;
+        },
+      });
+
+      await verifier.verify(TOKEN, ctx);
+
+      expect(logger.error).toHaveBeenCalledWith('onResult hook failed', {
+        provider: 'turnstile',
+        error: 'unprintable error',
+      });
+    });
+  });
+
+  it('labels a timeout by its name even when it is not an Error', async () => {
+    const plain = { name: 'TimeoutError', message: 'timed out' };
+
+    expect(await outcomeOf(fetchThrowing(plain))).toMatchObject({ reason: 'timeout' });
+    expect(await outcomeOf(fetchThrowing('down'))).toMatchObject({ reason: 'network-error' });
+  });
+
+  it('finds internal-error past the bounded error codes', async () => {
+    const codes = [...Array.from({ length: 12 }, (_, i) => `c${i}`), 'internal-error'];
+    const outcome = await outcomeOf(reply({ success: false, 'error-codes': codes }));
+
+    expect(outcome).toMatchObject({ verdict: 'unavailable', reason: 'provider-error' });
+    expect(outcome.errorCodes).toHaveLength(10);
+  });
+
   it('a slow hook does not hold the verdict up', async () => {
     const verifier = turnstile({
       secret: SECRET,
