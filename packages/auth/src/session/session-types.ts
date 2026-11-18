@@ -42,6 +42,7 @@ export type MintResult<A> =
       readonly ok: true;
       readonly token: string;
       readonly session: StoredSession<A>;
+      /** Ids of the user's older sessions this mint deleted to stay within `maxPerUser`, oldest first. */
       readonly evicted: readonly string[];
     }
   | { readonly ok: false; readonly reason: 'epoch_fence' };
