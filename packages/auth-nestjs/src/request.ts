@@ -5,9 +5,9 @@
  * - The session is validated through the core only (`readSessionToken` and
  *   `validateRequest`), once per request, so the middleware and the guard can
  *   never disagree about who is signed in.
- * - The client IP comes from the core's `clientIp`, counting the configured
- *   hops from the right of `X-Forwarded-For`; Express's `req.ip` and its
- *   trust-proxy setting are never read.
+ * - The client IP comes from the core's `clientIp`, through the configured
+ *   trusted proxies (and the trusted client IP header, when one is set);
+ *   Express's `req.ip` and its trust-proxy setting are never read.
  * - Nothing here trusts an identity the client wrote: the user id comes from
  *   the stored session, never from a header or the body.
  *
@@ -90,7 +90,10 @@ export function header(req: RawRequest, name: string): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export function requestMeta(req: RawRequest, trustedHops: number): RequestMeta {
+export function requestMeta(
+  req: RawRequest,
+  trust: Pick<ResolvedOptions, 'trustedHops' | 'clientIpHeader'>,
+): RequestMeta {
   const origin = header(req, 'origin');
 
   return {
@@ -98,7 +101,9 @@ export function requestMeta(req: RawRequest, trustedHops: number): RequestMeta {
       clientIp({
         remoteAddress: req.socket?.remoteAddress,
         forwardedFor: req.headers['x-forwarded-for'],
-        trustedHops,
+        trustedHops: trust.trustedHops,
+        trustedHeader:
+          trust.clientIpHeader === undefined ? undefined : req.headers[trust.clientIpHeader],
       }) ?? 'unknown',
     userAgent: header(req, 'user-agent') ?? '',
     ...(origin === undefined ? {} : { origin }),
@@ -119,7 +124,7 @@ export function sessionState(req: RawRequest, options: ResolvedOptions): Promise
 }
 
 async function resolveSession(req: RawRequest, options: ResolvedOptions): Promise<SessionState> {
-  const meta = requestMeta(req, options.trustedHops);
+  const meta = requestMeta(req, options);
   const token = options.auth.readSessionToken(header(req, 'cookie'));
 
   if (token === null) return { token, session: null, meta };
