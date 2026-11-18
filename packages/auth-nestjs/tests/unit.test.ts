@@ -98,6 +98,25 @@ describe('resolveOptions', () => {
     ).toThrow(AuthConfigError);
   });
 
+  it('falls back to Lax cookies for a stand-in auth with no cookie config', () => {
+    const real = makeAuth().auth;
+    const standIn = { ...real, context: { ...real.context, cookie: undefined } };
+    const resolved = resolveOptions(options({ auth: standIn }));
+
+    expect(resolved.cookie).toEqual({ secure: false });
+  });
+
+  it('accepts a desktop-only allowlist, with crossSiteOrigins and no allowedOrigins', () => {
+    const resolved = resolveOptions(
+      options({
+        csrf: { secrets: [CSRF_SECRET], allowedOrigins: [], crossSiteOrigins: ['app://desktop'] },
+      }),
+    );
+
+    expect(resolved.csrf.allowedOrigins).toEqual(['app://desktop']);
+    expect(resolved.csrf.crossSiteOrigins).toEqual(['app://desktop']);
+  });
+
   it('takes secrets as bytes, and names the cookies __Host- when the session cookie is', () => {
     const secure = { ...makeAuth().auth, cookieName: '__Host-session' };
 
