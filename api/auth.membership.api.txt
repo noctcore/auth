@@ -52,13 +52,13 @@ StoredMember [interface]
 ## types reached through the exports (not exported by name)
 AttributeSchema [interface]<A>
     parse(value: unknown): A
-AuthErrorCode [type] = 'invalid_credentials' /** Unknown, expired, used or exhausted token or code. */ | 'invalid_token' | 'invalid_email' /** Shorter than the policy's minimum. */ | 'weak_password' | 'password_too_long' | 'breached_password' /** The signed-in account has no password to check (for example a social-only account). */ | 'password_not_set' /** Only when the app opted into `registration.revealExisting`. */ | 'email_in_use' | 'captcha_failed' /** The captcha provider could not answer: an outage, not the user's mistake. */ | 'captcha_unavailable' | 'rate_limited' | 'session_expired' | 'fresh_auth_required' | 'second_factor_required' | 'invalid_second_factor' /** A hook refused for a reason that is safe to name only generically. */ | 'forbidden' /** The membership plugin: an admin action aimed at the acting user. */ | 'self_target' /** The membership plugin: the change would leave the scope without an admin. */ | 'last_admin'
+AuthErrorCode [type] = 'invalid_credentials' /** Unknown, expired, used or exhausted token or code. */ | 'invalid_token' | 'invalid_email' /** Shorter than the policy's minimum. */ | 'weak_password' | 'password_too_long' | 'breached_password' /** The signed-in account has no password to check (for example a social-only account). */ | 'password_not_set' /** Only when the app opted into `registration.revealExisting`. */ | 'email_in_use' /** Only with `throttle.lockout.revealLocked`: the account is locked (`retryAfterSeconds` when temporary). */ | 'account_locked' | 'captcha_failed' /** The captcha provider could not answer: an outage, not the user's mistake. */ | 'captcha_unavailable' | 'rate_limited' | 'session_expired' | 'fresh_auth_required' | 'second_factor_required' | 'invalid_second_factor' /** A hook refused for a reason that is safe to name only generically. */ | 'forbidden' /** The membership plugin: an admin action aimed at the acting user. */ | 'self_target' /** The membership plugin: the change would leave the scope without an admin. */ | 'last_admin'
 AuthEvent [interface]
     readonly data?: Readonly<Record<string, string | number | boolean>>
     readonly reason?: string
     readonly type: AuthEventType
     readonly userId?: string
-AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' /** Email change: a request (uniform whether or not the new address is taken), a refusal, a confirmed change. */ | 'email.change_requested' | 'email.change_failed' | 'email.changed' /** A revert link restored the old address. Carries `review: true`: look at the account. */ | 'email.change_reverted' | 'email.change_revert_failed' /** Support ended an account's lockout after a revert that could not finish. Carries `review: true`. */ | 'email.revert_lockout_cleared' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' | 'rate_limit.exceeded' /** The two-factor plugin's events. */ | 'two_factor.enrollment_started' | 'two_factor.enabled' | 'two_factor.disabled' | 'two_factor.verified' | 'two_factor.failed' | 'two_factor.refused' | 'two_factor.step_up' | 'two_factor.recovery_code_used' | 'two_factor.recovery_codes_generated' | 'two_factor.trusted_device_added' | 'two_factor.trusted_devices_revoked' /** The membership plugin's events. `userId` is the acting admin, `data.target` the member. */ | 'membership.added' | 'membership.role_changed' | 'membership.removed' | 'membership.refused' | 'invitation.created' | 'invitation.deduplicated' | 'invitation.revoked' | 'invitation.accepted' | 'invitation.refused'
+AuthEventType [type] = 'register.created' | 'register.existing' | 'register.refused' | 'login.success' | 'login.failure' | 'login.challenge' | 'logout' | 'session.created' | 'session.revoked' | 'sessions.revoked' | 'email.verification_sent' | 'email.verified' | 'email.verification_failed' /** Email change: a request (uniform whether or not the new address is taken), a refusal, a confirmed change. */ | 'email.change_requested' | 'email.change_failed' | 'email.changed' /** A revert link restored the old address. Carries `review: true`: look at the account. */ | 'email.change_reverted' | 'email.change_revert_failed' /** Support ended an account's lockout after a revert that could not finish. Carries `review: true`. */ | 'email.revert_lockout_cleared' | 'password.reset_requested' | 'password.reset_request_ignored' | 'password.reset_code_verified' | 'password.reset_code_failed' | 'password.reset' | 'password.reset_failed' | 'password.changed' | 'password.change_failed' | 'password.rehashed' /** The breached-password check could not answer; the password was accepted unchecked. */ | 'password.breach_check_unavailable' | 'account.locked' /** The opt-in permanent tier locked the account; only an admin clears it. */ | 'account.locked_permanently' /** An admin cleared the account's lock (`auth.lockout.clear`). */ | 'account.lock_cleared' | 'rate_limit.exceeded' /** The two-factor plugin's events. */ | 'two_factor.enrollment_started' | 'two_factor.enabled' | 'two_factor.disabled' | 'two_factor.verified' | 'two_factor.failed' | 'two_factor.refused' | 'two_factor.step_up' | 'two_factor.recovery_code_used' | 'two_factor.recovery_codes_generated' | 'two_factor.trusted_device_added' | 'two_factor.trusted_devices_revoked' /** The membership plugin's events. `userId` is the acting admin, `data.target` the member. */ | 'membership.added' | 'membership.role_changed' | 'membership.removed' | 'membership.refused' | 'invitation.created' | 'invitation.deduplicated' | 'invitation.revoked' | 'invitation.accepted' | 'invitation.refused'
 AuthFailure [interface]
     readonly code: AuthErrorCode
     readonly ok: false
@@ -72,10 +72,11 @@ AuthHooks [interface]<U extends AuthUser, A>
     beforePasswordResetRequest: (context: { user: U; }) => MaybePromise<HookResult>
     beforeSessionCreate: (context: { user: U; via: IssueVia; attributes: A; meta: RequestMeta; }) => MaybePromise<HookResult>
     loginChallenge: (context: { user: U; rememberMe: boolean; epoch: number; meta: RequestMeta; }) => MaybePromise<{ challenge: string; methods: readonly string[]; } | null | undefined>
+    onPermanentLock: (context: { userId: string; email: string; meta: RequestMeta; }) => MaybePromise<void>
     onSessionValidate: (context: { session: StoredSession<A>; meta: RequestMeta | undefined; }) => MaybePromise<HookResult>
     onSessionsRevoked: (context: { userId: string; sessionIds: readonly string[]; reason: RevocationReason; /** The scope a scoped change concerns (a membership change in that scope); absent otherwise. */ scope?: string; }) => MaybePromise<void>
     sessionAttributes: (context: { user: U; via: IssueVia; inherited: A | undefined; }) => MaybePromise<Partial<A>>
-AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly dedupeKey: string; } /** An email change: the code or link that proves the new address, sent to that address. */ | { readonly type: 'email-change-confirm'; readonly to: string; readonly userId: string; /** Set for link confirmation. */ readonly url?: string; /** Set for code confirmation. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } /** * An email change to an address that already has an account: the uniform * answer's mail, sent to that address. `userId` is the account that holds the address. */ | { readonly type: 'email-change-in-use'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } /** An email change was confirmed: sent to the address it replaced. `revertUrl` undoes it until `revertExpiresAt`. */ | { readonly type: 'email-changed'; readonly to: string; readonly userId: string; readonly newEmail: string; readonly at: Date; readonly revertUrl: string; readonly revertExpiresAt: Date; readonly dedupeKey: string; } /** A revert link was used: the address is back, every session ended and the password must be reset. */ | { readonly type: 'email-change-reverted'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a second factor was turned on for the account. */ | { readonly type: 'two-factor-enabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: the second factor was turned off. */ | { readonly type: 'two-factor-disabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */ | { readonly type: 'recovery-code-used'; readonly to: string; readonly userId: string; readonly remaining: number; readonly at: Date; readonly dedupeKey: string; } /** * The invitations plugin: an invitation to `scope`. No `userId`: the address * may have no account, and the mail is the same whether it has one or not. */ | { readonly type: 'invitation'; readonly to: string; readonly scope: string; readonly inviterId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; }
+AuthMailEvent [type] = { readonly type: 'verify-email'; readonly to: string; readonly userId: string; /** Set for link verification. */ readonly url?: string; /** Set for code verification. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset'; readonly to: string; readonly userId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-reset-code'; readonly to: string; readonly userId: string; readonly code: string; readonly expiresAt: Date; readonly dedupeKey: string; } | { readonly type: 'password-changed'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** Registration of an address that already has an account: the uniform answer's mail. */ | { readonly type: 'account-exists'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } /** * A new lock on the account. With `permanent` (the opt-in permanent tier) * it holds until an admin clears it and `until` is only the far-future * expiry it is stored with: say so instead of printing the date. */ | { readonly type: 'lockout'; readonly to: string; readonly userId: string; readonly until: Date; readonly permanent?: true; readonly dedupeKey: string; } /** An email change: the code or link that proves the new address, sent to that address. */ | { readonly type: 'email-change-confirm'; readonly to: string; readonly userId: string; /** Set for link confirmation. */ readonly url?: string; /** Set for code confirmation. */ readonly code?: string; readonly expiresAt: Date; readonly dedupeKey: string; } /** * An email change to an address that already has an account: the uniform * answer's mail, sent to that address. `userId` is the account that holds the address. */ | { readonly type: 'email-change-in-use'; readonly to: string; readonly userId: string; readonly dedupeKey: string; } /** An email change was confirmed: sent to the address it replaced. `revertUrl` undoes it until `revertExpiresAt`. */ | { readonly type: 'email-changed'; readonly to: string; readonly userId: string; readonly newEmail: string; readonly at: Date; readonly revertUrl: string; readonly revertExpiresAt: Date; readonly dedupeKey: string; } /** A revert link was used: the address is back, every session ended and the password must be reset. */ | { readonly type: 'email-change-reverted'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a second factor was turned on for the account. */ | { readonly type: 'two-factor-enabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: the second factor was turned off. */ | { readonly type: 'two-factor-disabled'; readonly to: string; readonly userId: string; readonly at: Date; readonly dedupeKey: string; } /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */ | { readonly type: 'recovery-code-used'; readonly to: string; readonly userId: string; readonly remaining: number; readonly at: Date; readonly dedupeKey: string; } /** * The invitations plugin: an invitation to `scope`. No `userId`: the address * may have no account, and the mail is the same whether it has one or not. */ | { readonly type: 'invitation'; readonly to: string; readonly scope: string; readonly inviterId: string; readonly url: string; readonly expiresAt: Date; readonly dedupeKey: string; }
 AuthPlugin [interface]<Id extends string = string, F extends object = object>
     readonly flows?: (context: PluginContext<any, any>) => F
     readonly hooks?: HookInput<any, any>
@@ -115,7 +116,7 @@ DistributiveOmit [type]<T, K extends PropertyKey> = T extends unknown ? Omit<T, 
 Door [type] = 'login' | 'register' | 'password-reset-request' /** Per user: reset mails one account can receive. */ | 'password-reset-mail' | 'password-reset' | 'password-reset-code' | 'email-verification' /** Per user: verification mails one account can request. */ | 'email-verification-request' /** Per user. */ | 'password-change' /** Per user: re-entering the password for a sensitive action. */ | 'reauthenticate' /** * Per address: reset-code guesses for one email, known or not, from all IPs. * Trade-off: anyone who knows an address can spend this budget and block * that address's code-mode reset for 15 minutes. Link-mode reset (the * default) does not use this door and is unaffected. */ | 'password-reset-code-address' /** Per user: email change requests one account can make. */ | 'email-change-request' /** * Per address: email change requests naming one new address, from every * account. Keyed like the lockout, on a hash of the normalised address. */ | 'email-change-address' /** Confirming an email change with a code or a link. */ | 'email-change' /** Using a revert link. */ | 'email-change-revert'
 Duration [type] = number | `${number}${'ms' | 's' | 'm' | 'h' | 'd'}`
 EmailChangeResult [type] = 'changed' | 'taken' | 'stale'
-FactorGate [type] = { readonly allowed: true; } | { readonly allowed: false; readonly newLock?: { until: number; }; }
+FactorGate [type] = { readonly allowed: true; } | { readonly allowed: false; readonly newLock?: NewLock; }
 Hit [interface]
     readonly allowed: boolean
     readonly count: number
@@ -145,11 +146,17 @@ LockoutOptions [interface]
     readonly perAccount?: RateLimitRule
     readonly perAccountIp?: RateLimitRule
     readonly perDevice?: RateLimitRule
+    readonly permanent?: PermanentLockOptions
     readonly quietPeriod?: Duration
+    readonly revealLocked?: boolean
+LockState [interface]
+    readonly locked: boolean
+    readonly permanent: boolean
+    readonly until: Date | null
 Logger [interface]
     error(message: string, context?: Record<string, unknown>): void
     warn(message: string, context?: Record<string, unknown>): void
-LoginGate [type] = { readonly allowed: true; readonly viaDevice?: true; } | { readonly allowed: false; readonly reason: 'locked' | 'account_ip_budget' | 'device_budget'; readonly newLock?: { until: number; }; }
+LoginGate [type] = { readonly allowed: true; readonly viaDevice?: true; } | { readonly allowed: false; readonly reason: 'locked' | 'permanently_locked' | 'account_ip_budget' | 'device_budget'; readonly newLock?: NewLock; /** * Set when the refusal is the account's lock, not one source's budget: * `permanent` for the permanent tier, else `until` when the lock ends * (when known). */ readonly lock?: { readonly until?: number; readonly permanent?: true; }; }
 MaybePromise [type]<T> = T | Promise<T>
 Metrics [interface]
     count(name: string, labels?: Readonly<Record<string, string>>): void
@@ -162,6 +169,9 @@ MintInput [interface]<A>
     readonly rememberMe: boolean
     readonly userId: string
 MintResult [type]<A> = { readonly ok: true; readonly token: string; readonly session: StoredSession<A>; readonly evicted: readonly string[]; } | { readonly ok: false; readonly reason: 'epoch_fence'; }
+NewLock [interface]
+    readonly permanent?: true
+    readonly until: number
 NormalizedEmail [type] = string & { readonly __normalizedEmail: true; }
 OneTimeTokens [class]
     (new) (store: TokenStore, clock: Clock, random: RandomSource, secret: Uint8Array | undefined): OneTimeTokens
@@ -188,6 +198,9 @@ PasswordHasher [interface]
 PasswordPolicy [interface]
     readonly maxLength: number
     readonly minLength: number
+PermanentLockOptions [interface]
+    readonly afterLocks: number
+    readonly trustedDevices?: boolean
 PluginContext [interface]<U extends AuthUser, A>
     checkCaptcha(door: CaptchaDoor, token: string | undefined, meta: RequestMeta): Promise<AuthFailure | null>
     emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
@@ -296,12 +309,15 @@ StoredToken [interface]
 Throttle [class]
     (new) (counters: CounterStore, clock: Clock, lockout?: LockoutOptions): Throttle
     clearAccount(account: string): Promise<void>
-    deviceFailed(account: string): Promise<{ newLock?: { until: number; }; }>
+    clearPermanent(account: string): Promise<LockState>
+    deviceFailed(account: string): Promise<{ newLock?: NewLock; }>
     factorSucceeded(account: string): Promise<void>
     gateFactor(account: string, rule: RateLimitRule): Promise<FactorGate>
     gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate>
     hit(scope: string, rule: RateLimitRule): Promise<Hit>
+    lockState(account: string): Promise<LockState>
     loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void>
+    private held
     private lock
     private readonly baseLockMs
     private readonly clock
@@ -310,9 +326,13 @@ Throttle [class]
     private readonly perAccount
     private readonly perAccountIp
     private readonly perDevice
+    private readonly permanentAfter
+    private readonly permanentDevices
     private readonly quietPeriodMs
+    private runningLock
     readonly deviceMaxAgeMs: number
-    recordFailure(account: string): Promise<{ newLock?: { until: number; }; }>
+    readonly revealLocked: boolean
+    recordFailure(account: string): Promise<{ newLock?: NewLock; }>
 TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; readonly data: Readonly<Record<string, string>>; } | { readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch'; readonly namedUserId: string; } | { readonly status: 'unknown'; }
 TokenStore [interface]
     consume(purpose: string, hash: string): Promise<StoredToken | null>
