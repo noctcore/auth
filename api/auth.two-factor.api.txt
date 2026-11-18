@@ -250,6 +250,7 @@ PermanentLockOptions [interface]
 PluginContext [interface]<U extends AuthUser, A>
     checkCaptcha(door: CaptchaDoor, token: string | undefined, meta: RequestMeta): Promise<AuthFailure | null>
     emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
+    findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
     hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>
     issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>
     keyedHash(purpose: string, message: string): string
