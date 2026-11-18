@@ -67,7 +67,7 @@ export class SessionCookies {
       ? principal.token
       : this.options.auth.readSessionToken(req.headers.cookie);
 
-    const meta = principal?.meta ?? requestMeta(req, this.options.trustedHops);
+    const meta = principal?.meta ?? requestMeta(req, this.options);
     const { cookie } = await this.options.auth.logout({ token, meta });
     const sameSite = sameSiteFor(req, this.options);
     const fresh = newPreSession(this.options, sameSite);

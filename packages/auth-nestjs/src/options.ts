@@ -16,6 +16,9 @@ import {
   type RequestMeta,
   type SessionCookieConfig,
   type StoredSession,
+  type TrustedHops,
+  resolveClientIpHeader,
+  resolveTrustedHops,
   toMilliseconds,
 } from '@noctcore/auth';
 
@@ -86,9 +89,17 @@ export interface AuthModuleOptions<U extends AuthUser = AuthUser> {
   readonly auth: NestAuth<U>;
   /**
    * How many reverse proxies sit in front of the app, counted from the right
-   * of `X-Forwarded-For` (see `trustedHopsFromEnv`). 0 when none.
+   * of `X-Forwarded-For` (see `trustedHopsFromEnv`), 0 when none; or a list
+   * of proxy addresses, CIDR ranges and the presets `loopback`, `linklocal`
+   * and `uniquelocal`, trusted by the socket address.
    */
-  readonly trustedHops: number;
+  readonly trustedHops: TrustedHops;
+  /**
+   * A single-address header your edge sets, such as `cf-connecting-ip`.
+   * Read only when the request came through a trusted proxy and the value is
+   * exactly one IP; otherwise `X-Forwarded-For` decides. Off by default.
+   */
+  readonly clientIpHeader?: string;
   readonly csrf: CsrfOptions;
   /**
    * The user's roles, for `@RequireRole()`. Called on every request that
@@ -109,7 +120,8 @@ export const DEFAULT_SHUTDOWN_TIMEOUT: Duration = '10s';
 /** The options after the boot checks, with secrets as bytes and cookie names fixed. */
 export interface ResolvedOptions {
   readonly auth: NestAuth;
-  readonly trustedHops: number;
+  readonly trustedHops: TrustedHops;
+  readonly clientIpHeader: string | undefined;
   readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined;
   readonly secure: boolean;
   /** The session cookie config the adapter's cookies take their `SameSite` from. */
@@ -144,11 +156,8 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     throw new AuthConfigError('AuthModule needs the createAuth(...) result as `auth`');
   }
 
-  if (!Number.isSafeInteger(trustedHops) || trustedHops < 0 || trustedHops > MAX_TRUSTED_HOPS) {
-    throw new AuthConfigError(
-      `trustedHops must be a whole number of proxies from 0 to ${MAX_TRUSTED_HOPS}`,
-    );
-  }
+  const hops = resolveTrustedHops(trustedHops, MAX_TRUSTED_HOPS);
+  const clientIpHeader = resolveClientIpHeader(options.clientIpHeader);
 
   if (csrf.secrets.length === 0)
     throw new AuthConfigError('csrf.secrets needs at least one secret');
@@ -189,7 +198,8 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
 
   return {
     auth,
-    trustedHops,
+    trustedHops: hops,
+    clientIpHeader,
     roles: options.roles as ResolvedOptions['roles'],
     secure,
     cookie,

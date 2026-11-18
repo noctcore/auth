@@ -9,7 +9,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { authMeta, currentSession, currentUser } from '../src/decorators';
 import { CsrfMiddleware } from '../src/csrf.middleware';
 import { resolveOptions, type AuthModuleOptions } from '../src/options';
-import { appendCookie, header, rawRequest, rawResponse, type RawResponse } from '../src/request';
+import {
+  appendCookie,
+  header,
+  rawRequest,
+  rawResponse,
+  requestMeta,
+  type RawResponse,
+} from '../src/request';
 import { SessionCookies } from '../src/session-cookies';
 import { SessionGuard } from '../src/session.guard';
 import {
@@ -19,7 +26,7 @@ import {
   RequireRole,
   trustedHopsFromEnv,
 } from '../src';
-import { boot, CSRF_SECRET, makeAuth, ORIGIN, type Booted } from './support';
+import { boot, Browser, CSRF_SECRET, makeAuth, ORIGIN, type Booted } from './support';
 
 function options(overrides: Partial<AuthModuleOptions> = {}): AuthModuleOptions {
   return {
@@ -188,9 +195,34 @@ describe('trustedHopsFromEnv', () => {
     );
   });
 
-  it('refuses "true" and anything that is not a hop count', () => {
-    expect(() => trustedHopsFromEnv({ TRUST_PROXY: 'true' })).toThrow(AuthConfigError);
-    expect(() => trustedHopsFromEnv({ TRUST_PROXY: 'loopback' })).toThrow(/number of proxy hops/u);
+  it('refuses "true", unknown names and malformed ranges', () => {
+    for (const bad of ['true', 'localhost', 'loopback, nope', '10.0.0.0/33', '1, loopback'])
+      expect(() => trustedHopsFromEnv({ TRUST_PROXY: bad }), bad).toThrow(AuthConfigError);
+  });
+
+  it('expands each Express preset to the ranges Express uses', () => {
+    expect(trustedHopsFromEnv({ TRUST_PROXY: 'loopback' })).toEqual(['127.0.0.1/8', '::1/128']);
+
+    expect(trustedHopsFromEnv({ TRUST_PROXY: 'linklocal' })).toEqual([
+      '169.254.0.0/16',
+      'fe80::/10',
+    ]);
+
+    expect(trustedHopsFromEnv({ TRUST_PROXY: 'uniquelocal' })).toEqual([
+      '10.0.0.0/8',
+      '172.16.0.0/12',
+      '192.168.0.0/16',
+      'fc00::/7',
+    ]);
+  });
+
+  it('mixes presets with explicit addresses and CIDR ranges', () => {
+    expect(
+      trustedHopsFromEnv({
+        TRUST_PROXY: 'loopback, 203.0.113.0/24, 2001:db8::/32, 198.51.100.9',
+        NODE_ENV: 'production',
+      }),
+    ).toEqual(['127.0.0.1/8', '::1/128', '203.0.113.0/24', '2001:db8::/32', '198.51.100.9']);
   });
 });
 
@@ -201,6 +233,19 @@ describe('configureTrustProxy', () => {
 
     expect(configureTrustProxy(app as unknown as INestApplication, { TRUST_PROXY: '1' })).toBe(1);
     expect(set).toHaveBeenCalledWith('trust proxy', 1);
+  });
+
+  it('sets the same address list on Express and returns it', () => {
+    const set = vi.fn();
+    const app = { getHttpAdapter: () => ({ getInstance: () => ({ set }) }) };
+
+    expect(
+      configureTrustProxy(app as unknown as INestApplication, {
+        TRUST_PROXY: 'loopback, 10.0.0.0/8',
+      }),
+    ).toEqual(['127.0.0.1/8', '::1/128', '10.0.0.0/8']);
+
+    expect(set).toHaveBeenCalledWith('trust proxy', ['127.0.0.1/8', '::1/128', '10.0.0.0/8']);
   });
 
   it('refuses an adapter without Express settings', () => {
@@ -512,5 +557,85 @@ describe('SessionCookies.signOut without the guard', () => {
     });
 
     expect(res.getHeader('set-cookie')).toHaveLength(3);
+  });
+});
+
+describe('trusted proxies by address and the client IP header', () => {
+  let t: Booted | undefined;
+
+  afterEach(async () => {
+    await t?.app.close();
+    t = undefined;
+  });
+
+  const peer = (remoteAddress: string, headers: Record<string, string> = {}) => ({
+    headers,
+    socket: { remoteAddress },
+  });
+
+  it('checks both settings at boot', () => {
+    const resolved = resolveOptions(
+      options({ trustedHops: ['loopback'], clientIpHeader: 'CF-Connecting-IP' }),
+    );
+
+    expect(resolved.trustedHops).toEqual(['127.0.0.1/8', '::1/128']);
+    expect(resolved.clientIpHeader).toBe('cf-connecting-ip');
+    expect(resolveOptions(options()).clientIpHeader).toBeUndefined();
+
+    expect(() => resolveOptions(options({ trustedHops: ['localhost'] }))).toThrow(AuthConfigError);
+
+    expect(() => resolveOptions(options({ clientIpHeader: 'x-forwarded-for' }))).toThrow(
+      AuthConfigError,
+    );
+  });
+
+  it('reads the header through a trusted hop and ignores it from any other peer', () => {
+    const trust = resolveOptions(
+      options({ trustedHops: ['10.0.0.0/8'], clientIpHeader: 'cf-connecting-ip' }),
+    );
+
+    expect(requestMeta(peer('10.0.0.2', { 'cf-connecting-ip': '198.51.100.7' }), trust).ip).toBe(
+      '198.51.100.7',
+    );
+
+    expect(
+      requestMeta(peer('203.0.113.50', { 'cf-connecting-ip': '198.51.100.7' }), trust).ip,
+    ).toBe('203.0.113.50');
+
+    expect(
+      requestMeta(
+        peer('10.0.0.2', { 'cf-connecting-ip': 'garbage', 'x-forwarded-for': '203.0.113.9' }),
+        trust,
+      ).ip,
+    ).toBe('203.0.113.9');
+  });
+
+  it('serves the header IP to the flows when the test client is a trusted proxy', async () => {
+    t = await boot({ options: { trustedHops: ['loopback'], clientIpHeader: 'cf-connecting-ip' } });
+    const browser = new Browser(t.app, '203.0.113.50');
+
+    await browser.signIn();
+
+    const meta = await browser.send('GET', '/api/meta', undefined, {
+      'cf-connecting-ip': '198.51.100.7',
+    });
+
+    expect(meta.body['ip']).toBe('198.51.100.7');
+  });
+
+  it('ignores the header when the test client is not a trusted proxy', async () => {
+    t = await boot({
+      options: { trustedHops: ['10.0.0.0/8'], clientIpHeader: 'cf-connecting-ip' },
+    });
+
+    const browser = new Browser(t.app, '203.0.113.50');
+
+    await browser.signIn();
+
+    const ip = (
+      await browser.send('GET', '/api/meta', undefined, { 'cf-connecting-ip': '198.51.100.7' })
+    ).body['ip'];
+
+    expect(String(ip)).toMatch(/127\.0\.0\.1|::1/u);
   });
 });
