@@ -7,11 +7,15 @@
  * - `trustedDevices` on (the default): the lock deletes every session but
  *   leaves the revocation epoch, so device cookies survive and the owner can
  *   still sign in from a known device. Such a session may reauthenticate and
- *   change the password, but no session may change the email.
+ *   change the password, but no session may change the email. Other ways in
+ *   still mint a session in this mode, each needing a correct password or the
+ *   app's SSO: a device sign-in, an app's SSO through `issueSession`, a
+ *   two-factor challenge started before the lock, and a login racing the
+ *   revocation.
  * - `trustedDevices` off: the lock bumps the epoch (every session and device
  *   cookie ends) and every session door is refused: issuing a session by any
- *   path, reauthentication, password change, email change and email
- *   verification, until an admin clears the lock.
+ *   path, validating one, reauthentication, password change, email change
+ *   and email verification, until an admin clears the lock.
  *
  * Guide: Learn, "Brute force and lockout".
  */
@@ -73,12 +77,18 @@ export async function endSessionsForPermanentLock<U extends AuthUser, A>(
 /**
  * With `trustedDevices` off: no session is issued for a permanently locked
  * account, by any flow or plugin (an app's own SSO through `issueSession`
- * included). Run before every other hook.
+ * included), and no session of it validates, so a session the lock's
+ * background revocation failed to end is refused (and revoked) on its next
+ * request anyway. Run before every other hook. Not installed with trusted
+ * devices, so the default mode reads nothing extra per request.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function permanentLockHooks(throttle: Throttle): HookInput<AuthUser, any> {
+  const locked = async (userId: string) =>
+    (await throttle.isPermanentlyLocked(userId)) ? refuse('permanently_locked') : undefined;
+
   return {
-    beforeSessionCreate: async ({ user }) =>
-      (await throttle.isPermanentlyLocked(user.id)) ? refuse('permanently_locked') : undefined,
+    beforeSessionCreate: ({ user }) => locked(user.id),
+    onSessionValidate: ({ session }) => locked(session.userId),
   };
 }
