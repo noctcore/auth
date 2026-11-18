@@ -56,6 +56,74 @@ describe.each(['fetch', 'node'] as const)('tRPC on the %s adapter', (transport) 
     await expect(browser.client.meta.query()).resolves.toMatchObject({ ip: '198.51.100.7' });
   });
 
+  it('lists session handles, never store keys, and revokes another device by its handle', async () => {
+    const laptop = await start();
+    const phone = new Browser(env, '198.51.100.8');
+
+    await laptop.signIn();
+    await phone.signIn();
+
+    const keys = (await env.stores.sessions.listByUser(env.userId)).map((s) => s.id);
+    const listed = await laptop.client.sessions.query();
+    const leaky = await laptop.client.leakySessions.query();
+
+    expect(keys).toHaveLength(2);
+    expect(listed).toHaveLength(2);
+    expect(leaky).toEqual(listed);
+
+    for (const key of keys) expect(JSON.stringify([listed, leaky])).not.toContain(key);
+
+    const other = listed.find((s) => !s.current);
+
+    expect(other?.handle).toMatch(/^[\w-]{43}$/u);
+
+    // A raw store key, garbage and an oversized handle never reach a session.
+    for (const handle of [keys[0] ?? '', keys[1] ?? '', 'not-a-handle'])
+      await expect(laptop.client.revokeSession.mutate({ handle })).resolves.toEqual({
+        revoked: false,
+      });
+
+    const oversized = await failure(
+      laptop.client.revokeSession.mutate({ handle: 'x'.repeat(129) }),
+    );
+
+    expect(oversized.data?.code).toBe('BAD_REQUEST');
+    await expect(phone.client.me.query()).resolves.toMatchObject({ id: env.userId });
+
+    await expect(
+      laptop.client.revokeSession.mutate({ handle: other?.handle ?? '' }),
+    ).resolves.toEqual({ revoked: true });
+
+    expect((await failure(phone.client.me.query())).data?.code).toBe('UNAUTHORIZED');
+    await expect(laptop.client.sessions.query()).resolves.toHaveLength(1);
+  });
+
+  it("answers another user's session handle like an unknown one", async () => {
+    const ada = await start();
+    const eve = new Browser(env, '198.51.100.9');
+
+    await ada.signIn();
+
+    const registered = await env.auth.register({
+      email: 'eve@example.com',
+      password: PASSWORD,
+      meta: { ip: '203.0.113.2' },
+    });
+
+    if (!registered.ok) throw new Error('could not register eve');
+
+    await eve.signIn('eve@example.com');
+
+    const [adaSession] = await ada.client.sessions.query();
+
+    for (const handle of [adaSession?.handle ?? '', 'not-a-handle'])
+      await expect(eve.client.revokeSession.mutate({ handle })).resolves.toEqual({
+        revoked: false,
+      });
+
+    await expect(ada.client.me.query()).resolves.toMatchObject({ id: env.userId });
+  });
+
   it('refuses a mutation without the CSRF token, with a foreign Origin or a cross-site fetch', async () => {
     const browser = await start();
 
