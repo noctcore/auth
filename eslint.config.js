@@ -291,6 +291,24 @@ export default tseslint.config(
     },
   },
   {
+    // A lookup by address goes through `core.findCredentialByEmail`, which
+    // treats a row whose stored address is not exactly the one asked for as
+    // not found: a store behind a case- or accent-insensitive collation would
+    // otherwise reach one account under several spellings.
+    files: ['packages/auth/src/*/**/*.ts'],
+    ignores: ['packages/auth/src/core/auth-core.ts', 'packages/auth/src/testing/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.property.name='users'][property.name='findCredentialByEmail']",
+          message: 'Look users up by address with core.findCredentialByEmail (exact match only).',
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/auth/src/crypto/hash.ts'],
     rules: { 'no-restricted-imports': ['error', { paths: BARREL_IMPORTS }] },
   },
