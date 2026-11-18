@@ -105,8 +105,8 @@ parseTrustProxy
 pwnedPasswords
 randomBytes
 refuse
-resolveSameSite
 resolveClientIpHeader
+resolveSameSite
 resolveTrustedHops
 resolveTrustedProxies
 secretsEqual
@@ -424,9 +424,8 @@ RequestMeta [interface]
     readonly ip: string
     readonly origin?: string | undefined
     readonly userAgent?: string | undefined
-resolveSameSite [function]: (config: SessionCookieConfig, origin: string | undefined) => SameSite
-resolveClientIpHeader [function]: (name: string | undefined) => string | undefined
 resolveClientIpHeader [function]: (name: string | undefined, trustedHops: TrustedHops) => string | undefined
+resolveSameSite [function]: (config: SessionCookieConfig, origin: string | undefined) => SameSite
 resolveTrustedHops [function]: (value: TrustedHops, maxHops: number) => TrustedHops
 resolveTrustedProxies [function]: (entries: string | readonly string[]) => readonly string[]
 RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'email-changed' | 'email-reverted' | 'evicted' | (string & {})
