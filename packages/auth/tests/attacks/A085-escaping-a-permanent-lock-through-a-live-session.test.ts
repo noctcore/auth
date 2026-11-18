@@ -1,4 +1,4 @@
-// A083: escaping a permanent lock through a live session.
+// A085: escaping a permanent lock through a live session.
 //
 // The permanent tier refuses the password login. An attacker who holds a
 // session the lock did not end (one opened earlier, or minted by a login
@@ -54,7 +54,7 @@ async function lockForGood(t: App) {
   await settled();
 }
 
-describe('A083: escaping a permanent lock through a live session', () => {
+describe('A085: escaping a permanent lock through a live session', () => {
   for (const trustedDevices of [true, false]) {
     it(`loses the session it held when the lock lands (trustedDevices: ${String(trustedDevices)})`, async () => {
       const { t, held } = await signedIn({ permanent: { afterLocks: 1, trustedDevices } });
