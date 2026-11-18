@@ -68,18 +68,49 @@ export function verifyRequestOrigin(input: {
 /**
  * Refuses unsafe requests whose `Sec-Fetch-Site` is missing or not
  * `same-origin` (or `same-site` when `allowSameSite` is set, for sibling
- * subdomains you trust). Note that requests from a desktop shell on its own
- * scheme arrive as `cross-site`; use `verifyRequestOrigin` for those clients.
+ * subdomains you trust). Requests from a desktop shell on its own scheme
+ * arrive as `cross-site`: list the shell's exact origin in
+ * `crossSiteOrigins` and pass the request's `origin`, and a `cross-site`
+ * request from that origin passes too. Nothing else that says `cross-site`
+ * does, and `none` never does.
  */
 export function verifyFetchSite(input: {
   method: string;
   secFetchSite: string | null | undefined;
   allowSameSite?: boolean;
+  /** The request's `Origin` header, read only for `crossSiteOrigins`. */
+  origin?: string | null | undefined;
+  /** Exact origins whose `cross-site` requests are accepted. Default none. */
+  crossSiteOrigins?: readonly string[];
 }): boolean {
   if (isSafeMethod(input.method)) return true;
   if (input.secFetchSite === 'same-origin') return true;
+  if (input.allowSameSite === true && input.secFetchSite === 'same-site') return true;
 
-  return input.allowSameSite === true && input.secFetchSite === 'same-site';
+  return (
+    input.secFetchSite === 'cross-site' &&
+    verifyRequestOrigin({
+      method: input.method,
+      origin: input.origin,
+      allowedOrigins: input.crossSiteOrigins ?? [],
+    })
+  );
+}
+
+/**
+ * Checks an allowlist of origins at boot: each entry must be one exact
+ * origin (`scheme://host[:port]`, any scheme, such as `app://desktop`), with
+ * no wildcard and not `null`, so a typo fails at startup instead of matching
+ * nothing, or more than meant. `option` names the setting in the error.
+ */
+export function assertExactOrigins(origins: readonly string[], option: string): readonly string[] {
+  for (const origin of origins) {
+    if (origin.includes('*') || origin === 'null' || normalizeOrigin(origin) === null) {
+      throw new AuthConfigError(`${option} needs exact origins, such as app://desktop: ${origin}`);
+    }
+  }
+
+  return [...origins];
 }
 
 /** Shortest accepted secret. */
