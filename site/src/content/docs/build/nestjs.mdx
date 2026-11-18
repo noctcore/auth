@@ -46,7 +46,7 @@ Nest runs middleware before guards, and the module uses that order on every requ
 3. **`@RequireRole()`** runs only after the session and the user are known. The module's `roles` function is called with the user just loaded, on every request, so a role taken away stops working on the next request. No role is ever copied into the cookie or the session.
 4. **`@RequireFreshAuth()`** asks the core's `requireFreshAuth` whether the session's last password proof is within `freshAuthAge`. A route can pass a shorter `maxAge`, never a longer one.
 
-`@Public()` skips steps 2 to 4 only on a route with no role or fresh-auth requirement. A store failure in the middleware or the guard is answered with a fixed `500` and logged by its error name only, so no message with a session key reaches your logs.
+`@Public()` lets a request through without a session, and skips steps 3 and 4, only on a route with no role or fresh-auth requirement. The guard still resolves a session the request carries, and its user, on a public route, so `@CurrentSession()` and `@CurrentUser()` name the caller when there is one: flows that refuse another account's session, such as an email verification link, rely on that. A store failure in the middleware or the guard is answered with a fixed `500` and logged by its error name only, so no message with a session key reaches your logs.
 
 Safe methods (`GET`, `HEAD`, `OPTIONS`) skip the CSRF check, never the session check. On a safe request the middleware also hands out what the page needs for its next unsafe one: a pre-session id when the browser has neither a session nor an id, and a `csrf` cookie when the one it holds is missing or bound to something else. A session cookie the core refused is cleared on the same response.
 
