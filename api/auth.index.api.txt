@@ -614,6 +614,9 @@ TurnstileOptions [interface]
     readonly secret: string
     readonly timeoutMs?: number
 TurnstileOutcome [type] = (TurnstileOutcomeBase & { readonly verdict: 'pass'; }) | (TurnstileOutcomeBase & { readonly verdict: 'reject'; readonly reason: TurnstileRefusalReason; }) | (TurnstileOutcomeBase & UnavailableOutcome)
+TurnstileOutcomeBase [interface]
+    readonly door: CaptchaDoor
+    readonly errorCodes: readonly string[]
 TurnstileRefusalReason [type] = 'missing-token' | 'token-too-long' | 'provider-refused' | 'hostname-mismatch' | 'action-mismatch'
 TurnstileVerifier [interface]
     check(token: string | undefined, context: { ip?: string; door: CaptchaDoor; }): Promise<TurnstileOutcome>
@@ -668,7 +671,4 @@ DistributiveOmit [type]<T, K extends PropertyKey> = T extends unknown ? Omit<T, 
 HookLists [type]<U extends AuthUser, A> = { readonly [K in keyof AuthHooks<U, A>]: ReadonlyArray<AuthHooks<U, A>[K]>; }
 MaybePromise [type]<T> = T | Promise<T>
 SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
-TurnstileOutcomeBase [interface]
-    readonly door: CaptchaDoor
-    readonly errorCodes: readonly string[]
 UnionToIntersection [type]<T> = (T extends unknown ? (value: T) => void : never) extends (value: infer I) => void ? I : never
