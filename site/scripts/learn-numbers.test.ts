@@ -16,6 +16,7 @@ import {
   clientIp,
   createSessionCookie,
   DEFAULT_DOOR_LIMITS,
+  TRUST_PROXY_PRESETS,
   generateNumericCode,
   generateToken,
   serializeCookie,
@@ -161,6 +162,15 @@ const rememberMeTtlDays = inUnit(read(SESSION, /options\.rememberMeTtl \?\? '(\w
 
 const loginDoor = DEFAULT_DOOR_LIMITS.login;
 
+/** The Express presets as the trust proxy page lists them, from the ranges the code expands them to. */
+const presetRanges = (() => {
+  const items = Object.entries(TRUST_PROXY_PRESETS).map(
+    ([name, ranges]) => `\`${name}\` (${ranges.map((r) => `\`${r}\``).join(', ')})`,
+  );
+
+  return `${items.slice(0, -1).join(', ')} and ${items.at(-1) ?? ''}`;
+})();
+
 /** The example X-Forwarded-For block on the trust proxy page, and what clientIp makes of it. */
 function forwardedExample(hops: number): string {
   const text = page('trust-proxy-and-client-ips');
@@ -204,6 +214,7 @@ const PAGES: Record<string, readonly string[]> = {
     `With 0 trusted hops it is \`${forwardedExample(0)}\``,
     `With 2 trusted hops it is \`${forwardedExample(2)}\``,
     `from 0 to ${maxHops}`,
+    `the Express presets ${presetRanges}, the same ranges Express gives them`,
     `unset is ${unsetHopsInDevelopment} in development`,
     `login allows ${loginDoor.limit} attempts per ${minutes(loginDoor.window) === 1 ? 'minute' : `${minutes(loginDoor.window)} minutes`} from one IP`,
     `(${rule(perAccountIp).limit} attempts per ${rule(perAccountIp).minutes} minutes)`,
@@ -220,6 +231,7 @@ const NOT_NUMBERS = [
   /\]\([^)]*\)/gu, // link targets
   /\bA\d{3}\b/gu, // attack ids
   /\bHMAC-SHA-256\b|\bSHA-256\b/gu,
+  /\bIPv[46]\b/gu, // address family names
   /\b(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}\b/gu, // documentation ranges (RFC 5737)
 ];
 

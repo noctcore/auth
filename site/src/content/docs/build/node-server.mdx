@@ -21,7 +21,7 @@ Read every setting once, at startup, and fail before the server listens. The two
 
 <Code code={configTs} lang="ts" title="src/config.ts" />
 
-`TRUST_PROXY` is the number of reverse proxies in front of the server. Every per-IP limit and audit row reads the client IP, and `X-Forwarded-For` is written by the client up to the first proxy you run, so the server trusts exactly that many hops from the right. Trusting everything lets a client choose its own rate-limit bucket; trusting nothing behind a proxy puts every client in one bucket, where one attacker blocks logins for everyone. `parseTrustProxy` refuses `true` for that reason.
+`TRUST_PROXY` is the number of reverse proxies in front of the server. Every per-IP limit and audit row reads the client IP, and `X-Forwarded-For` is written by the client up to the first proxy you run, so the server trusts exactly that many hops from the right. Trusting everything lets a client choose its own rate-limit bucket; trusting nothing behind a proxy puts every client in one bucket, where one attacker blocks logins for everyone. `parseTrustProxy` refuses `true` for that reason. `TRUST_PROXY` may instead list the proxies by address (`loopback, 10.0.0.0/8`); `resolveTrustedProxies` checks the list and expands the presets to the ranges Express uses, and `clientIp` then reads `X-Forwarded-For` only from a socket address inside it.
 
 <Code code={dbTs} lang="ts" title="src/db.ts" />
 
@@ -65,7 +65,7 @@ The flows return `AuthResult` values. A refusal has a public `code` and an inter
 ## Before going live
 
 - Serve over HTTPS and leave `session.cookie.secure` on (it is on whenever `NODE_ENV` is `production` here).
-- Set `TRUST_PROXY` to the number of proxies you actually run.
+- Set `TRUST_PROXY` to the number of proxies you actually run, or to their addresses.
 - Point the mailer at a queue.
 - Add an `audit` sink if you need a record of sign-ins and refusals.
 - Delete expired tokens now and then (`expiresAt` is indexed): `prisma.authToken.deleteMany({ where: { expiresAt: { lt: new Date() } } })`.

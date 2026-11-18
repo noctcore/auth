@@ -1,4 +1,4 @@
-import { parseTrustProxy } from '@noctcore/auth';
+import { parseTrustProxy, resolveTrustedProxies } from '@noctcore/auth';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -8,11 +8,10 @@ function required(name: string): string {
   return value;
 }
 
-// parseTrustProxy refuses "true" (any client could pick its IP). A plain
-// node:http server can only count hops, so an address list is refused here too.
+// parseTrustProxy refuses "true" (any client could pick its IP). A hop count
+// stays a number; an address list ("loopback, 10.0.0.0/8") is checked and its
+// presets expanded, so a typo fails here instead of trusting nothing.
 const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
-
-if (typeof trustProxy === 'string') throw new Error('TRUST_PROXY must be a number of hops');
 
 export const config = {
   /** At least 32 random bytes: `openssl rand -hex 32`. */
@@ -23,8 +22,13 @@ export const config = {
   redisUrl: required('REDIS_URL'),
   /** The app's own origin, for example https://app.example. */
   origin: required('APP_ORIGIN'),
-  /** How many reverse proxies sit in front of this server. */
-  trustedHops: trustProxy === false ? 0 : trustProxy,
+  /** How many reverse proxies sit in front of this server, or their addresses. */
+  trustedHops:
+    trustProxy === false
+      ? 0
+      : typeof trustProxy === 'string'
+        ? resolveTrustedProxies(trustProxy)
+        : trustProxy,
   /** False only for plain-HTTP local development. */
   secureCookies: process.env.NODE_ENV === 'production',
 };
