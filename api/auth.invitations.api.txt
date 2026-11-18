@@ -190,7 +190,7 @@ LockState [interface]
 Logger [interface]
     error(message: string, context?: Record<string, unknown>): void
     warn(message: string, context?: Record<string, unknown>): void
-LoginGate [type] = { readonly allowed: true; readonly viaDevice?: true; } | { readonly allowed: false; readonly reason: 'locked' | 'permanently_locked' | 'account_ip_budget' | 'device_budget'; readonly newLock?: NewLock; /** * Set when the refusal is the account's lock, not one source's budget: * `permanent` for the permanent tier, else `until` when the lock ends * (when known). */ readonly lock?: { readonly until?: number; readonly permanent?: true; }; }
+LoginGate [type] = { readonly allowed: true; readonly viaDevice?: true; } | { readonly allowed: false; readonly reason: 'locked' | 'permanently_locked' | 'account_ip_budget' | 'device_budget'; readonly newLock?: NewLock; /** * Set (only with `revealLocked`) when the refusal is the account's lock, * not one source's budget: `permanent` for the permanent tier, else * `until`, when the temporary lock ends. */ readonly lock?: { readonly until: number; } | { readonly permanent: true; }; }
 MaybePromise [type]<T> = T | Promise<T>
 Metrics [interface]
     count(name: string, labels?: Readonly<Record<string, string>>): void
@@ -272,7 +272,7 @@ RequestMeta [interface]
     readonly ip: string
     readonly origin?: string | undefined
     readonly userAgent?: string | undefined
-RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'email-changed' | 'email-reverted' | 'evicted' | (string & {})
+RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'email-changed' | 'email-reverted' | 'evicted' /** The opt-in permanent lockout tier locked the account. */ | 'locked-permanently' | (string & {})
 SameSite [type] = 'lax' | 'strict' | 'none'
 SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
 SessionCookieConfig [interface]
@@ -342,17 +342,21 @@ StoredToken [interface]
     readonly userId: string
 Throttle [class]
     (new) (counters: CounterStore, clock: Clock, lockout?: LockoutOptions): Throttle
+    addressSignedUp(account: string): Promise<void>
     clearAccount(account: string): Promise<void>
-    clearPermanent(account: string): Promise<LockState>
-    deviceFailed(account: string): Promise<{ newLock?: NewLock; }>
+    clearPermanent(account: string, owner?: string | null): Promise<LockState>
+    deviceFailed(account: string, owner?: string | null): Promise<{ newLock?: NewLock; }>
     factorSucceeded(account: string): Promise<void>
     gateFactor(account: string, rule: RateLimitRule): Promise<FactorGate>
-    gateLogin(account: string, ip: string, deviceId?: string | null): Promise<LoginGate>
+    gateLogin(account: string, ip: string, deviceId?: string | null, owner?: string | null): Promise<LoginGate>
     hit(scope: string, rule: RateLimitRule): Promise<Hit>
-    lockState(account: string): Promise<LockState>
+    isPermanentlyLocked(userId: string): Promise<boolean>
+    lockState(account: string, owner?: string | null): Promise<LockState>
     loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void>
+    permanentTier: boolean
     private held
     private lock
+    private permanentKey
     private readonly baseLockMs
     private readonly clock
     private readonly counters
@@ -361,12 +365,12 @@ Throttle [class]
     private readonly perAccountIp
     private readonly perDevice
     private readonly permanentAfter
-    private readonly permanentDevices
     private readonly quietPeriodMs
     private runningLock
     readonly deviceMaxAgeMs: number
+    readonly permanentDevices: boolean
     readonly revealLocked: boolean
-    recordFailure(account: string): Promise<{ newLock?: NewLock; }>
+    recordFailure(account: string, owner?: string | null): Promise<{ newLock?: NewLock; }>
 TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; readonly data: Readonly<Record<string, string>>; } | { readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch'; readonly namedUserId: string; } | { readonly status: 'unknown'; }
 TokenStore [interface]
     consume(purpose: string, hash: string): Promise<StoredToken | null>
