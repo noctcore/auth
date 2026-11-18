@@ -8,9 +8,11 @@
 // Stopped by: http/turnstile.ts (the hostname the token was solved on and the
 //   action it was solved for are checked when configured; an outage, a
 //   timeout, a non-2xx answer and a malformed body are `unavailable`, never
-//   `pass`), core/auth-core.ts (`unavailable` refuses the request like `reject`,
-//   before the door's rate limit and any account work). Unit tests:
-//   tests/primitives/captcha.test.ts.
+//   `pass`; the `onResult` hook gets a frozen outcome and cannot change the
+//   verdict), ports/provider-outcome.ts (a hook that throws or rejects is
+//   logged, never passed on), core/auth-core.ts (`unavailable`
+//   refuses the request like `reject`, before the door's rate limit and any
+//   account work). Unit tests: tests/primitives/captcha.test.ts.
 // Learn: Captcha (/auth/learn/captcha/)
 import { describe, expect, it, vi } from 'vitest';
 
