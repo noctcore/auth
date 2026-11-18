@@ -5,7 +5,12 @@
 // the CSRF header like a page would.
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createAuth, type AuthUser, type SessionCookieConfig } from '@noctcore/auth';
+import {
+  createAuth,
+  type AuthConfig,
+  type AuthUser,
+  type SessionCookieConfig,
+} from '@noctcore/auth';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '@noctcore/auth/testing';
 import {
   createTRPCClient,
@@ -32,6 +37,7 @@ import {
   sessionListOutput,
   toTRPCError,
   userOutput,
+  verifyEmailLinkInput,
   type AuthContextOf,
   type AuthContextOptions,
 } from '../src';
@@ -41,10 +47,19 @@ export const EMAIL = 'ada@example.com';
 export const PASSWORD = 'correct horse battery staple';
 export const CSRF_SECRET = 'csrf-secret-that-is-at-least-32-bytes-long';
 
-/** `cookie` replaces the session cookie config (plain HTTP, `Lax`, by default). */
-export function makeAuth(cookie: SessionCookieConfig = { secure: false }) {
+type Verification = AuthConfig<AuthUser, Record<string, never>, []>['emailVerification'];
+
+/**
+ * `cookie` replaces the session cookie config (plain HTTP, `Lax`, by default);
+ * `emailVerification` replaces the core's verification settings (codes by default).
+ */
+export function makeAuth(
+  cookie: SessionCookieConfig = { secure: false },
+  emailVerification?: Verification,
+) {
   const clock = manualClock();
   const stores = memoryStores(clock);
+  const mailer = recordingMailer();
 
   const auth = createAuth({
     stores,
@@ -52,11 +67,15 @@ export function makeAuth(cookie: SessionCookieConfig = { secure: false }) {
     password: { hasher: plainHasher(), breachCheck: false },
     session: { cookie },
     secret: 'auth-secret-that-is-at-least-32-bytes-long',
-    urls: { resetPassword: (token) => `${ORIGIN}/reset#${token}` },
-    mailer: recordingMailer(),
+    urls: {
+      resetPassword: (token) => `${ORIGIN}/reset#${token}`,
+      verifyEmail: (token) => `${ORIGIN}/verify#${token}`,
+    },
+    ...(emailVerification ? { emailVerification } : {}),
+    mailer,
   });
 
-  return { auth, clock, stores };
+  return { auth, clock, stores, mailer };
 }
 
 export type TestAuth = ReturnType<typeof makeAuth>['auth'];
@@ -108,6 +127,28 @@ export function buildRouter(auth: TestAuth) {
         if (!result.ok) throw toTRPCError(result);
 
         return { status: 'accepted' as const };
+      }),
+    // A mutation, so a mail scanner's GET never reaches it; the session, if
+    // the request carries one, is passed so another account's is refused.
+    verifyEmailLink: publicProcedure
+      .use(writesCookies)
+      .input(verifyEmailLinkInput)
+      .mutation(async ({ ctx, input }) => {
+        const result = await auth.verifyEmailLink({
+          token: input.token,
+          session: ctx.auth.session,
+          meta: ctx.auth.meta,
+        });
+
+        if (!result.ok) throw toTRPCError(result);
+
+        const issued = result.value.session;
+
+        return {
+          verified: true,
+          signedIn: issued !== null,
+          ...(issued && ctx.auth.setSession(issued)),
+        };
       }),
     me: protectedProcedure.output(userOutput).query(({ ctx }) => ctx.user),
     /** Returns more than the user: the output schema must strip it. */
@@ -171,10 +212,12 @@ export interface BootOptions {
   readonly transport?: 'fetch' | 'node';
   /** The session cookie config, in place of plain HTTP with `Lax`. */
   readonly cookie?: SessionCookieConfig;
+  /** The core's verification settings, in place of codes. */
+  readonly emailVerification?: Verification;
 }
 
 export async function boot(overrides: BootOptions = {}) {
-  const env = makeAuth(overrides.cookie);
+  const env = makeAuth(overrides.cookie, overrides.emailVerification);
   const roles = overrides.roles ?? new Map<string, readonly string[]>();
 
   const authContext = createAuthContext({
