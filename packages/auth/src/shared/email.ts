@@ -20,7 +20,8 @@ export type NormalizedEmail = string & { readonly __normalizedEmail: true };
  *   character is answered with its own code, `email_not_ascii`, so the app can
  *   tell the user to use an ASCII address instead of "invalid".
  * - `unicode`: NFC, then lowercases the whole address (domain and local part)
- *   with Unicode case mapping, the final sigma folded to the plain one.
+ *   with Unicode case mapping, the final sigma folded to the plain one in
+ *   the local part (a domain keeps a typed final sigma, as IDNA2008 does).
  *   Refuses invisible and control characters, compatibility characters
  *   (fullwidth letters, ligatures), punycode labels and any part that mixes
  *   scripts (a Cyrillic letter among Latin ones).
@@ -212,27 +213,38 @@ function isValidHost(domain: string): boolean {
 function unicodeOnce(trimmed: string): string | null {
   if (trimmed.length === 0 || FORBIDDEN.test(trimmed)) return null;
 
-  // Lowercase, with the final sigma folded to the plain one as Unicode case
-  // folding does: `toLowerCase` writes a capital sigma at the end of a word
-  // as the final form, so `\u03A3` and `\u03C3` would otherwise be two
-  // spellings of one address depending on what follows the letter.
-  const value = trimmed
-    .normalize('NFC')
+  const composed = trimmed.normalize('NFC');
+  const at = composed.indexOf('@');
+
+  if (at <= 0 || at !== composed.lastIndexOf('@')) return null;
+
+  // The local part: lowercased, with the final sigma folded to the plain one
+  // as Unicode case folding does. `toLowerCase` writes a capital sigma at the
+  // end of a word as the final form, so `\u03A3` and `\u03C3` would
+  // otherwise be two spellings of one mailbox depending on what follows.
+  const local = composed
+    .slice(0, at)
     .toLowerCase()
     .replace(/\u03C2/gu, '\u03C3')
     .normalize('NFC');
 
-  // Compatibility characters (fullwidth `ａ`, the `ﬁ` ligature, superscripts)
-  // render like other letters but are distinct code points: refused, so the
-  // stored form is the only spelling that reads that way.
+  // The domain: a typed final sigma stays, because IDNA2008 treats `\u03C2` as
+  // its own letter, but a capital sigma always lowercases to the plain one (as
+  // UTS 46 maps it), whatever follows it.
+  const domain = composed
+    .slice(at + 1)
+    .replace(/\u03A3/gu, '\u03C3')
+    .toLowerCase()
+    .normalize('NFC');
+
+  const value = `${local}@${domain}`;
+
+  // Compatibility characters (fullwidth `\uFF41`, the `\uFB01` ligature,
+  // superscripts) render like other letters but are distinct code points:
+  // refused, so the stored form is the only spelling that reads that way.
   if (value.normalize('NFKC') !== value || octets(value) > MAX_LENGTH) return null;
 
-  const at = value.indexOf('@');
-
-  if (at <= 0 || at !== value.lastIndexOf('@')) return null;
-
-  const local = value.slice(0, at);
-  const labels = value.slice(at + 1).split('.');
+  const labels = domain.split('.');
 
   if (octets(local) > MAX_LOCAL_LENGTH || labels.length < 2) return null;
 
@@ -263,17 +275,19 @@ const POLICIES: Readonly<Record<EmailPolicy, ResolvedEmailNormalizer>> = {
   unicode: unicodePolicy,
 };
 
-// What a custom normaliser's output may never contain: control characters and
-// line separators (the address goes into mail headers).
-const UNSAFE_OUTPUT = /[\p{Cc}\u2028\u2029]/u;
+// What a custom normaliser's output may never contain: control characters,
+// line separators and whitespace (the address goes into mail headers), and
+// the commas and angle brackets that would make it a list of recipients.
+const UNSAFE_OUTPUT = /[\p{Cc}\p{White_Space}\u2028\u2029,<>]/u;
 
+/** One `@` with something on each side, nothing unsafe, at most 254 bytes. */
 function isUsableOutput(value: unknown): value is string {
+  if (typeof value !== 'string' || UNSAFE_OUTPUT.test(value)) return false;
+
+  const at = value.indexOf('@');
+
   return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.includes('@') &&
-    !UNSAFE_OUTPUT.test(value) &&
-    octets(value) <= MAX_LENGTH
+    at > 0 && at === value.lastIndexOf('@') && at < value.length - 1 && octets(value) <= MAX_LENGTH
   );
 }
 
@@ -293,10 +307,18 @@ const BOOT_SAMPLE = [
   'STRASSE@example.de',
   '\uFF41lice@example.com',
   'al\u200Bice@example.com',
-  '"quoted local"@example.com',
+  '"quoted"@example.com',
   'not-an-address',
   '',
   'a@b',
+];
+
+// Different mailboxes a custom normaliser must keep apart when it accepts both:
+// another local part, another domain. A constant or domain-only normaliser
+// would merge every account into one.
+const DISTINCT_MAILBOXES: ReadonlyArray<readonly [string, string]> = [
+  ['alice@example.com', 'bob@example.com'],
+  ['alice@example.com', 'alice@example.org'],
 ];
 
 function describeSample(index: number): string {
@@ -326,7 +348,7 @@ function checkCustomNormalizer(normalize: EmailNormalizer): void {
 
     if (!isUsableOutput(first))
       throw new AuthConfigError(
-        `email.normalize must return null or a non-empty address with an @ and no control characters, at most ${MAX_LENGTH} bytes (${describeSample(index)})`,
+        `email.normalize must return null or an address with exactly one @, a non-empty local part and domain, no whitespace, commas, angle brackets or control characters, at most ${MAX_LENGTH} bytes (${describeSample(index)})`,
       );
 
     if (second !== first)
@@ -350,11 +372,35 @@ function checkCustomNormalizer(normalize: EmailNormalizer): void {
         `email.normalize must be idempotent: normalize(normalize(x)) differs from normalize(x) for ${describeSample(index)}`,
       );
   });
+
+  for (const [one, other] of DISTINCT_MAILBOXES) {
+    const a = normalize(one);
+    const b = normalize(other);
+
+    if (a !== null && a === b)
+      throw new AuthConfigError(
+        `email.normalize must keep different mailboxes apart: ${one} and ${other} gave the same result`,
+      );
+  }
+}
+
+/**
+ * Hears about a custom normaliser that misbehaves after startup. Gets a fixed
+ * message and, for a throw, only the error's class name: the error's own
+ * message could quote the address.
+ */
+export type EmailNormalizerErrorHandler = (
+  message: string,
+  details?: { readonly errorName: string },
+) => void;
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.constructor.name : typeof error;
 }
 
 function customPolicy(
   normalize: EmailNormalizer,
-  onError: (message: string, error?: unknown) => void,
+  onError: EmailNormalizerErrorHandler,
 ): ResolvedEmailNormalizer {
   return (input) => {
     if (typeof input !== 'string') return INVALID;
@@ -380,7 +426,7 @@ function customPolicy(
 
       return accepted(value);
     } catch (error) {
-      onError('email.normalize threw; refusing the address', error);
+      onError('email.normalize threw; refusing the address', { errorName: errorName(error) });
 
       return INVALID;
     }
@@ -391,11 +437,12 @@ function customPolicy(
  * Resolves `email.normalize` into the one normaliser every flow uses. Throws
  * `AuthConfigError` for an unknown policy name, and for a custom function
  * that fails the startup checks. `onError` hears about a custom normaliser
- * that misbehaves later (never with the address in the message).
+ * that misbehaves later: a fixed message and at most the error's class name,
+ * never the address or the error's message.
  */
 export function resolveEmailNormalizer(
   option: EmailPolicy | EmailNormalizer | undefined,
-  onError: (message: string, error?: unknown) => void,
+  onError: EmailNormalizerErrorHandler,
 ): ResolvedEmailNormalizer {
   if (option === undefined) return standardPolicy;
 

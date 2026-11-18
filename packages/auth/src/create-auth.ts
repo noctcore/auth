@@ -44,7 +44,6 @@ import { systemClock } from './ports/clock';
 import { noopMetrics, silentLogger } from './ports/logger';
 import type { AuthUser, SessionStore, StoredSession } from './ports/stores';
 import { SessionManager } from './session/session-manager';
-import { describeError } from './shared/describe-error';
 import { resolveEmailNormalizer } from './shared/email';
 import { AuthConfigError } from './shared/errors';
 import type { RequestMeta } from './shared/meta';
@@ -102,8 +101,8 @@ export function createAuth<
   const metrics = config.metrics ?? noopMetrics;
   const background = new BackgroundTasks(logger, metrics, config.background);
 
-  const emails = resolveEmailNormalizer(config.email?.normalize, (message, error) =>
-    logger.error(message, error === undefined ? {} : { error: describeError(error) }),
+  const emails = resolveEmailNormalizer(config.email?.normalize, (message, details) =>
+    logger.error(message, details ?? {}),
   );
 
   const policy = { ...DEFAULT_PASSWORD_POLICY, ...config.password.policy };
