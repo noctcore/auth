@@ -11,8 +11,7 @@ import type { AuthCore } from '../core/auth-core';
 import type { PasswordResetJob } from '../core/config';
 import { sha256Hex } from '../crypto/hash';
 import type { AuthUser } from '../ports/stores';
-import { normalizeEmail } from '../shared/email';
-import { fail, ok, type AuthResult } from '../shared/errors';
+import { ok, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 
 const DEDUPE_WINDOW_MS = 60_000;
@@ -31,9 +30,11 @@ export async function requestPasswordReset<U extends AuthUser, A>(
 
   if (limited) return limited;
 
-  const email = normalizeEmail(input.email);
+  const parsed = core.parseEmail(input.email);
 
-  if (!email) return fail('invalid_email', 'invalid_email');
+  if (!parsed.ok) return parsed;
+
+  const email = parsed.value;
 
   // One job per address per minute, so a burst of requests sends one mail.
   const bucket = Math.floor(core.clock.now() / DEDUPE_WINDOW_MS);
@@ -71,7 +72,7 @@ export async function processPasswordReset<U extends AuthUser, A>(
   job: PasswordResetJob,
 ): Promise<void> {
   const meta: RequestMeta = { ip: job.ip };
-  const email = normalizeEmail(job.email);
+  const email = core.normalizeEmail(job.email);
   const credential = email ? await core.users.findCredentialByEmail(email) : null;
 
   if (!credential) {

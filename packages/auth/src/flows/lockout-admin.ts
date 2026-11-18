@@ -14,7 +14,6 @@
  */
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
-import { normalizeEmail } from '../shared/email';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
 import type { LockState } from '../throttle/rules';
@@ -31,12 +30,12 @@ async function resolve<U extends AuthUser, A>(
 ): Promise<{ account: string; userId?: string } | null> {
   if ('userId' in target) {
     const user = await core.users.findById(target.userId);
-    const email = user ? normalizeEmail(user.email) : null;
+    const email = user ? core.normalizeEmail(user.email) : null;
 
     return user && email ? { account: accountKey(email), userId: user.id } : null;
   }
 
-  const email = normalizeEmail(target.email);
+  const email = core.normalizeEmail(target.email);
 
   if (!email) return null;
 

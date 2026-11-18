@@ -20,7 +20,7 @@ import type { IssuedSession } from '../../core/plugin-context';
 import { isTokenShape } from '../../crypto/random';
 import type { StoredInvitation } from '../../ports/invitations';
 import type { AuthUser, StoredSession } from '../../ports/stores';
-import { normalizeEmail, type NormalizedEmail } from '../../shared/email';
+import type { NormalizedEmail } from '../../shared/email';
 import { ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
 import {
@@ -64,10 +64,10 @@ export async function acceptInvitation<A>(
 
   if (!user) return refused(r, 'forbidden', 'user_missing', session.userId, meta);
 
-  // normalizeEmail answers null for an invalid address; two nulls are no match.
-  const userEmail = normalizeEmail(user.email);
+  // core.normalizeEmail answers null for an invalid address; two nulls are no match.
+  const userEmail = r.core.normalizeEmail(user.email);
 
-  if (!userEmail || userEmail !== normalizeEmail(invitation.email))
+  if (!userEmail || userEmail !== r.core.normalizeEmail(invitation.email))
     return refused(r, 'forbidden', 'email_mismatch', user.id, meta);
 
   if (!user.emailVerified) return refused(r, 'forbidden', 'email_unverified', user.id, meta);
@@ -91,7 +91,7 @@ export async function registerByInvitation<A>(
   if (!found.ok) return found;
 
   const invitation = found.value;
-  const email = normalizeEmail(invitation.email);
+  const email = r.core.normalizeEmail(invitation.email);
 
   if (!email) return refused(r, 'invalid_token', 'invitation_email_invalid', null, meta);
 

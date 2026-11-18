@@ -18,7 +18,7 @@
 import { PURPOSE } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
-import { normalizeEmail, type NormalizedEmail } from '../shared/email';
+import type { NormalizedEmail } from '../shared/email';
 
 function holdKey(email: NormalizedEmail): string {
   return `email-reserved:${email}`;
@@ -62,7 +62,7 @@ export async function isAddressHeld<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   email: string,
 ): Promise<boolean> {
-  const normalized = normalizeEmail(email);
+  const normalized = core.normalizeEmail(email);
 
   return normalized !== null && (await addressHolder(core, normalized)) !== null;
 }

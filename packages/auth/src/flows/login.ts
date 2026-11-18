@@ -29,7 +29,6 @@ import { publicUser } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { IssuedSession } from '../core/plugin-context';
 import { NO_SUCH_USER_ID, type AuthUser } from '../ports/stores';
-import { normalizeEmail } from '../shared/email';
 import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
@@ -69,13 +68,15 @@ export async function login<U extends AuthUser, A>(
 
   if (limited) return limited;
 
-  const email = normalizeEmail(input.email);
+  const parsed = core.parseEmail(input.email);
 
-  if (!email) {
-    await core.emit({ type: 'login.failure', reason: 'invalid_email' }, meta);
+  if (!parsed.ok) {
+    await core.emit({ type: 'login.failure', reason: parsed.reason }, meta);
 
-    return fail('invalid_credentials', 'invalid_email');
+    return fail('invalid_credentials', parsed.reason);
   }
+
+  const email = parsed.value;
 
   // Known and unknown addresses, locked or not, make the same store calls and
   // pay for the same password verify.

@@ -19,7 +19,6 @@ import {
 import { generateToken } from '../../crypto/random';
 import type { StoredInvitation } from '../../ports/invitations';
 import type { StoredSession } from '../../ports/stores';
-import { normalizeEmail } from '../../shared/email';
 import { ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
 
@@ -59,9 +58,11 @@ export async function createInvitation<A>(
   input: CreateInvitationInput<A>,
 ): Promise<AuthResult<CreatedInvitation>> {
   const { session, scope, meta } = input;
-  const email = normalizeEmail(input.email);
+  const parsed = r.core.parseEmail(input.email);
 
-  if (!email) return refused(r, 'invalid_email', 'invalid_email', session.userId, meta);
+  if (!parsed.ok) return refused(r, parsed.code, parsed.reason, session.userId, meta);
+
+  const email = parsed.value;
 
   const payload = { ...input.payload };
   const inviter = await r.core.users.findById(session.userId);
