@@ -112,10 +112,9 @@ TrustProxyEnv [interface]
 ## types reached through the exports (not exported by name)
 ResolvedOptions [interface]
     readonly auth: NestAuth
+    readonly clientIpHeader: string | undefined
     readonly cookie: SessionCookieConfig
     readonly csrf: { readonly secrets: readonly Uint8Array[]; /** `allowedOrigins` and `crossSiteOrigins` together: every origin the Origin check accepts. */ readonly allowedOrigins: readonly string[]; readonly crossSiteOrigins: readonly string[]; readonly allowSameSite: boolean; readonly exempt: readonly (string | RegExp)[]; readonly headerName: string; readonly cookieName: string; readonly preSessionCookieName: string; }
-    readonly clientIpHeader: string | undefined
-    readonly csrf: { readonly secrets: readonly Uint8Array[]; readonly allowedOrigins: readonly string[]; readonly allowSameSite: boolean; readonly exempt: readonly (string | RegExp)[]; readonly headerName: string; readonly cookieName: string; readonly preSessionCookieName: string; }
     readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined
     readonly secure: boolean
     readonly shutdownTimeout: Duration
