@@ -43,15 +43,21 @@ function parseV4(text: string): [number, number, number, number] | null {
   return a <= 255 && b <= 255 && c <= 255 && d <= 255 ? [a, b, c, d] : null;
 }
 
-function parseGroups(text: string): number[] | null {
+/**
+ * The 16-bit groups of one side of an IPv6 address. `endsAddress` is true
+ * only for the part that ends the whole address: an IPv4 tail
+ * ("::ffff:192.0.2.1") is allowed there and nowhere else, so "1.2.3.4::" and
+ * "1:1.2.3.4::5" are refused, as Node refuses them.
+ */
+function parseGroups(text: string, endsAddress: boolean): number[] | null {
   if (text === '') return [];
 
   const parts = text.split(':');
   const out: number[] = [];
 
   for (const [i, part] of parts.entries()) {
-    // An IPv4 tail ("::ffff:192.0.2.1") counts as the last two groups.
-    if (i === parts.length - 1 && part.includes('.')) {
+    // An IPv4 tail counts as the last two groups.
+    if (endsAddress && i === parts.length - 1 && part.includes('.')) {
       const v4 = parseV4(part);
 
       if (!v4) return null;
@@ -76,8 +82,8 @@ function parseV6(text: string): Bytes | null {
   // At most one "::" (":::" counts as two).
   if (gap !== text.lastIndexOf('::')) return null;
 
-  const head = parseGroups(gap === -1 ? text : text.slice(0, gap));
-  const tail = gap === -1 ? [] : parseGroups(text.slice(gap + 2));
+  const head = parseGroups(gap === -1 ? text : text.slice(0, gap), gap === -1);
+  const tail = gap === -1 ? [] : parseGroups(text.slice(gap + 2), true);
 
   if (!head || !tail) return null;
 
@@ -141,6 +147,68 @@ function inRange(bytes: Bytes, range: Range): boolean {
   return bytes.length === range.length && masked(bytes, range.prefix) === range.network;
 }
 
+/** `a.b.c.d` as `::ffff:a.b.c.d`, for IPv6 ranges. */
+function mapV4(bytes: Bytes): Bytes {
+  return [...Array<number>(10).fill(0), 0xff, 0xff, ...bytes];
+}
+
+/**
+ * A range that holds every address of a family: `0.0.0.0/0`, `::/0`, or an
+ * IPv6 range that holds all of `::ffff:0:0/96` (every IPv4 address matches it
+ * through its mapped form). Trusting one is trusting every hop, which is what
+ * refusing `true` is for.
+ */
+function holdsEverything(range: Range): boolean {
+  return (
+    range.prefix === 0 ||
+    (range.length === 16 && range.prefix <= 96 && inRange(mapV4([0, 0, 0, 0]), range))
+  );
+}
+
+const PRESET_NAMES = Object.keys(TRUST_PROXY_PRESETS).join(', ');
+
+/**
+ * Each entry with its presets expanded and its range parsed, or the reason
+ * the first bad entry is refused. Never throws.
+ */
+function compile(
+  entries: readonly unknown[],
+): { readonly entries: string[]; readonly ranges: Range[] } | { readonly refused: string } {
+  const out: string[] = [];
+  const ranges: Range[] = [];
+
+  for (const raw of entries) {
+    if (typeof raw !== 'string') return { refused: 'Trusted proxy entries must be strings' };
+
+    const entry = raw.trim();
+
+    const expanded: readonly string[] = Object.hasOwn(TRUST_PROXY_PRESETS, entry)
+      ? TRUST_PROXY_PRESETS[entry as TrustProxyPreset]
+      : [entry];
+
+    for (const item of expanded) {
+      const range = parseRange(item);
+
+      if (!range) {
+        return {
+          refused: `Trusted proxy "${entry}" is not an IP address, a CIDR range or one of ${PRESET_NAMES}`,
+        };
+      }
+
+      if (holdsEverything(range)) {
+        return {
+          refused: `Trusted proxy "${entry}" trusts every address, so any client could choose its own IP; list your proxies`,
+        };
+      }
+
+      out.push(item);
+      ranges.push(range);
+    }
+  }
+
+  return { entries: out, ranges };
+}
+
 /**
  * Expands a trusted-proxy list into plain addresses and CIDR ranges: each
  * preset name becomes the ranges Express gives it, and every other entry
@@ -149,55 +217,49 @@ function inRange(bytes: Bytes, range: Range): boolean {
  * quietly trusts nothing (or everything).
  */
 export function resolveTrustedProxies(entries: string | readonly string[]): readonly string[] {
-  const list = typeof entries === 'string' ? entries.split(',') : entries;
-  const out: string[] = [];
+  const list: readonly unknown[] = typeof entries === 'string' ? entries.split(',') : entries;
+  const result = compile(Array.isArray(list) ? list : [list]);
 
-  for (const raw of list) {
-    const entry = raw.trim();
+  if ('refused' in result) throw new AuthConfigError(result.refused);
 
-    if (Object.hasOwn(TRUST_PROXY_PRESETS, entry)) {
-      out.push(...TRUST_PROXY_PRESETS[entry as TrustProxyPreset]);
-      continue;
-    }
-
-    if (!parseRange(entry)) {
-      throw new AuthConfigError(
-        `Trusted proxy "${entry}" is not an IP address, a CIDR range or one of ${Object.keys(TRUST_PROXY_PRESETS).join(', ')}`,
-      );
-    }
-
-    out.push(entry);
-  }
-
-  return Object.freeze(out);
+  return Object.freeze(result.entries);
 }
 
-const compiled = new WeakMap<readonly string[], readonly Range[]>();
+const compiled = new WeakMap<object, readonly Range[]>();
 
-function rangesOf(list: readonly string[]): readonly Range[] {
+/**
+ * The ranges of a trusted list, compiled once per list. On the request path
+ * this never throws: a list that does not compile (or is not a list) trusts
+ * nothing, so a misconfigured direct caller fails closed. `resolveTrustedHops`
+ * and `resolveTrustedProxies` refuse the same list loudly at boot.
+ */
+function rangesOf(list: unknown): readonly Range[] {
+  if (!Array.isArray(list)) return [];
+
   const cached = compiled.get(list);
 
   if (cached) return cached;
 
-  const ranges = resolveTrustedProxies(list).map((entry) => parseRange(entry) as Range);
+  const result = compile(list);
+  const ranges = 'refused' in result ? [] : result.ranges;
 
   compiled.set(list, ranges);
 
   return ranges;
 }
 
-/** `a.b.c.d` as `::ffff:a.b.c.d`, for IPv6 ranges. */
-function mapV4(bytes: Bytes): Bytes {
-  return [...Array<number>(10).fill(0), 0xff, 0xff, ...bytes];
-}
-
 /**
  * True when the address is inside one of the trusted ranges (presets
  * allowed). An IPv4-mapped IPv6 address also matches the IPv4 ranges and a
  * plain IPv4 address the IPv6 ranges through its mapped form, as in Express.
+ * An IPv6 zone id (`fe80::1%eth0`, as a socket reports a link-local peer) is
+ * dropped first. Never throws: a list that does not compile trusts nothing.
  */
 export function isTrustedAddress(address: string, list: readonly string[]): boolean {
-  const bytes = parseIp(address);
+  if (typeof address !== 'string') return false;
+
+  const zone = address.indexOf('%');
+  const bytes = parseIp(zone > 0 && address.includes(':') ? address.slice(0, zone) : address);
 
   if (!bytes) return false;
 

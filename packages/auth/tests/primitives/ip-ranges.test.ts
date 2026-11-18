@@ -40,6 +40,11 @@ describe('isIp', () => {
       '203.0.113.7, 198.51.100.1',
       '1:2:3:4:5:6:7::8',
       '::ffff:999.0.0.1',
+      '1.2.3.4::',
+      '1.2.3.4::5',
+      '1:1.2.3.4::',
+      '1.2.3.4:5::',
+      '::1.2.3.4:5',
       '::ffff:1.2.3',
       ':::1',
     ])
@@ -86,8 +91,25 @@ describe('resolveTrustedProxies', () => {
       'loopback,',
       'true',
       'constructor',
+      '10.0.0.0::/8',
+      '1.2.3.4::/128',
     ])
       expect(() => resolveTrustedProxies(bad), bad).toThrow(AuthConfigError);
+  });
+
+  it('refuses a list that is not strings', () => {
+    expect(() => resolveTrustedProxies(42 as never)).toThrow(AuthConfigError);
+    expect(() => resolveTrustedProxies([42] as never)).toThrow(/must be strings/u);
+  });
+
+  it('refuses a range that trusts every address, as trust proxy "true" is refused', () => {
+    for (const everything of ['0.0.0.0/0', '::/0', '10.0.0.0/0', '::ffff:0:0/96', '::/64'])
+      expect(() => resolveTrustedProxies(everything), everything).toThrow(/trusts every address/u);
+
+    expect(resolveTrustedProxies('0.0.0.0/1, ::ffff:10.0.0.0/104')).toEqual([
+      '0.0.0.0/1',
+      '::ffff:10.0.0.0/104',
+    ]);
   });
 });
 
@@ -124,19 +146,56 @@ describe('isTrustedAddress', () => {
     expect(isTrustedAddress('::ffff:127.0.0.1', ['loopback'])).toBe(true);
     expect(isTrustedAddress('::ffff:10.1.2.3', ['10.0.0.0/8'])).toBe(true);
     expect(isTrustedAddress('::ffff:11.1.2.3', ['10.0.0.0/8'])).toBe(false);
-    expect(isTrustedAddress('10.1.2.3', ['::ffff:0:0/96'])).toBe(true);
+    expect(isTrustedAddress('10.1.2.3', ['::ffff:10.0.0.0/104'])).toBe(true);
+    expect(isTrustedAddress('11.1.2.3', ['::ffff:10.0.0.0/104'])).toBe(false);
   });
 
   it('never trusts something that is not an address', () => {
-    expect(isTrustedAddress('unknown', ['0.0.0.0/0'])).toBe(false);
+    expect(isTrustedAddress('unknown', ['0.0.0.0/1'])).toBe(false);
     expect(isTrustedAddress('', ['loopback'])).toBe(false);
+    expect(isTrustedAddress(undefined as never, ['loopback'])).toBe(false);
   });
 
-  it('treats a bare address as a single host and /0 as everything of its family', () => {
+  it('treats a bare address as a single host and keeps each range to its family', () => {
     expect(isTrustedAddress('198.51.100.9', ['198.51.100.9'])).toBe(true);
     expect(isTrustedAddress('198.51.100.10', ['198.51.100.9'])).toBe(false);
-    expect(isTrustedAddress('203.0.113.1', ['0.0.0.0/0'])).toBe(true);
-    expect(isTrustedAddress('2001:db8::1', ['0.0.0.0/0'])).toBe(false);
+    expect(isTrustedAddress('100.0.0.1', ['0.0.0.0/1'])).toBe(true);
+    expect(isTrustedAddress('2001:db8::1', ['0.0.0.0/1'])).toBe(false);
+  });
+
+  it('drops an IPv6 zone id from a link-local socket address before matching', () => {
+    expect(isTrustedAddress('fe80::1%eth0', ['linklocal'])).toBe(true);
+    expect(isTrustedAddress('fe80::1%25', ['linklocal'])).toBe(true);
+    expect(isTrustedAddress('2001:db8::1%eth0', ['linklocal'])).toBe(false);
+    expect(isTrustedAddress('10.0.0.1%eth0', ['uniquelocal'])).toBe(false);
+    expect(isTrustedAddress('%eth0', ['linklocal'])).toBe(false);
+
+    expect(
+      clientIp({
+        remoteAddress: 'fe80::1%eth0',
+        forwardedFor: '203.0.113.50',
+        trustedHops: ['linklocal'],
+      }),
+    ).toBe('203.0.113.50');
+  });
+
+  it('fails closed on the request path for a list that would be refused at boot', () => {
+    for (const list of [
+      ['localhost'],
+      ['0.0.0.0/0'],
+      [42],
+      'loopback',
+      null,
+      undefined,
+      {},
+    ] as unknown as (readonly string[])[]) {
+      expect(() => isTrustedAddress('127.0.0.1', list)).not.toThrow();
+      expect(isTrustedAddress('127.0.0.1', list), JSON.stringify(list)).toBe(false);
+
+      expect(
+        clientIp({ remoteAddress: '127.0.0.1', forwardedFor: '198.51.100.1', trustedHops: list }),
+      ).toBe('127.0.0.1');
+    }
   });
 });
 
@@ -192,7 +251,7 @@ describe('clientIp with a trusted client IP header', () => {
       clientIp({
         remoteAddress: '10.0.0.2',
         forwardedFor: '203.0.113.50',
-        trustedHops: 1,
+        trustedHops: ['10.0.0.0/8'],
         trustedHeader: '198.51.100.7',
       }),
     ).toBe('198.51.100.7');
@@ -206,10 +265,19 @@ describe('clientIp with a trusted client IP header', () => {
     ).toBe('2001:db8::7');
   });
 
-  it('ignores the header with no trusted hop', () => {
+  it('ignores the header with no trusted hop, and with a hop count (which never checks the socket)', () => {
     expect(
       clientIp({ remoteAddress: '203.0.113.50', trustedHops: 0, trustedHeader: '198.51.100.7' }),
     ).toBe('203.0.113.50');
+
+    expect(
+      clientIp({
+        remoteAddress: '203.0.113.50',
+        forwardedFor: '203.0.113.9',
+        trustedHops: 1,
+        trustedHeader: '198.51.100.7',
+      }),
+    ).toBe('203.0.113.9');
 
     expect(
       clientIp({
@@ -237,14 +305,18 @@ describe('clientIp with a trusted client IP header', () => {
         clientIp({
           remoteAddress: '10.0.0.2',
           forwardedFor: '203.0.113.50',
-          trustedHops: 1,
+          trustedHops: ['10.0.0.0/8'],
           trustedHeader,
         }),
         JSON.stringify(trustedHeader),
       ).toBe('203.0.113.50');
 
     expect(
-      clientIp({ remoteAddress: '10.0.0.2', trustedHops: 1, trustedHeader: ['198.51.100.7'] }),
+      clientIp({
+        remoteAddress: '10.0.0.2',
+        trustedHops: ['10.0.0.0/8'],
+        trustedHeader: ['198.51.100.7'],
+      }),
     ).toBe('198.51.100.7');
   });
 });
@@ -272,12 +344,17 @@ describe('resolveTrustedHops', () => {
 
 describe('resolveClientIpHeader', () => {
   it('lowercases a header name and passes undefined through', () => {
-    expect(resolveClientIpHeader('CF-Connecting-IP')).toBe('cf-connecting-ip');
-    expect(resolveClientIpHeader(undefined)).toBeUndefined();
+    expect(resolveClientIpHeader('CF-Connecting-IP', ['10.0.0.0/8'])).toBe('cf-connecting-ip');
+    expect(resolveClientIpHeader(undefined, 1)).toBeUndefined();
   });
 
   it('refuses X-Forwarded-For and names that are not header names', () => {
     for (const bad of ['X-Forwarded-For', '', 'cf connecting ip', 'a:b'])
-      expect(() => resolveClientIpHeader(bad), bad).toThrow(AuthConfigError);
+      expect(() => resolveClientIpHeader(bad, ['10.0.0.0/8']), bad).toThrow(AuthConfigError);
+  });
+
+  it('refuses the header unless the proxies are trusted by address', () => {
+    for (const hops of [0, 1, 2])
+      expect(() => resolveClientIpHeader('cf-connecting-ip', hops)).toThrow(/list of your edge/u);
   });
 });
