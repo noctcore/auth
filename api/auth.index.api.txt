@@ -74,6 +74,7 @@ NO_SUCH_USER_ID
 OneTimeTokens
 SessionManager
 TOKEN_BYTES
+TRUST_PROXY_PRESETS
 Throttle
 accountKey
 assertExactOrigins
@@ -93,6 +94,7 @@ generateToken
 hexDigestsEqual
 hmacSha256Hex
 isTokenShape
+isTrustedAddress
 maskIp
 noopMetrics
 normalizeEmail
@@ -104,6 +106,9 @@ pwnedPasswords
 randomBytes
 refuse
 resolveSameSite
+resolveClientIpHeader
+resolveTrustedHops
+resolveTrustedProxies
 secretsEqual
 serializeCookie
 sessionCookieName
@@ -209,7 +214,7 @@ CaptchaVerifier [interface]
 ChangedEmail [interface]<A>
     readonly session: IssuedSession<A>
 checkPasswordPolicy [function]: (password: string, policy?: PasswordPolicy) => PasswordPolicyVerdict
-clientIp [function]: (input: { remoteAddress: string | undefined; forwardedFor?: string | readonly string[] | null | undefined; trustedHops: number; }) => string | undefined
+clientIp [function]: (input: { remoteAddress: string | undefined; forwardedFor?: string | readonly string[] | null | undefined; trustedHops: TrustedHops; trustedHeader?: string | readonly string[] | null | undefined; }) => string | undefined
 Clock [interface]
     now(): number
 CookieAttributes [interface]
@@ -281,6 +286,7 @@ IssueOptions [interface]<A>
     readonly via: IssueVia
 IssueVia [type] = 'password' | 'register' | 'second-factor' | 'password-change' | 'email-verified' | 'email-changed' | 'revoke-others' | 'reauthenticate' | (string & {})
 isTokenShape [function]: (value: unknown) => value is string
+isTrustedAddress [function]: (address: string, list: readonly string[]) => boolean
 LockoutOptions [interface]
     readonly baseLock?: Duration
     readonly deviceMaxAge?: Duration
@@ -419,6 +425,9 @@ RequestMeta [interface]
     readonly origin?: string | undefined
     readonly userAgent?: string | undefined
 resolveSameSite [function]: (config: SessionCookieConfig, origin: string | undefined) => SameSite
+resolveClientIpHeader [function]: (name: string | undefined) => string | undefined
+resolveTrustedHops [function]: (value: TrustedHops, maxHops: number, label?: string) => TrustedHops
+resolveTrustedProxies [function]: (entries: string | readonly string[]) => readonly string[]
 RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'email-changed' | 'email-reverted' | 'evicted' | (string & {})
 SameSite [type] = 'lax' | 'strict' | 'none'
 SecretCipher [interface]
@@ -564,6 +573,9 @@ TokenStore [interface]
 toMilliseconds [function]: (duration: Duration) => number
 toPublicError [function]: (failure: AuthFailure) => { code: AuthErrorCode; retryAfterSeconds?: number; }
 toSeconds [function]: (duration: Duration) => number
+TRUST_PROXY_PRESETS [const]: { readonly loopback: readonly ["127.0.0.1/8", "::1/128"]; readonly linklocal: readonly ["169.254.0.0/16", "fe80::/10"]; readonly uniquelocal: readonly ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]; }
+TrustedHops [type] = number | readonly string[]
+TrustProxyPreset [type] = keyof typeof TRUST_PROXY_PRESETS
 turnstile [function]: (options: TurnstileOptions) => CaptchaVerifier
 TurnstileOptions [interface]
     readonly checkAction?: boolean
