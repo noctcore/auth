@@ -105,6 +105,20 @@ export class AccountController {
     return { sessions: await this.auth.sessions.list(session) };
   }
 
+  /** Signs out one device by the `handle` the session list showed (never a store key). */
+  @Post('sessions/revoke')
+  async revokeSession(
+    @Body() body: { handle?: unknown },
+    @CurrentSession() session: Session,
+    @AuthMeta() meta: RequestMeta,
+  ) {
+    const result = await this.auth.sessions.revoke({ session, handle: str(body.handle), meta });
+
+    if (!result.ok) throw refusal(result);
+
+    return result.value;
+  }
+
   /** Proves the password again: a new session (rotation) with a fresh credential proof. */
   @Post('reauthenticate')
   async reauthenticate(

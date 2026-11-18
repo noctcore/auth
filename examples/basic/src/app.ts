@@ -330,6 +330,18 @@ export function createApp(options: AppOptions) {
         return send(res, 200, { sessions: await auth.sessions.list(session) });
       }
 
+      // Signs out one device by the `handle` the session list showed (never a store key).
+      case 'POST /api/sessions/revoke': {
+        if (!session)
+          return failure(res, { ok: false, code: 'session_expired', reason: 'no_session' });
+
+        const result = await auth.sessions.revoke({ session, handle: str(body['handle']), meta });
+
+        if (!result.ok) return failure(res, result);
+
+        return send(res, 200, result.value);
+      }
+
       case 'POST /api/logout': {
         const { cookie } = await auth.logout({ token: sessionToken, meta });
         // Signed out again: a fresh pre-session id, and a token bound to it.
