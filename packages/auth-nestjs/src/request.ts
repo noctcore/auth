@@ -17,10 +17,12 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import {
   clientIp,
+  resolveSameSite,
   serializeCookie,
   type AuthUser,
   type CookieSpec,
   type RequestMeta,
+  type SameSite,
   type StoredSession,
 } from '@noctcore/auth';
 import type { ResolvedOptions } from './options';
@@ -145,11 +147,19 @@ export function appendCookie(res: RawResponse, spec: CookieSpec): void {
   res.setHeader('set-cookie', [...list, serializeCookie(spec)]);
 }
 
+/**
+ * The session cookie's `SameSite` for this request's `Origin`, for every
+ * cookie the module sets alongside it.
+ */
+export function sameSiteFor(req: RawRequest, options: ResolvedOptions): SameSite {
+  return resolveSameSite(options.cookie, header(req, 'origin'));
+}
+
 /** A cookie that clears the session cookie, for a token the core refused. */
-export function blankSessionCookie(options: ResolvedOptions): CookieSpec {
+export function blankSessionCookie(options: ResolvedOptions, sameSite: SameSite): CookieSpec {
   return {
     name: options.auth.cookieName,
     value: '',
-    attributes: { httpOnly: true, secure: options.secure, sameSite: 'lax', path: '/', maxAge: 0 },
+    attributes: { httpOnly: true, secure: options.secure, sameSite, path: '/', maxAge: 0 },
   };
 }

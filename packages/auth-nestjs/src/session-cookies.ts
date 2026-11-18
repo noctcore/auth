@@ -14,7 +14,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { IssuedSession } from '@noctcore/auth';
 import { csrfCookie, newPreSession, preSessionBinding, sessionBinding } from './csrf-tokens';
 import type { ResolvedOptions } from './options';
-import { appendCookie, principalOf, rawRequest, rawResponse, requestMeta } from './request';
+import {
+  appendCookie,
+  principalOf,
+  rawRequest,
+  rawResponse,
+  requestMeta,
+  sameSiteFor,
+} from './request';
 import { AUTH_OPTIONS } from './tokens';
 
 @Injectable()
@@ -32,7 +39,13 @@ export class SessionCookies {
     csrfToken: string;
   } {
     const res = rawResponse(response);
-    const csrf = csrfCookie(this.options, sessionBinding(issued.session));
+
+    // The CSRF cookie goes wherever the session cookie goes.
+    const csrf = csrfCookie(
+      this.options,
+      sessionBinding(issued.session),
+      issued.cookie.attributes.sameSite,
+    );
 
     appendCookie(res, issued.cookie);
     appendCookie(res, issued.deviceCookie);
@@ -56,8 +69,9 @@ export class SessionCookies {
 
     const meta = principal?.meta ?? requestMeta(req, this.options.trustedHops);
     const { cookie } = await this.options.auth.logout({ token, meta });
-    const fresh = newPreSession(this.options);
-    const csrf = csrfCookie(this.options, preSessionBinding(fresh.id));
+    const sameSite = sameSiteFor(req, this.options);
+    const fresh = newPreSession(this.options, sameSite);
+    const csrf = csrfCookie(this.options, preSessionBinding(fresh.id), sameSite);
 
     appendCookie(res, cookie);
     appendCookie(res, fresh.cookie);
