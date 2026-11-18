@@ -23,22 +23,24 @@ export type TrustProxyPreset = keyof typeof TRUST_PROXY_PRESETS;
 /** A parsed address: 4 bytes for IPv4, 16 for IPv6. */
 type Bytes = readonly number[];
 
+/** A range as its family (byte count), prefix length and masked network bytes. */
 interface Range {
-  readonly bytes: Bytes;
+  readonly length: number;
   readonly prefix: number;
+  readonly network: string;
 }
 
 const V4 = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})$/u;
 const GROUP = /^[0-9a-f]{1,4}$/iu;
 
-function parseV4(text: string): Bytes | null {
+function parseV4(text: string): [number, number, number, number] | null {
   const match = V4.exec(text);
 
   if (!match) return null;
 
-  const bytes = match.slice(1).map(Number);
+  const [, a, b, c, d] = match.map(Number) as [number, number, number, number, number];
 
-  return bytes.every((b) => b <= 255) ? bytes : null;
+  return a <= 255 && b <= 255 && c <= 255 && d <= 255 ? [a, b, c, d] : null;
 }
 
 function parseGroups(text: string): number[] | null {
@@ -54,7 +56,9 @@ function parseGroups(text: string): number[] | null {
 
       if (!v4) return null;
 
-      out.push(((v4[0] ?? 0) << 8) | (v4[1] ?? 0), ((v4[2] ?? 0) << 8) | (v4[3] ?? 0));
+      const [a, b, c, d] = v4;
+
+      out.push((a << 8) | b, (c << 8) | d);
       continue;
     }
 
@@ -67,18 +71,19 @@ function parseGroups(text: string): number[] | null {
 }
 
 function parseV6(text: string): Bytes | null {
-  const halves = text.split('::');
+  const gap = text.indexOf('::');
 
-  if (halves.length > 2) return null;
+  // At most one "::" (":::" counts as two).
+  if (gap !== text.lastIndexOf('::')) return null;
 
-  const head = parseGroups(halves[0] ?? '');
-  const tail = halves.length === 2 ? parseGroups(halves[1] ?? '') : [];
+  const head = parseGroups(gap === -1 ? text : text.slice(0, gap));
+  const tail = gap === -1 ? [] : parseGroups(text.slice(gap + 2));
 
   if (!head || !tail) return null;
 
   const missing = 8 - head.length - tail.length;
 
-  if (halves.length === 2 ? missing < 1 : missing !== 0) return null;
+  if (gap === -1 ? missing !== 0 : missing < 1) return null;
 
   const groups = [...head, ...Array<number>(missing).fill(0), ...tail];
 
@@ -95,13 +100,22 @@ export function isIp(text: string): boolean {
   return parseIp(text) !== null;
 }
 
-/** `::ffff:a.b.c.d` names the IPv4 address a.b.c.d; matched against IPv4 ranges as that. */
+const MAPPED_PREFIX = '0.0.0.0.0.0.0.0.0.0.255.255';
+
+/** `::ffff:a.b.c.d` (16 bytes) names the IPv4 address a.b.c.d; matched against IPv4 ranges as that. */
 function unmapV4(bytes: Bytes): Bytes | null {
-  if (bytes.length !== 16) return null;
+  return bytes.slice(0, 12).join('.') === MAPPED_PREFIX ? bytes.slice(12) : null;
+}
 
-  for (let i = 0; i < 10; i++) if (bytes[i] !== 0) return null;
+/** The bytes with every bit past the prefix cleared, as a comparable string. */
+function masked(bytes: Bytes, prefix: number): string {
+  return bytes
+    .map((byte, i) => {
+      const bits = Math.min(8, Math.max(0, prefix - i * 8));
 
-  return bytes[10] === 0xff && bytes[11] === 0xff ? bytes.slice(12) : null;
+      return byte & ((0xff << (8 - bits)) & 0xff);
+    })
+    .join('.');
 }
 
 function parseRange(entry: string): Range | null {
@@ -112,30 +126,19 @@ function parseRange(entry: string): Range | null {
   if (!bytes) return null;
 
   const max = bytes.length * 8;
-
-  if (slash === -1) return { bytes, prefix: max };
-
-  const prefixText = entry.slice(slash + 1);
+  const prefixText = slash === -1 ? String(max) : entry.slice(slash + 1);
 
   if (!/^(0|[1-9]\d{0,2})$/u.test(prefixText)) return null;
 
   const prefix = Number(prefixText);
 
-  return prefix <= max ? { bytes, prefix } : null;
+  if (prefix > max) return null;
+
+  return { length: bytes.length, prefix, network: masked(bytes, prefix) };
 }
 
 function inRange(bytes: Bytes, range: Range): boolean {
-  if (bytes.length !== range.bytes.length) return false;
-
-  let bits = range.prefix;
-
-  for (let i = 0; bits > 0; i++, bits -= 8) {
-    const mask = bits >= 8 ? 0xff : (0xff << (8 - bits)) & 0xff;
-
-    if (((bytes[i] ?? 0) & mask) !== ((range.bytes[i] ?? 0) & mask)) return false;
-  }
-
-  return true;
+  return bytes.length === range.length && masked(bytes, range.prefix) === range.network;
 }
 
 /**

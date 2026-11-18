@@ -107,11 +107,11 @@ function headerList(raw: string | readonly string[] | null | undefined): string[
 
 /** The one address in a trusted header, or undefined when it is missing or not exactly one IP. */
 function singleAddress(raw: string | readonly string[] | null | undefined): string | undefined {
-  const values = typeof raw === 'string' ? [raw] : (raw ?? []);
+  const [first, ...rest] = typeof raw === 'string' ? [raw] : (raw ?? []);
 
-  if (values.length !== 1) return undefined;
+  if (first === undefined || rest.length > 0) return undefined;
 
-  const value = (values[0] ?? '').trim();
+  const value = first.trim();
 
   return isIp(value) ? value : undefined;
 }
