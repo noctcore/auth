@@ -131,6 +131,26 @@ export class AccountController {
     return meta;
   }
 
+  @Get('sessions')
+  async sessions(@CurrentSession() session: StoredSession<Record<string, never>>) {
+    return { sessions: await this.auth.sessions.list(session) };
+  }
+
+  /** Revokes one of the caller's sessions by the public handle the list showed. */
+  @Post('sessions/revoke')
+  async revokeSession(
+    @Body() body: { handle?: unknown },
+    @CurrentSession() session: StoredSession<Record<string, never>>,
+    @AuthMeta() meta: RequestMeta,
+  ) {
+    const handle = typeof body.handle === 'string' ? body.handle : '';
+    const result = await this.auth.sessions.revoke({ session, handle, meta });
+
+    if (!result.ok) failure(result, 403);
+
+    return result.value;
+  }
+
   @Post('echo')
   echo(@Body() body: unknown) {
     return { body };
