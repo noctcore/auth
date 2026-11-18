@@ -8,6 +8,13 @@
  * current one. That closes account pre-hijacking: someone who registered the
  * address first and kept a session loses it the moment the real owner proves
  * the mailbox.
+ *
+ * `emailVerification.linkWithoutSession` also accepts a link opened with no
+ * session at all. The proof is still the single-use token, bound to the account
+ * and to the address it was sent to; the revocation still runs, bumping the
+ * epoch, so every session of the account ends, a squatter's included; and no
+ * session is issued, so the link alone never signs anyone in. Nothing is
+ * required of the epoch on the way in: there is no session to check it against.
  */
 import { PURPOSE, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
@@ -136,13 +143,18 @@ export async function verifyEmailCode<U extends AuthUser, A>(
 }
 
 /**
- * Verifies a link. The click must come from a signed-in session of the same
- * account; otherwise the link is left unspent so the user can sign in and open
- * it again. That keeps the pre-hijacking defence: a squatter's session can
- * never be the one that completes verification.
+ * Verifies a link. By default the click must come from a signed-in session of
+ * the same account; otherwise the link is left unspent so the user can sign in
+ * and open it again. That keeps the pre-hijacking defence: a squatter's session
+ * can never be the one that completes verification.
+ *
+ * With `linkWithoutSession` a click with no session verifies too, and gets no
+ * session back. A session of another account is refused either way, and the
+ * link stays unspent.
  */
 export async function verifyEmailLink<U extends AuthUser, A>(
   core: AuthCore<U, A>,
+  settings: FlowSettings,
   input: { token: string; session: StoredSession<A> | null; meta: RequestMeta },
 ): Promise<AuthResult<VerifiedEmail<A>>> {
   const limited = await core.rateLimit('email-verification', input.meta.ip, input.meta);
@@ -150,8 +162,9 @@ export async function verifyEmailLink<U extends AuthUser, A>(
   if (limited) return limited;
 
   const peek = await core.tokens.peekLink(PURPOSE.emailVerification, input.token);
+  const sessionless = input.session === null && settings.verification.linkWithoutSession;
 
-  if (peek.status === 'valid' && input.session?.userId !== peek.userId) {
+  if (peek.status === 'valid' && !sessionless && input.session?.userId !== peek.userId) {
     await core.emit(
       { type: 'email.verification_failed', userId: peek.userId, reason: 'session_required' },
       input.meta,

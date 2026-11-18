@@ -37,6 +37,7 @@ export interface FlowSettings {
     readonly ttlMs: number;
     readonly digits: number;
     readonly maxAttempts: number;
+    readonly linkWithoutSession: boolean;
   };
   readonly reset: {
     readonly kind: 'link' | 'code';
