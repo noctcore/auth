@@ -16,9 +16,14 @@
  * 3. `@RequireRole()`, only after both of the above;
  * 4. `@RequireFreshAuth()`.
  *
- * `@Public()` skips steps 1 to 4 only on a route with no role or fresh-auth
- * requirement; a route with one always needs a session (and `AuthModule`
- * refuses to boot with such a route, so the mistake is caught early).
+ * `@Public()` lets a request through without a session, and skips steps 3
+ * and 4, only on a route with no role or fresh-auth requirement; a route with
+ * one always needs a session (and `AuthModule` refuses to boot with such a
+ * route, so the mistake is caught early). Steps 1 and 2 still run on a public
+ * route: a session the request carries is resolved and its user loaded, so
+ * `@CurrentSession()` and `@CurrentUser()` name the caller when there is one.
+ * Flows that refuse another account's session (an email verification link, for
+ * one) depend on that.
  *
  * Only HTTP is supported. A GraphQL resolver, a WebSocket gateway or a
  * microservice handler is refused unless it is `@Public()`, so a transport
