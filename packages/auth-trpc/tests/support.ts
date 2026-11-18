@@ -34,6 +34,8 @@ import {
   reauthenticateInput,
   registerInput,
   requestPasswordResetInput,
+  revokedOutput,
+  revokeSessionInput,
   sessionListOutput,
   toTRPCError,
   userOutput,
@@ -159,6 +161,26 @@ export function buildRouter(auth: TestAuth) {
     sessions: protectedProcedure
       .output(sessionListOutput)
       .query(({ ctx }) => auth.sessions.list(ctx.session)),
+    /** Returns each session's store key too: the output schema must strip it. */
+    leakySessions: protectedProcedure
+      .output(sessionListOutput)
+      .query(async ({ ctx }) =>
+        (await auth.sessions.list(ctx.session)).map((s) => ({ ...s, id: ctx.session.id })),
+      ),
+    revokeSession: protectedProcedure
+      .input(revokeSessionInput)
+      .output(revokedOutput)
+      .mutation(async ({ ctx, input }) => {
+        const result = await auth.sessions.revoke({
+          session: ctx.session,
+          handle: input.handle,
+          meta: ctx.auth.meta,
+        });
+
+        if (!result.ok) throw toTRPCError(result);
+
+        return result.value;
+      }),
     reauthenticate: protectedProcedure
       .use(writesCookies)
       .input(reauthenticateInput)
