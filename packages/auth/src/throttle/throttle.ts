@@ -19,7 +19,8 @@
  *   backoff, capped (1 h by default). The tier resets only after a quiet
  *   period (24 h by default) with no new lock. A new lock mails the owner.
  * - Opt-in permanent tier (`lockout.permanent`): after `afterLocks` temporary
- *   locks in a row (a successful sign-in resets the count), the next lock
+ *   locks in a row (a successful sign-in or a completed password reset
+ *   resets the count), the next lock
  *   never lapses; only `clearPermanent` (an admin) lifts it, not a password
  *   reset. Its marker is keyed on the user id when the address has an
  *   account, so it follows the account through an email change, and on the
@@ -171,13 +172,11 @@ export class Throttle {
     if (all.count > this.perAccount.limit) {
       // Only the attempt that crossed the limit locks; a parallel one that also
       // got past the lock check above is refused here without a second lock.
-      if (!locksAt(all.count, this.perAccount.limit))
-        return { allowed: false, reason: 'locked', ...(await this.runningLock(account)) };
+      if (!locksAt(all.count, this.perAccount.limit)) return this.racingRefusal(account, owner);
 
       const { newLock } = await this.lock(account, all.count, true, owner);
 
-      if (!newLock)
-        return { allowed: false, reason: 'locked', ...(await this.runningLock(account)) };
+      if (!newLock) return this.racingRefusal(account, owner);
 
       return {
         allowed: false,
@@ -200,15 +199,33 @@ export class Throttle {
     return this.revealLocked ? { lock } : {};
   }
 
+  /** A refusal under a lock a parallel request set (or found): permanent when the marker says so. */
+  private async racingRefusal(account: string, owner?: string | null): Promise<LoginGate> {
+    const running = await this.runningLock(account, owner);
+    const permanent = running.lock !== undefined && 'permanent' in running.lock;
+
+    return { allowed: false, reason: permanent ? 'permanently_locked' : 'locked', ...running };
+  }
+
   /**
    * The end of a lock set by a parallel request, read only when login may
    * reveal it (`revealLocked`), so the default path makes no extra store call.
-   * A lock that cannot be read (it ended between the two reads) is answered
-   * as a temporary one of `baseLock`, never as permanent: only the permanent
-   * marker makes an answer permanent.
+   * A permanent marker set by a parallel request (with the tier on) makes the
+   * answer permanent. Otherwise a lock that cannot be read (it ended between
+   * the two reads) is answered as a temporary one of `baseLock`: only the
+   * permanent marker makes an answer permanent.
    */
-  private async runningLock(account: string): Promise<{ lock?: { until: number } }> {
+  private async runningLock(
+    account: string,
+    owner?: string | null,
+  ): Promise<{ lock?: { until: number } | { permanent: true } }> {
     if (!this.revealLocked) return {};
+
+    if (
+      this.permanentAfter !== undefined &&
+      (await this.counters.get(this.permanentKey(account, owner))) !== null
+    )
+      return { lock: { permanent: true } };
 
     const running = await this.counters.get(keys.lock(account));
 
@@ -376,7 +393,8 @@ export class Throttle {
 
   /**
    * A completed password reset proves the mailbox: lift the temporary lock and
-   * its history. A permanent lock stays: only an admin lifts it.
+   * its history, and the count toward the permanent tier. A permanent lock
+   * stays: only an admin lifts it.
    */
   async clearAccount(account: string): Promise<void> {
     await this.counters.reset(keys.lock(account));

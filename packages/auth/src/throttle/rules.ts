@@ -27,7 +27,8 @@ export interface LockoutOptions {
   /**
    * Opt in to a permanent tier: an account that keeps getting locked stays
    * locked until an admin clears it (`auth.lockout.clear`). Off by default.
-   * The count is of locks in a row, reset by a successful sign-in.
+   * The count is of locks in a row, reset by a successful sign-in or a
+   * completed password reset.
    *
    * Trade-off: anyone who knows an address can spread failures over many IPs
    * and lock its owner out for good on purpose (denial of service). Pair it
@@ -51,8 +52,8 @@ export interface LockoutOptions {
 export interface PermanentLockOptions {
   /**
    * How many temporary locks in a row (each within `quietPeriod` of the last,
-   * with no successful sign-in between) an account may take: the next lock
-   * is permanent. At least 1.
+   * with no successful sign-in or completed password reset between) an
+   * account may take: the next lock is permanent. At least 1.
    */
   readonly afterLocks: number;
   /**
@@ -62,12 +63,16 @@ export interface PermanentLockOptions {
    * device they signed in from. The lock deletes the account's sessions but
    * keeps the device cookies; sessions from a device sign-in may
    * reauthenticate and change the password, but no session may change the
-   * email until an admin clears the lock.
+   * email until an admin clears the lock. Other ways in still mint a session,
+   * each needing a correct password or the app's SSO: an app's SSO through
+   * `issueSession`, a two-factor challenge started before the lock, and a
+   * login racing the revocation.
    *
    * False: the lock holds against every login. It bumps the revocation epoch
    * (ending every session and device cookie), and refuses every session
-   * door (issuing a session by any path, reauthentication, password change,
-   * email change, email verification) until an admin clears it.
+   * door (issuing a session by any path, validating one, reauthentication,
+   * password change, email change, email verification) until an admin
+   * clears it.
    */
   readonly trustedDevices?: boolean;
 }
