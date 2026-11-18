@@ -48,11 +48,13 @@ type Verification = AuthConfig<AuthUser, Record<string, never>, []>['emailVerifi
 
 /**
  * `cookie` replaces the session cookie config (plain HTTP, `Lax`, by default);
- * `emailVerification` replaces the core's verification settings (codes by default).
+ * `emailVerification` replaces the core's verification settings (codes by default);
+ * `maxPerUser` replaces the per-user session cap (10 by default).
  */
 export function makeAuth(
   cookie: SessionCookieConfig = { secure: false },
   emailVerification?: Verification,
+  maxPerUser?: number,
 ) {
   const clock = manualClock();
   const stores = memoryStores(clock);
@@ -62,7 +64,7 @@ export function makeAuth(
     stores,
     clock,
     password: { hasher: plainHasher(), breachCheck: false },
-    session: { cookie },
+    session: { cookie, ...(maxPerUser === undefined ? {} : { maxPerUser }) },
     secret: 'auth-secret-that-is-at-least-32-bytes-long',
     urls: {
       resetPassword: (token) => `${ORIGIN}/reset#${token}`,
@@ -298,6 +300,8 @@ export interface BootOptions {
   readonly cookie?: SessionCookieConfig;
   /** The core's verification settings, in place of codes. */
   readonly emailVerification?: Verification;
+  /** The per-user session cap, in place of 10. */
+  readonly maxPerUser?: number;
 }
 
 /** Under a global prefix: a handler at the prefix root, and a route excluded from the prefix. */
@@ -335,7 +339,7 @@ export class ExcludedController {
 }
 
 export async function boot(overrides: BootOptions = {}) {
-  const env = makeAuth(overrides.cookie, overrides.emailVerification);
+  const env = makeAuth(overrides.cookie, overrides.emailVerification, overrides.maxPerUser);
   const roles = overrides.roles ?? new Map<string, readonly string[]>();
 
   const base: AuthModuleOptions = {
