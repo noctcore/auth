@@ -575,6 +575,23 @@ describe('permanent tier', () => {
     });
   });
 
+  it('announces a permanent lock once, however often failures cross the limit under it', async () => {
+    const t = new Throttle(counters, clock, small);
+
+    await lockOnce(t);
+    clock.advance(5 * MIN);
+    await lockOnce(t);
+
+    // Wrong passwords let through by a device token keep crossing, lock after lock.
+    for (let round = 0; round < 3; round++) {
+      clock.advance(60 * MIN);
+      await t.deviceFailed(victim);
+      expect(await t.deviceFailed(victim)).toEqual({});
+    }
+
+    expect((await t.lockState(victim)).permanent).toBe(true);
+  });
+
   it('reads no permanent marker while the tier is off', async () => {
     const get = vi.spyOn(counters, 'get');
 

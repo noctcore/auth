@@ -289,6 +289,10 @@ export class Throttle {
     await this.counters.set(keys.tier(account), tier, this.quietPeriodMs);
 
     if (escalates && this.permanentAfter !== undefined && tier > this.permanentAfter) {
+      // Already permanent (wrong passwords let through by a device token
+      // crossed again): announced once, not on every crossing.
+      if ((await this.counters.get(keys.permanent(account))) !== null) return {};
+
       await this.counters.set(keys.permanent(account), 1, LOCKOUT_EXPIRES_AT - this.clock.now());
 
       return { newLock: { until: LOCKOUT_EXPIRES_AT, permanent: true } };
