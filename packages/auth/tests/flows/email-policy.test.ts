@@ -139,6 +139,37 @@ describe('a custom normaliser in the flows', () => {
   });
 });
 
+describe('a custom normaliser that throws after startup', () => {
+  it('refuses the address and logs only the error class name', async () => {
+    const errors: Array<[string, Record<string, unknown> | undefined]> = [];
+    const logger = {
+      warn: () => undefined,
+      error: (m: string, c?: Record<string, unknown>) => void errors.push([m, c]),
+    };
+    const picky: EmailNormalizer = (email) => {
+      if (email.includes('boom')) throw new TypeError(`cannot read ${email}`);
+
+      return email.includes('@') ? email.trim().toLowerCase() : null;
+    };
+    const t = setup({ email: { normalize: picky }, logger });
+
+    const login = await t.auth.login({
+      email: 'boom@example.com',
+      password: PASSWORD,
+      meta: meta(),
+    });
+
+    expect(login).toMatchObject({
+      ok: false,
+      code: 'invalid_credentials',
+      reason: 'invalid_email',
+    });
+    expect(errors).toEqual([
+      ['email.normalize threw; refusing the address', { errorName: 'TypeError' }],
+    ]);
+  });
+});
+
 describe('the default', () => {
   it('is the standard policy, through auth.normalizeEmail too', () => {
     const t = setup();

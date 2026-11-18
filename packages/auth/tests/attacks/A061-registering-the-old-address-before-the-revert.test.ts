@@ -34,6 +34,9 @@ describe('A061: registering the old address so the revert has nowhere to go', ()
       await t.auth.register({ email: 'Ada@Example.com', password: PASSWORD, meta: meta() }),
     ).toEqual({ ok: true, value: { session: null } });
 
+    // The notice and its audit row are sent off the response path.
+    await settled();
+
     expect(t.mailer.sent.slice(before)).toEqual([
       expect.objectContaining({ type: 'account-exists', to: OWNER, userId: session.userId }),
     ]);
