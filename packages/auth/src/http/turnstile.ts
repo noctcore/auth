@@ -105,7 +105,6 @@ export function turnstile(options: TurnstileOptions): TurnstileVerifier {
 
     if (ip) form.set('remoteip', ip);
 
-    const signal = AbortSignal.timeout(timeoutMs);
     let response: Response;
 
     try {
@@ -113,7 +112,7 @@ export function turnstile(options: TurnstileOptions): TurnstileVerifier {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: form,
-        signal,
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       return { verdict: 'unavailable', reason: failureReason(error) };
@@ -181,7 +180,7 @@ export function turnstile(options: TurnstileOptions): TurnstileVerifier {
     const outcome: TurnstileOutcome = Object.freeze({
       ...verdict,
       door: context.door,
-      errorCodes: Object.freeze([...(verdict.errorCodes ?? [])]),
+      errorCodes: Object.freeze(verdict.errorCodes ?? []),
     });
 
     reportOutcome(options.onResult, outcome, logger, 'turnstile');
