@@ -26,13 +26,15 @@
  * Each body is tagged with what it checks, so `describeProcedures` can list a
  * plain tRPC router's procedures with their access rule.
  * - `rateLimited` counts with the core's throttle by the client IP the core
- *   resolved, and refuses when the counter store cannot answer.
+ *   resolved (or, opted in, by the signed-in user), and refuses when the
+ *   counter store cannot answer.
  *
  * A refusal is an `AuthTRPCError` naming only the public code.
  */
 import {
   AuthConfigError,
   fail,
+  sha256Hex,
   toMilliseconds,
   type AuthUser,
   type Duration,
@@ -271,23 +273,120 @@ const NAME = /^[a-z0-9][a-z0-9_.-]*$/iu;
 export const DEFAULT_RATE_LIMIT: RateLimitRule = { limit: 10, window: '1m' };
 
 /**
- * Counts each call in a fixed window per client IP, under a key of its own
- * (`trpc:<name>:<ip>`), so it never shares a budget with a core door. The
- * core flows already limit their own doors; use this on your procedures.
+ * Who a rate limit counts: `ip`, the client IP the core resolved; `user`, the
+ * signed-in user (the stored session's user id), with the client IP for a
+ * call that has no session the core accepted.
  */
-export function rateLimitedBody(name: string, rule: RateLimitRule = DEFAULT_RATE_LIMIT) {
-  if (!NAME.test(name)) throw new AuthConfigError(`Invalid rate limit name: ${name}`);
+export type RateLimitKeyBy = 'ip' | 'user';
 
-  // Checks the window now rather than on the first call.
+/** A fixed-window rule for `rateLimited`, keyed by the client IP unless `keyBy` says `user`. */
+export interface TrpcRateLimitRule extends RateLimitRule {
+  /** Default `ip`. */
+  readonly keyBy?: RateLimitKeyBy;
+}
+
+/**
+ * The procedure meta `rateLimited` reads: `rateLimit: 'exempt'` skips every
+ * `rateLimited` on the procedure, including one on the base procedure it was
+ * built from. Add it to your meta type: `initTRPC.meta<RateLimitMeta>()`.
+ */
+export interface RateLimitMeta {
+  readonly rateLimit?: 'exempt';
+}
+
+const KEY_BY: ReadonlySet<unknown> = new Set<RateLimitKeyBy>(['ip', 'user']);
+
+/** Checks a rule's window and `keyBy` when the middleware is made, rather than on the first call. */
+function checkRule<R extends TrpcRateLimitRule>(rule: R, what: string): R {
   toMilliseconds(rule.window);
 
-  return tagged('rate', async <TResult>(call: MiddlewareCall<TResult>): Promise<TResult> => {
+  if (rule.keyBy !== undefined && !KEY_BY.has(rule.keyBy)) {
+    throw new AuthConfigError(`${what}: keyBy must be 'ip' or 'user'`);
+  }
+
+  return rule;
+}
+
+/**
+ * The named tiers of `createAuthMiddlewares(t, { rateLimits })`, checked at
+ * boot. A Map, so a name such as `constructor` never reads the prototype.
+ */
+export function resolveRateLimitTiers(
+  tiers: Readonly<Record<string, TrpcRateLimitRule>> = {},
+): ReadonlyMap<string, TrpcRateLimitRule> {
+  const resolved = new Map<string, TrpcRateLimitRule>();
+
+  for (const [tier, rule] of Object.entries(tiers)) {
+    if (!NAME.test(tier)) throw new AuthConfigError(`Invalid rate limit tier name: ${tier}`);
+
+    resolved.set(tier, checkRule(rule, `Rate limit tier ${tier}`));
+  }
+
+  return resolved;
+}
+
+/**
+ * The rule a `rateLimited(name, pick)` call counts with: a tier named by
+ * `pick` (unknown: refused when the middleware is made), the rule `pick` is,
+ * else the tier named `name`, else the `default` tier, else 10 a minute.
+ */
+export function pickRateLimitRule(
+  tiers: ReadonlyMap<string, TrpcRateLimitRule>,
+  name: string,
+  pick: TrpcRateLimitRule | string | undefined,
+): TrpcRateLimitRule {
+  if (typeof pick === 'string') {
+    const found = tiers.get(pick);
+
+    if (!found) throw new AuthConfigError(`Unknown rate limit tier: ${pick}`);
+
+    return found;
+  }
+
+  return pick ?? tiers.get(name) ?? tiers.get('default') ?? DEFAULT_RATE_LIMIT;
+}
+
+const isExemptMeta = (meta: unknown): boolean =>
+  (meta as RateLimitMeta | null | undefined)?.rateLimit === 'exempt';
+
+/**
+ * The caller part of a counter key. A user is named by a hash of the user id
+ * the core stored with the session, never anything the client sent, under
+ * `user:`, which no client IP (an address or `unknown`) can start with. So
+ * the user and IP buckets never collide, the raw id stays out of the counter
+ * store, and a cookie the core refused counts by IP like any anonymous call.
+ */
+function callerOf(state: AuthState, keyBy: RateLimitKeyBy | undefined): string {
+  const userId = keyBy === 'user' ? state.session?.userId : undefined;
+
+  return userId ? `user:${sha256Hex(`trpc-rate-limit:${userId}`)}` : state.meta.ip;
+}
+
+/**
+ * Counts each call in a fixed window under a key of its own, so it never
+ * shares a budget with a core door: `trpc:<name>:<ip>` by default, and
+ * `trpc:<name>:user:<hash>` for a signed-in caller when `keyBy` is `user`.
+ * A procedure whose meta says `rateLimit: 'exempt'` is not counted. The core
+ * flows already limit their own doors; use this on your procedures.
+ */
+export function rateLimitedBody(name: string, rule: TrpcRateLimitRule = DEFAULT_RATE_LIMIT) {
+  if (!NAME.test(name)) throw new AuthConfigError(`Invalid rate limit name: ${name}`);
+
+  checkRule(rule, `Rate limit ${name}`);
+
+  return tagged('rate', async <TResult>(call: MetaCall<TResult>): Promise<TResult> => {
+    if (isExemptMeta(call.meta)) return call.next();
+
     const { state, internals } = stateOf(call.ctx);
     const { auth } = internals.options;
+    const { limit, window } = rule;
     let hit;
 
     try {
-      hit = await auth.context.throttle.hit(`trpc:${name}:${state.meta.ip}`, rule);
+      hit = await auth.context.throttle.hit(`trpc:${name}:${callerOf(state, rule.keyBy)}`, {
+        limit,
+        window,
+      });
     } catch (error) {
       // Fail closed: no answer from the counter store is not a pass.
       auth.context.logger.error('auth-trpc rate limit could not count the call', {

@@ -121,4 +121,23 @@ describe('inferred types', () => {
 
     expectTypeOf<Outputs['leaky']>().toEqualTypeOf<ReturnType<typeof userOutput.parse>>();
   });
+
+  it('types the tier names a procedure may pick', () => {
+    const t = initTRPC.context<{ auth: AuthState }>().create();
+    const plain = createAuthMiddlewares(t);
+
+    const tiered = createAuthMiddlewares(t, {
+      rateLimits: { strict: { limit: 2, window: '1h', keyBy: 'user' } },
+    });
+
+    expectTypeOf(tiered.rateLimited).toBeCallableWith('export', 'strict');
+    expectTypeOf(tiered.rateLimited).toBeCallableWith('export', { limit: 1, window: '1m' });
+
+    // @ts-expect-error: no tier of that name
+    tiered.rateLimited.bind(null, 'export', 'lax');
+    // @ts-expect-error: no tiers at all
+    plain.rateLimited.bind(null, 'export', 'strict');
+    // @ts-expect-error: keyBy is ip or user
+    plain.rateLimited.bind(null, 'export', { limit: 1, window: '1m', keyBy: 'email' });
+  });
 });

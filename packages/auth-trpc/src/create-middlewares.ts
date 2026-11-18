@@ -8,7 +8,7 @@
  * the docs build every procedure from these two, and
  * `assertProceduresGuarded(router)` fails on any procedure that has neither.
  */
-import type { AuthUser, Duration, RateLimitRule } from '@noctcore/auth';
+import type { AuthUser, Duration } from '@noctcore/auth';
 import type {
   TRPCMiddlewareBuilder,
   TRPCProcedureBuilder,
@@ -20,12 +20,15 @@ import {
   authedBody,
   csrfBody,
   freshAuthBody,
+  pickRateLimitRule,
   publicBody,
   rateLimitedBody,
+  resolveRateLimitTiers,
   writesCookiesBody,
   roleBody,
   type MiddlewareCall,
   type Principal,
+  type TrpcRateLimitRule,
 } from './middlewares';
 
 /** The context the adapter needs: `ctx.auth` from `createAuthContext`. */
@@ -63,7 +66,18 @@ export type AuthProcedureBuilder<TContext, TMeta, TOverrides, TErrorShape> = TRP
   TErrorShape
 >;
 
-export interface AuthMiddlewares<TContext, TMeta, TErrorShape> {
+/** The second argument of `createAuthMiddlewares`. */
+export interface AuthMiddlewareOptions<TTier extends string = string> {
+  /**
+   * Named rate limits, checked when the middlewares are made. A procedure
+   * picks one with `rateLimited(name, 'tier')`, or with `rateLimited('tier')`
+   * to share that tier's budget with every procedure that does the same. A
+   * tier named `default` replaces the 10 a minute of `rateLimited(name)`.
+   */
+  readonly rateLimits?: Readonly<Record<TTier, TrpcRateLimitRule>>;
+}
+
+export interface AuthMiddlewares<TContext, TMeta, TErrorShape, TTier extends string = never> {
   /** Refuses a mutation that fails the CSRF checks (403 `forbidden`). */
   readonly csrf: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>;
   /**
@@ -83,12 +97,15 @@ export interface AuthMiddlewares<TContext, TMeta, TErrorShape> {
     ...roles: readonly string[]
   ): TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>;
   /**
-   * A fixed window per client IP under `trpc:<name>`, default 10 a minute
-   * (429 `rate_limited`). Refuses when the counter store is down.
+   * A fixed window under `trpc:<name>` (429 `rate_limited`), per client IP
+   * unless the rule says `keyBy: 'user'`. The rule is `rule` when given (a
+   * tier name, or a rule of its own), else the tier named `name`, else the
+   * `default` tier, else 10 a minute. Skipped on a procedure whose meta says
+   * `rateLimit: 'exempt'`. Refuses when the counter store is down.
    */
   rateLimited(
     name: string,
-    rule?: RateLimitRule,
+    rule?: TrpcRateLimitRule | TTier,
   ): TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>;
   /**
    * The only way to the cookie writers: after it, `ctx.auth` is an
@@ -131,20 +148,25 @@ export function createAuthMiddlewares<
   TContext extends AuthContext<AuthUser, unknown>,
   TMeta extends object,
   TErrorShape,
->(t: AuthRoot<TContext, TMeta, TErrorShape>): AuthMiddlewares<TContext, TMeta, TErrorShape> {
+  TTier extends string = never,
+>(
+  t: AuthRoot<TContext, TMeta, TErrorShape>,
+  options: AuthMiddlewareOptions<TTier> = {},
+): AuthMiddlewares<TContext, TMeta, TErrorShape, TTier> {
   // tRPC types each middleware body by the root object's context; the shared
   // bodies take the plain call, so the root is read untyped here and the
   // result is typed by the interface above.
   const root = t as unknown as UntypedRoot;
   const make = (body: Body) => root.middleware(body) as never;
   const authed = make(authedBody);
+  const tiers = resolveRateLimitTiers(options.rateLimits);
 
   return {
     csrf: make(csrfBody),
     authed,
     freshAuth: (maxAge) => make(freshAuthBody(maxAge)),
     role: (...roles) => make(roleBody(roles)),
-    rateLimited: (name, rule) => make(rateLimitedBody(name, rule)),
+    rateLimited: (name, rule) => make(rateLimitedBody(name, pickRateLimitRule(tiers, name, rule))),
     writesCookies: make(writesCookiesBody),
     publicProcedure: root.procedure.use(make(publicBody)) as never,
     protectedProcedure: root.procedure.use(authed) as never,

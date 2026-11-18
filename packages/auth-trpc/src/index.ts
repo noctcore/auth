@@ -26,6 +26,7 @@ export {
   createAuthMiddlewares,
   type AuthContext,
   type AuthContextOf,
+  type AuthMiddlewareOptions,
   type AuthMiddlewares,
   type AuthProcedureBuilder,
   type AuthRoot,
@@ -44,7 +45,14 @@ export {
   type PublicAuthError,
   type PublicInputIssue,
 } from './errors';
-export { DEFAULT_RATE_LIMIT, type AuthProcedureMeta, type Principal } from './middlewares';
+export {
+  DEFAULT_RATE_LIMIT,
+  type AuthProcedureMeta,
+  type Principal,
+  type RateLimitKeyBy,
+  type RateLimitMeta,
+  type TrpcRateLimitRule,
+} from './middlewares';
 export {
   AuthGuardMiddleware,
   AuthedMiddleware,

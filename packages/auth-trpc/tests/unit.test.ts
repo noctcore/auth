@@ -17,6 +17,7 @@ import {
   createAuthMiddlewares,
   CsrfMiddleware,
   MAX_TRUSTED_HOPS,
+  RateLimitMiddleware,
   type AuthContextOptions,
   type AuthState,
   type AuthWriter,
@@ -451,6 +452,75 @@ describe('the middleware bodies', () => {
     expect(() => role()).toThrow(/at least one role/u);
     expect(() => rateLimited('bad name')).toThrow(/Invalid rate limit name/u);
     expect(() => rateLimited('ok', { limit: 1, window: 'soon' as never })).toThrow();
+  });
+
+  it('refuses bad tiers, an unknown tier and a bad keyBy when the middlewares are made', () => {
+    const tiers = (rateLimits: Record<string, unknown>) => () =>
+      createAuthMiddlewares(t, { rateLimits: rateLimits as never });
+
+    expect(tiers({ 'bad tier': { limit: 1, window: '1m' } })).toThrow(/Invalid rate limit tier/u);
+    expect(tiers({ ok: { limit: 1, window: 'soon' } })).toThrow();
+    expect(tiers({ ok: { limit: 1, window: '1m', keyBy: 'email' } })).toThrow(/keyBy must be/u);
+
+    const made = createAuthMiddlewares(t, { rateLimits: { strict: { limit: 1, window: '1m' } } });
+
+    expect(() => made.rateLimited('x', 'lax' as never)).toThrow(/Unknown rate limit tier: lax/u);
+    expect(() => made.rateLimited('x', 'constructor' as never)).toThrow(/Unknown rate limit tier/u);
+
+    expect(() => rateLimited('x', { limit: 1, window: '1m', keyBy: 'device' as never })).toThrow(
+      /keyBy must be/u,
+    );
+
+    expect(() => RateLimitMiddleware('bad name')).toThrow(/Invalid rate limit name/u);
+  });
+
+  it('picks the named tier, then the tier named like the limit, then default, then 10 a minute', async () => {
+    const env = options();
+    const hit = vi.spyOn(env.auth.context.throttle, 'hit');
+
+    const made = createAuthMiddlewares(t, {
+      rateLimits: {
+        default: { limit: 5, window: '1m' },
+        search: { limit: 30, window: '1m' },
+        strict: { limit: 2, window: '1h', keyBy: 'user' },
+      },
+    });
+
+    const router = t.router({
+      named: t.procedure.use(made.rateLimited('export', 'strict')).query(() => 1),
+      byName: t.procedure.use(made.rateLimited('search')).query(() => 1),
+      fallback: t.procedure.use(made.rateLimited('other')).query(() => 1),
+      own: t.procedure.use(made.rateLimited('search', { limit: 7, window: '1m' })).query(() => 1),
+      plain: t.procedure.use(rateLimited('plain')).query(() => 1),
+    });
+
+    const caller = t.createCallerFactory(router)(await contextFor(env, 'GET', {}));
+
+    for (const call of [caller.named, caller.byName, caller.fallback, caller.own, caller.plain]) {
+      await call();
+    }
+
+    // The counter store sees the window and limit only, never `keyBy`.
+    expect(hit.mock.calls).toEqual([
+      ['trpc:export:unknown', { limit: 2, window: '1h' }],
+      ['trpc:search:unknown', { limit: 30, window: '1m' }],
+      ['trpc:other:unknown', { limit: 5, window: '1m' }],
+      ['trpc:search:unknown', { limit: 7, window: '1m' }],
+      ['trpc:plain:unknown', { limit: 10, window: '1m' }],
+    ]);
+  });
+
+  it('skips an exempt procedure in the nestjs-trpc class too, and counts the rest', async () => {
+    const env = options();
+    const ctx = await contextFor(env, 'GET', {});
+    const next = () => Promise.resolve('ran');
+    const Limited = RateLimitMiddleware('nest-exempt', { limit: 1, window: '1m', keyBy: 'user' });
+    const exempt = { ctx, type: 'query', meta: { rateLimit: 'exempt' }, next };
+
+    for (let i = 0; i < 3; i += 1) await expect(new Limited().use(exempt)).resolves.toBe('ran');
+
+    await expect(new Limited().use({ ctx, type: 'query', next })).resolves.toBe('ran');
+    await expect(new Limited().use({ ctx, type: 'query', next })).rejects.toThrow('rate_limited');
   });
 
   it('logs a non-Error from the counter store by its type', async () => {

@@ -42,6 +42,7 @@ import {
   verifyEmailLinkInput,
   type AuthContextOf,
   type AuthContextOptions,
+  type RateLimitMeta,
 } from '../src';
 
 export const ORIGIN = 'http://app.test';
@@ -90,10 +91,18 @@ export type TestAuth = ReturnType<typeof makeAuth>['auth'];
 export type Context = AuthContextOf<TestAuth>;
 
 export function buildRouter(auth: TestAuth) {
-  const t = initTRPC.context<Context>().create({ errorFormatter: authErrorFormatter });
+  const t = initTRPC
+    .context<Context>()
+    .meta<RateLimitMeta>()
+    .create({ errorFormatter: authErrorFormatter });
 
   const { publicProcedure, protectedProcedure, freshAuth, role, rateLimited, writesCookies } =
-    createAuthMiddlewares(t);
+    createAuthMiddlewares(t, {
+      rateLimits: { 'per-user': { limit: 2, window: '1m', keyBy: 'user' } },
+    });
+
+  // A base procedure with a limit, and a procedure built on it that is exempt.
+  const sharedLimit = publicProcedure.use(rateLimited('shared', { limit: 1, window: '1m' }));
 
   return t.router({
     health: publicProcedure.query(() => ({ ok: true })),
@@ -208,6 +217,13 @@ export function buildRouter(auth: TestAuth) {
     limited: publicProcedure
       .use(rateLimited('ping', { limit: 2, window: '1m' }))
       .query(() => ({ pong: true })),
+    /** Counted per signed-in user, by the client IP for an anonymous caller. */
+    perUser: publicProcedure.use(rateLimited('per-user')).query(() => ({ pong: true })),
+    /** Two procedures sharing the `per-user` tier's budget under a name of their own. */
+    tierA: publicProcedure.use(rateLimited('tier', 'per-user')).query(() => ({ pong: 'a' })),
+    tierB: publicProcedure.use(rateLimited('tier', 'per-user')).query(() => ({ pong: 'b' })),
+    sharedLimited: sharedLimit.query(() => ({ pong: true })),
+    sharedExempt: sharedLimit.meta({ rateLimit: 'exempt' }).query(() => ({ pong: true })),
     echo: protectedProcedure
       .input(z.object({ note: z.string().max(5) }))
       .mutation(({ input }) => input),
