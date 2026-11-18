@@ -105,8 +105,15 @@ export interface SessionStore {
    * never recreate a deleted session, even when racing a delete.
    */
   touch(session: StoredSession): Promise<boolean>;
-  /** Deletes the sessions and removes them from the user's index. */
-  delete(userId: string, ids: readonly string[]): Promise<void>;
+  /**
+   * Deletes the sessions and removes them from the user's index. Should
+   * return the ids this call removed (the ones that still existed), so that of
+   * concurrent deletes of one session exactly one reports it: the per-user cap
+   * reports evictions from it. A store that returns nothing is taken to have
+   * removed every id it was given, and racing evictions may then report a
+   * session twice.
+   */
+  delete(userId: string, ids: readonly string[]): Promise<void | readonly string[]>;
   /** The user's sessions that still exist (expired ones are not returned). */
   listByUser(userId: string): Promise<StoredSession[]>;
   /** The user's revocation epoch; 0 when never bumped. */
