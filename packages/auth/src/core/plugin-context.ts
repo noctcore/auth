@@ -31,11 +31,18 @@ export interface IssuedSession<A> {
   /** The trusted-device cookie: set it with the session cookie. Voided by a password change, reset or revoke-all. */
   readonly deviceCookie: CookieSpec;
   /**
-   * Ids of the user's older sessions deleted to keep within
-   * `session.maxPerUser`, oldest first; empty when none were. The same ids, in
-   * the same form, reach `onSessionsRevoked` with reason `evicted`.
+   * Store keys of the user's older sessions deleted to keep within
+   * `session.maxPerUser`, oldest first; empty when none were. Server-side
+   * only, like `session.id`: never send them to a client. The same ids reach
+   * `onSessionsRevoked` as `sessionIds`, with reason `evicted`.
    */
   readonly evicted: readonly string[];
+  /**
+   * The public handles of the `evicted` sessions, in the same order: the
+   * names `sessions.list` showed and `onSessionsRevoked` passes as
+   * `sessionHandles`. Safe to send to a client.
+   */
+  readonly evictedHandles: readonly string[];
 }
 
 export interface IssueOptions<A> {

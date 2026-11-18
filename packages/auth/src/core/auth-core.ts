@@ -354,6 +354,7 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       cookie,
       deviceCookie: device,
       evicted: minted.evicted,
+      evictedHandles: minted.evicted.map((id) => this.sessionHandle(id)),
     });
   }
 

@@ -11,6 +11,7 @@ const EMAIL = 'ada@example.com';
 interface RevokedCall {
   readonly userId: string;
   readonly sessionIds: readonly string[];
+  readonly sessionHandles: readonly string[];
   readonly reason: RevocationReason;
 }
 
@@ -21,8 +22,13 @@ function cappedApp(maxPerUser: number, extra: { logger?: Logger; throwing?: bool
     session: { maxPerUser },
     ...(extra.logger ? { logger: extra.logger } : {}),
     hooks: {
-      onSessionsRevoked: ({ userId, sessionIds, reason }) => {
-        calls.push({ userId, sessionIds: [...sessionIds], reason });
+      onSessionsRevoked: ({ userId, sessionIds, sessionHandles, reason }) => {
+        calls.push({
+          userId,
+          sessionIds: [...sessionIds],
+          sessionHandles: [...sessionHandles],
+          reason,
+        });
 
         if (extra.throwing) throw new Error('socket registry down');
       },
@@ -43,9 +49,13 @@ function cappedApp(maxPerUser: number, extra: { logger?: Logger; throwing?: bool
 }
 
 describe('the per-user session cap', () => {
-  it('returns the evicted ids and reports them to the hooks once, with reason evicted', async () => {
+  it('returns the evicted ids and handles and reports them once, with reason evicted', async () => {
     const t = cappedApp(2);
     const first = await t.signedInUser(EMAIL);
+    const [listed] = await t.auth.sessions.list(first.session);
+    const firstHandle = listed?.handle ?? '';
+
+    expect(firstHandle).toBe(t.auth.sessions.handle(first.session.id));
 
     t.clock.advance(1000);
     const second = await t.login();
@@ -54,10 +64,18 @@ describe('the per-user session cap', () => {
     const third = await t.login();
 
     expect(second.evicted).toEqual([]);
+    expect(second.evictedHandles).toEqual([]);
     expect(third.evicted).toEqual([first.session.id]);
+    // The handle is the name the session list showed before the eviction.
+    expect(third.evictedHandles).toEqual([firstHandle]);
 
     expect(t.evictions()).toEqual([
-      { userId: first.session.userId, sessionIds: [first.session.id], reason: 'evicted' },
+      {
+        userId: first.session.userId,
+        sessionIds: [first.session.id],
+        sessionHandles: [firstHandle],
+        reason: 'evicted',
+      },
     ]);
 
     expect(await t.sessionOf(first.token)).toBeNull();
@@ -108,7 +126,13 @@ describe('the per-user session cap', () => {
     expect([...reported].sort()).toEqual(gone);
     expect([...returned].sort()).toEqual(gone);
 
-    for (const call of t.evictions()) expect(call.sessionIds.length).toBeGreaterThan(0);
+    for (const call of t.evictions()) {
+      expect(call.sessionIds.length).toBeGreaterThan(0);
+      expect(call.sessionHandles).toEqual(call.sessionIds.map((id) => t.auth.sessions.handle(id)));
+    }
+
+    for (const issued of raced)
+      expect(issued.evictedHandles).toEqual(issued.evicted.map((id) => t.auth.sessions.handle(id)));
   });
 
   it('still signs in, and logs, when the hook throws on an eviction', async () => {
