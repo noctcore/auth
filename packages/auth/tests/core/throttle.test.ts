@@ -469,6 +469,52 @@ describe('a lock holds the attempt counter', () => {
     ]);
   });
 
+  it('with revealLocked, gives a racing refusal the running lock end, read after the crossing', async () => {
+    const reveal = new Throttle(counters, clock, {
+      perAccount: { limit: 3, window: '15m' },
+      perAccountIp: { limit: 100, window: '15m' },
+      revealLocked: true,
+    });
+
+    // The first five lock reads (one per attempt, before the counters) see no
+    // lock; the sixth, made for the racing refusal, sees the real one.
+    const get = counters.get.bind(counters);
+    let lockReads = 0;
+
+    counters.get = (key) =>
+      key.startsWith('lock:') && ++lockReads <= 5 ? Promise.resolve(null) : get(key);
+
+    const until = clock.now() + 5 * MIN;
+    const gates = [];
+
+    for (let i = 0; i < 5; i++) gates.push(await reveal.gateLogin(victim, `ip-${i}`));
+
+    expect(gates.slice(3)).toEqual([
+      { allowed: false, reason: 'locked', newLock: { until }, lock: { until } },
+      { allowed: false, reason: 'locked', lock: { until } },
+    ]);
+  });
+
+  it('with revealLocked, leaves the end out when no running lock can be read', async () => {
+    const reveal = new Throttle(counters, clock, {
+      perAccount: { limit: 1, window: '15m' },
+      perAccountIp: { limit: 100, window: '15m' },
+      revealLocked: true,
+    });
+
+    staleLockReads();
+
+    const gates = [];
+
+    for (let i = 0; i < 4; i++) gates.push(await reveal.gateLogin(victim, `ip-${i}`));
+
+    // The third attempt is refused under the lock; the fourth crosses again and finds it running.
+    expect(gates.slice(2)).toEqual([
+      { allowed: false, reason: 'locked', lock: {} },
+      { allowed: false, reason: 'locked', lock: {} },
+    ]);
+  });
+
   it('touches the lock only on the attempts that cross the limit', async () => {
     const strict = new Throttle(counters, clock, {
       perAccount: { limit: 3, window: '15m' },
@@ -547,6 +593,26 @@ describe('permanent tier', () => {
     });
 
     expect(await t.lockState(victim)).toEqual({ locked: true, permanent: true, until: null });
+  });
+
+  it('holds a trusted device to its budget under a permanent lock', async () => {
+    const t = new Throttle(counters, clock, {
+      ...small,
+      perDevice: { limit: 1, window: '15m' },
+      revealLocked: true,
+    });
+
+    await lockOnce(t);
+    clock.advance(5 * MIN);
+    await lockOnce(t);
+
+    expect(await t.gateLogin(victim, 'c', 'device-1')).toEqual({ allowed: true, viaDevice: true });
+
+    expect(await t.gateLogin(victim, 'c', 'device-1')).toEqual({
+      allowed: false,
+      reason: 'device_budget',
+      lock: { permanent: true },
+    });
   });
 
   it('never escalates a second-factor lock, whatever its scope', async () => {
