@@ -68,9 +68,10 @@ AuthContextFactory [interface]<U extends AuthUser, A = unknown>
 AuthContextOf [type]<TAuth> = TAuth extends TrpcAuth<infer U, infer A> ? AuthContext<U, A> : never
 AuthContextOptions [interface]<U extends AuthUser = AuthUser, A = unknown>
     readonly auth: TrpcAuth<U, A>
+    readonly clientIpHeader?: string
     readonly csrf: CsrfOptions
     readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>
-    readonly trustedHops: number
+    readonly trustedHops: TrustedHops
 AuthedMiddleware [const]: NestTrpcMiddlewareClass
 authErrorFormatter [function]: <TShape extends ShapeLike>(opts: { shape: TShape; error: TRPCError; }) => AuthErrorShape<TShape>
 AuthErrorShape [type]<TShape extends ShapeLike> = Omit<TShape, 'data' | 'message'> & { readonly message: string; readonly data: Omit<TShape['data'], 'stack'> & { /** Set on an auth refusal: the public code, and when to retry on `rate_limited`. */ readonly auth: PublicAuthError | null; /** Set when the input failed validation: where and what kind, never the value. */ readonly input: readonly PublicInputIssue[] | null; }; }
