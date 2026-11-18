@@ -44,6 +44,8 @@ import { systemClock } from './ports/clock';
 import { noopMetrics, silentLogger } from './ports/logger';
 import type { AuthUser, SessionStore, StoredSession } from './ports/stores';
 import { SessionManager } from './session/session-manager';
+import { describeError } from './shared/describe-error';
+import { resolveEmailNormalizer } from './shared/email';
 import { AuthConfigError } from './shared/errors';
 import type { RequestMeta } from './shared/meta';
 import { Throttle } from './throttle/throttle';
@@ -99,6 +101,11 @@ export function createAuth<
   const logger = config.logger ?? silentLogger;
   const metrics = config.metrics ?? noopMetrics;
   const background = new BackgroundTasks(logger, metrics, config.background);
+
+  const emails = resolveEmailNormalizer(config.email?.normalize, (message, error) =>
+    logger.error(message, error === undefined ? {} : { error: describeError(error) }),
+  );
+
   const policy = { ...DEFAULT_PASSWORD_POLICY, ...config.password.policy };
 
   if (policy.minLength < 8)
@@ -150,6 +157,7 @@ export function createAuth<
     doors: config.throttle?.doors ?? {},
     cookie,
     attributeSchema: config.session?.attributes,
+    emails,
     deviceKey,
     handleKey,
     pluginKey,
@@ -234,6 +242,12 @@ export function createAuth<
      * must refuse a held address as it refuses a taken one.
      */
     isAddressHeld: (email: string) => isAddressHeld(core, email),
+    /**
+     * The address as the configured `email.normalize` policy spells it, or
+     * null when the policy refuses it. Use it wherever your own code stores
+     * or looks up an address, so it matches what the flows store.
+     */
+    normalizeEmail: (email: unknown) => core.normalizeEmail(email),
     /**
      * Ends the lockout left by a revert that could not restore the address,
      * and voids the owner's revert link and the hold on the old address with

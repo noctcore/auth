@@ -21,7 +21,12 @@ export {
   type RandomSource,
 } from './crypto/random';
 export { hexDigestsEqual, hmacSha256Hex, secretsEqual, sha256Hex } from './crypto/hash';
-export { normalizeEmail, type NormalizedEmail } from './shared/email';
+export {
+  normalizeEmail,
+  type EmailNormalizer,
+  type EmailPolicy,
+  type NormalizedEmail,
+} from './shared/email';
 export {
   AuthConfigError,
   fail,

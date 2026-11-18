@@ -18,6 +18,7 @@ import type { Mailer } from '../ports/mail';
 import type { AuthUser, CounterStore, SessionStore, TokenStore, UserStore } from '../ports/stores';
 import type { SessionOptions } from '../session/session-types';
 import type { Duration } from '../shared/duration';
+import type { EmailNormalizer, EmailPolicy } from '../shared/email';
 import type { LockoutOptions, RateLimitRule } from '../throttle/rules';
 
 /** Doors with their own rate limit. Keyed by client IP unless noted. */
@@ -119,6 +120,18 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
    * old handle must list again. Keep it apart from your CSRF secret.
    */
   readonly secret: Uint8Array | string;
+  readonly email?: {
+    /**
+     * How an address is normalised before it is compared, stored or used as a
+     * counter key, everywhere. Default `standard` (trim, lowercase A to Z,
+     * refuse non-ASCII). `ascii` answers non-ASCII with `email_not_ascii`;
+     * `unicode` keeps Unicode addresses (NFC, lowercased, single script per
+     * part); or pass your own function, which must be pure and idempotent.
+     * Changing it on a live database needs a data migration first: rows
+     * normalised under the old policy no longer match.
+     */
+    readonly normalize?: EmailPolicy | EmailNormalizer;
+  };
   readonly registration?: {
     /**
      * Answer `email_in_use` for a taken address instead of the uniform answer

@@ -19,6 +19,7 @@ import type { Mailer } from '../ports/mail';
 import type { AuthUser, UserStore } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
 import type { AttributeSchema } from '../session/session-types';
+import type { ResolvedEmailNormalizer } from '../shared/email';
 import type { RateLimitRule } from '../throttle/rules';
 import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
@@ -38,6 +39,8 @@ export interface CoreDependencies<U extends AuthUser, A> {
   readonly doors: Readonly<Partial<Record<Door, RateLimitRule>>>;
   readonly cookie: SessionCookieConfig;
   readonly attributeSchema: AttributeSchema<A> | undefined;
+  /** The normaliser resolved from `email.normalize`: every address goes through it. */
+  readonly emails: ResolvedEmailNormalizer;
   /** Key for trusted-device tokens, derived from the server secret. */
   readonly deviceKey: Uint8Array;
   /** Key for the public session handles, derived from the server secret. */

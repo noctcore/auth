@@ -29,6 +29,7 @@ import type { AuthUser, StoredSession, UserStore } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
 import type { MintInput, MintResult } from '../session/session-types';
 import { describeError } from '../shared/describe-error';
+import type { NormalizedEmail } from '../shared/email';
 import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { createDeviceToken, verifyDeviceToken } from '../throttle/device-token';
@@ -90,6 +91,18 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
 
   keyedHash(purpose: string, message: string): string {
     return hmacSha256Hex(deriveKey(this.#deps.pluginKey, purpose), message);
+  }
+
+  normalizeEmail(input: unknown): NormalizedEmail | null {
+    const verdict = this.#deps.emails(input);
+
+    return verdict.ok ? verdict.email : null;
+  }
+
+  parseEmail(input: unknown): AuthResult<NormalizedEmail> {
+    const verdict = this.#deps.emails(input);
+
+    return verdict.ok ? ok(verdict.email) : fail(verdict.reason, verdict.reason);
   }
 
   requireFreshAuth(session: StoredSession<A>): AuthResult<void> {

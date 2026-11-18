@@ -17,6 +17,8 @@ export type AuthErrorCode =
   /** Unknown, expired, used or exhausted token or code. */
   | 'invalid_token'
   | 'invalid_email'
+  /** The `ascii` email policy: the address has a non-ASCII character. */
+  | 'email_not_ascii'
   /** Shorter than the policy's minimum. */
   | 'weak_password'
   | 'password_too_long'
