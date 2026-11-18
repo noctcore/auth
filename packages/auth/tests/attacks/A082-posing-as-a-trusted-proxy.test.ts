@@ -1,4 +1,4 @@
-// A079: posing as a trusted proxy.
+// A082: posing as a trusted proxy.
 //
 // The app trusts its proxies by address (a CIDR list or the Express presets
 // loopback, linklocal and uniquelocal). An attacker connects from an address
@@ -22,7 +22,7 @@ import { AuthConfigError } from '../../src/shared/errors';
 
 const proxies = resolveTrustedProxies('loopback, 192.0.2.0/24');
 
-describe('A079: posing as a trusted proxy', () => {
+describe('A082: posing as a trusted proxy', () => {
   it('ignores X-Forwarded-For from a peer outside the trusted list', () => {
     for (const forged of ['198.51.100.11', '127.0.0.1', '192.0.2.10, 198.51.100.88']) {
       expect(

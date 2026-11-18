@@ -1,4 +1,4 @@
-// A078: choosing your own IP with a spoofed edge header.
+// A081: choosing your own IP with a spoofed edge header.
 //
 // The app reads the client IP from a header its edge sets, such as
 // cf-connecting-ip. An attacker who reaches the server without going through
@@ -24,7 +24,7 @@ import { EMAIL, meta, registered } from './support';
 
 const edge = resolveTrustedProxies('uniquelocal');
 
-describe('A078: choosing your own IP with a spoofed edge header', () => {
+describe('A081: choosing your own IP with a spoofed edge header', () => {
   it('ignores the header from a peer outside the trusted proxy list', () => {
     for (const spoofed of ['198.51.100.11', '127.0.0.1', '::1', '10.0.0.1']) {
       expect(
