@@ -174,7 +174,7 @@ export function createAuth<
       token: string;
       session: StoredSession<A> | null;
       meta: RequestMeta;
-    }) => verification.verifyEmailLink(core, input),
+    }) => verification.verifyEmailLink(core, settings, input),
     requestPasswordReset: (input: { email: string; captchaToken?: string; meta: RequestMeta }) =>
       requestPasswordReset(core, settings, input),
     verifyPasswordResetCode: (input: { email: string; code: string; meta: RequestMeta }) =>

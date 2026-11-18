@@ -16,6 +16,12 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
   config: AuthConfig<U, A, P>,
 ): FlowSettings {
   const verificationKind = config.emailVerification?.kind ?? 'code';
+  const linkWithoutSession: unknown = config.emailVerification?.linkWithoutSession ?? false;
+
+  // A string such as "false" from an env file would read as on: only a real boolean counts.
+  if (typeof linkWithoutSession !== 'boolean')
+    throw new AuthConfigError('emailVerification.linkWithoutSession must be true or false');
+
   const resetKind = config.passwordReset?.kind ?? 'link';
 
   const verificationTtl =
@@ -33,6 +39,7 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
       ttlMs: toMilliseconds(verificationTtl),
       digits: config.emailVerification?.digits ?? 8,
       maxAttempts: config.emailVerification?.maxAttempts ?? 5,
+      linkWithoutSession,
     },
     reset: {
       kind: resetKind,
@@ -74,6 +81,8 @@ function assertSafeSettings(settings: FlowSettings): void {
 
   if (settings.verification.kind === 'link' && !settings.urls.verifyEmail)
     throw new AuthConfigError('urls.verifyEmail is required for link verification');
+  if (settings.verification.linkWithoutSession && settings.verification.kind !== 'link')
+    throw new AuthConfigError('emailVerification.linkWithoutSession needs kind: link');
   if (settings.reset.kind === 'link' && !settings.urls.resetPassword)
     throw new AuthConfigError('urls.resetPassword is required for link resets');
 

@@ -136,6 +136,19 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
     readonly ttl?: Duration;
     readonly digits?: number;
     readonly maxAttempts?: number;
+    /**
+     * Link verification only. Also accept a valid link opened without a
+     * session, such as on another device or after the session expired. It
+     * verifies the address and signs everyone out, but signs nobody in. A
+     * session of another account is still refused. Default false: the link
+     * counts only in a signed-in session of the same account.
+     *
+     * With it on, any request carrying the token verifies, so a mail scanner
+     * that fetches the link can verify an account registered on someone
+     * else's address. Put the token in the URL fragment and verify only on a
+     * POST from a click, never on a GET or on page load.
+     */
+    readonly linkWithoutSession?: boolean;
   };
   readonly passwordReset?: {
     /** Default `link`. `code` sends digits that are exchanged for a short ticket. */
