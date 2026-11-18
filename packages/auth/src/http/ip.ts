@@ -51,17 +51,13 @@ export type TrustedHops = number | readonly string[];
 /**
  * Checks a `trustedHops` setting at boot: a whole number from 0 to `maxHops`,
  * or a proxy list (see `resolveTrustedProxies`), returned with its presets
- * expanded. `label` names the setting in the error.
+ * expanded.
  */
-export function resolveTrustedHops(
-  value: TrustedHops,
-  maxHops: number,
-  label = 'trustedHops',
-): TrustedHops {
+export function resolveTrustedHops(value: TrustedHops, maxHops: number): TrustedHops {
   if (typeof value === 'number') {
     if (!Number.isSafeInteger(value) || value < 0 || value > maxHops) {
       throw new AuthConfigError(
-        `${label} must be a whole number of proxies from 0 to ${maxHops}, or a list of proxy addresses`,
+        `trustedHops must be a whole number of proxies from 0 to ${maxHops}, or a list of proxy addresses`,
       );
     }
 
@@ -70,7 +66,7 @@ export function resolveTrustedHops(
 
   if (!Array.isArray(value)) {
     throw new AuthConfigError(
-      `${label} must be a number of proxies or a list of proxy addresses and ranges`,
+      'trustedHops must be a number of proxies or a list of proxy addresses and ranges',
     );
   }
 
