@@ -12,6 +12,7 @@ import {
   sessionListOutput,
   toTRPCError,
   userOutput,
+  verifyEmailLinkInput,
   type AuthContextOf,
 } from '@noctcore/auth-trpc';
 import { initTRPC } from '@trpc/server';
@@ -75,6 +76,29 @@ export function createAppRouter(auth: AppAuth) {
         if (!result.ok) throw toTRPCError(result);
 
         return { status: 'accepted' as const };
+      }),
+
+    // A mutation (a POST), called when the user clicks Confirm on the page the
+    // mail links to, with the token from its URL fragment; never on page load,
+    // so a mail scanner that fetches the link verifies nothing. ctx.auth.session
+    // is resolved on public procedures too: a link for another account is refused.
+    verifyEmailLink: publicProcedure
+      .use(writesCookies)
+      .input(verifyEmailLinkInput)
+      .mutation(async ({ ctx, input }) => {
+        const result = await auth.verifyEmailLink({
+          token: input.token,
+          session: ctx.auth.session,
+          meta: ctx.auth.meta,
+        });
+
+        if (!result.ok) throw toTRPCError(result);
+
+        // Signed in as this account: the session was re-issued. Otherwise
+        // nobody is signed in (with linkWithoutSession) and the page says so.
+        const issued = result.value.session;
+
+        return issued ? { verified: true, ...ctx.auth.setSession(issued) } : { verified: true };
       }),
 
     logout: publicProcedure

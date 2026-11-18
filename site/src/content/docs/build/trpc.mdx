@@ -34,6 +34,12 @@ bun add @noctcore/auth-trpc @noctcore/auth @trpc/server zod
 
 `authed`, `freshAuth`, `role` and `publicProcedure` each run the CSRF check on a mutation themselves, so leaving the `csrf` step out of a chain does not skip it.
 
+### Verification links
+
+`verifyEmailLink` above is a mutation on `publicProcedure`, so it is a POST and checks CSRF. The context resolves the session on public procedures too: pass `ctx.auth.session` as it is (`null` when nobody is signed in). A link for one account opened while signed in as another is then refused (`session_expired`) and stays usable for its owner. By default a link opened with no session is refused the same way; with `emailVerification.linkWithoutSession` on it verifies the address and signs nobody in.
+
+Never verify from a query or when the page loads: mail scanners fetch links in mail, and with `linkWithoutSession` on a fetch that reaches the flow verifies the account. Put the token in the URL fragment (``urls.verifyEmail: (token) => `${origin}/verify#${token}` ``), show a Confirm button, and call the mutation on the click. See [Email verification](/auth/learn/email-verification/) for the trade-off.
+
 ## The context
 
 <Code code={serverTs} lang="ts" title="src/server.ts" />

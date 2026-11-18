@@ -88,6 +88,7 @@ Source: `flows/resolve-settings.ts`.
 | `emailVerification.ttl` | `'15m'` for codes, `'24h'` for links | A short code is guessable over time, so it lives briefly; a 32-byte link is not, so it can wait in an inbox. |
 | `emailVerification.digits` | `8` | The auth guide's length. Must be 6 to 9. |
 | `emailVerification.maxAttempts` | `5` | Wrong guesses per code, counted atomically before each comparison. |
+| `emailVerification.linkWithoutSession` | `false` | Link verification only (refused at startup with codes, and anything but `true` or `false` is refused). Also accepts a valid link opened with no session: it verifies the address and revokes every session, but signs nobody in. A session of another account is still refused. Put the token in the URL fragment and verify only on a POST from a click, never on a GET or on page load, or a mail scanner verifies the account by fetching the link. See [Email verification](/auth/learn/email-verification/) for the trade-off. |
 
 ## Password reset
 
@@ -201,6 +202,7 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 - `session.absoluteTtl` or `rememberMeTtl` is longer than the session store's `maxSessionTtlMs`;
 - `registration.autoLogin` is set without `revealExisting`;
 - link verification, link reset or link email change is chosen without its `urls` function;
+- `emailVerification.linkWithoutSession` is set without `kind: 'link'`, or is not `true` or `false`;
 - `emailVerification.digits`, `passwordReset.digits` or `emailChange.digits` is outside 6 to 9;
 - `emailChange.revertTtl` is shorter than 7 days;
 - a plugin requires `captcha` and none is configured;

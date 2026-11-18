@@ -61,6 +61,12 @@ Safe methods (`GET`, `HEAD`, `OPTIONS`) skip the CSRF check, never the session c
 - **`SessionCookies.signOut`** revokes the session through `auth.logout`, clears its cookie and starts a fresh pre-session with its own token.
 - **`@CurrentUser()` and `@CurrentSession()`** read what the guard resolved from the stored session. On a public route they are `null` when nobody is signed in. Nothing in the module reads a user id from a header or the body.
 
+### Verification links
+
+`verifyEmailLink` above is a `@Public()` POST. The guard still resolves the session on a public route, so `@CurrentSession()` is the caller's session when there is one and `null` otherwise; pass it as it is. A link for one account opened while signed in as another is then refused (`401`, `session_expired`) and stays usable for its owner. By default a link opened with no session is refused the same way; with `emailVerification.linkWithoutSession` on it verifies the address and signs nobody in.
+
+Never verify on a GET or when the page loads: mail scanners fetch links in mail, and with `linkWithoutSession` on a fetch that reaches this route verifies the account. Put the token in the URL fragment (``urls.verifyEmail: (token) => `${origin}/verify#${token}` ``), show a Confirm button, and POST the token on the click. See [Email verification](/auth/learn/email-verification/) for the trade-off.
+
 ## Protected routes
 
 <Code code={accountControllerTs} lang="ts" title="src/account.controller.ts" />
