@@ -70,7 +70,7 @@ MemorySessionStore [class]
     (new) (clock?: Clock): MemorySessionStore
     bumpEpoch(userId: string): Promise<number>
     create(session: StoredSession, ttlMs: number): Promise<void>
-    delete(userId: string, ids: readonly string[]): Promise<void>
+    delete(userId: string, ids: readonly string[]): Promise<string[]>
     get(id: string): Promise<StoredSession | null>
     getEpoch(userId: string): Promise<number>
     listByUser(userId: string): Promise<StoredSession[]>
@@ -215,7 +215,7 @@ RequestMeta [interface]
 SessionStore [interface]
     bumpEpoch(userId: string): Promise<number>
     create(session: StoredSession, ttlMs: number): Promise<void>
-    delete(userId: string, ids: readonly string[]): Promise<void>
+    delete(userId: string, ids: readonly string[]): Promise<void | readonly string[]>
     get(id: string): Promise<StoredSession | null>
     getEpoch(userId: string): Promise<number>
     listByUser(userId: string): Promise<StoredSession[]>
