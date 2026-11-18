@@ -100,7 +100,10 @@ describe('resolveOptions', () => {
 
   it('falls back to Lax cookies for a stand-in auth with no cookie config', () => {
     const real = makeAuth().auth;
-    const standIn = { ...real, context: { ...real.context, cookie: undefined } };
+    const { cookie, ...context } = real.context;
+    const standIn = { ...real, context };
+
+    expect(cookie).toEqual({ secure: false });
     const resolved = resolveOptions(options({ auth: standIn }));
 
     expect(resolved.cookie).toEqual({ secure: false });
