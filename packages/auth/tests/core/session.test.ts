@@ -341,6 +341,93 @@ describe('SessionManager cap and revocation edges', () => {
     expect(third.evicted).toEqual([first.session.id]);
   });
 
+  it('evicts several at once, oldest first, when a tighter cap meets more sessions', async () => {
+    const roomy = manager({ maxPerUser: 4 });
+    const ids: string[] = [];
+
+    for (let i = 0; i < 3; i++) {
+      const minted = await mintFor(roomy);
+
+      if (!minted.ok) throw new Error('mint failed');
+
+      ids.push(minted.session.id);
+      clock.advance(1000);
+    }
+
+    const latest = await mintFor(manager({ maxPerUser: 2 }));
+
+    if (!latest.ok) throw new Error('mint failed');
+
+    expect(latest.evicted).toEqual([ids[0], ids[1]]);
+  });
+
+  it('reports a session two racing mints both chose to evict from only one of them', async () => {
+    const m = manager({ maxPerUser: 1 });
+    const oldest = await mintFor(m);
+
+    if (!oldest.ok) throw new Error('mint failed');
+
+    clock.advance(1000);
+
+    // Hold both mints after their write until both have listed, so both see
+    // the oldest session and both delete it.
+    const listByUser = store.listByUser.bind(store);
+    let waiting: (() => void)[] = [];
+
+    store.listByUser = async (userId) => {
+      const listed = await listByUser(userId);
+
+      await new Promise<void>((resolve) => {
+        waiting.push(resolve);
+
+        if (waiting.length < 2) return;
+
+        for (const release of waiting) release();
+
+        waiting = [];
+      });
+
+      return listed;
+    };
+
+    const [a, b] = await Promise.all([mintFor(m), mintFor(m)]);
+
+    if (!a.ok || !b.ok) throw new Error('mint failed');
+
+    const reported = [...a.evicted, ...b.evicted];
+
+    expect(reported.filter((id) => id === oldest.session.id)).toHaveLength(1);
+    expect(new Set(reported).size).toBe(reported.length);
+
+    const live = new Set((await listByUser('u1')).map((s) => s.id));
+    const gone = [oldest.session.id, a.session.id, b.session.id].filter((id) => !live.has(id));
+
+    expect([...reported].sort()).toEqual(gone.sort());
+  });
+
+  it('reports every id it chose when the store does not say which it removed', async () => {
+    const m = manager({ maxPerUser: 1 });
+    const first = await mintFor(m);
+
+    if (!first.ok) throw new Error('mint failed');
+
+    const remove = store.delete.bind(store);
+
+    // A store written against the older contract: delete resolves to nothing.
+    store.delete = async (userId: string, ids: readonly string[]) => {
+      await remove(userId, ids);
+
+      return undefined as never;
+    };
+
+    clock.advance(1000);
+    const second = await mintFor(m);
+
+    if (!second.ok) throw new Error('mint failed');
+
+    expect(second.evicted).toEqual([first.session.id]);
+  });
+
   it('evicts nothing under the cap, and accepts a cap of one', async () => {
     const atCap = manager({ maxPerUser: 2 });
 

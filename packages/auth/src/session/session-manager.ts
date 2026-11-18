@@ -235,6 +235,10 @@ export class SessionManager<A> {
    * Runs AFTER the new session is written, so concurrent logins converge to
    * the cap instead of all passing a pre-write check. Oldest first; the new
    * session has the newest createdAt.
+   *
+   * Returns the ids this call removed, as the store reports them: two logins
+   * racing at the cap may pick the same oldest session, and only the one whose
+   * delete removed it reports it, so each eviction reaches the hooks once.
    */
   private async evictOverCap(userId: string): Promise<string[]> {
     if (this.maxPerUser === null) return [];
@@ -244,11 +248,14 @@ export class SessionManager<A> {
     if (active.length <= this.maxPerUser) return [];
 
     active.sort((a, b) => a.createdAt - b.createdAt);
-    const evicted = active.slice(0, active.length - this.maxPerUser).map((s) => s.id);
+    const chosen = active.slice(0, active.length - this.maxPerUser).map((s) => s.id);
+    const removed = await this.store.delete(userId, chosen);
 
-    await this.store.delete(userId, evicted);
+    if (!removed) return chosen;
 
-    return evicted;
+    const confirmed = new Set(removed);
+
+    return chosen.filter((id) => confirmed.has(id));
   }
 
   /** Deletes the named sessions if they belong to the user. Returns the ids that did. */
