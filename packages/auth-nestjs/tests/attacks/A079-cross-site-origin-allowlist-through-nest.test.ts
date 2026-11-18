@@ -1,4 +1,4 @@
-// A078: riding the cross-site origin allowlist against a Nest app.
+// A079: riding the cross-site origin allowlist against a Nest app.
 //
 // An app that serves a desktop shell from its own scheme lists the shell's
 // origin in `csrf.crossSiteOrigins`, so the shell's `Sec-Fetch-Site:
@@ -45,7 +45,7 @@ afterEach(async () => {
   t = undefined;
 });
 
-describe('A078: riding the cross-site origin allowlist against a Nest app', () => {
+describe('A079: riding the cross-site origin allowlist against a Nest app', () => {
   it('serves the listed shell origin end to end, with every cookie SameSite=None', async () => {
     t = await boot(withShell);
     const shell = new Browser(t.app);
