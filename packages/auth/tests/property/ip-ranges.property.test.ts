@@ -25,7 +25,7 @@ describe('isIp', () => {
   it('never accepts a string Node does not read as an address', () => {
     fc.assert(
       fc.property(fc.string({ maxLength: 45 }), (text) => {
-        if (isIp(text)) expect(isIP(text)).not.toBe(0);
+        expect(!isIp(text) || isIP(text) !== 0).toBe(true);
       }),
       runs(),
     );

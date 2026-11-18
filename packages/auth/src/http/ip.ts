@@ -141,9 +141,7 @@ export function clientIp(input: {
   const remote = input.remoteAddress;
 
   const peerTrusted =
-    typeof hops === 'number'
-      ? hops > 0
-      : remote !== undefined && isTrustedAddress(remote, hops);
+    typeof hops === 'number' ? hops > 0 : remote !== undefined && isTrustedAddress(remote, hops);
 
   const fromHeader = peerTrusted ? singleAddress(input.trustedHeader) : undefined;
 
