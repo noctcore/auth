@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   counterStoreConformance,
@@ -8,6 +8,7 @@ import {
   MemoryInvitationStore,
   membershipStoreConformance,
   MemoryMembershipStore,
+  MemorySessionStore,
   runConformance,
   sessionStoreConformance,
   tokenStoreConformance,
@@ -51,3 +52,35 @@ runConformance(
   invitationStoreConformance(new MemoryInvitationStore(), context),
   api,
 );
+
+describe('session store conformance for a delete that reports nothing', () => {
+  // A store on the older contract: delete removes but answers nothing.
+  const silent = new MemorySessionStore(clock);
+  const remove = silent.delete.bind(silent);
+
+  silent.delete = async (userId: string, ids: readonly string[]) => {
+    await remove(userId, ids);
+
+    return undefined as never;
+  };
+
+  const deleteCase = (name: string) => name.startsWith('delete reports the ids it removed');
+
+  it('fails the delete cases with a message naming the opt-out', async () => {
+    const found = sessionStoreConformance(silent, context).find((c) => deleteCase(c.name));
+
+    await expect(found?.run()).rejects.toThrow(/deleteReportsRemoved: false/u);
+  });
+
+  it('lists them as skipped when the store opts out', async () => {
+    const cases = sessionStoreConformance(silent, { ...context, deleteReportsRemoved: false });
+
+    const skipped = cases.filter((c) =>
+      c.name.endsWith('(skipped: deleteReportsRemoved is false)'),
+    );
+
+    expect(skipped).toHaveLength(3);
+
+    for (const c of skipped) await c.run();
+  });
+});

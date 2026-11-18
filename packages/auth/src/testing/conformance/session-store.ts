@@ -48,13 +48,36 @@ export interface SessionStoreConformanceOptions extends ConformanceContext {
   readonly secondary?: SessionStore;
   /** Remaining TTL of the user's epoch in ms, for stores that expire it. Enables the epoch TTL check. */
   readonly epochTtlMs?: (userId: string) => Promise<number>;
+  /**
+   * Whether `delete` returns the ids it removed. Default true, and a store
+   * that returns nothing then fails the delete cases with a message naming
+   * this option. Pass false for a store that cannot tell: those cases are
+   * listed as skipped, and racing evictions may report a session twice.
+   */
+  readonly deleteReportsRemoved?: boolean;
+}
+
+const SKIPPED_DELETE_CASES = ' (skipped: deleteReportsRemoved is false)';
+
+/** The ids a delete reported, or a failure naming the option when it reported nothing. */
+function reported(removed: void | readonly string[]): readonly string[] {
+  assert.ok(
+    Array.isArray(removed),
+    'delete returned nothing: return the ids it removed, or pass deleteReportsRemoved: false',
+  );
+
+  return removed as readonly string[];
 }
 
 export function sessionStoreConformance(
   store: SessionStore,
   context: SessionStoreConformanceOptions = {},
 ): ConformanceCase[] {
-  const cases = sessionCases(store, context);
+  const cases = [
+    ...sessionCases(store, context),
+    ...deleteReportCases(store, context.secondary ?? store, context),
+  ];
+
   const epochTtlMs = context.epochTtlMs;
 
   if (epochTtlMs) {
@@ -233,20 +256,40 @@ function sessionCases(
       },
     },
     {
-      name: 'delete reports the ids it removed, if it reports any',
+      name: 'epochs start at 0 and every concurrent bump gets a distinct value',
+      async run() {
+        const userId = uniqueId('user');
+
+        assert.equal(await store.getEpoch(userId), 0);
+        const values = await times(50, () => store.bumpEpoch(userId));
+
+        assert.equal(new Set(values).size, 50);
+        assert.equal(Math.max(...values), 50);
+        assert.equal(await store.getEpoch(userId), 50);
+      },
+    },
+  ];
+}
+
+/** The cases that need `delete` to say what it removed: each eviction reported once. */
+function deleteReportCases(
+  store: SessionStore,
+  other: SessionStore,
+  context: SessionStoreConformanceOptions,
+): ConformanceCase[] {
+  const cases: ConformanceCase[] = [
+    {
+      name: 'delete reports the ids it removed',
       async run() {
         const userId = uniqueId('user');
         const a = sampleSession({ userId });
         const b = sampleSession({ userId });
 
         await Promise.all([store.create(a, 60_000), store.create(b, 60_000)]);
-        const removed = await store.delete(userId, [a.id, uniqueId('missing'), a.id]);
-
-        // A store may return nothing; the cap then reports every id it chose.
-        if (removed === undefined) return;
+        const removed = reported(await store.delete(userId, [a.id, uniqueId('missing'), a.id]));
 
         assert.deepEqual([...removed], [a.id]);
-        assert.deepEqual([...((await store.delete(userId, [a.id])) ?? [])], []);
+        assert.deepEqual([...reported(await store.delete(userId, [a.id]))], []);
       },
     },
     {
@@ -262,9 +305,7 @@ function sessionCases(
             other.delete(session.userId, [session.id]),
           ]);
 
-          if (results.some((removed) => removed === undefined)) return;
-
-          const reporters = results.filter((removed) => removed?.includes(session.id));
+          const reporters = results.filter((removed) => reported(removed).includes(session.id));
 
           assert.equal(reporters.length, 1, `iteration ${i}`);
         }
@@ -273,8 +314,7 @@ function sessionCases(
     {
       name: 'logins racing at the per-user cap report each eviction once',
       async run() {
-        // Exactly once needs a delete that says what it removed.
-        if ((await store.delete(uniqueId('user'), [])) === undefined) return;
+        reported(await store.delete(uniqueId('user'), []));
 
         for (let i = 0; i < 10; i++) {
           const options = { maxPerUser: 2 };
@@ -320,18 +360,12 @@ function sessionCases(
         }
       },
     },
-    {
-      name: 'epochs start at 0 and every concurrent bump gets a distinct value',
-      async run() {
-        const userId = uniqueId('user');
-
-        assert.equal(await store.getEpoch(userId), 0);
-        const values = await times(50, () => store.bumpEpoch(userId));
-
-        assert.equal(new Set(values).size, 50);
-        assert.equal(Math.max(...values), 50);
-        assert.equal(await store.getEpoch(userId), 50);
-      },
-    },
   ];
+
+  if (context.deleteReportsRemoved !== false) return cases;
+
+  return cases.map((testCase) => ({
+    name: testCase.name + SKIPPED_DELETE_CASES,
+    run: async () => {},
+  }));
 }
