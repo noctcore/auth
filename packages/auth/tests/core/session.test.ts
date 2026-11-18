@@ -490,6 +490,26 @@ describe('SessionManager cap and revocation edges', () => {
     expect(reports).toEqual([oldest.session.id]);
   });
 
+  it('answers a logout whose session another call deleted first with nothing', async () => {
+    const m = manager();
+    const minted = await mintFor(m);
+
+    if (!minted.ok) throw new Error('mint failed');
+
+    const get = store.get.bind(store);
+
+    // The logout reads the session, then an eviction deletes it first.
+    store.get = async (id) => {
+      const found = await get(id);
+
+      await store.delete('u1', [id]);
+
+      return found;
+    };
+
+    expect(await m.revokeToken(minted.token)).toBeNull();
+  });
+
   it('reports from revoke-all only the sessions its own delete removed', async () => {
     const m = manager({ maxPerUser: null });
     const a = await mintFor(m);
