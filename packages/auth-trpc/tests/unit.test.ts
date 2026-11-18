@@ -1,6 +1,11 @@
 // Unit tests: the boot checks, the request adapters, the error formatter, the
 // middleware bodies alone, and the schema walker's corners.
-import { AuthConfigError, createAuth } from '@noctcore/auth';
+import {
+  AuthConfigError,
+  createAuth,
+  resolveSameSite,
+  type SessionCookieConfig,
+} from '@noctcore/auth';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '@noctcore/auth/testing';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -68,6 +73,22 @@ describe('createAuthContext boot checks', () => {
     expect(cookie).toEqual({ secure: false });
 
     expect(resolveOptions(options({ auth: standIn })).cookie).toEqual({ secure: false });
+  });
+
+  it('refuses SameSite=None when the adapter cookies are not Secure, whatever the config claims', () => {
+    const real = makeAuth().auth;
+
+    const claims = (sameSite: NonNullable<SessionCookieConfig['sameSite']>) => ({
+      ...real,
+      context: { ...real.context, cookie: { secure: true, sameSite } },
+    });
+
+    expect(() => resolveOptions(options({ auth: claims('none') }))).toThrow(AuthConfigError);
+
+    const resolved = resolveOptions(options({ auth: claims(() => 'none') }));
+
+    expect(resolved.cookie.secure).toBe(false);
+    expect(() => resolveSameSite(resolved.cookie, 'app://desktop')).toThrow(AuthConfigError);
   });
 
   it('accepts a desktop-only allowlist, with crossSiteOrigins and no allowedOrigins', () => {
