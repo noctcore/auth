@@ -18,6 +18,7 @@ import {
   WritesCookiesMiddleware,
 } from '../src';
 import { isStreamedRequest } from '../src/context';
+import { resolveOptions } from '../src/options';
 import { secretKeys } from '../src/secret-queries';
 import { CSRF_SECRET, EMAIL, makeAuth, ORIGIN, PASSWORD } from './support';
 
@@ -57,6 +58,24 @@ describe('createAuthContext boot checks', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  it('falls back to Lax cookies for a stand-in auth with no cookie config', () => {
+    const real = makeAuth().auth;
+    const standIn = { ...real, context: { ...real.context, cookie: undefined } };
+
+    expect(resolveOptions(options({ auth: standIn })).cookie).toEqual({ secure: false });
+  });
+
+  it('accepts a desktop-only allowlist, with crossSiteOrigins and no allowedOrigins', () => {
+    const resolved = resolveOptions(
+      options({
+        csrf: { secrets: [CSRF_SECRET], allowedOrigins: [], crossSiteOrigins: ['app://desktop'] },
+      }),
+    );
+
+    expect(resolved.csrf.allowedOrigins).toEqual(['app://desktop']);
+    expect(resolved.csrf.crossSiteOrigins).toEqual(['app://desktop']);
   });
 
   it('names the CSRF cookies __Host- when the session cookie is secure', async () => {
