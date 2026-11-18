@@ -249,35 +249,55 @@ export class SessionManager<A> {
 
     active.sort((a, b) => a.createdAt - b.createdAt);
     const chosen = active.slice(0, active.length - this.maxPerUser).map((s) => s.id);
-    const removed = await this.store.delete(userId, chosen);
 
-    if (!removed) return chosen;
-
-    const confirmed = new Set(removed);
-
-    return chosen.filter((id) => confirmed.has(id));
+    return this.deleteAndReport(userId, chosen);
   }
 
-  /** Deletes the named sessions if they belong to the user. Returns the ids that did. */
+  /**
+   * Deletes the sessions and returns the ids this call removed, so that of an
+   * eviction racing a logout or a revocation, only the call that removed a
+   * session reports it, under one reason. A store that does not answer with
+   * an array (an older store returning nothing, or a count) is taken to have
+   * removed every id it was given.
+   */
+  private async deleteAndReport(userId: string, ids: readonly string[]): Promise<string[]> {
+    if (ids.length === 0) return [];
+
+    const removed: unknown = await this.store.delete(userId, ids);
+
+    if (!Array.isArray(removed)) return [...ids];
+
+    const confirmed = new Set<unknown>(removed);
+
+    return ids.filter((id) => confirmed.has(id));
+  }
+
+  /** Deletes the named sessions if they belong to the user. Returns the ids this call removed. */
   async revoke(userId: string, ids: readonly string[]): Promise<string[]> {
     const sessions = await this.store.listByUser(userId);
     const owned = new Set(sessions.map((s) => s.id));
-    const mine = ids.filter((id) => owned.has(id));
 
-    if (mine.length > 0) await this.store.delete(userId, mine);
-
-    return mine;
+    return this.deleteAndReport(
+      userId,
+      ids.filter((id) => owned.has(id)),
+    );
   }
 
-  /** Deletes the session a token names (single-device logout; no epoch bump). */
+  /**
+   * Deletes the session a token names (single-device logout; no epoch bump).
+   * Returns it only if this call removed it: a session another call ended
+   * first (an eviction, a revocation) was already reported there.
+   */
   async revokeToken(token: unknown): Promise<StoredSession | null> {
     if (!isTokenShape(token)) return null;
 
     const stored = await this.store.get(sha256Hex(token));
 
-    if (stored) await this.store.delete(stored.userId, [stored.id]);
+    if (!stored) return null;
 
-    return stored;
+    const removed = await this.deleteAndReport(stored.userId, [stored.id]);
+
+    return removed.length > 0 ? stored : null;
   }
 
   /**
@@ -293,8 +313,6 @@ export class SessionManager<A> {
     const sessions = await this.store.listByUser(userId);
     const ids = sessions.filter((s) => s.epoch < epoch).map((s) => s.id);
 
-    if (ids.length > 0) await this.store.delete(userId, ids);
-
-    return ids;
+    return this.deleteAndReport(userId, ids);
   }
 }
