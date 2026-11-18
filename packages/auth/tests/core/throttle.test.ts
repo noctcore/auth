@@ -617,6 +617,45 @@ describe('permanent tier', () => {
     });
   });
 
+  it('with revealLocked, answers a racing refusal as permanent once the marker exists', async () => {
+    const t = new Throttle(counters, clock, { ...small, revealLocked: true });
+
+    await lockOnce(t);
+    clock.advance(5 * MIN);
+    await lockOnce(t);
+
+    // The request reads no marker and no lock at the top (a parallel request
+    // set them just after), then counts past the limit without crossing it.
+    const get = counters.get.bind(counters);
+    let markerReads = 0;
+
+    counters.get = (key) => {
+      if (key.startsWith('lock:')) return Promise.resolve(null);
+      if (key.startsWith('perm:') && ++markerReads === 1) return Promise.resolve(null);
+
+      return get(key);
+    };
+
+    expect(await t.gateLogin(victim, 'c')).toEqual({
+      allowed: false,
+      reason: 'permanently_locked',
+      lock: { permanent: true },
+    });
+  });
+
+  it('starts the count toward the permanent tier over after a completed password reset', async () => {
+    const t = new Throttle(counters, clock, small);
+
+    await lockOnce(t);
+    await t.clearAccount(victim);
+
+    expect(await lockOnce(t)).toEqual({
+      allowed: false,
+      reason: 'locked',
+      newLock: { until: clock.now() + 5 * MIN },
+    });
+  });
+
   it('never escalates a second-factor lock, whatever its scope', async () => {
     const t = new Throttle(counters, clock, small);
     const rule = { limit: 1, window: '15m' } as const;
