@@ -107,12 +107,38 @@ export function verifyFetchSite(input: {
  */
 export function assertExactOrigins(origins: readonly string[], option: string): readonly string[] {
   for (const origin of origins) {
-    if (origin.includes('*') || origin === 'null' || normalizeOrigin(origin) === null) {
+    if (origin.includes('*') || !isBareOrigin(origin)) {
       throw new AuthConfigError(`${option} needs exact origins, such as app://desktop: ${origin}`);
     }
   }
 
   return [...origins];
+}
+
+/**
+ * `scheme://host[:port]` and nothing else: a host (so not `app:desktop`,
+ * `app://` or `javascript:x`), and no user info, path (beyond `/`), query or
+ * fragment, which an origin never carries and a listed entry must not either.
+ */
+function isBareOrigin(value: string): boolean {
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  return (
+    url.host !== '' &&
+    url.username === '' &&
+    url.password === '' &&
+    (url.pathname === '' || url.pathname === '/') &&
+    url.search === '' &&
+    url.hash === '' &&
+    !value.endsWith('?') &&
+    !value.endsWith('#')
+  );
 }
 
 /** Shortest accepted secret. */
