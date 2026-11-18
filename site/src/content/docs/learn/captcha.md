@@ -17,6 +17,23 @@ Rate limits count requests per IP, per account and per address. A bot farm with 
 
 **An outage is a failure.** A network error, no answer within 5000 ms (the default `timeoutMs`), an answer whose status is not a success, a body without a boolean `success`, and Cloudflare's own `internal-error` all count as `unavailable`. Any other failure Cloudflare reports, such as a token that expired or was already used, is `reject`. A missing token, or one longer than 2048 characters, is rejected without calling the provider.
 
+**Every verdict says why.** `turnstile()` returns a verifier with a second method, `check(token, context)`, that verifies exactly like `verify` and returns the verdict with its cause, and the optional `onResult` option gets the same outcome for every call: a pass, a refusal and an outage. Use it to log or count, so an outage shows apart from a misconfiguration such as a wrong secret. An outcome holds the `verdict`, the `door`, the `errorCodes` siteverify answered with (empty when it was not called) and a `reason`:
+
+| Verdict | `reason` | When |
+| --- | --- | --- |
+| `unavailable` | `timeout` | No answer within `timeoutMs`, while connecting or reading the body |
+| `unavailable` | `network-error` | The request or the body read failed (DNS, TLS, a reset connection) |
+| `unavailable` | `http-status` | An answer whose status is not a success; `status` holds the code |
+| `unavailable` | `unparsable-body` | A success status with a body that is not JSON or has no boolean `success` |
+| `unavailable` | `provider-error` | Cloudflare reported `internal-error` |
+| `reject` | `missing-token` | No token; the provider was not called |
+| `reject` | `token-too-long` | Longer than 2048 characters; the provider was not called |
+| `reject` | `provider-refused` | Any other failure siteverify reported: see `errorCodes` (`timeout-or-duplicate` for an expired or reused token, `invalid-input-secret` for a wrong secret) |
+| `reject` | `hostname-mismatch` | Solved on a hostname outside `expectedHostnames` |
+| `reject` | `action-mismatch` | Solved for another door, with `checkAction` |
+
+An outcome never carries the token or the secret. The hook is not awaited and cannot change the verdict: the outcome it gets is frozen, and a hook that throws or rejects is reported to the verifier's `logger` option (silent by default) with the error message only. The `unavailable` reasons are a shared type, `UnavailableReason`, meant for every provider check the package makes.
+
 **Why the captcha fails closed when the breach check fails open.** The [breach check](/auth/learn/passwords/) judges a password the user chose; skipping it during an outage accepts one password that might have leaked, and the outage is logged. The captcha is a gate against automated traffic; skipping it during an outage opens the gate to exactly that traffic, at a moment an attacker can choose. The cost is real and the package accepts it: while the provider is down, nobody can sign in, sign up or request a reset on an app with a captcha configured.
 
 **What it does not do.** A captcha raises the price of a request; it does not stop people or paid solving services from solving challenges, so the rate limits and the lockout still do the counting. The verifier does not track tokens itself: it relies on siteverify to refuse a token that expired or was already used.
