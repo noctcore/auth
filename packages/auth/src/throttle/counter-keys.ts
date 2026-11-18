@@ -20,6 +20,8 @@ export const counterKeys = {
   accountIp: (account: string, ip: string) => `aip:${account}:${ip}`,
   /** Attempts against one account from every source. */
   account: (account: string) => `acct:${account}`,
+  /** Present while the account is in the permanent tier; only an admin clears it. */
+  permanent: (account: string) => `perm:${account}`,
   /** The backoff tier: how many locks in a row, renewed on each one. */
   tier: (account: string) => `tier:${account}`,
   /** One trusted device's attempts under a lock. */

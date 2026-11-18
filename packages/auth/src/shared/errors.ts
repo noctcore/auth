@@ -25,6 +25,8 @@ export type AuthErrorCode =
   | 'password_not_set'
   /** Only when the app opted into `registration.revealExisting`. */
   | 'email_in_use'
+  /** Only with `throttle.lockout.revealLocked`: the account is locked (`retryAfterSeconds` when temporary). */
+  | 'account_locked'
   | 'captcha_failed'
   /** The captcha provider could not answer: an outage, not the user's mistake. */
   | 'captcha_unavailable'
@@ -45,7 +47,7 @@ export interface AuthFailure {
   readonly code: AuthErrorCode;
   /** Internal cause for audit and metrics. Never send it to the client. */
   readonly reason: string;
-  /** Set on `rate_limited`: when the window that refused ends. */
+  /** Set on `rate_limited`, and on a temporary `account_locked`: when the refusal ends. */
   readonly retryAfterSeconds?: number;
 }
 
