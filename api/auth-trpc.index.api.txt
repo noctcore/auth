@@ -111,6 +111,7 @@ CsrfMiddleware [const]: NestTrpcMiddlewareClass
 CsrfOptions [interface]
     readonly allowSameSite?: boolean
     readonly allowedOrigins: readonly string[]
+    readonly crossSiteOrigins?: readonly string[]
     readonly headerName?: string
     readonly secrets: readonly (string | Uint8Array)[]
 csrfTokenOutput [const]: z.ZodObject<{ csrfToken: z.ZodString; }, z.core.$strip>
@@ -164,7 +165,7 @@ TrpcAuth [interface]<U extends AuthUser = AuthUser, A = unknown>
     logout(input: { token: string | null | undefined; meta: RequestMeta; }): Promise<{ cookie: CookieSpec; }>
     readDeviceToken(cookieHeader: string | null | undefined): string | null
     readSessionToken(cookieHeader: string | null | undefined): string | null
-    readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly throttle: { hit(scope: string, rule: RateLimitRule): Promise<Hit>; }; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>; }
+    readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly throttle: { hit(scope: string, rule: RateLimitRule): Promise<Hit>; }; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>; /** * The session cookie config. The CSRF, pre-session and blank session * cookies take their `SameSite` from it, per request `Origin`, exactly as * the session cookie does. Missing (a hand-made stand-in): `Lax`. */ readonly cookie?: SessionCookieConfig; }
     readonly cookieName: string
     requireFreshAuth(session: StoredSession<A>): AuthResult<void>
     validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<StoredSession<A>>>
