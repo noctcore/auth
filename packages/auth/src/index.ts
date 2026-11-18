@@ -66,7 +66,14 @@ export {
   verifyRequestOrigin,
 } from './http/csrf';
 export type { CaptchaDoor, CaptchaVerdict, CaptchaVerifier } from './ports/captcha';
-export { turnstile, type TurnstileOptions } from './http/turnstile';
+export type { OutcomeHook, UnavailableOutcome, UnavailableReason } from './ports/provider-outcome';
+export {
+  turnstile,
+  type TurnstileOptions,
+  type TurnstileOutcome,
+  type TurnstileRefusalReason,
+  type TurnstileVerifier,
+} from './http/turnstile';
 export {
   clientIp,
   maskIp,
