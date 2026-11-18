@@ -27,7 +27,7 @@ Rate limits count requests per IP, per account and per address. A bot farm with 
 | `unavailable` | `unparsable-body` | A success status with a body that is not JSON or has no boolean `success` |
 | `unavailable` | `provider-error` | Cloudflare reported `internal-error` |
 | `reject` | `missing-token` | No token; the provider was not called |
-| `reject` | `token-too-long` | Longer than 2048 characters; the provider was not called |
+| `reject` | `token-too-long` | Longer than the limit above; the provider was not called |
 | `reject` | `provider-refused` | Any other failure siteverify reported: see `errorCodes` (`timeout-or-duplicate` for an expired or reused token, `invalid-input-secret` for a wrong secret) |
 | `reject` | `hostname-mismatch` | Solved on a hostname outside `expectedHostnames` |
 | `reject` | `action-mismatch` | Solved for another door, with `checkAction` |
