@@ -5,7 +5,7 @@
 // the CSRF header like a page would.
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createAuth, type AuthUser } from '@noctcore/auth';
+import { createAuth, type AuthUser, type SessionCookieConfig } from '@noctcore/auth';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '@noctcore/auth/testing';
 import {
   createTRPCClient,
@@ -41,7 +41,8 @@ export const EMAIL = 'ada@example.com';
 export const PASSWORD = 'correct horse battery staple';
 export const CSRF_SECRET = 'csrf-secret-that-is-at-least-32-bytes-long';
 
-export function makeAuth() {
+/** `cookie` replaces the session cookie config (plain HTTP, `Lax`, by default). */
+export function makeAuth(cookie: SessionCookieConfig = { secure: false }) {
   const clock = manualClock();
   const stores = memoryStores(clock);
 
@@ -49,7 +50,7 @@ export function makeAuth() {
     stores,
     clock,
     password: { hasher: plainHasher(), breachCheck: false },
-    session: { cookie: { secure: false } },
+    session: { cookie },
     secret: 'auth-secret-that-is-at-least-32-bytes-long',
     urls: { resetPassword: (token) => `${ORIGIN}/reset#${token}` },
     mailer: recordingMailer(),
@@ -168,10 +169,12 @@ export interface BootOptions {
   readonly roles?: Map<string, readonly string[]>;
   readonly options?: Partial<AuthContextOptions<AuthUser, Record<string, never>>>;
   readonly transport?: 'fetch' | 'node';
+  /** The session cookie config, in place of plain HTTP with `Lax`. */
+  readonly cookie?: SessionCookieConfig;
 }
 
 export async function boot(overrides: BootOptions = {}) {
-  const env = makeAuth();
+  const env = makeAuth(overrides.cookie);
   const roles = overrides.roles ?? new Map<string, readonly string[]>();
 
   const authContext = createAuthContext({
@@ -258,7 +261,7 @@ export class Browser {
   }
 
   get csrf(): string {
-    return this.cookies.get('csrf') ?? '';
+    return this.cookies.get('csrf') ?? this.cookies.get('__Host-csrf') ?? '';
   }
 
   async fetch(input: unknown, init?: RequestInit): Promise<Response> {

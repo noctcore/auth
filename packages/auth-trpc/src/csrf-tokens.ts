@@ -13,6 +13,7 @@ import {
   randomBytes,
   verifyCsrfToken,
   type CookieSpec,
+  type SameSite,
   type StoredSession,
 } from '@noctcore/auth';
 import type { ResolvedOptions } from './options';
@@ -38,7 +39,15 @@ export function readPreSession(value: string | undefined): string | null {
   return value !== undefined && PRE_SESSION.test(value) ? value : null;
 }
 
-export function newPreSession(options: ResolvedOptions): { id: string; cookie: CookieSpec } {
+/**
+ * The cookies below take `sameSite` from the caller: the session cookie's
+ * resolution for the request (`resolveSameSite`), or the attribute of the
+ * session cookie written next to them, so they always travel together.
+ */
+export function newPreSession(
+  options: ResolvedOptions,
+  sameSite: SameSite,
+): { id: string; cookie: CookieSpec } {
   // The core's randomness (Web Crypto), so the fetch adapter runs where
   // node:crypto does not.
   const id = Array.from(randomBytes(16), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -48,7 +57,7 @@ export function newPreSession(options: ResolvedOptions): { id: string; cookie: C
     cookie: {
       name: options.csrf.preSessionCookieName,
       value: id,
-      attributes: { httpOnly: true, secure: options.secure, sameSite: 'lax', path: '/' },
+      attributes: { httpOnly: true, secure: options.secure, sameSite, path: '/' },
     },
   };
 }
@@ -56,6 +65,7 @@ export function newPreSession(options: ResolvedOptions): { id: string; cookie: C
 export function csrfCookie(
   options: ResolvedOptions,
   bound: string,
+  sameSite: SameSite,
 ): { token: string; cookie: CookieSpec } {
   const [current] = options.csrf.secrets;
   // resolveOptions refuses an empty list, so `current` is always set.
@@ -67,7 +77,7 @@ export function csrfCookie(
       name: options.csrf.cookieName,
       value: token,
       // Readable by the page, which echoes it in the CSRF header.
-      attributes: { httpOnly: false, secure: options.secure, sameSite: 'lax', path: '/' },
+      attributes: { httpOnly: false, secure: options.secure, sameSite, path: '/' },
     },
   };
 }

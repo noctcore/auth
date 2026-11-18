@@ -8,8 +8,12 @@
  *   from a header, the input or the client.
  * - The CSRF verdict is computed here, from the request's headers, and
  *   enforced by the `csrf` middleware on every mutation (the core's three
- *   checks: Origin allowlist, `Sec-Fetch-Site`, and the signed double-submit
- *   token bound to this session or pre-session).
+ *   checks: Origin allowlist, `Sec-Fetch-Site` (`cross-site` only from an
+ *   origin on `crossSiteOrigins`), and the signed double-submit token bound
+ *   to this session or pre-session).
+ * - Every cookie the adapter sets takes the session cookie's `SameSite` for
+ *   the request's `Origin` (the core's `resolveSameSite`), so a shell that
+ *   gets `None` for its session gets it for the CSRF cookies too.
  * - Like the Nest adapter, a safe request hands out what the page needs to
  *   send mutations: a pre-session id when the browser has none yet, and a
  *   CSRF cookie bound to the current binding. A session token the core
@@ -32,6 +36,7 @@
 import {
   AuthConfigError,
   parseCookieHeader,
+  resolveSameSite,
   verifyFetchSite,
   verifyRequestOrigin,
   type AuthUser,
@@ -232,16 +237,19 @@ function csrfVerdict(
   // Judged as the unsafe request a mutation always is, whatever method carried it.
   const method = 'POST';
   const secFetchSite = request.header('sec-fetch-site');
+  const origin = request.header('origin');
 
-  const originOk = verifyRequestOrigin({
-    method,
-    origin: request.header('origin'),
-    allowedOrigins: csrf.allowedOrigins,
-  });
+  const originOk = verifyRequestOrigin({ method, origin, allowedOrigins: csrf.allowedOrigins });
 
   const siteOk =
     secFetchSite === undefined ||
-    verifyFetchSite({ method, secFetchSite, allowSameSite: csrf.allowSameSite });
+    verifyFetchSite({
+      method,
+      secFetchSite,
+      allowSameSite: csrf.allowSameSite,
+      origin,
+      crossSiteOrigins: csrf.crossSiteOrigins,
+    });
 
   const tokenOk = csrfTokenValid(options, {
     cookieToken,
@@ -267,13 +275,15 @@ async function resolveState(
   const preSession = readPreSession(cookies.get(csrf.preSessionCookieName));
   const cookieToken = cookies.get(csrf.cookieName);
   let bound = binding(session, preSession);
+  // Every cookie set here travels with the session cookie, so takes its SameSite.
+  const sameSite = resolveSameSite(options.cookie, request.header('origin'));
 
   // A token the core refused is cleared, so the browser stops sending it.
   if (token !== null && session === null) {
     write({
       name: auth.cookieName,
       value: '',
-      attributes: { httpOnly: true, secure: options.secure, sameSite: 'lax', path: '/', maxAge: 0 },
+      attributes: { httpOnly: true, secure: options.secure, sameSite, path: '/', maxAge: 0 },
     });
   }
 
@@ -282,7 +292,7 @@ async function resolveState(
 
   if (isSafeMethod(request.method)) {
     if (bound === null) {
-      const fresh = newPreSession(options);
+      const fresh = newPreSession(options, sameSite);
 
       write(fresh.cookie);
       bound = preSessionBinding(fresh.id);
@@ -290,14 +300,14 @@ async function resolveState(
 
     const current = csrfTokenValid(options, { cookieToken, headerToken: cookieToken, bound });
 
-    if (!current) write(csrfCookie(options, bound).cookie);
+    if (!current) write(csrfCookie(options, bound, sameSite).cookie);
   }
 
   let user: Promise<AuthUser | null> | undefined;
 
   const startPreSession = (): { csrfToken: string } => {
-    const fresh = newPreSession(options);
-    const next = csrfCookie(options, preSessionBinding(fresh.id));
+    const fresh = newPreSession(options, sameSite);
+    const next = csrfCookie(options, preSessionBinding(fresh.id), sameSite);
 
     write(fresh.cookie);
     write(next.cookie);
@@ -323,7 +333,12 @@ async function resolveState(
     setSession: (issued) => {
       once();
 
-      const next = csrfCookie(options, sessionBinding(issued.session));
+      // The CSRF cookie goes wherever the session cookie goes.
+      const next = csrfCookie(
+        options,
+        sessionBinding(issued.session),
+        issued.cookie.attributes.sameSite,
+      );
 
       write(issued.cookie);
       write(issued.deviceCookie);

@@ -5,6 +5,7 @@
  * that quietly passes everything.
  */
 import {
+  assertExactOrigins,
   AuthConfigError,
   createCsrfToken,
   type AuthEvent,
@@ -15,6 +16,7 @@ import {
   type Hit,
   type RateLimitRule,
   type RequestMeta,
+  type SessionCookieConfig,
   type StoredSession,
 } from '@noctcore/auth';
 
@@ -47,6 +49,12 @@ export interface TrpcAuth<U extends AuthUser = AuthUser, A = unknown> {
       error(message: string, context?: Record<string, unknown>): void;
     };
     emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>;
+    /**
+     * The session cookie config. The CSRF, pre-session and blank session
+     * cookies take their `SameSite` from it, per request `Origin`, exactly as
+     * the session cookie does. Missing (a hand-made stand-in): `Lax`.
+     */
+    readonly cookie?: SessionCookieConfig;
   };
 }
 
@@ -60,6 +68,14 @@ export interface CsrfOptions {
   readonly allowedOrigins: readonly string[];
   /** Accept `Sec-Fetch-Site: same-site` too, for sibling subdomains you trust. Default false. */
   readonly allowSameSite?: boolean;
+  /**
+   * Exact origins allowed to send mutations from another site, such as a
+   * desktop shell on its own scheme (`app://desktop`). An origin listed here
+   * counts as allowed, and its `Sec-Fetch-Site: cross-site` requests pass;
+   * the double-submit token is still required. Matched exactly, no
+   * wildcards. Trust each one as much as your own origin. Default none.
+   */
+  readonly crossSiteOrigins?: readonly string[];
   /** Header the page echoes the token in. Default `x-csrf-token`. */
   readonly headerName?: string;
 }
@@ -87,9 +103,13 @@ export interface ResolvedOptions {
   readonly trustedHops: number;
   readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined;
   readonly secure: boolean;
+  /** The session cookie config the adapter's cookies take their `SameSite` from. */
+  readonly cookie: SessionCookieConfig;
   readonly csrf: {
     readonly secrets: readonly Uint8Array[];
+    /** `allowedOrigins` and `crossSiteOrigins` together: every origin the Origin check accepts. */
     readonly allowedOrigins: readonly string[];
+    readonly crossSiteOrigins: readonly string[];
     readonly allowSameSite: boolean;
     readonly headerName: string;
     readonly cookieName: string;
@@ -122,7 +142,11 @@ export function resolveOptions<U extends AuthUser, A>(
 
   if (csrf.secrets.length === 0)
     throw new AuthConfigError('csrf.secrets needs at least one secret');
-  if (csrf.allowedOrigins.length === 0) throw new AuthConfigError('csrf.allowedOrigins is empty');
+
+  const crossSiteOrigins = assertExactOrigins(csrf.crossSiteOrigins ?? [], 'csrf.crossSiteOrigins');
+
+  if (csrf.allowedOrigins.length === 0 && crossSiteOrigins.length === 0)
+    throw new AuthConfigError('csrf.allowedOrigins is empty');
 
   const secrets = csrf.secrets.map((secret) =>
     typeof secret === 'string' ? new TextEncoder().encode(secret) : secret,
@@ -146,9 +170,11 @@ export function resolveOptions<U extends AuthUser, A>(
     trustedHops,
     roles: options.roles as ResolvedOptions['roles'],
     secure,
+    cookie: auth.context.cookie ?? { secure },
     csrf: {
       secrets,
-      allowedOrigins: [...csrf.allowedOrigins],
+      allowedOrigins: [...csrf.allowedOrigins, ...crossSiteOrigins],
+      crossSiteOrigins,
       allowSameSite: csrf.allowSameSite ?? false,
       headerName,
       cookieName: secure ? '__Host-csrf' : 'csrf',
