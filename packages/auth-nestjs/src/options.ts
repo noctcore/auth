@@ -4,6 +4,7 @@
  * instead of letting it run with a check that quietly passes everything.
  */
 import {
+  assertExactOrigins,
   AuthConfigError,
   createCsrfToken,
   type AuthResult,
@@ -12,6 +13,7 @@ import {
   type CookieSpec,
   type Duration,
   type RequestMeta,
+  type SessionCookieConfig,
   type StoredSession,
   toMilliseconds,
 } from '@noctcore/auth';
@@ -40,6 +42,12 @@ export interface NestAuth<U extends AuthUser = AuthUser> {
     readonly logger: {
       error(message: string, context?: Record<string, unknown>): void;
     };
+    /**
+     * The session cookie config. The CSRF, pre-session and blank session
+     * cookies take their `SameSite` from it, per request `Origin`, exactly as
+     * the session cookie does. Missing (a hand-made stand-in): `Lax`.
+     */
+    readonly cookie?: SessionCookieConfig;
   };
 }
 
@@ -53,6 +61,14 @@ export interface CsrfOptions {
   readonly allowedOrigins: readonly string[];
   /** Accept `Sec-Fetch-Site: same-site` too, for sibling subdomains you trust. Default false. */
   readonly allowSameSite?: boolean;
+  /**
+   * Exact origins allowed to send unsafe requests from another site, such
+   * as a desktop shell on its own scheme (`app://desktop`). An origin listed
+   * here counts as allowed, and its `Sec-Fetch-Site: cross-site` requests
+   * pass; the double-submit token is still required. Matched exactly, no
+   * wildcards. Trust each one as much as your own origin. Default none.
+   */
+  readonly crossSiteOrigins?: readonly string[];
   /**
    * Paths that skip CSRF entirely, such as a webhook that authenticates with
    * a signature. A string matches the request path exactly (a global prefix
@@ -95,10 +111,14 @@ export interface ResolvedOptions {
   readonly trustedHops: number;
   readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined;
   readonly secure: boolean;
+  /** The session cookie config the adapter's cookies take their `SameSite` from. */
+  readonly cookie: SessionCookieConfig;
   readonly shutdownTimeout: Duration;
   readonly csrf: {
     readonly secrets: readonly Uint8Array[];
+    /** `allowedOrigins` and `crossSiteOrigins` together: every origin the Origin check accepts. */
     readonly allowedOrigins: readonly string[];
+    readonly crossSiteOrigins: readonly string[];
     readonly allowSameSite: boolean;
     readonly exempt: readonly (string | RegExp)[];
     readonly headerName: string;
@@ -131,7 +151,11 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
 
   if (csrf.secrets.length === 0)
     throw new AuthConfigError('csrf.secrets needs at least one secret');
-  if (csrf.allowedOrigins.length === 0) throw new AuthConfigError('csrf.allowedOrigins is empty');
+
+  const crossSiteOrigins = assertExactOrigins(csrf.crossSiteOrigins ?? [], 'csrf.crossSiteOrigins');
+
+  if (csrf.allowedOrigins.length === 0 && crossSiteOrigins.length === 0)
+    throw new AuthConfigError('csrf.allowedOrigins is empty');
 
   const secrets = csrf.secrets.map((secret) =>
     typeof secret === 'string' ? new TextEncoder().encode(secret) : secret,
@@ -160,10 +184,12 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     trustedHops,
     roles: options.roles as ResolvedOptions['roles'],
     secure,
+    cookie: auth.context.cookie ?? { secure },
     shutdownTimeout,
     csrf: {
       secrets,
-      allowedOrigins: [...csrf.allowedOrigins],
+      allowedOrigins: [...csrf.allowedOrigins, ...crossSiteOrigins],
+      crossSiteOrigins,
       allowSameSite: csrf.allowSameSite ?? false,
       exempt: [...(csrf.exempt ?? [])],
       headerName,

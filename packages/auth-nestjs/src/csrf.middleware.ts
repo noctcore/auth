@@ -4,8 +4,10 @@
  * For every unsafe method on a route that is not exempt, all three of the
  * core's checks must pass: the `Origin` is on the allowlist
  * (`verifyRequestOrigin`), `Sec-Fetch-Site` says `same-origin` whenever the
- * browser sends it (`verifyFetchSite`), and the double-submit token matches
- * its cookie and is bound to this session or pre-session (`verifyCsrfToken`).
+ * browser sends it, or `cross-site` from an origin on `crossSiteOrigins`
+ * (`verifyFetchSite`), and the double-submit token matches its cookie and is
+ * bound to this session or pre-session (`verifyCsrfToken`). The cookies set
+ * here take the session cookie's `SameSite` for the request's `Origin`.
  *
  * A refusal is answered here, with 403 and one fixed body, instead of
  * `next(err)`: an error handed on could reach a filter that echoes its
@@ -38,6 +40,7 @@ import {
   markCsrfPassed,
   rawRequest,
   rawResponse,
+  sameSiteFor,
   sessionState,
   type RawRequest,
   type RawResponse,
@@ -104,23 +107,32 @@ export class CsrfMiddleware implements NestMiddleware {
     const cookies = parseCookieHeader(header(req, 'cookie'));
     const preSession = readPreSession(cookies.get(csrf.preSessionCookieName));
     const cookieToken = cookies.get(csrf.cookieName);
+    const origin = header(req, 'origin');
+    // Every cookie set here travels with the session cookie, so takes its SameSite.
+    const sameSite = sameSiteFor(req, this.options);
 
     // A token the core refused is cleared, so the browser stops sending it.
     if (state.token !== null && state.session === null)
-      appendCookie(res, blankSessionCookie(this.options));
+      appendCookie(res, blankSessionCookie(this.options, sameSite));
 
     if (!isSafeMethod(method)) {
       const secFetchSite = header(req, 'sec-fetch-site');
 
       const originOk = verifyRequestOrigin({
         method,
-        origin: header(req, 'origin'),
+        origin,
         allowedOrigins: csrf.allowedOrigins,
       });
 
       const siteOk =
         secFetchSite === undefined ||
-        verifyFetchSite({ method, secFetchSite, allowSameSite: csrf.allowSameSite });
+        verifyFetchSite({
+          method,
+          secFetchSite,
+          allowSameSite: csrf.allowSameSite,
+          origin,
+          crossSiteOrigins: csrf.crossSiteOrigins,
+        });
 
       const tokenOk = csrfTokenValid(this.options, {
         cookieToken,
@@ -134,7 +146,7 @@ export class CsrfMiddleware implements NestMiddleware {
     let bound = binding(state.session, preSession);
 
     if (bound === null) {
-      const fresh = newPreSession(this.options);
+      const fresh = newPreSession(this.options, sameSite);
 
       appendCookie(res, fresh.cookie);
       bound = preSessionBinding(fresh.id);
@@ -146,7 +158,7 @@ export class CsrfMiddleware implements NestMiddleware {
       bound,
     });
 
-    if (!current) appendCookie(res, csrfCookie(this.options, bound).cookie);
+    if (!current) appendCookie(res, csrfCookie(this.options, bound, sameSite).cookie);
 
     return true;
   }

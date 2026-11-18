@@ -20,6 +20,7 @@ import {
   toPublicError,
   type AuthUser,
   type RequestMeta,
+  type SessionCookieConfig,
   type StoredSession,
 } from '@noctcore/auth';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '@noctcore/auth/testing';
@@ -42,7 +43,8 @@ export const EMAIL = 'ada@example.com';
 export const PASSWORD = 'correct horse battery staple';
 export const CSRF_SECRET = 'csrf-secret-that-is-at-least-32-bytes-long';
 
-export function makeAuth() {
+/** `cookie` replaces the session cookie config (plain HTTP, `Lax`, by default). */
+export function makeAuth(cookie: SessionCookieConfig = { secure: false }) {
   const clock = manualClock();
   const stores = memoryStores(clock);
   const mailer = recordingMailer();
@@ -51,7 +53,7 @@ export function makeAuth() {
     stores,
     clock,
     password: { hasher: plainHasher(), breachCheck: false },
-    session: { cookie: { secure: false } },
+    session: { cookie },
     secret: 'auth-secret-that-is-at-least-32-bytes-long',
     urls: { resetPassword: (token) => `${ORIGIN}/reset#${token}` },
     mailer,
@@ -227,6 +229,8 @@ export interface BootOptions {
   readonly controllers?: readonly Type[];
   /** `app.setGlobalPrefix(prefix, { exclude })` before init. */
   readonly globalPrefix?: { readonly prefix: string; readonly exclude: string[] };
+  /** The session cookie config, in place of plain HTTP with `Lax`. */
+  readonly cookie?: SessionCookieConfig;
 }
 
 /** Under a global prefix: a handler at the prefix root, and a route excluded from the prefix. */
@@ -264,7 +268,7 @@ export class ExcludedController {
 }
 
 export async function boot(overrides: BootOptions = {}) {
-  const env = makeAuth();
+  const env = makeAuth(overrides.cookie);
   const roles = overrides.roles ?? new Map<string, readonly string[]>();
 
   const base: AuthModuleOptions = {
@@ -333,7 +337,7 @@ export class Browser {
   ) {}
 
   get csrf(): string {
-    return this.cookies.get('csrf') ?? '';
+    return this.cookies.get('csrf') ?? this.cookies.get('__Host-csrf') ?? '';
   }
 
   async send(
