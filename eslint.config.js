@@ -73,6 +73,16 @@ const CONSTANT_TIME_IMPORT = {
   message: 'Compare secrets with hexDigestsEqual or secretsEqual from crypto/hash.ts.',
 };
 
+// Addresses are normalised by the policy `email.normalize` picks, through
+// `core.normalizeEmail` or `core.parseEmail`. The fixed `standard` function is
+// public API only: a flow that imported it would ignore the configured policy.
+const FIXED_EMAIL_NORMALIZER = {
+  regex: '/shared/email$',
+  importNames: ['normalizeEmail'],
+  message:
+    'Normalise addresses with core.normalizeEmail or core.parseEmail (the configured policy).',
+};
+
 const LAYERS = {
   shared: [],
   crypto: ['shared'],
@@ -274,7 +284,10 @@ export default tseslint.config(
     // crypto/hash.ts (the override below lets that one module import it).
     files: ['packages/auth/src/*/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', { paths: [...BARREL_IMPORTS, CONSTANT_TIME_IMPORT] }],
+      'no-restricted-imports': [
+        'error',
+        { paths: [...BARREL_IMPORTS, CONSTANT_TIME_IMPORT], patterns: [FIXED_EMAIL_NORMALIZER] },
+      ],
     },
   },
   {
