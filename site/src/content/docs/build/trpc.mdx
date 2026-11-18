@@ -42,8 +42,8 @@ bun add @noctcore/auth-trpc @noctcore/auth @trpc/server zod
 
 - the session cookie is read and validated through the core (`validateRequest`); a token the core refused is cleared;
 - the client IP comes from the core's `clientIp`, counting `trustedHops` from the right of `X-Forwarded-For` (at most 16);
-- the three CSRF checks are computed from the headers: the `Origin` is on the allowlist, `Sec-Fetch-Site` says `same-origin` when the browser sends it, and the double-submit token matches its cookie and is bound to this session or pre-session;
-- on a query, the page gets what it needs for its next mutation: a pre-session id when it has none, and a CSRF cookie bound to the current session or pre-session.
+- the three CSRF checks are computed from the headers: the `Origin` is on the allowlist, `Sec-Fetch-Site` says `same-origin` when the browser sends it (or `cross-site` from an origin on `csrf.crossSiteOrigins`, for a desktop shell; see [Cookies and desktop shells](/auth/learn/cookies-and-desktop-shells/)), and the double-submit token matches its cookie and is bound to this session or pre-session;
+- on a query, the page gets what it needs for its next mutation: a pre-session id when it has none, and a CSRF cookie bound to the current session or pre-session. Both take the `SameSite` that `session.cookie.sameSite` gives the request's `Origin`, like the session cookie.
 
 The CSRF cookie is readable by the page, which echoes it in the `x-csrf-token` header on every mutation; see [the client](#the-client).
 

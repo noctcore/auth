@@ -357,12 +357,16 @@ describe('Learn page cookie facts', () => {
     ).toThrow('SameSite=None requires a Secure cookie');
   });
 
-  it('keeps the adapter CSRF cookies at SameSite=Lax', () => {
+  it('gives the adapter CSRF cookies the session cookie SameSite, never a fixed one', () => {
     for (const adapter of ['auth-nestjs', 'auth-trpc']) {
       const csrf = source(`${adapter}/src/csrf-tokens.ts`);
 
-      expect(csrf.match(/sameSite: '(\w+)'/gu)).toEqual(["sameSite: 'lax'", "sameSite: 'lax'"]);
+      expect(csrf.match(/sameSite: '(\w+)'/gu)).toBeNull();
+      expect(csrf.match(/secure: options\.secure, sameSite, path/gu)).toHaveLength(2);
     }
+
+    expect(text).toContain("CSRF and pre-session cookies and the blank cookie");
+    expect(text).toContain('`resolveSameSite`');
   });
 });
 

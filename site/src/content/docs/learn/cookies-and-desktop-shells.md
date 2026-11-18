@@ -33,13 +33,27 @@ session: {
 },
 ```
 
-The trusted-device cookies get the same answer. `None` on a cookie that is not `Secure` is refused with a configuration error when a cookie is built (usually at the first sign-in), not when `createAuth` starts. The origin comes from the request's `Origin` header, which a client that is not a browser can set to anything; that only changes the attributes of its own cookie.
+The trusted-device cookies get the same answer, and so do the NestJS and tRPC adapters' CSRF and pre-session cookies and the blank cookie they write to clear a refused session: every cookie that has to travel with the session cookie takes its `SameSite` from the same function, through the core's `resolveSameSite`. `None` on a cookie that is not `Secure` is refused with a configuration error when a cookie is built (usually at the first sign-in), not when `createAuth` starts. The origin comes from the request's `Origin` header, which a client that is not a browser can set to anything; that only changes the attributes of its own cookie.
 
-**`None` needs the rest of the CSRF defence.** A cookie with `SameSite=None` is sent on requests other sites start too, so the origin it is meant for has to be checked. A shell's requests arrive as `cross-site`, which `verifyFetchSite` alone would refuse, so name the shell's origin in the `verifyRequestOrigin` allowlist and keep the signed double-submit token. [CSRF](/auth/learn/csrf/) covers both.
+**`None` needs the rest of the CSRF defence.** A cookie with `SameSite=None` is sent on requests other sites start too, so the origin it is meant for has to be checked. A shell's requests arrive as `cross-site`, which `verifyFetchSite` refuses by default. List the shell's exact origin in the adapter's `csrf.crossSiteOrigins` (or pass `origin` and `crossSiteOrigins` to `verifyFetchSite` yourself): that origin then passes the `Origin` check, and its `cross-site` requests pass the `Sec-Fetch-Site` check, while every other cross-site request is still refused. The signed double-submit token is still required. [CSRF](/auth/learn/csrf/) covers the trade-off.
+
+```ts
+createAuthContext({
+  auth,
+  trustedHops,
+  csrf: {
+    secrets: [csrfSecret],
+    allowedOrigins: ['https://app.example'],
+    crossSiteOrigins: ['app://desktop'],
+  },
+});
+```
+
+`AuthModule.forRoot` takes the same `csrf.crossSiteOrigins`. Entries are matched exactly, scheme, host and port; a wildcard, `null` or anything that is not an origin stops the app at boot. The list is empty by default, so nothing changes until you name an origin.
 
 **Limits for shells and other clients.**
 
-- The NestJS and tRPC adapters set their CSRF and pre-session cookies with `SameSite=Lax` whatever the session cookie uses, so their double-submit layer is built for pages served from your own site. A shell on its own scheme whose requests count as cross-site does not get those cookies sent back. Test the shell against the adapter before relying on it, or load your web origin in the shell, where it is an ordinary same-site browser page and needs no `None` at all.
+- Whether a shell's engine keeps and sends `SameSite=None` cookies to your API depends on the engine and its settings. Test the shell against the adapter before relying on it, or load your web origin in the shell, where it is an ordinary same-site browser page and needs neither `None` nor `crossSiteOrigins`.
 - `__Host-`, `Secure`, `HttpOnly` and `SameSite` are instructions to a browser. A client that is not a browser, such as a native HTTP library or a command-line tool, keeps cookies wherever its library does and enforces none of them. It must also send an `Origin` the allowlist names, because `verifyRequestOrigin` refuses an unsafe request without one.
 
 ## Where the package and the guide differ
@@ -50,4 +64,4 @@ The guide asks for `HttpOnly` and `Secure`, and says `SameSite` mitigates many c
 
 - [Browser client-side storage](https://auth.pilcrowonpaper.com/browser-client-side-storage) in Pilcrow's auth guide.
 - [Set-Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie) on MDN, including the cookie prefixes.
-- Attack tests: [A018, cookie tossing and reading the session cookie from script](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A018-cookie-tossing-and-script-theft.test.ts), [A008, cross-site request forgery](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A008-csrf-cross-site-post.test.ts), [A026, through the Nest adapter](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A026-csrf-origin-through-nest.test.ts) and [A033, through the tRPC adapter](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A033-csrf-through-trpc.test.ts).
+- Attack tests: [A018, cookie tossing and reading the session cookie from script](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A018-cookie-tossing-and-script-theft.test.ts), [A008, cross-site request forgery](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A008-csrf-cross-site-post.test.ts), [A026, through the Nest adapter](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A026-csrf-origin-through-nest.test.ts), [A033, through the tRPC adapter](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A033-csrf-through-trpc.test.ts), and the cross-site origin allowlist in [A078, through the Nest adapter](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A078-cross-site-origin-allowlist-through-nest.test.ts) and [A079, through the tRPC adapter](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A079-cross-site-origin-allowlist-through-trpc.test.ts).

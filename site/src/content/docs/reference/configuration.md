@@ -65,7 +65,7 @@ Source: `http/cookie.ts`.
 | --- | --- | --- |
 | `session.cookie.name` | `'session'` | Base name. When the cookie is Secure it becomes `__Host-session`: the browser then requires Secure, `Path=/` and no `Domain`, so a sibling subdomain cannot set or overwrite it. Letters, digits, `_` and `-` only. |
 | `session.cookie.secure` | `true` | Turn it off only for plain-HTTP local development. Also drops the `__Host-` prefix, from the device cookie too (`device` instead of `__Host-device`). |
-| `session.cookie.sameSite` | `'lax'` | Keeps the cookie off cross-site subrequests and form posts while links into the site still work. Accepts a function of the request's `Origin` for an app that also serves a desktop shell; `'none'` without Secure is refused when a cookie is built, not at startup. |
+| `session.cookie.sameSite` | `'lax'` | Keeps the cookie off cross-site subrequests and form posts while links into the site still work. Accepts a function of the request's `Origin` for an app that also serves a desktop shell; `'none'` without Secure is refused when a cookie is built, not at startup. The trusted-device cookies and the NestJS and tRPC adapters' CSRF, pre-session and blank session cookies get the same answer. |
 
 The cookie is always HttpOnly. A session without "remember me" gets a browser-session cookie (no `Max-Age`).
 
