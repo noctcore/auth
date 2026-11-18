@@ -23,15 +23,9 @@ import { PURPOSE } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { refuse, type HookInput } from '../core/hooks';
 import type { AuthUser } from '../ports/stores';
+import { LOCKOUT_EXPIRES_AT } from '../shared/duration';
 import type { RequestMeta } from '../shared/meta';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
-
-/**
- * The expiry of a lockout and of the revert link it keeps: the start of
- * 9999-12-31 UTC, within every SQL date column (MySQL's DATETIME stops at
- * year 9999) and a JavaScript Date, and as a Redis TTL far below its limit.
- */
-export const LOCKOUT_EXPIRES_AT = Date.UTC(9999, 11, 31);
 
 /** Locks the account out; returns the expiry its marker is stored with. */
 export async function lockOut<U extends AuthUser, A>(
