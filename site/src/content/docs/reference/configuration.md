@@ -69,6 +69,20 @@ Source: `http/cookie.ts`.
 
 The cookie is always HttpOnly. A session without "remember me" gets a browser-session cookie (no `Max-Age`).
 
+## Email addresses
+
+Source: `shared/email.ts`.
+
+| Key | Default | Why |
+| --- | --- | --- |
+| `email.normalize` | `'standard'` | How every address is normalised before it is compared, stored or used as a counter key, by every flow and plugin and by `auth.normalizeEmail`. `'standard'` trims, lowercases A to Z and refuses any non-ASCII character (`invalid_email`), so Unicode case folding can never merge two addresses. `'ascii'` stores the same spelling but answers a non-ASCII address with `email_not_ascii`, so you can say why. `'unicode'` keeps Unicode addresses: NFC, then lowercase of the domain and the local part, the Greek final sigma folded to the plain one (no mainstream provider treats the local part as case-sensitive, and folding it stops case-collision takeovers); it refuses invisible, bidi, control and compatibility characters (fullwidth letters, ligatures), punycode labels (send the Unicode form) and any part that mixes scripts, apart from the Chinese, Japanese and Korean mixes with Latin. Or pass `(email) => string \| null`, your own normaliser. An unknown name is refused at startup. |
+
+**A custom normaliser** must be pure, deterministic and idempotent: `normalize(normalize(x)) === normalize(x)`, because a stored address is normalised again every time it is compared. `createAuth` runs it over a sample of addresses (mixed case, IDN, decomposed accents, confusables, junk) and refuses to start if it throws, returns anything but `null` or a non-empty address with an `@` (no control characters, at most 254 bytes), answers differently twice, or is not idempotent. On each call it refuses (and logs) an address whose result is not a fixed point. Return `null` for an address you refuse; it is answered `invalid_email`.
+
+**Use the same normaliser in your own code.** `auth.normalizeEmail(email)` gives the configured spelling, or `null`. Call it wherever your app stores or looks up an address outside the flows (an admin create, an import, an SSO first login), never a fixed function. The exported `normalizeEmail` is the `standard` policy only.
+
+**Changing the policy needs a data migration.** Rows are stored in the spelling of the policy that wrote them. Before switching `email.normalize` on a live database, rewrite every stored address (users, pending invitations, and any address in outstanding tokens, or let those expire) into the new spelling, and resolve the duplicates that rewrite may reveal (two rows that become one address). The package does not do this for you. Until it is done, owners of rows the new policy no longer matches cannot sign in or reset by address, and a sign-up can create a second account for the same mailbox.
+
 ## Registration
 
 Source: `flows/resolve-settings.ts`.
