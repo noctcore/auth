@@ -360,13 +360,18 @@ describe('Learn page cookie facts', () => {
     expect(text).toContain('`__Host-csrf` and `__Host-presession`');
   });
 
-  it('refuses SameSite=None without Secure when a cookie is built, not when the name is checked', () => {
-    const config = { secure: false, sameSite: 'none' } as const;
+  it('refuses a fixed SameSite=None without Secure at startup, a function when a cookie is built', () => {
+    const fixed = { secure: false, sameSite: 'none' } as const;
+    const chosen = { secure: false, sameSite: (): 'none' => 'none' };
 
-    expect(() => sessionCookieName(config)).not.toThrow();
+    expect(() => sessionCookieName(fixed)).not.toThrow();
     expect(() =>
-      createSessionCookie(config, 'TOKEN', { expiresAt: DAY, persistent: false, now: 0 }),
+      createSessionCookie(fixed, 'TOKEN', { expiresAt: DAY, persistent: false, now: 0 }),
     ).toThrow('SameSite=None requires a Secure cookie');
+    expect(() =>
+      createSessionCookie(chosen, 'TOKEN', { expiresAt: DAY, persistent: false, now: 0 }),
+    ).toThrow('SameSite=None requires a Secure cookie');
+    expect(text).toContain('when `createAuth` starts');
   });
 
   it('gives the adapter CSRF cookies the session cookie SameSite, never a fixed one', () => {
