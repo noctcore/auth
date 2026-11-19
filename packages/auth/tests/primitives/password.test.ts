@@ -140,6 +140,126 @@ describe('pwnedPasswords', () => {
     expect(await pwnedPasswords({ fetch: throwing })('password')).toBe('unavailable');
   });
 
+  describe('outcomes', () => {
+    const outcomeOf = (fetch: typeof globalThis.fetch, options = {}) =>
+      pwnedPasswords({ fetch, ...options }).check('password');
+
+    it('says clean and breached without a reason', async () => {
+      expect(await outcomeOf(respond(`${suffix}:0`))).toEqual({ verdict: 'clean' });
+      expect(await outcomeOf(respond(`${suffix}:3`))).toEqual({ verdict: 'breached' });
+    });
+
+    it('maps a timeout to timeout', async () => {
+      const slow = vi.fn(async () => {
+        throw new DOMException('too slow', 'TimeoutError');
+      }) as unknown as typeof fetch;
+
+      expect(await outcomeOf(slow)).toEqual({ verdict: 'unavailable', reason: 'timeout' });
+    });
+
+    it('maps a failed request to network-error', async () => {
+      const down = vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      }) as unknown as typeof fetch;
+
+      expect(await outcomeOf(down)).toEqual({ verdict: 'unavailable', reason: 'network-error' });
+    });
+
+    it('maps a failed body read to network-error, or timeout when it was cut by the timer', async () => {
+      const cut = (error: Error) =>
+        vi.fn(async () => ({
+          ok: true,
+          text: async () => {
+            throw error;
+          },
+        })) as unknown as typeof fetch;
+
+      expect(await outcomeOf(cut(new TypeError('terminated')))).toEqual({
+        verdict: 'unavailable',
+        reason: 'network-error',
+      });
+
+      expect(await outcomeOf(cut(new DOMException('slow', 'TimeoutError')))).toEqual({
+        verdict: 'unavailable',
+        reason: 'timeout',
+      });
+    });
+
+    it('maps a non-success status to http-status and keeps the code', async () => {
+      expect(await outcomeOf(respond('', 503))).toEqual({
+        verdict: 'unavailable',
+        reason: 'http-status',
+        status: 503,
+      });
+
+      expect(await outcomeOf(respond('', 429))).toMatchObject({ status: 429 });
+    });
+
+    it('maps a body that is not range lines to unparsable-body', async () => {
+      expect(await outcomeOf(respond('<html>captive portal</html>'))).toEqual({
+        verdict: 'unavailable',
+        reason: 'unparsable-body',
+      });
+    });
+
+    it('keeps the function and check in agreement', async () => {
+      const checker = pwnedPasswords({ fetch: respond('', 500) });
+
+      expect(await checker('password')).toBe('unavailable');
+    });
+
+    it('hands every outcome to onResult once, frozen, and the hook cannot change the verdict', async () => {
+      const seen: unknown[] = [];
+
+      const onResult = vi.fn((outcome: { verdict: string }) => {
+        seen.push(outcome);
+        (outcome as { verdict: string }).verdict = 'clean';
+      });
+
+      const checker = pwnedPasswords({ fetch: respond(`${suffix}:9`), onResult });
+
+      expect(await checker.check('password')).toEqual({ verdict: 'breached' });
+      expect(onResult).toHaveBeenCalledTimes(1);
+      expect(Object.isFrozen(seen[0])).toBe(true);
+
+      await pwnedPasswords({ fetch: respond('', 500), onResult }).check('password');
+      expect(onResult).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports a throwing or rejecting hook to the logger and keeps the verdict', async () => {
+      const logger = { warn: vi.fn(), error: vi.fn() };
+
+      const throwing = pwnedPasswords({
+        fetch: respond(`${suffix}:9`),
+        logger,
+        onResult: () => {
+          throw new Error('meter down');
+        },
+      });
+
+      expect(await throwing('password')).toBe('breached');
+
+      const rejecting = pwnedPasswords({
+        fetch: respond(''),
+        logger,
+        onResult: () => Promise.reject(new Error('queue full')),
+      });
+
+      expect(await rejecting('password')).toBe('clean');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(logger.error).toHaveBeenCalledWith('onResult hook failed', {
+        provider: 'pwned-passwords',
+        error: 'meter down',
+      });
+
+      expect(logger.error).toHaveBeenCalledWith('onResult hook failed', {
+        provider: 'pwned-passwords',
+        error: 'queue full',
+      });
+    });
+  });
+
   it('uses the global fetch and the public range API when nothing is given', async () => {
     const fetch = respond(`${suffix}:3`);
 
