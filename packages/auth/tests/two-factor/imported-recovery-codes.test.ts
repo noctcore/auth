@@ -97,7 +97,7 @@ describe('imported recovery codes', () => {
     );
   });
 
-  it('keeps the session when the set and its count both fail, and logs both', async () => {
+  it('still writes the audit row and mails the owner when the count fails after the session', async () => {
     const logged: string[] = [];
 
     const t = twoFactorApp(
@@ -105,7 +105,10 @@ describe('imported recovery codes', () => {
       {
         logger: {
           warn: () => undefined,
-          error: (message: string) => logged.push(message),
+          error: (message: string, context?: Record<string, unknown>) =>
+            logged.push(
+              typeof context?.['step'] === 'string' ? `${message}: ${context['step']}` : message,
+            ),
         },
       },
     );
@@ -123,8 +126,72 @@ describe('imported recovery codes', () => {
 
     expect(logged).toEqual([
       'twoFactor: replacing an imported recovery code set failed',
-      'twoFactor: reporting a spent imported recovery code failed',
+      'twoFactor: reporting a spent imported recovery code failed: count',
     ]);
+
+    // The alert still goes out, with the count unknown.
+    await Promise.resolve();
+
+    expect(t.mailer.last('recovery-code-used')).toMatchObject({
+      to: EMAIL,
+      userId,
+      remaining: null,
+    });
+
+    expect(
+      t.audit.events.filter((e) => e.type === 'two_factor.recovery_code_used').pop(),
+    ).toMatchObject({ userId, data: { imported: true } });
+
+    expect(
+      t.audit.events.filter((e) => e.type === 'two_factor.recovery_code_used').pop()?.data,
+    ).not.toHaveProperty('remaining');
+  });
+
+  it('still writes the audit row when the user lookup fails after the session', async () => {
+    const logged: string[] = [];
+    let failLookups = false;
+
+    const t = twoFactorApp(
+      { importedRecoveryCodes: legacyScheme },
+      {
+        logger: {
+          warn: () => undefined,
+          error: (message: string, context?: Record<string, unknown>) =>
+            logged.push(
+              typeof context?.['step'] === 'string' ? `${message}: ${context['step']}` : message,
+            ),
+        },
+      },
+    );
+
+    const { userId } = await t.enrolled();
+
+    await importLegacyCodes(t.store, userId);
+
+    // The rotation runs once the session exists: lookups fail from then on.
+    const replace = t.store.replaceRecoveryCodes.bind(t.store);
+
+    t.store.replaceRecoveryCodes = (id, hashes) => ((failLookups = true), replace(id, hashes));
+
+    const users = t.auth.context.users;
+    const findById = users.findById.bind(users);
+
+    users.findById = (id: string) =>
+      failLookups ? Promise.reject(new Error('users down')) : findById(id);
+
+    const mailsBefore = t.mailer.sent.filter((m) => m.type === 'recovery-code-used').length;
+    const done = await viaChallenge(t, legacy(0));
+
+    expect(done.ok && done.value.recoveryCodes).toHaveLength(10);
+
+    expect(logged).toEqual(['twoFactor: reporting a spent imported recovery code failed: user']);
+
+    expect(
+      t.audit.events.filter((e) => e.type === 'two_factor.recovery_code_used').pop(),
+    ).toMatchObject({ userId, data: { remaining: 10, imported: true } });
+
+    await Promise.resolve();
+    expect(t.mailer.sent.filter((m) => m.type === 'recovery-code-used')).toHaveLength(mailsBefore);
   });
 
   it('keeps the session and shows no codes when replacing the set fails, and reports the set that is left', async () => {

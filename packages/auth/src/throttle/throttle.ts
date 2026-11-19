@@ -287,6 +287,17 @@ export class Throttle {
     return { allowed: true };
   }
 
+  /**
+   * Claims the rotation of a user's imported recovery code set for
+   * `windowMs`: true for the first caller in the window, false for every
+   * other (an atomic increment). Throws when the store fails.
+   */
+  async claimRecoveryCodeRotation(userId: string, windowMs: number): Promise<boolean> {
+    const window = await this.counters.increment(keys.recoveryCodeRotation(userId), windowMs);
+
+    return window.count === 1;
+  }
+
   /** A correct second-factor code: the account's attempt budget starts over. */
   async factorSucceeded(account: string): Promise<void> {
     await this.counters.reset(keys.account(keys.factor(account)));

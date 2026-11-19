@@ -21,9 +21,10 @@
  * app's way on every path, and tried under the imported prefix when the
  * plugin's own hash did not match. The check reports an imported code; the
  * login challenge replaces the whole set once its session is issued, so the
- * old hashes leave the store. Only one login rotates a set (a claim on a
- * counter), so two concurrent logins with two imported codes never leave a
- * set nobody was shown. A hash that throws is read as no match.
+ * old hashes leave the store. Only one login per challenge lifetime rotates
+ * a set (a claim on a counter), so two logins with two imported codes that
+ * race within a challenge's lifetime never leave a set nobody was shown. A
+ * hash that throws is read as no match.
  *
  * Guide: Learn, "Second factors".
  */
@@ -37,7 +38,7 @@ import {
 import { CHALLENGE_TTL_MS } from './options';
 import type { Runtime } from './runtime';
 import { matchTotp } from './totp';
-import { NO_SUCH_USER_ID } from '../../ports/stores';
+import { NO_SUCH_USER_ID, type AuthUser } from '../../ports/stores';
 import type { StoredTotpFactor } from '../../ports/two-factor';
 import type { RequestMeta } from '../../shared/meta';
 
@@ -210,12 +211,9 @@ export async function rotateImportedSet(
   meta: RequestMeta,
 ): Promise<string[] | null> {
   try {
-    const claim = await runtime.core.throttle.hit(`two-factor-rotation:${userId}`, {
-      limit: 1,
-      window: `${CHALLENGE_TTL_MS}ms`,
-    });
+    const claimed = await runtime.core.throttle.claimRecoveryCodeRotation(userId, CHALLENGE_TTL_MS);
 
-    return claim.allowed ? await issueRecoveryCodes(runtime, userId, meta) : null;
+    return claimed ? await issueRecoveryCodes(runtime, userId, meta) : null;
   } catch (error) {
     runtime.core.logger.error('twoFactor: replacing an imported recovery code set failed', {
       error: errorName(error),
@@ -229,7 +227,9 @@ export async function rotateImportedSet(
  * Reports an imported code the login challenge spent, once the set is
  * settled: `rotated` is the new set when this login replaced it, so the
  * owner is told how many codes they now hold. Runs after the session may
- * exist, so a failure is logged instead of thrown.
+ * exist, so nothing here throws: a count that fails is reported as unknown
+ * (`remaining` left out of the audit row, null in the mail), a user lookup
+ * that fails still writes the audit row, and each failure is logged.
  */
 export async function reportImportedCode(
   runtime: Runtime,
@@ -237,12 +237,30 @@ export async function reportImportedCode(
   meta: RequestMeta,
   rotated: readonly string[] | null,
 ): Promise<void> {
+  const remaining =
+    rotated?.length ??
+    (await settled(runtime, 'count', () => runtime.store.countRecoveryCodes(userId)));
+
+  const user = await settled(runtime, 'user', () => runtime.core.users.findById(userId));
+
+  await announceRecoveryCodeUsed(runtime, { userId, user, meta, imported: true, remaining });
+}
+
+/** The value `read` gives, or null when it throws (logged by the error's name). */
+async function settled<T>(
+  runtime: Runtime,
+  what: string,
+  read: () => Promise<T>,
+): Promise<T | null> {
   try {
-    await recoveryCodeUsed(runtime, userId, meta, true, rotated?.length);
+    return await read();
   } catch (error) {
     runtime.core.logger.error('twoFactor: reporting a spent imported recovery code failed', {
+      step: what,
       error: errorName(error),
     });
+
+    return null;
   }
 }
 
@@ -265,26 +283,45 @@ export async function totpStep(
 
 /**
  * A recovery code was spent: the audit row (`imported` when it came from the
- * app's earlier scheme), and a mail to the owner saying how many are left:
- * `remaining` when the caller knows it (a set it just made), else the count.
+ * app's earlier scheme), and a mail to the owner saying how many are left.
  */
 async function recoveryCodeUsed(
   runtime: Runtime,
   userId: string,
   meta: RequestMeta,
   imported: boolean,
-  remaining?: number,
 ): Promise<void> {
-  const left = remaining ?? (await runtime.store.countRecoveryCodes(userId));
+  const remaining = await runtime.store.countRecoveryCodes(userId);
   const user = await runtime.core.users.findById(userId);
+
+  await announceRecoveryCodeUsed(runtime, { userId, user, meta, imported, remaining });
+}
+
+/**
+ * The audit row and the owner's mail for a spent recovery code. `remaining`
+ * null: the count could not be read, so the row leaves it out and the mail
+ * says null. `user` null: no mail, the row still goes out.
+ */
+async function announceRecoveryCodeUsed(
+  runtime: Runtime,
+  spent: {
+    readonly userId: string;
+    readonly user: AuthUser | null;
+    readonly meta: RequestMeta;
+    readonly imported: boolean;
+    readonly remaining: number | null;
+  },
+): Promise<void> {
+  const { userId, user, imported, remaining } = spent;
+  const counted = remaining === null ? {} : { remaining };
 
   await runtime.core.emit(
     {
       type: 'two_factor.recovery_code_used',
       userId,
-      data: imported ? { remaining: left, imported: true } : { remaining: left },
+      data: imported ? { ...counted, imported: true } : counted,
     },
-    meta,
+    spent.meta,
   );
 
   if (!user) return;
@@ -293,7 +330,7 @@ async function recoveryCodeUsed(
     type: 'recovery-code-used',
     to: user.email,
     userId,
-    remaining: left,
+    remaining,
     at: new Date(runtime.core.clock.now()),
   });
 }
