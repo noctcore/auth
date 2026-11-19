@@ -7,6 +7,7 @@
  * address goes through it.
  */
 import { AuthConfigError } from './errors';
+import { decodePunycode } from './punycode';
 
 export type NormalizedEmail = string & { readonly __normalizedEmail: true };
 
@@ -19,8 +20,8 @@ export type NormalizedEmail = string & { readonly __normalizedEmail: true };
  * - Every policy, built in or custom, refuses an address with whitespace, a
  *   control character or an RFC 5322 special other than the one `@`
  *   (`, ; : < > ( ) " \\ [ ]`): one address must stay one plain mailbox in a
- *   mail header. The `unicode` policy also takes only a host name as the
- *   domain (letter-digit-hyphen labels in its ASCII form).
+ *   mail header. The `unicode` policy also takes only a domain the URL
+ *   parser keeps exactly as typed (see `isValidHost`).
  * - `ascii`: the same output as `standard`, but an address with a non-ASCII
  *   character is answered with its own code, `email_not_ascii`, so the app can
  *   tell the user to use an ASCII address instead of "invalid".
@@ -249,25 +250,35 @@ const HOST_DELIMITER = /[/\\?#:@%[\]]/u;
 const LDH_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 
 /**
- * Whether the domain is a plain host name: no port, path, query, fragment,
- * credentials or percent escape, accepted by the URL standard (UTS 46
- * processing), and every label of its ASCII form a letter-digit-hyphen label.
- * An ASCII domain must come back from the parser exactly as given (so
- * `127.1` for `127.0.0.1` is refused); a Unicode one comes back in punycode,
- * and each of those labels is checked the same way.
+ * Whether the domain is a host name the URL parser keeps exactly as typed: no
+ * port, path, query, fragment, credentials or percent escape; accepted by the
+ * URL standard (UTS 46 processing); every label of its ASCII (punycode) form
+ * a letter-digit-hyphen label that decodes back to the label typed, so a
+ * character UTS 46 would map onto another (an ideographic full stop for a
+ * dot, a Greek iota subscript, `127.1` for `127.0.0.1`) is refused; and a
+ * last label that is not all digits, so no IPv4 address passes as a domain.
  */
 function isValidHost(domain: string): boolean {
   if (HOST_DELIMITER.test(domain)) return false;
 
+  let hostname: string;
+
   try {
-    const { hostname } = new URL(`http://${domain}/`);
-
-    if (!NON_ASCII.test(domain) && hostname !== domain) return false;
-
-    return hostname.split('.').every((label) => LDH_LABEL.test(label));
+    hostname = new URL(`http://${domain}/`).hostname;
   } catch {
     return false;
   }
+
+  const typed = domain.split('.');
+  const parsed = hostname.split('.');
+
+  if (parsed.length !== typed.length || /^[0-9]+$/u.test(parsed.at(-1) ?? '')) return false;
+
+  return parsed.every(
+    (label, index) =>
+      LDH_LABEL.test(label) &&
+      (label.startsWith('xn--') ? decodePunycode(label.slice(4)) : label) === typed[index],
+  );
 }
 
 function unicodeOnce(trimmed: string): string | null {
