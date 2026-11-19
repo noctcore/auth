@@ -13,7 +13,7 @@
  * Guide: Learn, "Second factors"; Build, "Two-factor".
  */
 import { isRequired, standingOfUser } from './enforcement';
-import { issueRecoveryCodes } from './enrollment';
+import { issueRecoveryCodes } from './proofs';
 import { refused, type Runtime } from './runtime';
 import { requireStepUp } from './step-up';
 import type { TwoFactorStanding } from '../../core/hooks';

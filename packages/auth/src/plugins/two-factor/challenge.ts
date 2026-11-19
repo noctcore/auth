@@ -48,7 +48,11 @@ export interface VerifyChallengeInput {
 
 export interface PassedChallenge<A> {
   readonly session: IssuedSession<A>;
-  /** Set when the challenge was an enrollment: show these once. */
+  /**
+   * Set when the challenge was an enrollment, or when it was passed with a
+   * recovery code imported from the app's earlier scheme (the whole set was
+   * replaced): show these once.
+   */
   readonly recoveryCodes: string[] | null;
   /** Set when `rememberDevice` was asked for: set its cookie. */
   readonly trustedDevice: TrustedDevice | null;
@@ -241,7 +245,14 @@ async function prove(
       : confirmed;
   }
 
-  const check = await checkProof(runtime, { userId, account, proof, blocked, meta });
+  const check = await checkProof(runtime, {
+    userId,
+    account,
+    proof,
+    blocked,
+    meta,
+    replaceImported: true,
+  });
 
-  return check.ok ? { ok: true, method: check.kind, recoveryCodes: null } : check;
+  return check.ok ? { ok: true, method: check.kind, recoveryCodes: check.recoveryCodes } : check;
 }

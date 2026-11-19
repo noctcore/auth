@@ -17,9 +17,20 @@
  *    step forward (compare-and-set), so a code is good once, even under two
  *    concurrent submissions; a recovery code only if the store deletes it.
  *
+ * With `importedRecoveryCodes` on, a recovery code is also hashed the old
+ * app's way on every path, and tried under the imported prefix when the
+ * plugin's own hash did not match. Spending an imported code at login
+ * replaces the whole set with new codes, so the old hashes leave the store.
+ *
  * Guide: Learn, "Second factors".
  */
-import { normalizeRecoveryCode, RECOVERY_CODE_PURPOSE } from './recovery-codes';
+import {
+  generateRecoveryCodes,
+  IMPORTED_RECOVERY_CODE_PREFIX,
+  importedRecoveryCodeInput,
+  normalizeRecoveryCode,
+  RECOVERY_CODE_PURPOSE,
+} from './recovery-codes';
 import type { Runtime } from './runtime';
 import { matchTotp } from './totp';
 import { NO_SUCH_USER_ID } from '../../ports/stores';
@@ -32,7 +43,12 @@ export type SecondFactorProof =
   | { readonly kind: 'recovery-code'; readonly code: string };
 
 export type ProofCheck =
-  | { readonly ok: true; readonly kind: SecondFactorProof['kind'] }
+  | {
+      readonly ok: true;
+      readonly kind: SecondFactorProof['kind'];
+      /** The new set, when an imported code was spent and `replaceImported` asked for one. */
+      readonly recoveryCodes: string[] | null;
+    }
   | { readonly ok: false; readonly reason: string };
 
 const SIX_DIGITS = /^\d{6}$/u;
@@ -54,6 +70,8 @@ export interface ProofRequest {
   /** A refusal decided before the check: applied after the reads, before any write. */
   readonly blocked: string | null;
   readonly meta: RequestMeta;
+  /** Replace the set with new codes when an imported code is spent (the login challenge, which can show them). */
+  readonly replaceImported?: boolean;
 }
 
 /** Checks a proof against the user's confirmed factor. */
@@ -65,6 +83,7 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
   const owner = factor?.confirmed === true ? request.userId : null;
 
   const failure = (reason: string): ProofCheck => ({ ok: false, reason });
+  let recoveryCodes: string[] | null = null;
 
   if (request.proof.kind === 'recovery-code') {
     const code = normalizeRecoveryCode(request.proof.code);
@@ -75,17 +94,25 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
     const subject =
       owner !== null && request.blocked === null && gate.allowed ? owner : NO_SUCH_USER_ID;
 
+    const imported = await importedHash(runtime, subject, request.proof.code);
+
     const consumed =
       code !== null &&
       (await store.consumeRecoveryCode(subject, recoveryCodeHash(runtime, subject, code)));
 
+    const consumedImported =
+      !consumed && imported !== null && (await store.consumeRecoveryCode(subject, imported));
+
     if (request.blocked !== null) return failure(request.blocked);
     if (!gate.allowed) return failure('factor_locked');
     if (owner === null) return failure('no_factor');
-    if (code === null) return failure('malformed_recovery_code');
-    if (!consumed) return failure('wrong_recovery_code');
+    if (code === null && imported === null) return failure('malformed_recovery_code');
+    if (!consumed && !consumedImported) return failure('wrong_recovery_code');
 
-    await recoveryCodeUsed(runtime, owner, request.meta);
+    if (consumedImported && request.replaceImported === true)
+      recoveryCodes = await issueRecoveryCodes(runtime, owner, request.meta);
+
+    await recoveryCodeUsed(runtime, owner, request.meta, consumedImported);
   } else {
     // A pending factor's secret is decrypted like a confirmed one; only `owner` decides.
     const step = await totpStep(runtime, factor, request.proof.code);
@@ -99,12 +126,48 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
 
   await core.throttle.factorSucceeded(request.account);
 
-  return { ok: true, kind: request.proof.kind };
+  return { ok: true, kind: request.proof.kind, recoveryCodes };
 }
 
 /** The stored form of a normalised recovery code: an HMAC bound to its user. */
 export function recoveryCodeHash(runtime: Runtime, userId: string, code: string): string {
   return runtime.core.keyedHash(RECOVERY_CODE_PURPOSE, `${userId}:${code}`);
+}
+
+/**
+ * The store key of the typed code under the app's imported scheme, or null
+ * when the option is off or the input cannot be one of its codes.
+ */
+async function importedHash(
+  runtime: Runtime,
+  userId: string,
+  input: unknown,
+): Promise<string | null> {
+  const scheme = runtime.settings.importedRecoveryCodes;
+  const code = importedRecoveryCodeInput(input);
+
+  if (scheme === null || code === null) return null;
+
+  const hash = await scheme.hash(code, { userId });
+
+  return typeof hash === 'string' && hash.length > 0
+    ? `${IMPORTED_RECOVERY_CODE_PREFIX}${hash}`
+    : null;
+}
+
+/** A new set of recovery codes, replacing every old one in one write. Returned once, never stored. */
+export async function issueRecoveryCodes(
+  runtime: Runtime,
+  userId: string,
+  meta: RequestMeta,
+): Promise<string[]> {
+  const codes = generateRecoveryCodes(runtime.core.random);
+  const hashes = codes.map((code) => recoveryCodeHash(runtime, userId, code.replace('-', '')));
+
+  await runtime.store.replaceRecoveryCodes(userId, hashes);
+  await runtime.core.emit({ type: 'two_factor.recovery_codes_generated', userId }, meta);
+
+  return codes;
 }
 
 /**
@@ -124,17 +187,25 @@ export async function totpStep(
   return matchTotp(secret, code, runtime.core.clock.now());
 }
 
-/** A recovery code was spent: the audit row, and a mail to the owner saying how many are left. */
+/**
+ * A recovery code was spent: the audit row (`imported` when it came from the
+ * app's earlier scheme), and a mail to the owner saying how many are left.
+ */
 async function recoveryCodeUsed(
   runtime: Runtime,
   userId: string,
   meta: RequestMeta,
+  imported: boolean,
 ): Promise<void> {
   const remaining = await runtime.store.countRecoveryCodes(userId);
   const user = await runtime.core.users.findById(userId);
 
   await runtime.core.emit(
-    { type: 'two_factor.recovery_code_used', userId, data: { remaining } },
+    {
+      type: 'two_factor.recovery_code_used',
+      userId,
+      data: imported ? { remaining, imported: true } : { remaining },
+    },
     meta,
   );
 

@@ -57,6 +57,7 @@ export { TWO_FACTOR_REQUIRED_REVOCATION } from './enforcement';
 export type { TwoFactorStatus } from './management';
 export type {
   AttemptRule,
+  ImportedRecoveryCodes,
   TwoFactorEnforcement,
   TwoFactorOptions,
   TwoFactorPolicy,
@@ -64,7 +65,7 @@ export type {
 export type { TwoFactorStanding } from '../../core/hooks';
 export type { SecondFactorProof } from './proofs';
 export type { TrustedDevice } from './trusted-devices';
-export { RECOVERY_CODE_COUNT } from './recovery-codes';
+export { importedRecoveryCodeHashes, RECOVERY_CODE_COUNT } from './recovery-codes';
 export { TOTP_DIGITS, TOTP_PERIOD_SECONDS, totpCode } from './totp';
 export type {
   SecretCipher,

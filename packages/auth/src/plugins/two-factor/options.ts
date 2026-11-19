@@ -8,6 +8,26 @@ import type { SecretCipher, TwoFactorStore } from '../../ports/two-factor';
 import { toMilliseconds, type Duration } from '../../shared/duration';
 import { AuthConfigError } from '../../shared/errors';
 
+/**
+ * Recovery codes carried over from the app's earlier scheme. The migration
+ * script stores their hashes with `importedRecoveryCodeHashes`; this option
+ * tells the plugin how a typed code is hashed under that scheme.
+ */
+export interface ImportedRecoveryCodes {
+  /**
+   * The old scheme's hash of a typed code, as the migration stored it (for
+   * example the hex SHA-256 of the code with dashes removed and letters upper
+   * cased), or null when the input cannot be one of its codes. Must be
+   * deterministic: a per-code salted hash (bcrypt, Argon2) cannot be looked
+   * up, so those users re-enroll instead. `userId` is there for a scheme
+   * that salted per user. The input is a string of at most 64 characters.
+   */
+  readonly hash: (
+    code: string,
+    context: { readonly userId: string },
+  ) => string | null | Promise<string | null>;
+}
+
 /** A fixed window: at most `limit` hits per `window`. */
 export interface AttemptRule {
   readonly limit: number;
@@ -62,6 +82,12 @@ export interface TwoFactorOptions {
   readonly attempts?: AttemptRule;
   /** Code checks per client IP. Default 10 per minute. */
   readonly perIp?: AttemptRule;
+  /**
+   * Accept recovery codes imported from the app's earlier scheme, each once.
+   * Spending one at login replaces the user's whole set with new codes, which
+   * the challenge returns. Default: none accepted.
+   */
+  readonly importedRecoveryCodes?: ImportedRecoveryCodes;
 }
 
 /** What the app's enforcement policy answers for one user. */
@@ -89,6 +115,7 @@ export interface TwoFactorSettings {
   readonly trustedDevices: { readonly ttlMs: number; readonly maxPerUser: number } | null;
   readonly attempts: AttemptRule;
   readonly perIp: AttemptRule;
+  readonly importedRecoveryCodes: ImportedRecoveryCodes | null;
 }
 
 /** The token purpose of a login challenge: never a session, a reset link or a reset ticket. */
@@ -132,7 +159,19 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
     trustedDevices: resolveTrustedDevices(options.trustedDevices),
     attempts: resolveRule('attempts', options.attempts ?? { limit: 5, window: '15m' }),
     perIp: resolveRule('perIp', options.perIp ?? { limit: 10, window: '1m' }),
+    importedRecoveryCodes: resolveImported(options.importedRecoveryCodes),
   };
+}
+
+function resolveImported(
+  option: TwoFactorOptions['importedRecoveryCodes'],
+): ImportedRecoveryCodes | null {
+  if (option === undefined) return null;
+
+  if (typeof option?.hash !== 'function')
+    throw new AuthConfigError('twoFactor: importedRecoveryCodes.hash must be a function');
+
+  return option;
 }
 
 /** A limit that is a positive integer over a positive window; anything else would never count or never refuse. */
