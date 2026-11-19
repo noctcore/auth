@@ -63,7 +63,10 @@ export async function loginChallenge(
   const factor = await runtime.store.findFactor(user.id);
   const active = factor?.confirmed === true;
 
-  if (!active && !(await runtime.settings.required({ user }))) return null;
+  // With `enforcement`, a required user without a factor signs in and the
+  // session's standing confines it, so only a confirmed factor challenges.
+  if (!active && (runtime.settings.enforcement || !(await runtime.settings.required({ user }))))
+    return null;
 
   const { token } = await runtime.core.tokens.issueLink(
     CHALLENGE_PURPOSE,

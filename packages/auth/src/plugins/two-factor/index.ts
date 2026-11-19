@@ -2,7 +2,8 @@
  * @noctcore/auth/two-factor: a second factor that a stolen password cannot get
  * past, including through the recovery and reset paths. TOTP (RFC 6238),
  * recovery codes, trusted devices, step-up for sensitive actions, and
- * enforcement the app decides per user.
+ * enforcement the app decides per user (with a grace period and a sweep,
+ * re-checked on every request, through `enforcement`).
  *
  * It is a plugin: hooks on the core seams and flows under `auth.twoFactor`,
  * never HTTP endpoints. Every session it issues goes through the core's
@@ -25,6 +26,7 @@ import {
   type ConfirmEnrollmentInput,
   type EnrollInput,
 } from './enrollment';
+import { sweepUnenrolled, type SweepInput } from './enforcement';
 import { twoFactorHooks } from './hooks';
 import { disable, regenerateRecoveryCodes, revokeTrustedDevices, status } from './management';
 import { resolveSettings, type TwoFactorOptions } from './options';
@@ -50,8 +52,16 @@ export type {
   EnrollInput,
   Enrollment,
 } from './enrollment';
+export type { SweepInput, SweepResult } from './enforcement';
+export { TWO_FACTOR_REQUIRED_REVOCATION } from './enforcement';
 export type { TwoFactorStatus } from './management';
-export type { AttemptRule, TwoFactorOptions } from './options';
+export type {
+  AttemptRule,
+  TwoFactorEnforcement,
+  TwoFactorOptions,
+  TwoFactorPolicy,
+} from './options';
+export type { TwoFactorStanding } from '../../core/hooks';
 export type { SecondFactorProof } from './proofs';
 export type { TrustedDevice } from './trusted-devices';
 export { RECOVERY_CODE_COUNT } from './recovery-codes';
@@ -82,7 +92,7 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
 
   return definePlugin({
     id: 'twoFactor',
-    hooks: twoFactorHooks(runtime),
+    hooks: twoFactorHooks(runtime, { enforced: settings.enforcement !== null }),
     flows: (context) => {
       if (bound) throw new AuthConfigError('twoFactor: one plugin instance per createAuth');
 
@@ -116,6 +126,12 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
         /** Forgets every trusted device of the user. */
         revokeTrustedDevices: (input: { session: StoredSession<A>; meta: RequestMeta }) =>
           revokeTrustedDevices(r, input),
+        /**
+         * With `enforcement`: revokes the sessions of the listed users who
+         * must have a factor, have none and are past their grace window
+         * (reason `two-factor-required`). Call it from your scheduler.
+         */
+        sweepUnenrolled: (input: SweepInput) => sweepUnenrolled(r, input),
         /** The name of the trusted-device cookie (`__Host-two-factor-device` when secure). */
         trustedDeviceCookieName: cookieName,
         /** Reads the trusted-device token out of a `Cookie` header. */

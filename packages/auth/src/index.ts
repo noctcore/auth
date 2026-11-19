@@ -156,6 +156,9 @@ export {
   type IssueVia,
   type Refusal,
   type RevocationReason,
+  type SessionStanding,
+  type TwoFactorStanding,
+  type ValidatedSession,
 } from './core/hooks';
 export type { IssuedSession, IssueOptions, PluginContext } from './core/plugin-context';
 export type { LoginInput, LoginOutcome } from './flows/login';
