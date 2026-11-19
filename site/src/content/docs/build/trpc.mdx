@@ -29,7 +29,7 @@ bun add @noctcore/auth-trpc @noctcore/auth @trpc/server zod
 - `publicProcedure` checks CSRF on every mutation and needs no session: sign-up, sign-in, the reset request, sign-out.
 - `protectedProcedure` also refuses a caller without a valid session (`UNAUTHORIZED`, `session_expired`) and adds `ctx.user`, loaded from your user store on this request (so a deleted user is signed out at once), and `ctx.session`. Under the two-factor plugin's `enforcement`, a session past the grace window is `enrollment-only`: it is refused (`FORBIDDEN`, `two_factor_enrollment_required`) on every procedure whose meta does not say `twoFactorEnrollment: true`, and so are `freshAuth`, `role` and the nestjs-trpc `AuthGuardMiddleware`, which run the same check. Type the meta with `initTRPC.meta<AuthProcedureMeta>()` to have the key checked. See [Enforcement with a grace period](/auth/build/two-factor/#enforcement-with-a-grace-period).
 - `freshAuth(maxAge?)` asks for a password proof newer than `freshAuthAge`; `maxAge` can only make it shorter. `role(...roles)` reads the roles through the `roles` option of `createAuthContext` on every call, so a role taken away stops working on the next request. Both run the session check themselves.
-- `rateLimited(name, rule?)` counts calls per client IP in a fixed window (10 a minute by default), under a key of its own so it never shares a budget with the core's doors. When the counter store does not answer, the call is refused. It does not check CSRF itself: it counts every call that reaches it, in the order of the chain. On `publicProcedure` and `protectedProcedure` the CSRF and session checks run before it, so a forged mutation is refused without using up the victim's budget; on a bare `t.procedure`, or ahead of those checks, it counts forged calls too.
+- `rateLimited(name, rule?)` counts calls per client IP in a fixed window (10 a minute by default; see [tiers and per-user keys](#rate-limit-tiers-per-user-keys-and-exemptions)), under a key of its own so it never shares a budget with the core's doors. When the counter store does not answer, the call is refused. It does not check CSRF itself: it counts every call that reaches it, in the order of the chain. On `publicProcedure` and `protectedProcedure` the CSRF and session checks run before it, so a forged mutation is refused without using up the victim's budget; on a bare `t.procedure`, or ahead of those checks, it counts forged calls too.
 - `writesCookies` is the only way to the cookie writers. After it, `ctx.auth` has `setSession`, `signOut` and `clearSession`; without it they are not on the type, so an unmarked procedure that calls one does not compile, and from untyped code they throw an `AuthConfigError` before writing anything. It also refuses a streamed batch; see [the client](#the-client).
 
 `authed`, `freshAuth`, `role` and `publicProcedure` each run the CSRF check on a mutation themselves, so leaving the `csrf` step out of a chain does not skip it.
@@ -39,6 +39,28 @@ bun add @noctcore/auth-trpc @noctcore/auth @trpc/server zod
 `verifyEmailLink` above is a mutation on `publicProcedure`, so it is a POST and checks CSRF. The context resolves the session on public procedures too: pass `ctx.auth.session` as it is (`null` when nobody is signed in). A link for one account opened while signed in as another is then refused (`session_expired`) and stays usable for its owner. By default a link opened with no session is refused the same way; with `emailVerification.linkWithoutSession` on it verifies the address and signs nobody in.
 
 Never verify from a query or when the page loads: mail scanners fetch links in mail, and with `linkWithoutSession` on a fetch that reaches the flow verifies the account. Put the token in the URL fragment (``urls.verifyEmail: (token) => `${origin}/verify#${token}` ``), show a Confirm button, and call the mutation on the click. See [Email verification](/auth/learn/email-verification/) for the trade-off.
+
+### Rate limit tiers, per-user keys and exemptions
+
+`createAuthMiddlewares(t, { rateLimits })` takes named rules, checked when the middlewares are made (a bad name, window or `keyBy` throws an `AuthConfigError` at boot):
+
+```ts
+const t = initTRPC.context<Context>().meta<RateLimitMeta>().create({ errorFormatter: authErrorFormatter });
+
+const { publicProcedure, protectedProcedure, rateLimited, writesCookies } = createAuthMiddlewares(t, {
+  rateLimits: {
+    default: { limit: 20, window: '1m' },
+    sensitive: { limit: 5, window: '1h', keyBy: 'user' },
+  },
+});
+
+exportData: protectedProcedure.use(rateLimited('export', 'sensitive')).mutation(/* ... */),
+logout: publicProcedure.use(writesCookies).meta({ rateLimit: 'exempt' }).mutation(/* ... */),
+```
+
+- **Which rule.** `rateLimited(name, rule)` counts with `rule` when given: a tier name (typed from the keys of `rateLimits`, and an unknown one throws at boot) or a rule of its own. Without one it takes the tier named `name`, else the tier named `default`, else 10 a minute. The budget belongs to `name`: two procedures that pass the same name share one budget, two names never do, whatever tier they use.
+- **Who is counted.** By default, the client IP. A rule with `keyBy: 'user'` counts a signed-in caller by user, so a user keeps one budget across IPs and users behind one shared IP (an office, a carrier NAT) stop spending each other's. The user comes only from the session the core accepted, never from anything the client sent: a call with no session, or with a cookie the core refused, counts by its client IP, so a made-up cookie is no fresh budget. The counter key holds a hash of the user id, not the id. Per-user keys give each account its own budget, so someone with many accounts has many budgets: on a procedure anyone can call, keep a per-IP limit too.
+- **Exemptions.** A procedure whose meta says `rateLimit: 'exempt'` is never counted, including by a `rateLimited` on the base procedure it was built from, so a sign-out cannot be rate limited out. Add `RateLimitMeta` to your meta type (`initTRPC.meta<RateLimitMeta>()`, or extend it). Meta is set in your code, never by the client.
 
 ## The context
 
@@ -113,6 +135,6 @@ Both walk a plain tRPC router. They cannot see into nestjs-trpc, which builds it
 
 ## nestjs-trpc
 
-The same middleware bodies come as classes for nestjs-trpc. Register `AuthGuardMiddleware` in `globalMiddlewares`: it checks CSRF on every mutation and requires a session on every procedure unless its meta says `auth: 'public'` (`@Mutation({ meta: { auth: 'public' } })`), so a procedure nobody marked is closed. `WritesCookiesMiddleware` (with `@UseMiddlewares`) is the only way to the cookie writers, as on plain tRPC: without it, `setSession`, `signOut` and `clearSession` throw an `AuthConfigError` before writing anything. nestjs-trpc types `@Ctx()` by hand, so type it as `{ auth: AuthWriter }` only on marked procedures; the compiler cannot check the marker there. `signOut` refuses before the core signs out, but in an unmarked procedure `setSession` refuses only after your flow ran (a rotation then leaves the browser without its new session), so mark every procedure that issues a session. `RoleMiddleware(...roles)`, `FreshAuthMiddleware(maxAge?)` and `RateLimitMiddleware(name, rule?)` make the classes for `@UseMiddlewares(...)`, once, at module level; list every class in a module's `providers`. A role or fresh-proof class on a procedure marked public refuses every call, as a configuration error.
+The same middleware bodies come as classes for nestjs-trpc. Register `AuthGuardMiddleware` in `globalMiddlewares`: it checks CSRF on every mutation and requires a session on every procedure unless its meta says `auth: 'public'` (`@Mutation({ meta: { auth: 'public' } })`), so a procedure nobody marked is closed. `WritesCookiesMiddleware` (with `@UseMiddlewares`) is the only way to the cookie writers, as on plain tRPC: without it, `setSession`, `signOut` and `clearSession` throw an `AuthConfigError` before writing anything. nestjs-trpc types `@Ctx()` by hand, so type it as `{ auth: AuthWriter }` only on marked procedures; the compiler cannot check the marker there. `signOut` refuses before the core signs out, but in an unmarked procedure `setSession` refuses only after your flow ran (a rotation then leaves the browser without its new session), so mark every procedure that issues a session. `RoleMiddleware(...roles)`, `FreshAuthMiddleware(maxAge?)` and `RateLimitMiddleware(name, rule?)` make the classes (a rule may say `keyBy: 'user'`; a tier is a rule constant passed to each class that uses it, and `@Mutation({ meta: { rateLimit: 'exempt' } })` skips the count) for `@UseMiddlewares(...)`, once, at module level; list every class in a module's `providers`. A role or fresh-proof class on a procedure marked public refuses every call, as a configuration error.
 
 The context class returns `authContext.node(opts)`, and the error formatter goes in `trpc: { errorFormatter: authErrorFormatter }`.
