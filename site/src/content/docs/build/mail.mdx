@@ -50,7 +50,7 @@ Timeouts and drops are counted on your `metrics` as `auth_background_task`, with
 | `email-change-reverted` | a revert link restored the address; every session ended and the password must be reset | `at` |
 | `two-factor-enabled` | the two-factor plugin: a second factor was turned on | `at` |
 | `two-factor-disabled` | the two-factor plugin: the second factor was turned off | `at` |
-| `recovery-code-used` | the two-factor plugin: a recovery code was spent | `remaining`, `at` |
+| `recovery-code-used` | the two-factor plugin: a recovery code was spent | `remaining` (null when the count could not be read), `at` |
 | `invitation` | the invitations plugin: an invitation to a scope; no `userId`, since the address may have no account | `scope`, `inviterId`, `url`, `expiresAt` |
 
 `account-exists` is the other half of the uniform registration answer: the caller sees "check your email" either way, and only the owner of the address learns the account exists. `lockout` tells the owner someone is guessing their password. `email-change-in-use` plays the same part for an email change, and `email-changed` is the owner's way back when the change was not theirs ([Email change](/auth/build/email-change/)).
