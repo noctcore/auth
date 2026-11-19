@@ -1,6 +1,6 @@
 {
   "name": "@noctcore/auth-redis",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Redis session and counter stores for @noctcore/auth.",
   "license": "MIT",
   "type": "module",
@@ -53,7 +53,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
   },
   "dependencies": {
-    "@noctcore/auth": "0.5.0"
+    "@noctcore/auth": "0.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
