@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { adoptLegacySessions, AuthConfigError, systemClock, type LegacySession } from '../../src';
+import {
+  adoptLegacySessions,
+  AuthConfigError,
+  clearsSessionCookie,
+  systemClock,
+  type LegacySession,
+} from '../../src';
 import { sha256Hex } from '../../src/crypto/hash';
 import { generateToken } from '../../src/crypto/random';
 import type { SessionStore } from '../../src/ports/stores';
@@ -27,7 +33,7 @@ function legacyStore() {
 }
 
 /** A session store whose `create` lands `ms` later, like a write on a database round trip. */
-function slowCreates(store: MemorySessionStore, ms: number): SessionStore {
+function slowCreates(store: SessionStore, ms: number): SessionStore {
   return {
     create: async (session, ttlMs) => {
       await new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -249,6 +255,59 @@ describe('adoptLegacySessions', () => {
     expect(b).toBeNull();
     // The next request finds the session the winner wrote.
     expect((await second.get(id))?.id).toBe(id);
+  });
+
+  it('refuses the losing request as adopting, which keeps its cookie, and a dead token as for good', async () => {
+    const legacy = legacyStore();
+    const t = setup();
+    const slow = slowCreates(t.stores.sessions, 300);
+
+    const wrap = () =>
+      adoptLegacySessions(slow, { take: legacy.take, maxTtl: '30d', clock: t.clock });
+
+    // Two app instances over the same stores, as two processes would be.
+    const first = setup({ stores: { ...t.stores, sessions: wrap() }, clock: t.clock } as never);
+    const second = setup({ stores: { ...t.stores, sessions: wrap() }, clock: t.clock } as never);
+    const user = await first.signedInUser('legacy@example.com');
+    const token = generateToken();
+
+    legacy.rows.set(sha256Hex(token), legacyRow(user.session.userId, t.clock.now()));
+
+    const [won, lost] = await Promise.all([
+      first.auth.validateRequest({ token, meta: meta() }),
+      second.auth.validateRequest({ token, meta: meta() }),
+    ]);
+
+    expect(won.ok).toBe(true);
+    expect(lost).toMatchObject({ ok: false, code: 'session_expired', reason: 'session_adopting' });
+    expect(clearsSessionCookie(won)).toBe(false);
+    expect(clearsSessionCookie(lost)).toBe(false);
+
+    // The cookie it kept finds the adopted session on the next request.
+    expect((await second.auth.validateRequest({ token, meta: meta() })).ok).toBe(true);
+
+    // A malformed token, and a legacy record that is dropped, are refused for good.
+    const malformed = await second.auth.validateRequest({ token: 'not-a-token', meta: meta() });
+    const expiredToken = generateToken();
+
+    legacy.rows.set(
+      sha256Hex(expiredToken),
+      legacyRow(user.session.userId, t.clock.now(), { expiresAt: t.clock.now() }),
+    );
+
+    const expired = await second.auth.validateRequest({ token: expiredToken, meta: meta() });
+
+    expect(malformed).toMatchObject({ ok: false, reason: 'session_malformed' });
+    expect(expired).toMatchObject({ ok: false, reason: 'session_unknown' });
+    expect([malformed, expired].map(clearsSessionCookie)).toEqual([true, true]);
+  });
+
+  it('never reports adopting without the wrapper: an unknown token is refused for good', async () => {
+    const t = setup();
+    const result = await t.auth.validateRequest({ token: generateToken(), meta: meta() });
+
+    expect(result).toMatchObject({ ok: false, reason: 'session_unknown' });
+    expect(clearsSessionCookie(result)).toBe(true);
   });
 
   it('answers null for a token no store knows', async () => {

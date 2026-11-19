@@ -51,6 +51,18 @@ export async function validateRequest<U extends AuthUser, A>(
   return ok(standing ? { ...result.session, ...standing } : result.session);
 }
 
+/**
+ * Whether the response to a request should clear its session cookie, given
+ * what `validateRequest` answered for the token: true when the token was
+ * refused for good, false when it was accepted or refused only because
+ * another request may still be adopting it from the app's own store
+ * (`adoptLegacySessions`), so the next request can find the adopted session.
+ * The adapters clear the cookie through this one check so they cannot drift.
+ */
+export function clearsSessionCookie(result: AuthResult<unknown>): boolean {
+  return !result.ok && result.reason !== 'session_adopting';
+}
+
 /** Restrictiveness of each two-factor state: a later hook can tighten it, never loosen it. */
 const TWO_FACTOR_RANK: Readonly<Record<TwoFactorStanding['state'], number>> = {
   grace: 1,

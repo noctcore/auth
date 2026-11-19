@@ -11,7 +11,9 @@
  *   be undone by the legacy record being adopted again, and of two requests
  *   racing on one cookie only one adopts it. The other looks for the session
  *   the first is writing, once more after a short wait, and is refused if it
- *   is still missing.
+ *   is still missing, with the reason `adopting`: the adapters keep the
+ *   cookie of such a refusal (`clearsSessionCookie`), since the next request
+ *   may find the session the first one wrote.
  * - The adopted session is stamped with epoch 0, the epoch of a user whose
  *   sessions were never revoked. A sign-out everywhere or a password change
  *   after the switch bumps the epoch, so legacy sessions the user never
@@ -80,6 +82,32 @@ export interface LegacySessionOptions {
  */
 const RACE_WAIT_MS = 50;
 
+/**
+ * What the session manager reads through the wrapper: the session, and
+ * whether a refusal may be a lost race for a record another request is still
+ * adopting. Internal: the key is not exported from the package.
+ */
+export const LEGACY_LOOKUP = Symbol('noctcore.legacyLookup');
+
+interface Lookup {
+  readonly session: StoredSession | null;
+  /**
+   * True when neither store had the session and the legacy store had no
+   * record either: a request racing this one may have taken it and still be
+   * writing it. Not knowable across processes, so every such token reports it.
+   */
+  readonly adopting: boolean;
+}
+
+type AdoptingStore = SessionStore & { readonly [LEGACY_LOOKUP]?: (id: string) => Promise<Lookup> };
+
+/** The session under `id`, and whether a refusal may be a pending adoption; plain stores never report one. */
+export async function lookUpSession(store: SessionStore, id: string): Promise<Lookup> {
+  const lookup = (store as AdoptingStore)[LEGACY_LOOKUP];
+
+  return lookup ? lookup(id) : { session: await store.get(id), adopting: false };
+}
+
 const isTime = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
@@ -126,21 +154,24 @@ export function adoptLegacySessions(
     };
   }
 
-  async function adopt(id: string): Promise<StoredSession | null> {
+  async function adopt(id: string): Promise<Lookup> {
     const legacy = await options.take(id);
 
     // Nothing to adopt: either no legacy session, or a request racing this one
     // on the same cookie took the record first. That request may still be
     // inside `store.create` on a database round trip, so look once more after
-    // a short wait, then fail closed.
+    // a short wait, then fail closed, reporting the refusal as a possible
+    // pending adoption so the cookie is kept for the next request.
     if (!legacy) {
       const written = await store.get(id);
 
-      if (written) return written;
+      if (written) return { session: written, adopting: false };
 
       await new Promise<void>((resolve) => setTimeout(resolve, RACE_WAIT_MS));
 
-      return store.get(id);
+      const late = await store.get(id);
+
+      return { session: late, adopting: late === null };
     }
 
     const now = clock.now();
@@ -151,19 +182,26 @@ export function adoptLegacySessions(
         userId: typeof legacy.userId === 'string' ? legacy.userId : undefined,
       });
 
-      return null;
+      return { session: null, adopting: false };
     }
 
-    if (session.expiresAt <= now) return null;
+    if (session.expiresAt <= now) return { session: null, adopting: false };
 
     await store.create(session, session.expiresAt - now);
 
-    return session;
+    return { session, adopting: false };
   }
 
-  const wrapped: SessionStore = {
+  async function lookup(id: string): Promise<Lookup> {
+    const stored = await store.get(id);
+
+    return stored ? { session: stored, adopting: false } : adopt(id);
+  }
+
+  const wrapped: AdoptingStore = {
+    [LEGACY_LOOKUP]: lookup,
     create: (session, ttlMs) => store.create(session, ttlMs),
-    get: async (id) => (await store.get(id)) ?? adopt(id),
+    get: async (id) => (await lookup(id)).session,
     touch: (session) => store.touch(session),
     delete: (userId, ids) => store.delete(userId, ids),
     listByUser: (userId) => store.listByUser(userId),

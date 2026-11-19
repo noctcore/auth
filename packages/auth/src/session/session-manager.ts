@@ -26,6 +26,7 @@ import type {
   SessionRefusal,
   ValidateResult,
 } from './session-types';
+import { lookUpSession } from './legacy-sessions';
 import { sha256Hex } from '../crypto/hash';
 import { generateToken, isTokenShape, type RandomSource } from '../crypto/random';
 import type { Clock } from '../ports/clock';
@@ -131,9 +132,9 @@ export class SessionManager<A> {
   async validate(token: unknown, options: { touch?: boolean } = {}): Promise<ValidateResult<A>> {
     if (!isTokenShape(token)) return { ok: false, reason: 'malformed' };
 
-    const stored = await this.store.get(sha256Hex(token));
+    const { session: stored, adopting } = await lookUpSession(this.store, sha256Hex(token));
 
-    if (!stored) return { ok: false, reason: 'unknown' };
+    if (!stored) return { ok: false, reason: adopting ? 'adopting' : 'unknown' };
 
     const now = this.clock.now();
     const refusal = await this.refusalFor(stored, now);
