@@ -98,10 +98,14 @@ Source: `shared/email.ts`.
 
 **Upgrading: check rows written outside the flows.** Lookups by address are exact, whatever the policy: a user row whose stored email is not exactly what the normaliser produces counts as not found. A row written by an import, an admin tool or a seed in another spelling (uppercase letters, surrounding whitespace, a non-ASCII character under the default policy) is unreachable even if you never change `email.normalize`. Before upgrading, find the rows where the stored email differs from `auth.normalizeEmail(email)`, then rewrite them or merge the duplicates. Each time the store returns such a row for a lookup, the core logs a warning with the user id (never the address), so rows you missed show up in your logs. Behind a case- or accent-insensitive collation that warning repeats on every lookup of such a row and can be noisy; rewrite the rows or make the column binary to silence it.
 
-**Upgrading: domains that are not host names.** The `standard` and `ascii` policies take only a host name as the domain, as `unicode` does: letters, digits and inner hyphens per label (at most 63), no empty label, and a last label that is not all digits. They used to check only for one inner dot, so a stored address whose domain is an IPv4 address (`127.0.0.1`, `127.1`), has an underscore or another character outside a host name, or a label that is empty, starts or ends with a hyphen or is longer than 63 is now refused: its owner can no longer sign in, reset or be found by address, and a pending invitation to it cannot be accepted. Find such rows before upgrading and rewrite or remove them. In PostgreSQL:
+**Upgrading: domains that are not host names.** The `standard` and `ascii` policies take only a host name as the domain, as `unicode` does: letters, digits and inner hyphens per label (at most 63), no empty label, and a last label that is not all digits. They used to check only for one inner dot, so a stored address whose domain is an IPv4 address (`127.0.0.1`, `127.1`), has an underscore or another character outside a host name, or a label that is empty, starts or ends with a hyphen or is longer than 63 is now refused: its owner can no longer sign in, reset or be found by address, and a pending invitation to it cannot be accepted. An outstanding email change or verification token that names such an address can no longer be redeemed either: the flows normalise the address again when the token is used and refuse it (they fail closed), so the user has to start the change or request a new mail with a valid address. Find such rows before upgrading and rewrite or remove them. In PostgreSQL:
 
 ```sql
-SELECT id, email FROM users -- your user table; run it on "AuthInvitation" too
+SELECT id, email FROM users -- your user table
+WHERE split_part(email, '@', 2) !~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+   OR split_part(email, '@', 2) ~ '\.[0-9]+$';
+
+SELECT id, email FROM "AuthInvitation"
 WHERE split_part(email, '@', 2) !~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
    OR split_part(email, '@', 2) ~ '\.[0-9]+$';
 ```
