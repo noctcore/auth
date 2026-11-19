@@ -318,7 +318,7 @@ SessionOptions [interface]<A>
     readonly maxPerUser?: number | null
     readonly rememberMeTtl?: Duration
     readonly touchInterval?: Duration
-SessionRefusal [type] = 'malformed' | 'unknown' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked'
+SessionRefusal [type] = 'malformed' | 'unknown' | 'adopting' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked'
 SessionStanding [interface]
     readonly twoFactor?: TwoFactorStanding
 SessionStore [interface]
