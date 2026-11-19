@@ -7,6 +7,7 @@ import type { PluginContext } from '../../core/plugin-context';
 import type { AuthEventType } from '../../ports/audit';
 import type { InvitationStore, StoredInvitation } from '../../ports/invitations';
 import type { AuthUser } from '../../ports/stores';
+import { sha256Hex } from '../../crypto/hash';
 import { describeError } from '../../shared/describe-error';
 import { fail, type AuthErrorCode, type AuthFailure } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
@@ -21,8 +22,23 @@ export interface Runtime {
   readonly settings: InvitationsSettings;
 }
 
-/** The keyed-hash purpose of invitation tokens: never a reset, session or recovery hash. */
-export const TOKEN_PURPOSE = 'invitation';
+/**
+ * The stored form of an invitation token: its SHA-256, under no key, like the
+ * reset and verification links. The token is 256 random bits, so a leaked
+ * table cannot be searched without one, and rotating the server secret leaves
+ * every pending invitation working.
+ */
+export function tokenHash(token: string): string {
+  return sha256Hex(token);
+}
+
+/**
+ * The keyed-hash purpose invitations were stored under before 0.6. Only read,
+ * never written: `pending` falls back to it so an invitation created before
+ * the upgrade still works. Invitations live at most 30 days, so the fallback
+ * can go once every older one has expired.
+ */
+export const LEGACY_TOKEN_PURPOSE = 'invitation';
 /** The keyed-hash purpose of the per-address throttle key, so no raw address is a counter key. */
 const ADDRESS_PURPOSE = 'invitation-address';
 

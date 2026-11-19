@@ -1,7 +1,7 @@
 /**
  * The contract the invitations plugin (`@noctcore/auth/invitations`) is
  * handed: pending invitations, each bound to one scope and one normalised
- * address, found by a keyed hash of its token and spent exactly once.
+ * address, found by a hash of its token and spent exactly once.
  *
  * Every write that must not happen twice is atomic, and the conformance suite
  * in `@noctcore/auth/testing` (`invitationStoreConformance`) checks it:
@@ -15,11 +15,15 @@
  * Guide: Build, "Invitations".
  */
 
-/** A pending invitation as stored. Never the token: only its keyed hash. */
+/** A pending invitation as stored. Never the token: only its hash. */
 export interface StoredInvitation {
   /** A random id, safe to show to admins and to pass to `revoke`. */
   readonly id: string;
-  /** HMAC-SHA-256 of the token under a key derived for invitations. */
+  /**
+   * SHA-256 of the token (lowercase hex), under no key, so it survives a
+   * rotation of the server secret. Rows written before 0.6 hold an HMAC under
+   * a key derived from the secret; the plugin still finds those. Opaque to the store.
+   */
   readonly hash: string;
   /** The app's scope id: a tenant, organisation or team. */
   readonly scope: string;

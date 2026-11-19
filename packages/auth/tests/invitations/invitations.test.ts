@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AuthMailEvent, StoredSession } from '../../src';
+import { createAuth, sha256Hex, type AuthMailEvent, type StoredSession } from '../../src';
 import { invitations, type InvitationsOptions } from '../../src/plugins/invitations';
-import { MemoryInvitationStore } from '../../src/testing';
+import { MemoryInvitationStore, plainHasher } from '../../src/testing';
 import { setup } from '../flows/setup';
 import { invitationApp, meta, PASSWORD, SCOPE } from './setup';
 
@@ -109,7 +109,7 @@ describe('invitations options', () => {
 });
 
 describe('invitations create', () => {
-  it('stores a keyed hash, mails the link and audits the invitation', async () => {
+  it('stores the SHA-256 of the token, mails the link and audits the invitation', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });
     const now = t.clock.now();
@@ -152,7 +152,7 @@ describe('invitations create', () => {
 
     expect(mail).not.toHaveProperty('userId');
 
-    const stored = await t.store.findByHash(t.auth.context.keyedHash('invitation', token));
+    const stored = await t.store.findByHash(sha256Hex(token));
 
     expect(stored).toMatchObject({ id: invitation?.id, email: 'bob@example.com' });
     expect(JSON.stringify(stored)).not.toContain(token);
@@ -499,7 +499,7 @@ describe('invitations accept', () => {
     expect(await accept('a'.repeat(64))).toMatchObject({ reason: 'unknown_token' });
 
     t.clock.advance(7 * DAY - 1);
-    expect(await t.store.findByHash(t.auth.context.keyedHash('invitation', token))).not.toBeNull();
+    expect(await t.store.findByHash(sha256Hex(token))).not.toBeNull();
     t.clock.advance(1);
     expect(await accept(token)).toMatchObject({ code: 'invalid_token', reason: 'expired_token' });
     expect(t.onAccept).not.toHaveBeenCalled();
@@ -522,7 +522,7 @@ describe('invitations accept', () => {
     await t.store.create(
       {
         id: 'broken',
-        hash: t.auth.context.keyedHash('invitation', raw),
+        hash: sha256Hex(raw),
         scope: SCOPE,
         email: 'also not an address',
         inviterId: inviter.userId,
@@ -550,7 +550,7 @@ describe('invitations accept', () => {
     await t.store.create(
       {
         id: 'raw',
-        hash: t.auth.context.keyedHash('invitation', raw),
+        hash: sha256Hex(raw),
         scope: SCOPE,
         email: 'Bob@Example.com',
         inviterId: inviter.userId,
@@ -701,6 +701,68 @@ describe('invitations accept', () => {
     expect(t.audit.types()).not.toContain('invitation.accepted');
   });
 
+  it('accepts an invitation issued before the server secret was rotated', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+    const bob = await t.user({ email: 'bob@example.com' });
+    const { token, invitation } = await t.invite(inviter, 'bob@example.com');
+
+    // The same stores and invitation store, restarted under a new secret.
+    const plugin = invitations({
+      store: t.store,
+      authorize: t.authorize,
+      onAccept: t.onAccept,
+      url,
+    });
+
+    const rotated = createAuth({
+      stores: t.stores,
+      password: { hasher: plainHasher(), breachCheck: false },
+      secret: 'a-rotated-secret-that-is-also-32-bytes-or-more',
+      urls: {
+        resetPassword: (x) => `https://app.example/reset#${x}`,
+        verifyEmail: (x) => `https://app.example/verify#${x}`,
+      },
+      mailer: t.mailer,
+      audit: t.audit,
+      clock: t.clock,
+      plugins: [plugin],
+    });
+
+    expect(await rotated.invitations.accept({ session: bob.session, token, meta: meta() })).toEqual(
+      { ok: true, value: invitation },
+    );
+
+    expect(t.onAccept).toHaveBeenCalledTimes(1);
+  });
+
+  it('still accepts an invitation stored under the keyed hash used before 0.6', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+    const bob = await t.user({ email: 'bob@example.com' });
+    const raw = 'e'.repeat(64);
+
+    await t.store.create(
+      {
+        id: 'legacy',
+        hash: t.auth.context.keyedHash('invitation', raw),
+        scope: SCOPE,
+        email: 'bob@example.com',
+        inviterId: inviter.userId,
+        payload: {},
+        createdAt: t.clock.now(),
+        expiresAt: t.clock.now() + DAY,
+      },
+      t.clock.now(),
+    );
+
+    expect(
+      await t.auth.invitations.accept({ session: bob.session, token: raw, meta: meta() }),
+    ).toMatchObject({ ok: true, value: { id: 'legacy' } });
+
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toEqual([]);
+  });
+
   it('limits accepts per IP', async () => {
     const t = invitationApp({ perIp: { limit: 1, window: '1m' } });
     const bob = await t.user({ email: 'bob@example.com' });
@@ -829,7 +891,7 @@ describe('invitations register', () => {
     await t.store.create(
       {
         id: 'corrupt',
-        hash: t.auth.context.keyedHash('invitation', corrupt),
+        hash: sha256Hex(corrupt),
         scope: SCOPE,
         email: 'not an address',
         inviterId: inviter.userId,
