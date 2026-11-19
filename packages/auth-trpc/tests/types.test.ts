@@ -1,6 +1,6 @@
 // Type tests: what tRPC infers through the adapter's procedures and schemas.
 // `bun run typecheck` checks them; the runtime part only keeps Vitest happy.
-import type { AuthUser, StoredSession } from '@noctcore/auth';
+import type { AuthUser, ValidatedSession } from '@noctcore/auth';
 import { initTRPC, type inferRouterInputs, type inferRouterOutputs } from '@trpc/server';
 import { describe, expectTypeOf, it } from 'vitest';
 import type { userOutput } from '../src';
@@ -29,7 +29,7 @@ describe('inferred types', () => {
     const _router = t.router({
       me: protectedProcedure.query(({ ctx }) => {
         expectTypeOf(ctx.user).toEqualTypeOf<AppUser>();
-        expectTypeOf(ctx.session).toEqualTypeOf<StoredSession<unknown>>();
+        expectTypeOf(ctx.session).toEqualTypeOf<ValidatedSession<unknown>>();
 
         return ctx.user.role;
       }),
@@ -100,8 +100,12 @@ describe('inferred types', () => {
       expectTypeOf(ctx.auth).toHaveProperty('setSession');
       expectTypeOf(ctx.auth).toHaveProperty('signOut');
       expectTypeOf(ctx.auth).toHaveProperty('clearSession');
+
       // The session attributes and the principal survive the marker.
-      expectTypeOf(ctx.auth.session).toEqualTypeOf<StoredSession<Record<string, never>> | null>();
+      expectTypeOf(ctx.auth.session).toEqualTypeOf<ValidatedSession<
+        Record<string, never>
+      > | null>();
+
       expectTypeOf(ctx.user.email).toBeString();
     });
   });

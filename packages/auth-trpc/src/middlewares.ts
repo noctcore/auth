@@ -12,7 +12,10 @@
  *   exists in the store, loaded on this request, so a deleted user is signed
  *   out at once and nothing is read from a cookie or a token. It runs the
  *   CSRF check itself first, so a mutation behind it is checked even where
- *   the `csrf` step was left out of the chain.
+ *   the `csrf` step was left out of the chain. It refuses an
+ *   `enrollment-only` session (the two-factor plugin's `enforcement`, past
+ *   the grace window) with `two_factor_enrollment_required`, unless the
+ *   procedure's meta says `twoFactorEnrollment: true`.
  * - `freshAuth` and `role` run the `authed` check themselves, so either one
  *   alone still refuses a caller without a session or a forged mutation.
  * - `guard` is the nestjs-trpc default: CSRF on mutations, and a session for
@@ -34,7 +37,7 @@ import {
   type AuthUser,
   type Duration,
   type RateLimitRule,
-  type StoredSession,
+  type ValidatedSession,
 } from '@noctcore/auth';
 import {
   claimCookieWriter,
@@ -72,7 +75,8 @@ export const kindOf = (body: unknown): BodyKind | undefined => kinds.get(body as
 /** What `authed` adds to the context. */
 export interface Principal<U extends AuthUser = AuthUser, A = unknown> {
   readonly user: U;
-  readonly session: StoredSession<A>;
+  /** The validated session, with its two-factor standing on this request when enforcement is on. */
+  readonly session: ValidatedSession<A>;
 }
 
 function stateOf(ctx: unknown): { state: AuthState; internals: Internals } {
@@ -94,10 +98,34 @@ function checkCsrf(call: { readonly ctx: unknown; readonly type: string }): void
   }
 }
 
-/** The CSRF check on a mutation, then the session and its user. */
+/**
+ * The meta keys the adapter reads. Pass it to `initTRPC.meta<...>()` (or
+ * intersect it with your own meta type) to have them checked.
+ */
+export interface AuthProcedureMeta {
+  /** The nestjs-trpc guard: no session needed. CSRF still applies. */
+  readonly auth?: 'public';
+  /**
+   * An `enrollment-only` session (the two-factor plugin's `enforcement`,
+   * past the grace window) may call this procedure: mark the enrollment
+   * procedures and what a user needs on the way (status, re-authentication,
+   * sign out). Every other procedure refuses such a session with
+   * `two_factor_enrollment_required`. It opens nothing else.
+   */
+  readonly twoFactorEnrollment?: boolean;
+}
+
+const allowsEnrollmentOnly = (meta: unknown): boolean =>
+  (meta as AuthProcedureMeta | null | undefined)?.twoFactorEnrollment === true;
+
+/**
+ * The CSRF check on a mutation, then the session and its user, then an
+ * enrollment-only session only on a procedure whose meta allows it.
+ */
 export async function principalOf(call: {
   readonly ctx: unknown;
   readonly type: string;
+  readonly meta?: unknown;
 }): Promise<Principal> {
   checkCsrf(call);
 
@@ -105,6 +133,9 @@ export async function principalOf(call: {
   const user = state.session ? await state.user() : null;
 
   if (!state.session || !user) throw toTRPCError(fail('session_expired', 'no_session'));
+
+  if (state.session.twoFactor?.state === 'enrollment-only' && !allowsEnrollmentOnly(call.meta))
+    throw toTRPCError(fail('two_factor_enrollment_required', 'enrollment_only'));
 
   return { user, session: state.session };
 }
