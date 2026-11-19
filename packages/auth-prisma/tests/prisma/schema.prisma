@@ -93,8 +93,8 @@ model AuthMemberScope {
   version Int    @default(0)
 }
 
-// The invitations plugin (@noctcore/auth/invitations). Only a keyed hash of
-// the token is stored. The unique (scope, email) index holds one invitation
+// The invitations plugin (@noctcore/auth/invitations). Only a SHA-256 of
+// the token is stored (rows from before 0.6 hold an HMAC, still accepted). The unique (scope, email) index holds one invitation
 // per scope and address; consume is a delete by the unique hash.
 
 model AuthInvitation {
