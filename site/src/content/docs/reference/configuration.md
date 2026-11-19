@@ -24,10 +24,19 @@ Every time option takes a `Duration`: a number is **seconds**, a string carries 
 | `stores.sessions` | A `SessionStore`. `@noctcore/auth-redis` ships one. |
 | `stores.counters` | A `CounterStore`: rate limits and lockout. `@noctcore/auth-redis` ships one. |
 | `password.hasher` | A `PasswordHasher`. Use `argon2id()` from `@noctcore/auth/argon2`. |
-| `secret` | The server secret, a string or `Uint8Array` of at least 32 bytes. Separate keys are derived from it for code HMACs, trusted-device tokens and session handles, so one key never serves two purposes. Rotating it invalidates outstanding codes and device cookies, never sessions or pending invitations (an invitation token is stored as a SHA-256, under no key; only invitations created before 0.6, found through a fallback lookup under their old keyed hash until they expire, are voided by a rotation), changes every session handle (a client holding an old one gets `{ revoked: false }` and must list again; see [Session handles](/auth/learn/sessions-and-expiry/#session-handles)), and also every recovery code of the two-factor plugin (their HMAC key is derived from it): after a rotation, have every user with a factor regenerate their recovery codes. Keep it apart from your CSRF secret. |
+| `secret` | The server secret, a string or `Uint8Array` of at least 32 bytes. Separate keys are derived from it for code HMACs, trusted-device tokens and session handles. Rotating it has several effects, listed in [What rotating the secret does](#what-rotating-the-secret-does). Keep it apart from your CSRF secret. |
 | `mailer` | A `Mailer` whose `send(event)` enqueues the mail. Flows never await it, and each mail is handed over at most once. See [Mail into your templates and queue](/auth/build/mail/). |
 
 Any store that passes the conformance suite in `@noctcore/auth/testing` is valid; see [Writing a store adapter](/auth/build/store-adapter/). Source: `create-auth.ts` (`assertRequiredConfig`), `crypto/keys.ts`.
+
+### What rotating the secret does
+
+Separate keys are derived from `secret` for code HMACs, trusted-device tokens and session handles, so one key never serves two purposes. Rotating it:
+
+- invalidates outstanding codes and device cookies;
+- never invalidates sessions or pending invitations: an invitation token is stored as a SHA-256, under no key. Only invitations created before 0.6, found through a fallback lookup under their old keyed hash until they expire, are voided by a rotation;
+- changes every session handle: a client holding an old one gets `{ revoked: false }` and must list again (see [Session handles](/auth/learn/sessions-and-expiry/#session-handles));
+- invalidates every recovery code of the two-factor plugin, because their HMAC key is derived from it: after a rotation, have every user with a factor regenerate their recovery codes.
 
 ## Password
 
@@ -182,7 +191,7 @@ Each rule is `{ limit, window }`; a part you leave out keeps its default.
 | `login` | 10 per `'1m'` | IP |
 | `register` | 10 per `'1m'` | IP |
 | `password-reset-request` | 10 per `'1m'` | IP |
-| `password-reset-mail` | 3 per `'1h'` | user: reset mails one account can receive. Spent when the mail is handed over, so a mail dropped or failed afterwards still counts (see [Mail](/auth/build/mail/#a-dropped-or-failed-mail-still-spends-the-budget)) |
+| `password-reset-mail` | 3 per `'1h'` | user: reset mails one account can receive. Spent before the mail is handed over, so a mail dropped or failed afterwards still counts (see [Mail](/auth/build/mail/#a-dropped-or-failed-mail-still-spends-the-budget)) |
 | `password-reset` | 10 per `'1m'` | IP |
 | `password-reset-code` | 10 per `'1m'` | IP |
 | `password-reset-code-address` | 5 per `'15m'` | address: code guesses for one email from every IP |
