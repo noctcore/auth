@@ -19,8 +19,9 @@
  *
  * With `importedRecoveryCodes` on, a recovery code is also hashed the old
  * app's way on every path, and tried under the imported prefix when the
- * plugin's own hash did not match. Spending an imported code at login
- * replaces the whole set with new codes, so the old hashes leave the store.
+ * plugin's own hash did not match. The check reports an imported code; the
+ * login challenge replaces the whole set once its session is issued, so the
+ * old hashes leave the store. A hash that throws is read as no match.
  *
  * Guide: Learn, "Second factors".
  */
@@ -46,8 +47,8 @@ export type ProofCheck =
   | {
       readonly ok: true;
       readonly kind: SecondFactorProof['kind'];
-      /** The new set, when an imported code was spent and `replaceImported` asked for one. */
-      readonly recoveryCodes: string[] | null;
+      /** The proof was a recovery code imported from the app's earlier scheme. */
+      readonly imported: boolean;
     }
   | { readonly ok: false; readonly reason: string };
 
@@ -70,8 +71,6 @@ export interface ProofRequest {
   /** A refusal decided before the check: applied after the reads, before any write. */
   readonly blocked: string | null;
   readonly meta: RequestMeta;
-  /** Replace the set with new codes when an imported code is spent (the login challenge, which can show them). */
-  readonly replaceImported?: boolean;
 }
 
 /** Checks a proof against the user's confirmed factor. */
@@ -83,7 +82,7 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
   const owner = factor?.confirmed === true ? request.userId : null;
 
   const failure = (reason: string): ProofCheck => ({ ok: false, reason });
-  let recoveryCodes: string[] | null = null;
+  let imported = false;
 
   if (request.proof.kind === 'recovery-code') {
     const code = normalizeRecoveryCode(request.proof.code);
@@ -94,25 +93,23 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
     const subject =
       owner !== null && request.blocked === null && gate.allowed ? owner : NO_SUCH_USER_ID;
 
-    const imported = await importedHash(runtime, subject, request.proof.code);
+    const importedKey = await importedHash(runtime, subject, request.proof.code);
 
     const consumed =
       code !== null &&
       (await store.consumeRecoveryCode(subject, recoveryCodeHash(runtime, subject, code)));
 
     const consumedImported =
-      !consumed && imported !== null && (await store.consumeRecoveryCode(subject, imported));
+      !consumed && importedKey !== null && (await store.consumeRecoveryCode(subject, importedKey));
 
     if (request.blocked !== null) return failure(request.blocked);
     if (!gate.allowed) return failure('factor_locked');
     if (owner === null) return failure('no_factor');
-    if (code === null && imported === null) return failure('malformed_recovery_code');
+    if (code === null && importedKey === null) return failure('malformed_recovery_code');
     if (!consumed && !consumedImported) return failure('wrong_recovery_code');
 
-    if (consumedImported && request.replaceImported === true)
-      recoveryCodes = await issueRecoveryCodes(runtime, owner, request.meta);
-
-    await recoveryCodeUsed(runtime, owner, request.meta, consumedImported);
+    imported = consumedImported;
+    await recoveryCodeUsed(runtime, owner, request.meta, imported);
   } else {
     // A pending factor's secret is decrypted like a confirmed one; only `owner` decides.
     const step = await totpStep(runtime, factor, request.proof.code);
@@ -126,7 +123,7 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
 
   await core.throttle.factorSucceeded(request.account);
 
-  return { ok: true, kind: request.proof.kind, recoveryCodes };
+  return { ok: true, kind: request.proof.kind, imported };
 }
 
 /** The stored form of a normalised recovery code: an HMAC bound to its user. */
@@ -136,7 +133,9 @@ export function recoveryCodeHash(runtime: Runtime, userId: string, code: string)
 
 /**
  * The store key of the typed code under the app's imported scheme, or null
- * when the option is off or the input cannot be one of its codes.
+ * when the option is off or the input cannot be one of its codes. A hash
+ * that throws is logged (its name only: a message could quote the input) and
+ * read as no match, so the proof is refused like a wrong code.
  */
 async function importedHash(
   runtime: Runtime,
@@ -148,7 +147,17 @@ async function importedHash(
 
   if (scheme === null || code === null) return null;
 
-  const hash = await scheme.hash(code, { userId });
+  let hash: string | null;
+
+  try {
+    hash = await scheme.hash(code, { userId });
+  } catch (error) {
+    runtime.core.logger.error('twoFactor: importedRecoveryCodes.hash threw; read as no match', {
+      error: error instanceof Error ? error.name : typeof error,
+    });
+
+    return null;
+  }
 
   return typeof hash === 'string' && hash.length > 0
     ? `${IMPORTED_RECOVERY_CODE_PREFIX}${hash}`

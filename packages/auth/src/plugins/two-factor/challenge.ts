@@ -20,7 +20,7 @@
  */
 import { confirmPending } from './enrollment';
 import { CHALLENGE_MAX_ATTEMPTS, CHALLENGE_PURPOSE, CHALLENGE_TTL_MS } from './options';
-import { checkProof, type SecondFactorProof } from './proofs';
+import { checkProof, issueRecoveryCodes, type SecondFactorProof } from './proofs';
 import { clientTag, factorAccount, limitIp, refused, type Runtime } from './runtime';
 import { recordStepUp } from './step-up';
 import { isTrustedDevice, trustDevice, type TrustedDevice } from './trusted-devices';
@@ -98,6 +98,8 @@ type Proved =
       readonly ok: true;
       readonly method: ChallengeProof['kind'];
       readonly recoveryCodes: string[] | null;
+      /** An imported recovery code passed: replace the set once the session is issued. */
+      readonly replaceImported: boolean;
     }
   | { readonly ok: false; readonly reason: string };
 
@@ -201,7 +203,13 @@ export async function verifyChallenge<A>(
     meta,
   );
 
-  return ok({ session, recoveryCodes: proved.recoveryCodes, trustedDevice });
+  // Only now, with the challenge spent and the session issued: a refusal
+  // before this point leaves the rest of the imported set usable.
+  const recoveryCodes = proved.replaceImported
+    ? await issueRecoveryCodes(runtime, user.id, meta)
+    : proved.recoveryCodes;
+
+  return ok({ session, recoveryCodes, trustedDevice });
 }
 
 /** Checks the proof the way the challenge's mode asks for. */
@@ -227,7 +235,7 @@ async function prove(
       (enrolling !== null ? 'enrollment_required' : trusted ? null : 'device_not_trusted');
 
     return reason === null
-      ? { ok: true, method: proof.kind, recoveryCodes: null }
+      ? { ok: true, method: proof.kind, recoveryCodes: null, replaceImported: false }
       : { ok: false, reason };
   }
 
@@ -241,18 +249,18 @@ async function prove(
     });
 
     return confirmed.ok
-      ? { ok: true, method: proof.kind, recoveryCodes: confirmed.recoveryCodes }
+      ? {
+          ok: true,
+          method: proof.kind,
+          recoveryCodes: confirmed.recoveryCodes,
+          replaceImported: false,
+        }
       : confirmed;
   }
 
-  const check = await checkProof(runtime, {
-    userId,
-    account,
-    proof,
-    blocked,
-    meta,
-    replaceImported: true,
-  });
+  const check = await checkProof(runtime, { userId, account, proof, blocked, meta });
 
-  return check.ok ? { ok: true, method: check.kind, recoveryCodes: check.recoveryCodes } : check;
+  return check.ok
+    ? { ok: true, method: check.kind, recoveryCodes: null, replaceImported: check.imported }
+    : check;
 }

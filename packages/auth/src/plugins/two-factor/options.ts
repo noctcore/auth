@@ -21,6 +21,8 @@ export interface ImportedRecoveryCodes {
    * deterministic: a per-code salted hash (bcrypt, Argon2) cannot be looked
    * up, so those users re-enroll instead. `userId` is there for a scheme
    * that salted per user. The input is a string of at most 64 characters.
+   * It should not throw: a throw is logged (the error's name only) and read
+   * as no match, so the proof is refused like a wrong code.
    */
   readonly hash: (
     code: string,
@@ -84,7 +86,8 @@ export interface TwoFactorOptions {
   readonly perIp?: AttemptRule;
   /**
    * Accept recovery codes imported from the app's earlier scheme, each once.
-   * Spending one at login replaces the user's whole set with new codes, which
+   * Passing the login challenge with one replaces the user's whole set with
+   * new codes once the session is issued, which
    * the challenge returns. Default: none accepted.
    */
   readonly importedRecoveryCodes?: ImportedRecoveryCodes;
