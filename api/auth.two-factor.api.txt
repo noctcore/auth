@@ -5,6 +5,7 @@ RECOVERY_CODE_COUNT
 TOTP_DIGITS
 TOTP_PERIOD_SECONDS
 TWO_FACTOR_REQUIRED_REVOCATION
+importedRecoveryCodeHashes
 totpCode
 twoFactor
 
@@ -27,6 +28,9 @@ Enrollment [interface]
     readonly expiresAt: number
     readonly secret: string
     readonly uri: string
+importedRecoveryCodeHashes [function]: (hashes: readonly string[]) => string[]
+ImportedRecoveryCodes [interface]
+    readonly hash: (code: string, context: { readonly userId: string; }) => string | null | Promise<string | null>
 PassedChallenge [interface]<A>
     readonly recoveryCodes: string[] | null
     readonly session: IssuedSession<A>
@@ -72,6 +76,7 @@ TwoFactorOptions [interface]
     readonly attempts?: AttemptRule
     readonly cipher: SecretCipher
     readonly enforcement?: TwoFactorEnforcement
+    readonly importedRecoveryCodes?: ImportedRecoveryCodes
     readonly issuer: string
     readonly perIp?: AttemptRule
     readonly required?: (context: { readonly user: AuthUser; }) => boolean | Promise<boolean>
