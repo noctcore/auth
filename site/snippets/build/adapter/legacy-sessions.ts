@@ -34,6 +34,7 @@ export function withOldSessions(store: SessionStore, db: DatabaseSync): SessionS
       return {
         userId: row.user_id,
         createdAt: row.created_at,
+        // Grants fresh-auth standing: the old table has no later sign-in time.
         authenticatedAt: row.created_at,
         lastActiveAt: row.last_seen_at,
         expiresAt: row.expires_at,
