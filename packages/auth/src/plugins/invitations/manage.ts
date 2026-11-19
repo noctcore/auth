@@ -12,7 +12,7 @@ import {
   limit,
   refused,
   view,
-  TOKEN_PURPOSE,
+  tokenHash,
   type InvitationView,
   type Runtime,
 } from './runtime';
@@ -88,7 +88,7 @@ export async function createInvitation<A>(
   const invitation: StoredInvitation = {
     // 128 random bits: an id to show and revoke by, never a credential.
     id: generateToken(r.core.random).slice(0, 32),
-    hash: r.core.keyedHash(TOKEN_PURPOSE, token),
+    hash: tokenHash(token),
     scope,
     email,
     inviterId: inviter.id,

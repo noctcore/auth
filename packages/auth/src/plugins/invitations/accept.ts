@@ -28,7 +28,8 @@ import {
   limit,
   refused,
   view,
-  TOKEN_PURPOSE,
+  tokenHash,
+  LEGACY_TOKEN_PURPOSE,
   type InvitationView,
   type Runtime,
 } from './runtime';
@@ -142,7 +143,10 @@ async function pending(
 
   if (!isTokenShape(token)) return refused(r, 'invalid_token', 'malformed_token', null, meta);
 
-  const invitation = await r.store.findByHash(r.core.keyedHash(TOKEN_PURPOSE, token));
+  const invitation =
+    (await r.store.findByHash(tokenHash(token))) ??
+    // Created before 0.6, under the server secret. Remove once those have expired.
+    (await r.store.findByHash(r.core.keyedHash(LEGACY_TOKEN_PURPOSE, token)));
 
   if (!invitation) return refused(r, 'invalid_token', 'unknown_token', null, meta);
 
