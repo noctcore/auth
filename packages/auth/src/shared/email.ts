@@ -20,8 +20,11 @@ export type NormalizedEmail = string & { readonly __normalizedEmail: true };
  * - Every policy, built in or custom, refuses an address with whitespace, a
  *   control character or an RFC 5322 special other than the one `@`
  *   (`, ; : < > ( ) " \\ [ ]`): one address must stay one plain mailbox in a
- *   mail header. The `unicode` policy also takes only a domain the URL
- *   parser keeps exactly as typed (see `isValidHost`).
+ *   mail header. Every built-in policy takes only a host name as the domain:
+ *   letter-digit-hyphen labels of 1 to 63 characters, no empty label, a last
+ *   label that is not all digits (see `isHostName`). The `unicode` policy
+ *   also takes only a domain the URL parser keeps exactly as typed (see
+ *   `isValidHost`).
  * - `ascii`: the same output as `standard`, but an address with a non-ASCII
  *   character is answered with its own code, `email_not_ascii`, so the app can
  *   tell the user to use an ASCII address instead of "invalid".
@@ -75,12 +78,31 @@ const NON_ASCII = /[^\p{ASCII}]/u;
 // (quoting) and `[` and `]` (a domain literal). Built-in and custom policies
 // share this one rule, so one accepted address is one plain mailbox.
 const UNSAFE_OUTPUT = /[\p{Cc}\p{White_Space}\u2028\u2029,;:<>()"\\[\]]/u;
+// A DNS label in its ASCII form: letters, digits and hyphens, 1 to 63 of
+// them, not starting or ending with a hyphen.
+const LDH_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+const ALL_DIGITS = /^[0-9]+$/u;
 const INVALID: EmailVerdict = { ok: false, reason: 'invalid_email' };
 const NOT_ASCII: EmailVerdict = { ok: false, reason: 'email_not_ascii' };
 
 /** Lowercases A to Z only. `String.prototype.toLowerCase` also folds non-ASCII letters. */
 function asciiLower(value: string): string {
   return value.replace(/[A-Z]/gu, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
+}
+
+/**
+ * Whether a domain, split on its dots and in its lowercase ASCII form, is a
+ * host name: at least two labels, each letters, digits and inner hyphens (at
+ * most 63), none empty, and a last label that is not all digits, so no IPv4
+ * address (`127.0.0.1`, or a short form such as `127.1`) passes as a
+ * domain. The one domain rule every built-in policy shares.
+ */
+function isHostName(labels: readonly string[]): boolean {
+  return (
+    labels.length >= 2 &&
+    labels.every((label) => LDH_LABEL.test(label)) &&
+    !ALL_DIGITS.test(labels.at(-1) ?? '')
+  );
 }
 
 function accepted(email: string): EmailVerdict {
@@ -93,8 +115,10 @@ function accepted(email: string): EmailVerdict {
  * any non-ASCII character: Unicode case folding maps distinct characters onto
  * ASCII ones (KELVIN SIGN to `k`, a dotted capital I to `i` plus a combining
  * dot), which would let two different addresses normalise to one account.
- * Internationalised domains must arrive in their ASCII (punycode) form.
- * Deliberately permissive beyond that: the verification mail is the real check.
+ * Internationalised domains must arrive in their ASCII (punycode) form, and
+ * the domain must be a host name (letter-digit-hyphen labels, no IPv4
+ * address). Deliberately permissive beyond that: the verification mail is the
+ * real check.
  *
  * With `email.normalize` set to another policy this is no longer the
  * normaliser your auth uses: call `auth.normalizeEmail` in your own code (an
@@ -135,9 +159,7 @@ function standardPolicy(input: unknown): EmailVerdict {
 
   if (local.length > MAX_LOCAL_LENGTH) return INVALID;
 
-  const dot = domain.lastIndexOf('.');
-
-  if (dot <= 0 || dot === domain.length - 1) return INVALID;
+  if (!isHostName(domain.split('.'))) return INVALID;
 
   return accepted(value);
 }
@@ -245,18 +267,15 @@ function octets(value: string): number {
 // query, a fragment, credentials, an IPv6 literal or a percent escape.
 const HOST_DELIMITER = /[/\\?#:@%[\]]/u;
 
-// A DNS label in its ASCII form: letters, digits and hyphens, 1 to 63 of
-// them, not starting or ending with a hyphen.
-const LDH_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
-
 /**
  * Whether the domain is a host name the URL parser keeps exactly as typed: no
  * port, path, query, fragment, credentials or percent escape; accepted by the
  * URL standard (UTS 46 processing); every label of its ASCII (punycode) form
  * a letter-digit-hyphen label that decodes back to the label typed, so a
  * character UTS 46 would map onto another (an ideographic full stop for a
- * dot, a Greek iota subscript, `127.1` for `127.0.0.1`) is refused; and a
- * last label that is not all digits, so no IPv4 address passes as a domain.
+ * dot, a Greek iota subscript, `127.1` for `127.0.0.1`) is refused; and,
+ * like every policy, a host name (`isHostName`), so no IPv4 address passes
+ * as a domain.
  */
 function isValidHost(domain: string): boolean {
   if (HOST_DELIMITER.test(domain)) return false;
@@ -272,11 +291,10 @@ function isValidHost(domain: string): boolean {
   const typed = domain.split('.');
   const parsed = hostname.split('.');
 
-  if (parsed.length !== typed.length || /^[0-9]+$/u.test(parsed.at(-1) ?? '')) return false;
+  if (parsed.length !== typed.length || !isHostName(parsed)) return false;
 
   return parsed.every(
     (label, index) =>
-      LDH_LABEL.test(label) &&
       (label.startsWith('xn--') ? decodePunycode(label.slice(4)) : label) === typed[index],
   );
 }

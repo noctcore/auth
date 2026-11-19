@@ -9,7 +9,8 @@ import { normalizeEmail } from '../../src/shared/email';
 import { runs } from './runs';
 
 const local = fc.stringMatching(/^[A-Za-z0-9._+-]{1,30}$/u);
-const label = fc.stringMatching(/^[A-Za-z0-9-]{1,20}$/u);
+// A DNS label: letters, digits and inner hyphens, as every policy requires.
+const label = fc.stringMatching(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,18}[A-Za-z0-9])?$/u);
 
 const address = fc
   .tuple(

@@ -51,6 +51,56 @@ describe('the standard policy (the default)', () => {
   });
 });
 
+describe('the domain rule the standard and ascii policies share with unicode', () => {
+  // Letter-digit-hyphen labels of 1 to 63 characters, no empty label, and a
+  // last label that is not all digits, so no IPv4 address is a domain.
+  const NOT_A_HOST_NAME = [
+    'alice@exa_mple.com',
+    'alice@-example.com',
+    'alice@example-.com',
+    'alice@example.-com',
+    'alice@example..com',
+    'alice@.example.com',
+    'alice@example.com.',
+    'alice@example.c*m',
+    'alice@ex!ample.com',
+    'alice@127.0.0.1',
+    'alice@127.1',
+    'alice@10.0.0.1',
+    'alice@example.123',
+    'alice@0x7f.1',
+    'alice@localhost',
+    `alice@${'a'.repeat(64)}.com`,
+  ];
+
+  it.each([['standard' as const], ['ascii' as const], ['unicode' as const]])(
+    'refuses a domain that is not a host name under the %s policy',
+    (name) => {
+      for (const input of NOT_A_HOST_NAME) expect(valueOf(name, input)).toBe('invalid_email');
+    },
+  );
+
+  it('still accepts a host name with digits, inner hyphens and a 63-character label', () => {
+    for (const input of [
+      'alice@example.com',
+      'alice@mail.example.co.uk',
+      'alice@123.example.com',
+      'alice@1-2.example',
+      'alice@example.c0m',
+      'alice@xn--bcher-kva.de',
+      `alice@${'a'.repeat(63)}.com`,
+    ]) {
+      expect(valueOf('standard', input)).toBe(input);
+      expect(valueOf('ascii', input)).toBe(input);
+    }
+  });
+
+  it('checks the domain after lowercasing, so case does not change the answer', () => {
+    expect(valueOf('standard', 'Alice@Mail.EXAMPLE.Com')).toBe('alice@mail.example.com');
+    expect(valueOf('standard', 'Alice@EXA_MPLE.COM')).toBe('invalid_email');
+  });
+});
+
 describe('the ascii policy', () => {
   it('gives the standard spelling for every ASCII address', () => {
     for (const input of ['  Alice@Example.COM ', 'a.b+c@sub.example.co.uk', 'x@XN--BCHER-KVA.DE'])
