@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAuth, sha256Hex, type AuthMailEvent, type StoredSession } from '../../src';
-import { invitations, type InvitationsOptions } from '../../src/plugins/invitations';
+import {
+  invitations,
+  type AcceptedInvitation,
+  type InvitationsOptions,
+} from '../../src/plugins/invitations';
 import { MemoryInvitationStore, plainHasher } from '../../src/testing';
 import { setup } from '../flows/setup';
 import { invitationApp, meta, PASSWORD, SCOPE } from './setup';
@@ -95,6 +99,14 @@ describe('invitations options', () => {
         `invitations: ${name}.window must be positive`,
       );
     }
+  });
+
+  it('refuses an acceptWithoutSession that is not true or false', () => {
+    expect(() => invitations(options({ acceptWithoutSession: 'yes' as never }))).toThrow(
+      'invitations: acceptWithoutSession must be true or false',
+    );
+
+    expect(() => invitations(options({ acceptWithoutSession: true }))).not.toThrow();
   });
 
   it('binds one plugin instance to one createAuth', () => {
@@ -701,6 +713,24 @@ describe('invitations accept', () => {
     expect(t.audit.types()).not.toContain('invitation.accepted');
   });
 
+  it('refuses a null session while acceptWithoutSession is off, spending nothing', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+
+    await t.user({ email: 'bob@example.com' });
+
+    const { token } = await t.invite(inviter, 'bob@example.com');
+
+    expect(await t.auth.invitations.accept({ session: null, token, meta: meta() })).toEqual({
+      ok: false,
+      code: 'forbidden',
+      reason: 'session_required',
+    });
+
+    expect(t.onAccept).not.toHaveBeenCalled();
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toHaveLength(1);
+  });
+
   it('accepts an invitation issued before the server secret was rotated', async () => {
     const t = invitationApp();
     const inviter = await t.user({ canInvite: true });
@@ -763,6 +793,29 @@ describe('invitations accept', () => {
     expect(await t.store.listByScope(SCOPE, t.clock.now())).toEqual([]);
   });
 
+  it('accepts an account that already belongs to another scope, leaving the move to onAccept', async () => {
+    const memberOf = new Map<string, string>();
+
+    const t = invitationApp({
+      // The app's rule: one scope per account, so accepting moves it.
+      onAccept: ({ user, invitation }: AcceptedInvitation) =>
+        void memberOf.set(user.id, invitation.scope),
+    });
+
+    const inviter = await t.user({ canInvite: true });
+    const bob = await t.user({ email: 'bob@example.com' });
+
+    memberOf.set(bob.userId, 'org_old');
+
+    const { token } = await t.invite(inviter, 'bob@example.com', 'org_new');
+
+    expect(
+      await t.auth.invitations.accept({ session: bob.session, token, meta: meta() }),
+    ).toMatchObject({ ok: true, value: { scope: 'org_new' } });
+
+    expect(memberOf.get(bob.userId)).toBe('org_new');
+  });
+
   it('limits accepts per IP', async () => {
     const t = invitationApp({ perIp: { limit: 1, window: '1m' } });
     const bob = await t.user({ email: 'bob@example.com' });
@@ -772,6 +825,123 @@ describe('invitations accept', () => {
 
     expect(await accept()).toMatchObject({ reason: 'unknown_token' });
     expect(await accept()).toMatchObject({ reason: 'rate_limited:invitation-ip' });
+  });
+});
+
+describe('invitations accept without a session', () => {
+  it('accepts into the account holding the invited, verified address, and signs nobody in', async () => {
+    const t = invitationApp({ acceptWithoutSession: true });
+    const inviter = await t.user({ canInvite: true });
+    const bob = await t.user({ email: 'bob@example.com' });
+    const { token, invitation } = await t.invite(inviter, 'Bob@Example.com');
+    const created = () => t.audit.types().filter((type) => type === 'session.created').length;
+    const before = created();
+
+    expect(await t.auth.invitations.accept({ session: null, token, meta: meta() })).toEqual({
+      ok: true,
+      value: invitation,
+    });
+
+    const accepted = t.onAccept.mock.lastCall?.[0];
+
+    expect(accepted).toMatchObject({
+      user: { id: bob.userId, emailVerified: true },
+      invitation: { id: invitation.id },
+      created: false,
+    });
+
+    expect(accepted?.user).not.toHaveProperty('passwordHash');
+
+    expect(t.audit.events.at(-1)).toMatchObject({
+      type: 'invitation.accepted',
+      userId: bob.userId,
+      data: { scope: SCOPE, invitation: invitation.id, created: false, withoutSession: true },
+    });
+
+    expect(created()).toBe(before);
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toEqual([]);
+  });
+
+  it('refuses an address with no account, spending nothing, so register can still use it', async () => {
+    const t = invitationApp({ acceptWithoutSession: true });
+    const inviter = await t.user({ canInvite: true });
+    const { token } = await t.invite(inviter, 'new@example.com');
+
+    expect(await t.auth.invitations.accept({ session: null, token, meta: meta() })).toEqual({
+      ok: false,
+      code: 'forbidden',
+      reason: 'account_missing',
+    });
+
+    expect(
+      await t.auth.invitations.register({ token, password: PASSWORD, meta: meta() }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('refuses a stored address that is not an address, as having no account', async () => {
+    const t = invitationApp({ acceptWithoutSession: true });
+    const inviter = await t.user({ canInvite: true });
+    const raw = 'f'.repeat(64);
+
+    await t.store.create(
+      {
+        id: 'corrupt',
+        hash: sha256Hex(raw),
+        scope: SCOPE,
+        email: 'not an address',
+        inviterId: inviter.userId,
+        payload: {},
+        createdAt: t.clock.now(),
+        expiresAt: t.clock.now() + DAY,
+      },
+      t.clock.now(),
+    );
+
+    expect(await t.auth.invitations.accept({ session: null, token: raw, meta: meta() })).toEqual({
+      ok: false,
+      code: 'forbidden',
+      reason: 'account_missing',
+    });
+
+    expect(t.onAccept).not.toHaveBeenCalled();
+  });
+
+  it('refuses a junk token and an inviter who lost the right, as with a session', async () => {
+    const t = invitationApp({ acceptWithoutSession: true });
+    const inviter = await t.user({ canInvite: true });
+
+    await t.user({ email: 'bob@example.com' });
+
+    expect(
+      await t.auth.invitations.accept({ session: null, token: 'nope', meta: meta() }),
+    ).toMatchObject({ code: 'invalid_token', reason: 'malformed_token' });
+
+    const { token } = await t.invite(inviter, 'bob@example.com');
+
+    t.allowed.delete(inviter.userId);
+
+    expect(await t.auth.invitations.accept({ session: null, token, meta: meta() })).toMatchObject({
+      code: 'invalid_token',
+      reason: 'inviter_not_allowed',
+    });
+
+    expect(t.onAccept).not.toHaveBeenCalled();
+  });
+
+  it('still checks a session that is given against the invited address', async () => {
+    const t = invitationApp({ acceptWithoutSession: true });
+    const inviter = await t.user({ canInvite: true });
+    const carol = await t.user({ email: 'carol@example.com' });
+
+    await t.user({ email: 'bob@example.com' });
+
+    const { token } = await t.invite(inviter, 'bob@example.com');
+
+    expect(
+      await t.auth.invitations.accept({ session: carol.session, token, meta: meta() }),
+    ).toEqual({ ok: false, code: 'forbidden', reason: 'email_mismatch' });
+
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toHaveLength(1);
   });
 });
 
