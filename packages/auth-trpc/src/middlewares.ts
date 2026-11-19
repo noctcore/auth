@@ -103,7 +103,7 @@ function checkCsrf(call: { readonly ctx: unknown; readonly type: string }): void
  * The meta keys the adapter reads. Pass it to `initTRPC.meta<...>()` (or
  * intersect it with your own meta type) to have them checked.
  */
-export interface AuthProcedureMeta {
+export interface AuthProcedureMeta extends RateLimitMeta {
   /** The nestjs-trpc guard: no session needed. CSRF still applies. */
   readonly auth?: 'public';
   /**
