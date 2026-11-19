@@ -2,11 +2,14 @@
  * The invitee's side: accept into an existing account, or create the account
  * by accepting.
  *
- * - `accept` needs a session. The signed-in account's address must be verified
- *   and equal the invited one (both normalised); otherwise nothing is spent.
- *   An unverified account is never attached, which stops an attacker who
- *   registered the address first (pre-hijacking) from collecting the invitation.
- *   It issues no session, so a second factor is never skipped.
+ * - `accept` needs a session, unless `acceptWithoutSession` is on and the
+ *   caller passes `session: null`: then the account is the one holding the
+ *   invited address. Either way that account's address must be verified and
+ *   equal the invited one (both normalised); otherwise nothing is spent. An
+ *   unverified account is never attached, which stops an attacker who
+ *   registered the address first (pre-hijacking) from collecting the
+ *   invitation. It issues no session, so a second factor is never skipped
+ *   and a link alone never signs anyone in.
  * - `register` is for an address with no account. It creates the account with
  *   the address verified (the token proves the mailbox), then issues a session
  *   through `issueSession` with `via: 'invitation'`, where the hooks (two-factor
@@ -35,7 +38,11 @@ import {
 } from './runtime';
 
 export interface AcceptInvitationInput<A> {
-  readonly session: StoredSession<A>;
+  /**
+   * The signed-in session. `null` only with `acceptWithoutSession` on (it is
+   * refused otherwise): then the account holding the invited address accepts.
+   */
+  readonly session: StoredSession<A> | null;
   readonly token: string;
   readonly meta: RequestMeta;
 }
@@ -56,14 +63,25 @@ export async function acceptInvitation<A>(
   input: AcceptInvitationInput<A>,
 ): Promise<AuthResult<InvitationView>> {
   const { session, meta } = input;
+
+  // Refused before the token is looked up: with the option off, a link alone does nothing.
+  if (!session && !r.settings.acceptWithoutSession)
+    return refused(r, 'forbidden', 'session_required', null, meta);
+
   const found = await pending(r, input.token, meta);
 
   if (!found.ok) return found;
 
   const invitation = found.value;
-  const user = await r.core.users.findById(session.userId);
 
-  if (!user) return refused(r, 'forbidden', 'user_missing', session.userId, meta);
+  const user = session
+    ? await r.core.users.findById(session.userId)
+    : await holderOf(r, invitation);
+
+  if (!user)
+    return session
+      ? refused(r, 'forbidden', 'user_missing', session.userId, meta)
+      : refused(r, 'forbidden', 'account_missing', null, meta);
 
   // core.normalizeEmail answers null for an invalid address; two nulls are no match.
   const userEmail = r.core.normalizeEmail(user.email);
@@ -77,7 +95,7 @@ export async function acceptInvitation<A>(
 
   if (!spent.ok) return spent;
 
-  await accepted(r, user, spent.value, false, meta);
+  await accepted(r, user, spent.value, false, meta, session === null);
 
   return ok(view(spent.value));
 }
@@ -156,6 +174,17 @@ async function pending(
   return ok(invitation);
 }
 
+/**
+ * The account holding the invited address, for an accept with no session.
+ * Read again by id, so `onAccept` never sees the password hash.
+ */
+async function holderOf(r: Runtime, invitation: StoredInvitation): Promise<AuthUser | null> {
+  const email = r.core.normalizeEmail(invitation.email);
+  const credential = email ? await r.core.findCredentialByEmail(email) : null;
+
+  return credential ? r.core.users.findById(credential.id) : null;
+}
+
 /** Checks the inviter again, then spends the invitation atomically. */
 async function spend(
   r: Runtime,
@@ -199,6 +228,7 @@ async function accepted(
   invitation: StoredInvitation,
   created: boolean,
   meta: RequestMeta,
+  withoutSession = false,
 ): Promise<void> {
   await r.settings.onAccept({ user, invitation, created, meta });
 
@@ -206,7 +236,12 @@ async function accepted(
     {
       type: 'invitation.accepted',
       userId: user.id,
-      data: { scope: invitation.scope, invitation: invitation.id, created },
+      data: {
+        scope: invitation.scope,
+        invitation: invitation.id,
+        created,
+        ...(withoutSession ? { withoutSession } : {}),
+      },
     },
     meta,
   );

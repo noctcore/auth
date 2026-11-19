@@ -11,7 +11,7 @@ AcceptedInvitation [interface]
     readonly user: AuthUser
 AcceptInvitationInput [interface]<A>
     readonly meta: RequestMeta
-    readonly session: StoredSession<A>
+    readonly session: StoredSession<A> | null
     readonly token: string
 AttemptRule [interface]
     readonly limit: number
@@ -33,6 +33,7 @@ InvitationRequest [interface]
     readonly user: AuthUser
 invitations [function]: <A = Record<string, never>>(options: InvitationsOptions) => AuthPlugin<"invitations", { create: (input: CreateInvitationInput<A>) => Promise<AuthResult<CreatedInvitation>>; list: (input: ListInvitationsInput<A>) => Promise<AuthResult<InvitationView[]>>; revoke: (input: RevokeInvitationInput<A>) => Promise<AuthResult<void>>; accept: (input: AcceptInvitationInput<A>) => Promise<AuthResult<InvitationView>>; register: (input: RegisterByInvitationInput) => Promise<AuthResult<RegisteredByInvitation<A>>>; }>
 InvitationsOptions [interface]
+    readonly acceptWithoutSession?: boolean
     readonly authorize: (request: InvitationRequest) => boolean | Promise<boolean>
     readonly onAccept: (accepted: AcceptedInvitation) => void | Promise<void>
     readonly perAddress?: AttemptRule

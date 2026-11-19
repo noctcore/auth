@@ -65,6 +65,14 @@ export interface InvitationsOptions {
    * (or the account) since sending leaves nothing acceptable behind.
    */
   readonly recheckInviter?: boolean;
+  /**
+   * Also accept with no session (`accept({ session: null, ... })`): the
+   * token, which only the invited mailbox received, then joins the account
+   * that holds the invited address, which must be verified. No session is
+   * issued, so nobody is signed in by it. Default false: `accept` needs a
+   * session of the account with the invited address.
+   */
+  readonly acceptWithoutSession?: boolean;
   /** Invitations one inviter may send. Default 20 per hour. */
   readonly perInviter?: AttemptRule;
   /** Invitations one address may receive, across scopes. Default 3 per day. */
@@ -79,6 +87,7 @@ export interface InvitationsSettings {
   readonly url: InvitationsOptions['url'];
   readonly ttlMs: number;
   readonly recheckInviter: boolean;
+  readonly acceptWithoutSession: boolean;
   readonly perInviter: AttemptRule;
   readonly perAddress: AttemptRule;
   readonly perIp: AttemptRule;
@@ -106,12 +115,18 @@ export function resolveSettings(options: InvitationsOptions): InvitationsSetting
   if (ttlMs <= 0 || ttlMs > MAX_TTL_MS)
     throw new AuthConfigError('invitations: ttl must be positive and at most 30 days');
 
+  const acceptWithoutSession: unknown = options.acceptWithoutSession ?? false;
+
+  if (typeof acceptWithoutSession !== 'boolean')
+    throw new AuthConfigError('invitations: acceptWithoutSession must be true or false');
+
   return {
     authorize: options.authorize,
     onAccept: options.onAccept,
     url: options.url,
     ttlMs,
     recheckInviter: options.recheckInviter ?? true,
+    acceptWithoutSession,
     perInviter: resolveRule('perInviter', options.perInviter ?? { limit: 20, window: '1h' }),
     perAddress: resolveRule('perAddress', options.perAddress ?? { limit: 3, window: '24h' }),
     perIp: resolveRule('perIp', options.perIp ?? { limit: 10, window: '1m' }),
