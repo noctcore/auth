@@ -207,6 +207,7 @@ BackgroundOptions [interface]
     readonly timeout?: Duration
     readonly waitUntil?: (promise: Promise<void>) => void
 BreachChecker [type] = (password: string) => Promise<BreachVerdict>
+BreachOutcome [type] = { readonly verdict: 'clean' | 'breached'; } | UnavailableOutcome
 BreachVerdict [type] = 'clean' | 'breached' | 'unavailable'
 CaptchaDoor [type] = 'login' | 'register' | 'password-reset' | 'email-verification'
 CaptchaVerdict [type] = 'pass' | 'reject' | 'unavailable'
@@ -410,10 +411,15 @@ PluginContext [interface]<U extends AuthUser, A>
     sessionHandle(sessionId: string): string
     verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>
 PluginFlows [type]<P extends readonly AuthPlugin[]> = UnionToIntersection<P[number] extends infer Plugin ? Plugin extends AuthPlugin<infer Id, infer F> ? { readonly [K in Id]: F; } : never : never>
-pwnedPasswords [function]: (options?: PwnedPasswordsOptions) => BreachChecker
+pwnedPasswords [function]: (options?: PwnedPasswordsOptions) => PwnedPasswordsChecker
+PwnedPasswordsChecker [interface]
+    check(password: string): Promise<BreachOutcome>
+    (call) (password: string): Promise<BreachVerdict>
 PwnedPasswordsOptions [interface]
     readonly baseUrl?: string
     readonly fetch?: typeof fetch
+    readonly logger?: Logger
+    readonly onResult?: OutcomeHook<BreachOutcome>
     readonly timeoutMs?: number
     readonly userAgent?: string
 randomBytes [function]: (length: number, random?: RandomSource) => Uint8Array

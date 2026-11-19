@@ -43,7 +43,9 @@ export { dummyHashFor, type PasswordHasher } from './password/hasher';
 export {
   pwnedPasswords,
   type BreachChecker,
+  type BreachOutcome,
   type BreachVerdict,
+  type PwnedPasswordsChecker,
   type PwnedPasswordsOptions,
 } from './password/breach';
 export {
