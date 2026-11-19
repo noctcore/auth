@@ -1,4 +1,5 @@
 import type { SecretCipher, TwoFactorStore } from '@noctcore/auth';
+import { importedRecoveryCodeHashes } from '@noctcore/auth/two-factor';
 
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -44,4 +45,16 @@ export async function migrateTotpSeed(
   const step = Math.floor(Date.now() / 30_000) - 2;
 
   await store.confirmFactor(user.id, secret, step);
+}
+
+/**
+ * Carries one user's unused recovery codes over as the old app stored them
+ * (here the hex SHA-256 of each code), replacing whatever set the store held.
+ * The plugin accepts them only with its `importedRecoveryCodes` option.
+ */
+export async function migrateRecoveryCodes(
+  store: TwoFactorStore,
+  user: { id: string; recoveryCodeHashes: string[] },
+): Promise<void> {
+  await store.replaceRecoveryCodes(user.id, importedRecoveryCodeHashes(user.recoveryCodeHashes));
 }

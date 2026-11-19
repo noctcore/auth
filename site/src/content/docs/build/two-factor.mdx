@@ -38,6 +38,7 @@ Generate each key with `openssl rand -base64 32` and keep it with your other sec
 | `trustedDevices` | `{ ttl: '30d', maxPerUser: 5 }` | `false` turns "remember this device" off (and stops honouring devices trusted before). |
 | `attempts` | 5 per `'15m'` | Code checks per user, from every IP together, before the factor locks. |
 | `perIp` | 10 per `'1m'` | Code checks per IP. |
+| `importedRecoveryCodes` | none | `{ hash }`: accept recovery codes carried over from your earlier scheme. See [Moving existing TOTP users over](#moving-existing-totp-users-over). |
 
 Turning a factor on or off and spending a recovery code each send a mail event (`two-factor-enabled`, `two-factor-disabled`, `recovery-code-used`), so add them to your templates ([Mail](/auth/build/mail/)).
 
@@ -79,11 +80,39 @@ Other flows: `status(session)` (on, pending, required, recovery codes left), `re
 
 ## Moving existing TOTP users over
 
-If your users already have TOTP seeds, move each one into the store already confirmed, so their authenticator apps keep working:
+If your users already have TOTP seeds, move each one into the store already confirmed, so their authenticator apps keep working. Their unused recovery codes can come along too (below):
 
 <Code code={migrateTs} lang="ts" title="scripts/migrate-totp.ts" />
 
-Old recovery codes cannot be carried over: the plugin stores them as an HMAC keyed by your auth secret. Ask migrated users to generate a new set from the settings page after their next sign-in, where `status` shows `recoveryCodesRemaining: 0`.
+### Carrying recovery codes over
+
+The plugin's own codes are stored as an HMAC keyed by your auth secret, so your old hashes cannot become plugin codes. They can still be accepted as they are, each once, if your old scheme hashed a code the same way every time (an unsalted or peppered SHA-256, an HMAC, a hash salted per user):
+
+1. In the migration script, store each user's unused hashes with `importedRecoveryCodeHashes` (`migrateRecoveryCodes` above). It marks them as imported, so the plugin never confuses them with its own.
+2. Tell the plugin how a typed code was hashed. `hash(code, { userId })` gets the input as typed (at most 64 characters) and returns the stored hash, or null when the input cannot be one of your codes. Normalise the way your old app did:
+
+```ts
+import { createHash } from 'node:crypto';
+
+twoFactor({
+  store,
+  cipher,
+  issuer: 'Acme',
+  importedRecoveryCodes: {
+    hash: (code) => {
+      const compact = code.replace(/[\s-]/g, '').toUpperCase();
+
+      return /^[0-9A-HJKMNP-TV-Z]{16}$/.test(compact)
+        ? createHash('sha256').update(compact).digest('hex')
+        : null;
+    },
+  },
+});
+```
+
+An imported code is spent like any recovery code: by one atomic delete, counted in the factor budget, mailed to the owner (the audit row carries `imported: true`). When one passes the **login challenge**, the plugin replaces the user's whole set with ten new codes and `verifyChallenge` returns them in `recoveryCodes`: show them once, as after an enrollment. From then on the user is on the plugin's codes and the old hashes are gone from the store. An imported code spent on a step-up, a password change or a reset is spent without a new set (nothing there could show one); the user moves over at the next login that uses one, or by generating a new set from the settings page. Turning the option off later voids every imported code still in the store, so keep it until the users who have not moved yet are expected to re-enroll.
+
+If your old codes were hashed with a per-code salt (bcrypt, Argon2), they cannot be looked up, so they cannot be carried over. Re-enroll those users instead: migrate the TOTP seed without recovery codes, and after their next sign-in send them to generate a new set from the settings page, where `status` shows `recoveryCodesRemaining: 0`. Until they do, the TOTP code is their only way through the challenge.
 
 ## Limits
 
