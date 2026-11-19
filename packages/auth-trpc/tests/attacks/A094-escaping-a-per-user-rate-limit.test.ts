@@ -4,16 +4,19 @@
 // instead of by client IP. An attacker tries to turn that into a way out:
 // sending a made-up or stolen-looking session cookie on every call so each
 // one lands in a fresh bucket, naming another user so the calls drain that
-// user's budget instead of their own, or reading user ids out of the counter
-// store's keys.
+// user's budget instead of their own, or reading the counter store's keys
+// and linking them to user ids, which are often guessable.
 //
 // Stopped by: auth-trpc src/middlewares.ts: the user part of the key comes
 //   only from the session the core accepted (`ctx.auth.session`), never from
 //   anything the client sent; a cookie the core refused counts by the client
-//   IP like any anonymous call; the user part is a hash of the stored user id
-//   under `user:`, which no client IP can start with, so the raw id never
-//   reaches the counter store and a user bucket never meets an IP bucket.
+//   IP like any anonymous call; the user part is the core's keyed hash (an
+//   HMAC under a key derived from the server secret) of the stored user id
+//   under `user:`, which no client IP can start with, so neither the id nor
+//   a plain hash of it reaches the counter store and a user bucket never
+//   meets an IP bucket.
 // Learn: Brute force and lockout (/auth/learn/brute-force-and-lockout/); core A011
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { boot, Browser, failure, PASSWORD, type Booted } from '../support';
 
@@ -68,7 +71,7 @@ describe('A094 escaping a per-user rate limit', () => {
     await expect(new Browser(booted).client.perUser.query()).resolves.toEqual({ pong: true });
   });
 
-  it('keeps the raw user id out of the counter store', async () => {
+  it('keeps the user id, and any plain hash of it, out of the counter store', async () => {
     booted = await boot();
 
     const hit = vi.spyOn(booted.auth.context.throttle, 'hit');
@@ -82,5 +85,16 @@ describe('A094 escaping a per-user rate limit', () => {
     expect(scopes).toHaveLength(1);
     expect(scopes[0]).toMatch(/^trpc:per-user:user:[0-9a-f]{64}$/u);
     expect(scopes[0]).not.toContain(booted.userId);
+
+    // Not a plain digest anyone could compute from a guessed id: the server secret keys it.
+    const plain = createHash('sha256').update(booted.userId).digest('hex');
+    const legacy = createHash('sha256').update(`trpc-rate-limit:${booted.userId}`).digest('hex');
+
+    expect(scopes[0]).not.toContain(plain);
+    expect(scopes[0]).not.toContain(legacy);
+
+    expect(scopes[0]).toBe(
+      `trpc:per-user:user:${booted.auth.context.keyedHash('auth-trpc/rate-limit-user', booted.userId)}`,
+    );
   });
 });

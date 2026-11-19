@@ -50,6 +50,11 @@ export interface TrpcAuth<U extends AuthUser = AuthUser, A = unknown> {
     readonly users: { findById(id: string): Promise<U | null> };
     readonly clock: Clock;
     readonly throttle: { hit(scope: string, rule: RateLimitRule): Promise<Hit> };
+    /**
+     * An HMAC of `message` under a key derived from the server secret for
+     * `purpose`. Names the user in a `keyBy: 'user'` rate limit key.
+     */
+    keyedHash(purpose: string, message: string): string;
     readonly logger: {
       error(message: string, context?: Record<string, unknown>): void;
     };
