@@ -86,13 +86,16 @@ AuthMiddlewares [interface]<TContext, TMeta, TErrorShape>
     readonly writesCookies: TRPCMiddlewareBuilder<TContext, TMeta, WriterOf<TContext>, unknown>
     role(...roles: readonly string[]): TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
 AuthProcedureBuilder [type]<TContext, TMeta, TOverrides, TErrorShape> = TRPCProcedureBuilder<TContext, TMeta, TOverrides, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, false, TErrorShape>
+AuthProcedureMeta [interface]
+    readonly auth?: 'public'
+    readonly twoFactorEnrollment?: boolean
 AuthRoot [interface]<TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>
     readonly middleware: (fn: never) => unknown
     readonly procedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>
 AuthState [interface]<U extends AuthUser = AuthUser, A = unknown>
     readonly deviceToken: string | null
     readonly meta: RequestMeta
-    readonly session: StoredSession<A> | null
+    readonly session: ValidatedSession<A> | null
     user(): Promise<U | null>
 AuthTRPCError [class]
     (new) (auth: PublicAuthError): AuthTRPCError
@@ -101,7 +104,7 @@ AuthWriter [interface]<U extends AuthUser = AuthUser, A = unknown>
     clearSession(cookie: CookieSpec): { csrfToken: string; }
     readonly deviceToken: string | null
     readonly meta: RequestMeta
-    readonly session: StoredSession<A> | null
+    readonly session: ValidatedSession<A> | null
     setSession(issued: Pick<IssuedSession<unknown>, 'cookie' | 'deviceCookie' | 'session'>): { csrfToken: string; }
     signOut(): Promise<{ csrfToken: string; }>
     user(): Promise<U | null>
@@ -133,7 +136,7 @@ NodeContextInput [interface]
     readonly req: { readonly method?: string | undefined; readonly headers: IncomingHttpHeaders; readonly socket?: { readonly remoteAddress?: string | undefined; } | undefined; }
     readonly res: { getHeader(name: string): number | string | string[] | undefined; setHeader(name: string, value: number | string | readonly string[]): unknown; }
 Principal [interface]<U extends AuthUser = AuthUser, A = unknown>
-    readonly session: StoredSession<A>
+    readonly session: ValidatedSession<A>
     readonly user: U
 ProcedureAccess [interface]
     readonly access: 'session' | 'public' | 'open'
@@ -169,7 +172,7 @@ TrpcAuth [interface]<U extends AuthUser = AuthUser, A = unknown>
     readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly throttle: { hit(scope: string, rule: RateLimitRule): Promise<Hit>; }; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>; /** * The session cookie config. The CSRF, pre-session and blank session * cookies take their `SameSite` from it, per request `Origin`, exactly as * the session cookie does. Missing (a hand-made stand-in): `Lax`. */ readonly cookie?: SessionCookieConfig; }
     readonly cookieName: string
     requireFreshAuth(session: StoredSession<A>): AuthResult<void>
-    validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<StoredSession<A>>>
+    validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<ValidatedSession<A>>>
 userOutput [const]: z.ZodObject<{ id: z.ZodString; email: z.ZodString; emailVerified: z.ZodBoolean; }, z.core.$strip>
 verificationRequestOutput [const]: z.ZodObject<{ sent: z.ZodBoolean; }, z.core.$strip>
 verifyEmailCodeInput [const]: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
