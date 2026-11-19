@@ -4,7 +4,18 @@
 import 'reflect-metadata';
 import type { ExecutionContext, INestApplication } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { AuthConfigError, resolveSameSite, type SessionCookieConfig } from '@noctcore/auth';
+import {
+  adoptLegacySessions,
+  AuthConfigError,
+  createAuth,
+  generateToken,
+  resolveSameSite,
+  sha256Hex,
+  type LegacySession,
+  type SessionCookieConfig,
+  type SessionStore,
+} from '@noctcore/auth';
+import { manualClock, memoryStores, plainHasher, recordingMailer } from '@noctcore/auth/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { authMeta, currentSession, currentUser } from '../src/decorators';
 import { CsrfMiddleware } from '../src/csrf.middleware';
@@ -642,5 +653,109 @@ describe('trusted proxies by address and the client IP header', () => {
     ).body['ip'];
 
     expect(String(ip)).toMatch(/127\.0\.0\.1|::1/u);
+  });
+});
+
+/**
+ * Two app instances over shared stores behind `adoptLegacySessions`, as two
+ * processes would be, with a session store whose writes land 300 ms later
+ * (a slow database), longer than the wrapper's wait for a racing request.
+ */
+function racingInstances() {
+  const clock = manualClock();
+  const stores = memoryStores(clock);
+  const rows = new Map<string, LegacySession>();
+
+  const take = async (id: string) => {
+    const row = rows.get(id) ?? null;
+
+    rows.delete(id);
+
+    return row;
+  };
+
+  const slow: SessionStore = {
+    create: async (session, ttlMs) => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 300));
+      await stores.sessions.create(session, ttlMs);
+    },
+    get: (id) => stores.sessions.get(id),
+    touch: (session) => stores.sessions.touch(session),
+    delete: (userId, ids) => stores.sessions.delete(userId, ids),
+    listByUser: (userId) => stores.sessions.listByUser(userId),
+    getEpoch: (userId) => stores.sessions.getEpoch(userId),
+    bumpEpoch: (userId) => stores.sessions.bumpEpoch(userId),
+  };
+
+  const instance = () =>
+    createAuth({
+      stores: { ...stores, sessions: adoptLegacySessions(slow, { take, maxTtl: '30d', clock }) },
+      clock,
+      password: { hasher: plainHasher(), breachCheck: false },
+      secret: 'auth-secret-that-is-at-least-32-bytes-long',
+      urls: { resetPassword: (token) => `${ORIGIN}/reset#${token}` },
+      mailer: recordingMailer(),
+    });
+
+  /** A legacy row for a new cookie token; `expired` makes it one the wrapper drops. */
+  const legacyToken = (expired = false) => {
+    const token = generateToken();
+    const now = clock.now();
+
+    rows.set(sha256Hex(token), {
+      userId: 'user-1',
+      createdAt: now - 60_000,
+      authenticatedAt: now - 60_000,
+      lastActiveAt: now - 60_000,
+      expiresAt: expired ? now : now + 86_400_000,
+      idleTimeoutMs: 86_400_000,
+      rememberMe: true,
+    });
+
+    return token;
+  };
+
+  return { first: instance(), second: instance(), legacyToken };
+}
+
+type RacingAuth = ReturnType<typeof racingInstances>['first'];
+
+describe('a session another instance is still adopting', () => {
+  async function get(auth: RacingAuth, token: string) {
+    const res = new FakeResponse();
+    const next = vi.fn();
+
+    await new CsrfMiddleware(resolveOptions(options({ auth }))).use(
+      { method: 'GET', url: '/x', headers: { cookie: `${auth.cookieName}=${token}` } },
+      res,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledOnce();
+
+    const cookies = (res.getHeader('set-cookie') ?? []) as string[];
+
+    return cookies.some((line) => line.startsWith(`${auth.cookieName}=;`));
+  }
+
+  it('keeps the cookie of the request that lost the race, and clears a dead one', async () => {
+    const { first, second, legacyToken } = racingInstances();
+    const token = legacyToken();
+    const validate = vi.spyOn(second, 'validateRequest');
+
+    // The loser is refused (its wait is shorter than the winner's write) but keeps its cookie.
+    const [wonCleared, lostCleared] = await Promise.all([get(first, token), get(second, token)]);
+
+    expect(await validate.mock.results[0]?.value).toMatchObject({
+      ok: false,
+      reason: 'session_adopting',
+    });
+
+    expect(await second.validateRequest({ token })).toMatchObject({ ok: true });
+    expect([wonCleared, lostCleared]).toEqual([false, false]);
+
+    // A malformed token, and a legacy record the wrapper drops, still clear it.
+    expect(await get(second, 'not-a-token')).toBe(true);
+    expect(await get(second, legacyToken(true))).toBe(true);
   });
 });

@@ -16,6 +16,7 @@
  */
 import type { IncomingHttpHeaders } from 'node:http';
 import {
+  clearsSessionCookie,
   clientIp,
   resolveSameSite,
   serializeCookie,
@@ -49,6 +50,8 @@ export interface SessionState {
   readonly token: string | null;
   /** The validated session (with its standing on this request), or null when there is none or it was refused. */
   readonly session: ValidatedSession<unknown> | null;
+  /** True when the core refused the token for good, so the response clears its cookie (`clearsSessionCookie`). */
+  readonly clearCookie: boolean;
   readonly meta: RequestMeta;
 }
 
@@ -127,11 +130,16 @@ async function resolveSession(req: RawRequest, options: ResolvedOptions): Promis
   const meta = requestMeta(req, options);
   const token = options.auth.readSessionToken(header(req, 'cookie'));
 
-  if (token === null) return { token, session: null, meta };
+  if (token === null) return { token, session: null, clearCookie: false, meta };
 
   const result = await options.auth.validateRequest({ token, meta });
 
-  return { token, session: result.ok ? result.value : null, meta };
+  return {
+    token,
+    session: result.ok ? result.value : null,
+    clearCookie: clearsSessionCookie(result),
+    meta,
+  };
 }
 
 export function setPrincipal(req: RawRequest, principal: Principal): void {
