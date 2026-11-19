@@ -17,7 +17,8 @@
  * - Like the Nest adapter, a safe request hands out what the page needs to
  *   send mutations: a pre-session id when the browser has none yet, and a
  *   CSRF cookie bound to the current binding. A session token the core
- *   refused is cleared, so the browser stops sending it.
+ *   refused for good is cleared, so the browser stops sending it
+ *   (`clearsSessionCookie`).
  * - A new session (sign-in and every rotation) is written with
  *   `ctx.auth.setSession(issued)`, which also binds a fresh CSRF token to it.
  *   Only a procedure marked `writesCookies` gets the writers: anywhere else
@@ -35,6 +36,7 @@
  */
 import {
   AuthConfigError,
+  clearsSessionCookie,
   parseCookieHeader,
   resolveSameSite,
   verifyFetchSite,
@@ -284,8 +286,9 @@ async function resolveState(
   // Every cookie set here travels with the session cookie, so takes its SameSite.
   const sameSite = resolveSameSite(options.cookie, request.header('origin'));
 
-  // A token the core refused is cleared, so the browser stops sending it.
-  if (token !== null && session === null) {
+  // A token the core refused for good is cleared, so the browser stops
+  // sending it. One another request may still be adopting is kept.
+  if (validated !== null && clearsSessionCookie(validated)) {
     write({
       name: auth.cookieName,
       value: '',
