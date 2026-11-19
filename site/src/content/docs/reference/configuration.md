@@ -296,7 +296,7 @@ Source: `session/legacy-sessions.ts`. Wraps a session store so sessions from the
 | `clock` | system clock | For tests. |
 | `logger` | none | Told about a malformed old session it dropped, with the user id only. |
 
-While the wrapper is installed, a token neither store knows is refused with the reason `session_adopting`, since another request may still be adopting it; `clearsSessionCookie(result)` is false for that refusal, so the adapters keep its cookie.
+While the wrapper is installed, a token neither store knows is refused with the reason `session_adopting`, since another request may still be adopting it; `clearsSessionCookie(result)` is false for that refusal, so the adapters keep its cookie. That signal lives on the store `adoptLegacySessions` returns, so pass that result directly to `createAuth` as `stores.sessions`: a store of your own that wraps it (for logging or metrics) hides the signal, and a request that loses the race is signed out again. Wrap the package's store before you pass it to `adoptLegacySessions` instead.
 
 ### `prismaStores(options)`
 

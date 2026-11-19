@@ -85,6 +85,8 @@ It works when your old cookie carries a token the package accepts (64 lowercase 
 
 Old sessions are not listed in `auth.sessions.list` until they are first used, and the per-user cap counts them from then on.
 
+**Pass the result directly to `createAuth`.** The `adopting` signal lives on the store `adoptLegacySessions` returns, and the session manager reads it from there. A store of your own that wraps that result (to log or count calls) hides it, so a request that loses the race is refused as `session_unknown` and its cookie is cleared: the user is signed out again. To log or count, wrap the package's store first and pass the wrapped store to `adoptLegacySessions`.
+
 **Remove the wrapper once `maxTtl` has passed since the switch.** By then every old session has been adopted or has expired, so the wrapper has nothing left to adopt, but while it is installed every cookie the package's store does not know still costs a read of your old store, a second read of the package's store and the 50 ms wait, and keeps its cookie. Pass the package's store to `createAuth` directly again, then drop the old table.
 
 ## In-memory stores
