@@ -6,6 +6,7 @@ description: Adding TOTP with recovery codes and trusted devices to an app, with
 import { Code } from '@astrojs/starlight/components';
 import authTs from '../../../../snippets/build/two-factor/auth.ts?raw';
 import cipherTs from '../../../../snippets/build/two-factor/cipher.ts?raw';
+import enforcementTs from '../../../../snippets/build/two-factor/enforcement.ts?raw';
 import loginTs from '../../../../snippets/build/two-factor/login.ts?raw';
 import migrateTs from '../../../../snippets/build/two-factor/migrate.ts?raw';
 import settingsTs from '../../../../snippets/build/two-factor/settings.ts?raw';
@@ -32,6 +33,7 @@ Generate each key with `openssl rand -base64 32` and keep it with your other sec
 | `store`, `cipher` | required | |
 | `issuer` | required | The name the authenticator app shows. |
 | `required` | never | `({ user }) => boolean`: users who must have a factor. Without one they get an enrollment challenge at login, never a session. |
+| `enforcement` | off | `({ user }) => { required, graceEndsAt? }`: a requirement with a grace window, checked on every request; see [Enforcement with a grace period](#enforcement-with-a-grace-period). Pass it or `required`, not both. |
 | `stepUpWindow` | `'10m'` | How long a code proved in a session counts for sensitive actions. |
 | `trustedDevices` | `{ ttl: '30d', maxPerUser: 5 }` | `false` turns "remember this device" off (and stops honouring devices trusted before). |
 | `attempts` | 5 per `'15m'` | Code checks per user, from every IP together, before the factor locks. |
@@ -48,6 +50,20 @@ With the plugin on, `auth.login` answers `{ kind: 'challenge', challenge, method
 Every refusal answers `invalid_second_factor` (or `rate_limited`); the reason, such as `wrong_code`, `code_replayed` or `factor_locked`, is only in the audit row. Show the same message for all of them.
 
 When `methods` is `['enroll']`, the user is one you require a factor of and has none yet. Pass the challenge to `auth.twoFactor.enroll({ challenge, meta })` to get a secret, show it, and send the first code to `verifyChallenge` as a TOTP proof: it turns the factor on and returns the session with the recovery codes.
+
+## Enforcement with a grace period
+
+`required` is checked once, at login: a user without a factor never gets a session. When you turn the requirement on for users who already have accounts (a tenant that starts requiring a factor, say), give them a grace window with `enforcement` instead. Your policy answers per user, so the tenant, role or plan it hangs on stays in your app:
+
+- **In the window**, sign-in works as usual and every validated session carries `twoFactor: { state: 'grace', graceEndsAt }` (milliseconds since the epoch). Show a reminder.
+- **After the window**, the user still signs in, but the session is `twoFactor: { state: 'enrollment-only' }`: it reaches only the routes you mark for enrollment. Everything else answers `403` with `two_factor_enrollment_required`. Enrolling is the settings flow above (fresh password proof, `enroll`, `confirmEnrollment`); once the factor is confirmed the standing is gone on the next request.
+- **Checked live.** The standing is computed on every request, never stored in the session, so a policy change or a closing window applies on the next request, without a new sign-in. The policy runs only for users without a confirmed factor (an enrolled user costs one store read), but it runs on each of their requests: cache your tenant rules, and expect a change to apply once that cache does.
+- **Fail closed.** A policy that throws, or answers nothing, reads as required with the window over (enrollment-only), and is logged by the error's name only. An unreadable `graceEndsAt` means no grace.
+- **The sweep.** `auth.twoFactor.sweepUnenrolled({ userIds })` revokes every session of each listed user who is required, past the window and still without a confirmed factor, with reason `two-factor-required` (your `onSessionsRevoked` hook hears it). Users in the window, users with a factor and unknown ids are skipped; a user whose policy throws is skipped and counted in `failed`, since validation already confines that session. Pass any iterable or async iterable, so a large tenant can be paged from your database, and run it from your scheduler.
+
+<Code code={enforcementTs} lang="ts" title="src/two-factor/enforcement.ts" />
+
+With an adapter, mark what an enrollment-only session may reach: `@TwoFactorEnrollment()` on a NestJS route or controller ([NestJS](/auth/build/nestjs/#the-guard-order)), or `meta: { twoFactorEnrollment: true }` on a tRPC procedure ([tRPC](/auth/build/trpc/)). Mark the enrollment routes, `status`, re-authentication and sign out; the marker opens nothing else, so roles and fresh-auth still apply. Public routes and procedures run for anyone, so they ignore the standing: do not hand account data out of one. `status` reports the standing too, as `enforcement` (null when the factor is on or none is required).
 
 ## Settings and step-up
 
