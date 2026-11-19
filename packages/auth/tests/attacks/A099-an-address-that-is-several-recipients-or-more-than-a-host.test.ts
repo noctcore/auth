@@ -4,7 +4,11 @@
 // plain mailbox: a list (`eve,victim@example.com`, `eve;victim@example.com`),
 // group syntax (`eve:victim@example.com` delivers to `victim@example.com`), angle
 // brackets, a comment the parser strips (`victim@example.com(x)`, the victim's
-// mailbox as a separate account), quoting or a domain literal. Or, under the
+// mailbox as a separate account), quoting or a domain literal. Or, under any built-in
+// policy, a domain that is not a host name (`victim@exa_mple.com`,
+// `victim@-example.com`, an empty label) or is an IPv4 address
+// (`victim@127.0.0.1`, and its short form `victim@127.1`, one host with two
+// spellings). Or, under the
 // unicode policy, a domain the URL parser reads as more than a host name
 // (`victim@example.com:25`, `victim@evil.test/x`, `victim@ex%41mple.com`,
 // `victim@exa_mple.com`), a domain UTS 46 would remap (an ideographic full stop
@@ -12,7 +16,9 @@
 // address, so one mailbox has spellings treated as different accounts.
 //
 // Stopped by: shared/email.ts: one rule for every policy, built in and custom: no whitespace,
-//   control character or RFC 5322 special besides the one @ (`, ; : < > ( ) " \ [ ]`); the unicode
+//   control character or RFC 5322 special besides the one @ (`, ; : < > ( ) " \ [ ]`); every
+//   built-in policy takes only a host name as the domain (letter-digit-hyphen labels of at most
+//   63, none empty, a last label that is not all digits; isHostName); the unicode
 //   policy takes a domain only when it has no port, path, query, fragment, credentials or
 //   percent escape, every label of its ASCII (punycode) form is letters, digits and inner
 //   hyphens and decodes back to exactly the label typed (shared/punycode.ts), and its last
@@ -53,6 +59,19 @@ const MORE_THAN_A_HOST = [
   'victim@x.\u1C80\u0430.com',
 ];
 
+// Not a host name, under every built-in policy.
+const NOT_A_HOST_NAME = [
+  'victim@exa_mple.com',
+  'victim@-example.com',
+  'victim@example-.com',
+  'victim@example..com',
+  'victim@.example.com',
+  'victim@127.0.0.1',
+  'victim@127.1',
+  'victim@example.123',
+  `victim@${'a'.repeat(64)}.com`,
+];
+
 const keepsAsTyped: EmailNormalizer = (email) => {
   const value = email.trim().toLowerCase();
 
@@ -85,6 +104,30 @@ describe('A099: an address that is several recipients, or a domain that is more 
       await settled();
 
       expect(t.mailer.sent).toEqual([]);
+    },
+  );
+
+  it.each(POLICIES.slice(0, 3))(
+    'refuses a domain that is not a host name, or an IPv4 address, and sends nothing (%s)',
+    async (_, normalize) => {
+      const t = setup({ email: { normalize } });
+
+      await t.auth.register({ email: 'victim@example.com', password: PASSWORD, meta: meta() });
+
+      for (const [i, email] of NOT_A_HOST_NAME.entries()) {
+        expect(t.auth.normalizeEmail(email)).toBeNull();
+
+        expect(
+          await t.auth.register({ email, password: PASSWORD, meta: meta(`192.0.2.${i + 10}`) }),
+        ).toMatchObject({
+          ok: false,
+          code: 'invalid_email',
+        });
+      }
+
+      await settled();
+
+      expect(t.mailer.sent.map((m) => m.to)).toEqual(['victim@example.com']);
     },
   );
 
