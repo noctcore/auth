@@ -23,8 +23,11 @@ export type NormalizedEmail = string & { readonly __normalizedEmail: true };
  *   with Unicode case mapping, the final sigma folded to the plain one in
  *   the local part (a domain keeps a typed final sigma, as IDNA2008 does).
  *   Refuses invisible and control characters, compatibility characters
- *   (fullwidth letters, ligatures), punycode labels and any part that mixes
- *   scripts (a Cyrillic letter among Latin ones).
+ *   (fullwidth letters, ligatures), punycode labels, any part that mixes
+ *   scripts (a Cyrillic letter among Latin ones), and a few Latin letters
+ *   that read as other Latin ones (the dotless i, the IPA Extensions block,
+ *   a dot above on i or j). There is no UTS 39 confusables check, so other
+ *   lookalikes within one script are accepted.
  */
 export type EmailPolicy = 'standard' | 'ascii' | 'unicode';
 
@@ -126,6 +129,18 @@ function asciiPolicy(input: unknown): EmailVerdict {
 // addresses that render the same cannot differ by an invisible character.
 const FORBIDDEN = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Z}\p{Default_Ignorable_Code_Point}]/u;
 const NEUTRAL = /[\p{Script=Common}\p{Script=Inherited}]/u;
+
+// Latin letters that read as other Latin letters, which the one-script rule
+// cannot see because the lookalike and the original share a script: the
+// dotless `\u0131` (reads as `i`), the IPA Extensions block (`\u0251` reads
+// as `a`, `\u0261` as `g`), and a combining dot above on `i` or `j`, which
+// is also what `\u0130` lowercases to (`i` followed by `\u0307`). Checked
+// after lowercasing and on the decomposed form, so a capital form, or a dot
+// above on a precomposed `i` with another mark (NFC writes `i` and
+// `\u0323` as one letter), is refused too. This is a short list, not a
+// UTS 39 confusables check: other same-script lookalikes are accepted (see
+// THREAT_MODEL.md).
+const LATIN_LOOKALIKE = /[\u0131\u0250-\u02AF]|[ij]\p{Mn}*\u0307/u;
 
 // The scripts told apart; a letter of any other script counts as 'Other'.
 const SCRIPT_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
@@ -243,6 +258,7 @@ function unicodeOnce(trimmed: string): string | null {
   // superscripts) render like other letters but are distinct code points:
   // refused, so the stored form is the only spelling that reads that way.
   if (value.normalize('NFKC') !== value || octets(value) > MAX_LENGTH) return null;
+  if (LATIN_LOOKALIKE.test(value.normalize('NFD'))) return null;
 
   const labels = domain.split('.');
 
