@@ -294,7 +294,9 @@ export default tseslint.config(
     // A lookup by address goes through `core.findCredentialByEmail`, which
     // treats a row whose stored address is not exactly the one asked for as
     // not found: a store behind a case- or accent-insensitive collation would
-    // otherwise reach one account under several spellings.
+    // otherwise reach one account under several spellings. Any receiver other
+    // than `core` (a store, a destructured `users`, a renamed variable) is
+    // refused, not only `<x>.users`.
     files: ['packages/auth/src/*/**/*.ts'],
     ignores: ['packages/auth/src/core/auth-core.ts', 'packages/auth/src/testing/**'],
     rules: {
@@ -302,7 +304,7 @@ export default tseslint.config(
         'error',
         {
           selector:
-            "MemberExpression[object.property.name='users'][property.name='findCredentialByEmail']",
+            "MemberExpression[property.name='findCredentialByEmail']:not([object.name='core']):not([object.property.name='core'])",
           message: 'Look users up by address with core.findCredentialByEmail (exact match only).',
         },
       ],
