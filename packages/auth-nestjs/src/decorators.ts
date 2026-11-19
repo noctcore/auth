@@ -20,10 +20,10 @@ import {
   type AuthUser,
   type Duration,
   type RequestMeta,
-  type StoredSession,
+  type ValidatedSession,
 } from '@noctcore/auth';
 import { principalOf, rawRequest, type Principal } from './request';
-import { FRESH_AUTH_KEY, PUBLIC_KEY, ROLES_KEY } from './tokens';
+import { FRESH_AUTH_KEY, PUBLIC_KEY, ROLES_KEY, TWO_FACTOR_ENROLLMENT_KEY } from './tokens';
 
 /** Lets a route, or every route of a controller, through without a session. */
 export const Public = (): CustomDecorator<string> => SetMetadata(PUBLIC_KEY, true);
@@ -44,6 +44,18 @@ export const RequireRole = (...roles: readonly string[]): CustomDecorator<string
 export const RequireFreshAuth = (maxAge?: Duration): CustomDecorator<string> =>
   SetMetadata(FRESH_AUTH_KEY, maxAge === undefined ? true : toMilliseconds(maxAge));
 
+/**
+ * Marks a route (or every route of a controller) as one an `enrollment-only`
+ * session may reach, under the two-factor plugin's `enforcement`: the
+ * enrollment routes, and what a user needs on the way there (the factor's
+ * status, re-authentication for a stale session, sign out). Every other
+ * route refuses such a session with 403 `two_factor_enrollment_required`.
+ * It opens nothing else: the route still needs a session, and its role and
+ * fresh-auth requirements still apply.
+ */
+export const TwoFactorEnrollment = (): CustomDecorator<string> =>
+  SetMetadata(TWO_FACTOR_ENROLLMENT_KEY, true);
+
 function principal(context: ExecutionContext): Principal | undefined {
   return principalOf(rawRequest(context.switchToHttp().getRequest()));
 }
@@ -54,7 +66,7 @@ export const currentUser = (_data: unknown, context: ExecutionContext): AuthUser
 export const currentSession = (
   _data: unknown,
   context: ExecutionContext,
-): StoredSession<unknown> | null => principal(context)?.session ?? null;
+): ValidatedSession<unknown> | null => principal(context)?.session ?? null;
 
 export const authMeta = (_data: unknown, context: ExecutionContext): RequestMeta | undefined =>
   principal(context)?.meta;
@@ -62,7 +74,11 @@ export const authMeta = (_data: unknown, context: ExecutionContext): RequestMeta
 /** The signed-in user, loaded from the store on this request; null on a public route without a session. */
 export const CurrentUser = createParamDecorator(currentUser);
 
-/** The validated session; null on a public route without a session. */
+/**
+ * The validated session; null on a public route without a session. Under the
+ * two-factor plugin's `enforcement` it carries `twoFactor` (grace or
+ * enrollment-only) for this request.
+ */
 export const CurrentSession = createParamDecorator(currentSession);
 
 /** The request's `RequestMeta` (client IP through the trusted hops, user agent, origin), for the flows. */

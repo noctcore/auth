@@ -45,16 +45,19 @@ export const PASSWORD = 'correct horse battery staple';
 export const CSRF_SECRET = 'csrf-secret-that-is-at-least-32-bytes-long';
 
 type Verification = AuthConfig<AuthUser, Record<string, never>, []>['emailVerification'];
+type Hooks = AuthConfig<AuthUser, Record<string, never>, []>['hooks'];
 
 /**
  * `cookie` replaces the session cookie config (plain HTTP, `Lax`, by default);
  * `emailVerification` replaces the core's verification settings (codes by default);
- * `maxPerUser` replaces the per-user session cap (10 by default).
+ * `maxPerUser` replaces the per-user session cap (10 by default);
+ * `hooks` adds app hooks (none by default).
  */
 export function makeAuth(
   cookie: SessionCookieConfig = { secure: false },
   emailVerification?: Verification,
   maxPerUser?: number,
+  hooks?: Hooks,
 ) {
   const clock = manualClock();
   const stores = memoryStores(clock);
@@ -71,6 +74,7 @@ export function makeAuth(
       verifyEmail: (token) => `${ORIGIN}/verify#${token}`,
     },
     ...(emailVerification ? { emailVerification } : {}),
+    ...(hooks ? { hooks } : {}),
     mailer,
   });
 
@@ -302,6 +306,8 @@ export interface BootOptions {
   readonly emailVerification?: Verification;
   /** The per-user session cap, in place of 10. */
   readonly maxPerUser?: number;
+  /** App hooks for the core (a `sessionStanding` hook, say). */
+  readonly hooks?: Hooks;
 }
 
 /** Under a global prefix: a handler at the prefix root, and a route excluded from the prefix. */
@@ -339,7 +345,13 @@ export class ExcludedController {
 }
 
 export async function boot(overrides: BootOptions = {}) {
-  const env = makeAuth(overrides.cookie, overrides.emailVerification, overrides.maxPerUser);
+  const env = makeAuth(
+    overrides.cookie,
+    overrides.emailVerification,
+    overrides.maxPerUser,
+    overrides.hooks,
+  );
+
   const roles = overrides.roles ?? new Map<string, readonly string[]>();
 
   const base: AuthModuleOptions = {

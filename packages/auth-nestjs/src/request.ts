@@ -23,7 +23,7 @@ import {
   type CookieSpec,
   type RequestMeta,
   type SameSite,
-  type StoredSession,
+  type ValidatedSession,
 } from '@noctcore/auth';
 import type { ResolvedOptions } from './options';
 
@@ -47,8 +47,8 @@ export interface RawResponse {
 export interface SessionState {
   /** The session token from the cookie, or null when there is none. */
   readonly token: string | null;
-  /** The validated session, or null when there is none or it was refused. */
-  readonly session: StoredSession<unknown> | null;
+  /** The validated session (with its standing on this request), or null when there is none or it was refused. */
+  readonly session: ValidatedSession<unknown> | null;
   readonly meta: RequestMeta;
 }
 
