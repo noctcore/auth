@@ -28,7 +28,7 @@ const SPELLINGS = [
 const lowerNfc: EmailNormalizer = (email) => {
   const value = email.trim().normalize('NFC').toLowerCase().normalize('NFC');
 
-  return value.includes('@') ? value : null;
+  return /^[^\s,;:<>()"\\[\]@]+@[^\s,;:<>()"\\[\]@]+$/u.test(value) ? value : null;
 };
 
 describe('A089: another spelling of the victim address under a configured email policy', () => {

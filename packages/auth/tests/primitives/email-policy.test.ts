@@ -13,6 +13,10 @@ import {
 import { AuthConfigError } from '../../src/shared/errors';
 
 const quiet = () => undefined;
+
+// A plain address: one `@`, no whitespace and no RFC 5322 special. A custom
+// normaliser must return null for anything else, or startup refuses it.
+const PLAIN = /^[^\s,;:<>()"\\[\]@]+@[^\s,;:<>()"\\[\]@]+$/u;
 const policy = (name: EmailPolicy | undefined) => resolveEmailNormalizer(name, quiet);
 
 const valueOf = (name: EmailPolicy | undefined, input: unknown) => {
@@ -163,13 +167,114 @@ describe('the unicode policy', () => {
     for (const input of ['', 'no-at', '@example.com', 'a@b', 'a@b.', 'a@@b.com', 'a@.b.com', 7])
       expect(valueOf('unicode', input)).toBe('invalid_email');
   });
+
+  it('takes only a plain host as the domain, as typed', () => {
+    for (const input of [
+      'alice@evil.com/x',
+      'alice@evil.com\\x',
+      'alice@example.com:25',
+      'alice@example.com:',
+      'alice@example.com?x',
+      'alice@example.com#x',
+      'alice@ex%41mple.com',
+      'alice@b%C3%BCcher.de',
+      'alice@b\u00FCcher.de:80',
+      'alice@[::1].com',
+      'alice@127.1',
+      'alice@example.com(x)',
+      'alice@example.com;x',
+      'alice@exa_mple.com',
+      'alice@-example.com',
+      'alice@example-.com',
+      'alice@example.c*m',
+      'alice@b\u00FCcher.de(x)',
+      `alice@${'a'.repeat(64)}.com`,
+    ])
+      expect(valueOf('unicode', input)).toBe('invalid_email');
+
+    expect(valueOf('unicode', 'alice@example.com')).toBe('alice@example.com');
+    expect(valueOf('unicode', 'alice@mail.example.co.uk')).toBe('alice@mail.example.co.uk');
+    expect(valueOf('unicode', ZOE_NFC)).toBe(ZOE_NFC);
+
+    expect(valueOf('unicode', '\u7528\u6237@\u4F8B\u5B50.\u5E7F\u544A')).toBe(
+      '\u7528\u6237@\u4F8B\u5B50.\u5E7F\u544A',
+    );
+  });
+
+  it('refuses a very long input before any Unicode work', () => {
+    const normalize = vi.spyOn(String.prototype, 'normalize');
+
+    try {
+      expect(valueOf('unicode', `${'a'.repeat(5000)}@example.com`)).toBe('invalid_email');
+      expect(normalize).not.toHaveBeenCalled();
+    } finally {
+      normalize.mockRestore();
+    }
+
+    // The bound is generous: a decomposed address that composes within 254 bytes passes.
+    const decomposed = `${'e\u0301'.repeat(32)}@example.com`;
+
+    expect(decomposed.length).toBeGreaterThan(64);
+    expect(valueOf('unicode', decomposed)).toBe(`${'\u00E9'.repeat(32)}@example.com`);
+  });
+});
+
+describe('the characters every policy refuses', () => {
+  // One address must stay one recipient in a mail header: no list separator,
+  // no display-name brackets, no whitespace or control character.
+  const UNSAFE = [
+    'ada,eve@example.com',
+    'ada@example.com,eve@example.com',
+    '<ada@example.com>',
+    'ada<x>@example.com',
+    'ada@exam>ple.com',
+    'ada eve@example.com',
+    'ada\t@example.com',
+    'eve;victim@example.com',
+    'eve:victim@example.com',
+    'victim@example.com(x)',
+    '(x)victim@example.com',
+    'vic(x)tim@example.com',
+    'a"b@example.com',
+    'a\\b@example.com',
+    'victim@[192.0.2.1]',
+    'a[b]@example.com',
+    'ada\u0000@example.com',
+  ];
+
+  // Refuses only what the startup sample probes (a quoted local part), then
+  // passes everything else through, so the per-call check is what refuses.
+  const keepsAsTyped: EmailNormalizer = (email) => {
+    const value = email.trim().toLowerCase();
+
+    return value.includes('@') && !value.startsWith('"') ? value : null;
+  };
+
+  it.each([['standard' as const], ['ascii' as const], ['unicode' as const]])(
+    'refuses them under the %s policy',
+    (name) => {
+      for (const input of UNSAFE) expect(policy(name)(input).ok).toBe(false);
+    },
+  );
+
+  it('refuses them from a custom normaliser on each call', () => {
+    const normalize = resolveEmailNormalizer(keepsAsTyped, quiet);
+
+    for (const input of UNSAFE) expect(normalize(input).ok).toBe(false);
+  });
+
+  it('still accepts the punctuation a local part may carry', () => {
+    const address = "o'neil.smith+tag_1-x!#$%&*/=?^{|}~@example.com";
+
+    for (const name of ['standard', 'ascii'] as const) expect(valueOf(name, address)).toBe(address);
+  });
 });
 
 describe('a custom normaliser', () => {
   const lowerTrim: EmailNormalizer = (email) => {
     const value = email.trim().toLowerCase();
 
-    return value.includes('@') ? value : null;
+    return PLAIN.test(value) ? value : null;
   };
 
   it('is used as given, its null answered invalid_email', () => {
@@ -235,20 +340,51 @@ describe('a custom normaliser', () => {
     const localOnly: EmailNormalizer = (email) => {
       const at = email.lastIndexOf('@');
 
-      return at > 0 ? `${email.slice(0, at).trim().toLowerCase()}@example.com` : null;
+      const local = email.slice(0, at).trim().toLowerCase();
+
+      return at > 0 && PLAIN.test(`${local}@example.com`) ? `${local}@example.com` : null;
     };
 
     for (const merges of [constant, domainOnly, localOnly])
       expect(() => resolveEmailNormalizer(merges, quiet)).toThrow(/different mailboxes/u);
   });
 
+  it('is refused at startup when it throws on the mailboxes it must keep apart', () => {
+    // Fine on the whole sample, throws only on the second mailbox of a pair.
+    const failsLate: EmailNormalizer = (email) => {
+      if (email === 'bob@example.com') throw new RangeError('boom');
+
+      return lowerTrim(email);
+    };
+
+    let thrown: unknown;
+
+    try {
+      resolveEmailNormalizer(failsLate, quiet);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AuthConfigError);
+    expect((thrown as Error).message).toMatch(/threw/u);
+    expect((thrown as Error).cause).toBeInstanceOf(RangeError);
+  });
+
+  it('is refused at startup when it passes a quoted local part through', () => {
+    const keepsQuotes: EmailNormalizer = (email) => {
+      const value = email.trim().toLowerCase();
+
+      return value.includes('@') ? value : null;
+    };
+
+    expect(() => resolveEmailNormalizer(keepsQuotes, quiet)).toThrow(/RFC 5322 specials/u);
+  });
+
   it('may refuse whole domains: only addresses it accepts must stay apart', () => {
     const companyOnly: EmailNormalizer = (email) => {
       const value = email.trim().toLowerCase();
 
-      return value.endsWith('@example.com') && value.indexOf('@') === value.lastIndexOf('@')
-        ? value
-        : null;
+      return value.endsWith('@example.com') && PLAIN.test(value) ? value : null;
     };
 
     expect(() => resolveEmailNormalizer(companyOnly, quiet)).not.toThrow();

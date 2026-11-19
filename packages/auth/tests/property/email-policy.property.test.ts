@@ -21,7 +21,8 @@ const POLICIES: ReadonlyArray<EmailPolicy> = ['standard', 'ascii', 'unicode'];
 const nfcLower: EmailNormalizer = (email) => {
   const value = email.trim().normalize('NFC').toLowerCase().normalize('NFC');
 
-  return value.includes('@') && value.normalize('NFC').toLowerCase().normalize('NFC') === value
+  return /^[^\s,;:<>()"\\[\]@]+@[^\s,;:<>()"\\[\]@]+$/u.test(value) &&
+    value.normalize('NFC').toLowerCase().normalize('NFC') === value
     ? value
     : null;
 };
