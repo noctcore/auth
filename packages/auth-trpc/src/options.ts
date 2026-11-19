@@ -19,6 +19,7 @@ import {
   type RequestMeta,
   type SessionCookieConfig,
   type StoredSession,
+  type ValidatedSession,
   type TrustedHops,
   resolveClientIpHeader,
   resolveTrustedHops,
@@ -40,7 +41,7 @@ export interface TrpcAuth<U extends AuthUser = AuthUser, A = unknown> {
     token: string | null | undefined;
     meta?: RequestMeta;
     touch?: boolean;
-  }): Promise<AuthResult<StoredSession<A>>>;
+  }): Promise<AuthResult<ValidatedSession<A>>>;
   requireFreshAuth(session: StoredSession<A>): AuthResult<void>;
   logout(input: { token: string | null | undefined; meta: RequestMeta }): Promise<{
     cookie: CookieSpec;

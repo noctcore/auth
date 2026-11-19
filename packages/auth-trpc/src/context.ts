@@ -43,7 +43,7 @@ import {
   type CookieSpec,
   type IssuedSession,
   type RequestMeta,
-  type StoredSession,
+  type ValidatedSession,
 } from '@noctcore/auth';
 import {
   binding,
@@ -72,8 +72,12 @@ import {
  * `AuthWriter`, with `setSession`, `signOut` and `clearSession`.
  */
 export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
-  /** The session the core accepted, or null when there is none or it was refused. */
-  readonly session: StoredSession<A> | null;
+  /**
+   * The session the core accepted, or null when there is none or it was
+   * refused. Under the two-factor plugin's `enforcement` it carries
+   * `twoFactor` (grace or enrollment-only) for this request.
+   */
+  readonly session: ValidatedSession<A> | null;
   /** Client IP through the trusted hops, user agent and origin: pass it to the flows. */
   readonly meta: RequestMeta;
   /** The trusted-device token from its cookie, for `auth.login({ deviceToken })`. */
