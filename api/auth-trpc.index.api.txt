@@ -90,6 +90,7 @@ AuthMiddlewares [interface]<TContext, TMeta, TErrorShape, TTier extends string =
 AuthProcedureBuilder [type]<TContext, TMeta, TOverrides, TErrorShape> = TRPCProcedureBuilder<TContext, TMeta, TOverrides, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, TRPCUnsetMarker, false, TErrorShape>
 AuthProcedureMeta [interface]
     readonly auth?: 'public'
+    readonly rateLimit?: 'exempt'
     readonly twoFactorEnrollment?: boolean
 AuthRoot [interface]<TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>
     readonly middleware: (fn: never) => unknown
