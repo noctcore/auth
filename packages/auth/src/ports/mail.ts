@@ -126,12 +126,16 @@ export type AuthMailEvent =
       readonly at: Date;
       readonly dedupeKey: string;
     }
-  /** The two-factor plugin: a recovery code was spent; `remaining` codes are left. */
+  /**
+   * The two-factor plugin: a recovery code was spent; `remaining` codes are
+   * left, or null when the count could not be read (the store failed after a
+   * login with an imported code had already issued its session).
+   */
   | {
       readonly type: 'recovery-code-used';
       readonly to: string;
       readonly userId: string;
-      readonly remaining: number;
+      readonly remaining: number | null;
       readonly at: Date;
       readonly dedupeKey: string;
     }

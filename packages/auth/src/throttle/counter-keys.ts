@@ -35,6 +35,12 @@ export const counterKeys = {
   device: (account: string, deviceId: string) => `dev:${account}:${deviceId}`,
   /** The budget shared by all of an account's trusted devices under a lock. */
   devices: (account: string) => `devs:${account}`,
+  /**
+   * Present while a login is replacing a user's imported recovery code set:
+   * only the first caller in its window rotates. Hashed, so the counter
+   * store never holds a user id.
+   */
+  recoveryCodeRotation: (userId: string) => `rot:${sha256Hex(`rotation:${userId}`)}`,
   /** The scope of a second factor's lock, tier and attempts: never an account's own keys. */
   factor: (account: string) => `2fa:${account}`,
 } as const;
