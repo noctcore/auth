@@ -118,7 +118,9 @@ describe('a custom normaliser in the flows', () => {
     const value = email.trim().toLowerCase();
     const at = value.lastIndexOf('@');
 
-    return at > 0 ? `${value.slice(0, at).replace(/\+.*$/u, '')}${value.slice(at)}` : null;
+    const result = `${value.slice(0, at).replace(/\+.*$/u, '')}${value.slice(at)}`;
+
+    return at > 0 && /^[^\s,;:<>()"\\[\]@]+@[^\s,;:<>()"\\[\]@]+$/u.test(result) ? result : null;
   };
 
   it('is the one the flows and auth.normalizeEmail use', async () => {
@@ -151,7 +153,9 @@ describe('a custom normaliser that throws after startup', () => {
     const picky: EmailNormalizer = (email) => {
       if (email.includes('boom')) throw new TypeError(`cannot read ${email}`);
 
-      return email.includes('@') ? email.trim().toLowerCase() : null;
+      const value = email.trim().toLowerCase();
+
+      return /^[^\s,;:<>()"\\[\]@]+@[^\s,;:<>()"\\[\]@]+$/u.test(value) ? value : null;
     };
 
     const t = setup({ email: { normalize: picky }, logger });

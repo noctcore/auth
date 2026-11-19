@@ -16,6 +16,11 @@ export type NormalizedEmail = string & { readonly __normalizedEmail: true };
  * - `standard` (the default): trims, lowercases A to Z, refuses every
  *   non-ASCII character (answered `invalid_email`). Internationalised domains
  *   must arrive as punycode.
+ * - Every policy, built in or custom, refuses an address with whitespace, a
+ *   control character or an RFC 5322 special other than the one `@`
+ *   (`, ; : < > ( ) " \\ [ ]`): one address must stay one plain mailbox in a
+ *   mail header. The `unicode` policy also takes only a host name as the
+ *   domain (letter-digit-hyphen labels in its ASCII form).
  * - `ascii`: the same output as `standard`, but an address with a non-ASCII
  *   character is answered with its own code, `email_not_ascii`, so the app can
  *   tell the user to use an ASCII address instead of "invalid".
@@ -52,10 +57,23 @@ export type ResolvedEmailNormalizer = (input: unknown) => EmailVerdict;
 
 const MAX_LENGTH = 254;
 const MAX_LOCAL_LENGTH = 64;
+// A cheap bound on the raw input before any Unicode work, so a huge string is
+// refused without being normalised five times. Generous on purpose: a 254-byte
+// address can arrive decomposed (up to four code points per composed letter),
+// and the byte limit is applied again to the normalised result.
+const MAX_INPUT_LENGTH = 4 * MAX_LENGTH;
 // Printable ASCII only, no spaces: refuses control characters and every
 // non-ASCII character in the local part and the domain.
 const ALLOWED = /^[\x21-\x7e]+$/u;
 const NON_ASCII = /[^\p{ASCII}]/u;
+// What no address may contain, whichever policy produced it: control
+// characters, line separators and whitespace (the address goes into mail
+// headers), and every RFC 5322 special an address parser acts on besides the
+// one `@`: `,` and `;` (a list of recipients), `<` and `>` (a display name),
+// `:` (group syntax), `(` and `)` (a comment the parser strips), `"` and `\\`
+// (quoting) and `[` and `]` (a domain literal). Built-in and custom policies
+// share this one rule, so one accepted address is one plain mailbox.
+const UNSAFE_OUTPUT = /[\p{Cc}\p{White_Space}\u2028\u2029,;:<>()"\\[\]]/u;
 const INVALID: EmailVerdict = { ok: false, reason: 'invalid_email' };
 const NOT_ASCII: EmailVerdict = { ok: false, reason: 'email_not_ascii' };
 
@@ -98,7 +116,13 @@ function standardPolicy(input: unknown): EmailVerdict {
 
   const trimmed = input.trim();
 
-  if (trimmed.length === 0 || trimmed.length > MAX_LENGTH || !ALLOWED.test(trimmed)) return INVALID;
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > MAX_LENGTH ||
+    !ALLOWED.test(trimmed) ||
+    UNSAFE_OUTPUT.test(trimmed)
+  )
+    return INVALID;
 
   const value = asciiLower(trimmed);
   const at = value.indexOf('@');
@@ -216,10 +240,31 @@ function octets(value: string): number {
   return encoder.encode(value).length;
 }
 
-/** Whether the URL standard (UTS 46 processing) accepts the domain as a host. */
+// What would make the URL parser read more than a host: a port, a path, a
+// query, a fragment, credentials, an IPv6 literal or a percent escape.
+const HOST_DELIMITER = /[/\\?#:@%[\]]/u;
+
+// A DNS label in its ASCII form: letters, digits and hyphens, 1 to 63 of
+// them, not starting or ending with a hyphen.
+const LDH_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+
+/**
+ * Whether the domain is a plain host name: no port, path, query, fragment,
+ * credentials or percent escape, accepted by the URL standard (UTS 46
+ * processing), and every label of its ASCII form a letter-digit-hyphen label.
+ * An ASCII domain must come back from the parser exactly as given (so
+ * `127.1` for `127.0.0.1` is refused); a Unicode one comes back in punycode,
+ * and each of those labels is checked the same way.
+ */
 function isValidHost(domain: string): boolean {
+  if (HOST_DELIMITER.test(domain)) return false;
+
   try {
-    return new URL(`http://${domain}/`).hostname.length > 0;
+    const { hostname } = new URL(`http://${domain}/`);
+
+    if (!NON_ASCII.test(domain) && hostname !== domain) return false;
+
+    return hostname.split('.').every((label) => LDH_LABEL.test(label));
   } catch {
     return false;
   }
@@ -258,6 +303,7 @@ function unicodeOnce(trimmed: string): string | null {
   // superscripts) render like other letters but are distinct code points:
   // refused, so the stored form is the only spelling that reads that way.
   if (value.normalize('NFKC') !== value || octets(value) > MAX_LENGTH) return null;
+  if (UNSAFE_OUTPUT.test(value)) return null;
   if (LATIN_LOOKALIKE.test(value.normalize('NFD'))) return null;
 
   const labels = domain.split('.');
@@ -277,7 +323,11 @@ function unicodeOnce(trimmed: string): string | null {
 function unicodePolicy(input: unknown): EmailVerdict {
   if (typeof input !== 'string') return INVALID;
 
-  const value = unicodeOnce(input.trim());
+  const trimmed = input.trim();
+
+  if (trimmed.length > MAX_INPUT_LENGTH) return INVALID;
+
+  const value = unicodeOnce(trimmed);
 
   // Lowercasing can leave a string NFC would compose differently on a second
   // pass; only a fixed point is accepted, so the policy is idempotent by
@@ -290,11 +340,6 @@ const POLICIES: Readonly<Record<EmailPolicy, ResolvedEmailNormalizer>> = {
   ascii: asciiPolicy,
   unicode: unicodePolicy,
 };
-
-// What a custom normaliser's output may never contain: control characters,
-// line separators and whitespace (the address goes into mail headers), and
-// the commas and angle brackets that would make it a list of recipients.
-const UNSAFE_OUTPUT = /[\p{Cc}\p{White_Space}\u2028\u2029,<>]/u;
 
 /** One `@` with something on each side, nothing unsafe, at most 254 bytes. */
 function isUsableOutput(value: unknown): value is string {
@@ -364,7 +409,7 @@ function checkCustomNormalizer(normalize: EmailNormalizer): void {
 
     if (!isUsableOutput(first))
       throw new AuthConfigError(
-        `email.normalize must return null or an address with exactly one @, a non-empty local part and domain, no whitespace, commas, angle brackets or control characters, at most ${MAX_LENGTH} bytes (${describeSample(index)})`,
+        `email.normalize must return null or an address with exactly one @, a non-empty local part and domain, no whitespace, control characters or RFC 5322 specials (, ; : < > ( ) " \\ [ ]), at most ${MAX_LENGTH} bytes (${describeSample(index)})`,
       );
 
     if (second !== first)
@@ -390,8 +435,18 @@ function checkCustomNormalizer(normalize: EmailNormalizer): void {
   });
 
   for (const [one, other] of DISTINCT_MAILBOXES) {
-    const a = normalize(one);
-    const b = normalize(other);
+    let a: unknown;
+    let b: unknown;
+
+    try {
+      a = normalize(one);
+      b = normalize(other);
+    } catch (error) {
+      throw new AuthConfigError(
+        `email.normalize threw on ${one} or ${other}: return null for an address it refuses`,
+        { cause: error },
+      );
+    }
 
     if (a !== null && a === b)
       throw new AuthConfigError(
