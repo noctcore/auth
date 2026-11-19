@@ -97,7 +97,7 @@ export function renderAuthMail(event: AuthMailEvent): OutgoingMail {
       return {
         to: event.to,
         subject: 'A recovery code was used',
-        text: `A recovery code was used to sign in at ${event.at.toISOString()}. ${event.remaining} codes are left. If this was not you, reset your password now.`,
+        text: `A recovery code was used to sign in at ${event.at.toISOString()}. ${event.remaining === null ? '' : `${event.remaining} codes are left. `}If this was not you, reset your password now.`,
       };
 
     case 'invitation':
