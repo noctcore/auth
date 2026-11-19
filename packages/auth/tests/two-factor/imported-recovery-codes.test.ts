@@ -228,6 +228,46 @@ describe('imported recovery codes', () => {
     expect(recoveryCodes).toHaveLength(10);
   });
 
+  it('logs the type of a thrown value that is not an Error', async () => {
+    const logged: unknown[] = [];
+
+    const t = twoFactorApp(
+      {
+        importedRecoveryCodes: {
+          hash: () => {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error
+            throw legacy(0);
+          },
+        },
+      },
+      {
+        logger: {
+          warn: () => undefined,
+          error: (message: string, context?: Record<string, unknown>) =>
+            logged.push({ message, context }),
+        },
+      },
+    );
+
+    const { userId } = await t.enrolled();
+
+    await importLegacyCodes(t.store, userId);
+
+    expect(await viaChallenge(t, legacy(0))).toMatchObject({
+      ok: false,
+      reason: 'malformed_recovery_code',
+    });
+
+    expect(JSON.stringify(logged)).not.toContain(legacy(0));
+
+    expect(logged).toEqual([
+      {
+        message: 'twoFactor: importedRecoveryCodes.hash threw; read as no match',
+        context: { error: 'string' },
+      },
+    ]);
+  });
+
   it('accepts nothing imported without the option', async () => {
     const t = twoFactorApp();
     const { userId } = await t.enrolled();
