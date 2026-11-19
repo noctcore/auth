@@ -27,6 +27,7 @@ RequireFreshAuth
 RequireRole
 SessionCookies
 SessionGuard
+TwoFactorEnrollment
 configureTrustProxy
 describeRoutes
 trustedHopsFromEnv
@@ -79,7 +80,7 @@ NestAuth [interface]<U extends AuthUser = AuthUser>
     readonly context: { readonly users: { findById(id: string): Promise<U | null>; }; readonly clock: Clock; readonly logger: { error(message: string, context?: Record<string, unknown>): void; }; /** * The session cookie config. The CSRF, pre-session and blank session * cookies take their `SameSite` from it, per request `Origin`, exactly as * the session cookie does. Missing (a hand-made stand-in): `Lax`. */ readonly cookie?: SessionCookieConfig; }
     readonly cookieName: string
     requireFreshAuth(session: StoredSession<unknown>): AuthResult<void>
-    validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<StoredSession<unknown>>>
+    validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<ValidatedSession<unknown>>>
 Public [const]: () => CustomDecorator<string>
 RequireFreshAuth [const]: (maxAge?: Duration) => CustomDecorator<string>
 RequireRole [const]: (...roles: readonly string[]) => CustomDecorator<string>
@@ -91,6 +92,7 @@ RouteAccess [interface]
     readonly path: string
     readonly public: boolean
     readonly roles: readonly (readonly string[])[]
+    readonly twoFactorEnrollment: boolean
 SessionCookies [class]
     (new) (options: ResolvedOptions): SessionCookies
     private readonly options
@@ -100,6 +102,7 @@ SessionGuard [class]
     (new) (reflector: Reflector, options: ResolvedOptions): SessionGuard
     canActivate(context: ExecutionContext): Promise<boolean>
     private check
+    private checkEnrollmentOnly
     private checkFreshness
     private checkRoles
     private readonly options
@@ -108,6 +111,7 @@ trustedHopsFromEnv [function]: (env: TrustProxyEnv) => TrustedHops
 TrustProxyEnv [interface]
     readonly NODE_ENV?: string | undefined
     readonly TRUST_PROXY?: string | undefined
+TwoFactorEnrollment [const]: () => CustomDecorator<string>
 
 ## types reached through the exports (not exported by name)
 ResolvedOptions [interface]
