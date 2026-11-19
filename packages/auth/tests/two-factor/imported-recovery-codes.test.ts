@@ -20,6 +20,21 @@ import { MemoryTwoFactorStore } from '../../src/testing';
 
 const legacy = (i: number) => LEGACY_CODES[i] ?? '';
 
+/** A step-up on the session a passed challenge returned. */
+async function stepUpWith(
+  t: TwoFactorApp,
+  done: Awaited<ReturnType<typeof viaChallenge>>,
+  code: string,
+) {
+  if (!done.ok) throw new Error('expected a passed challenge');
+
+  return t.auth.twoFactor.stepUp({
+    session: done.value.session.session,
+    proof: { kind: 'recovery-code', code },
+    meta: meta(),
+  });
+}
+
 async function viaChallenge(t: TwoFactorApp, code: string) {
   return t.auth.twoFactor.verifyChallenge({
     challenge: (await t.challenged()).challenge,
@@ -65,19 +80,99 @@ describe('imported recovery codes', () => {
     expect((await viaChallenge(t, legacy(0))).ok).toBe(true);
 
     await Promise.resolve();
-    // Counted when the code was spent, before the session (and so the new set) existed.
-    expect(t.mailer.last('recovery-code-used')).toMatchObject({ to: EMAIL, userId, remaining: 2 });
+    // Reported once the set was replaced: the user holds the ten new codes, not the old two.
+    expect(t.mailer.last('recovery-code-used')).toMatchObject({ to: EMAIL, userId, remaining: 10 });
 
     expect(t.audit.events.find((e) => e.type === 'two_factor.recovery_code_used')?.data).toEqual({
-      remaining: 2,
+      remaining: 10,
       imported: true,
     });
 
     const types = t.audit.events.map((e) => e.type);
 
-    expect(types.lastIndexOf('two_factor.recovery_codes_generated')).toBeGreaterThan(
-      types.lastIndexOf('two_factor.recovery_code_used'),
+    expect(types.filter((type) => type === 'two_factor.recovery_code_used')).toHaveLength(1);
+
+    expect(types.lastIndexOf('two_factor.recovery_code_used')).toBeGreaterThan(
+      types.lastIndexOf('two_factor.recovery_codes_generated'),
     );
+  });
+
+  it('keeps the session when the set and its count both fail, and logs both', async () => {
+    const logged: string[] = [];
+
+    const t = twoFactorApp(
+      { importedRecoveryCodes: legacyScheme },
+      {
+        logger: {
+          warn: () => undefined,
+          error: (message: string) => logged.push(message),
+        },
+      },
+    );
+
+    const { userId } = await t.enrolled();
+
+    await importLegacyCodes(t.store, userId);
+
+    t.store.replaceRecoveryCodes = () => Promise.reject(new Error('store down'));
+    t.store.countRecoveryCodes = () => Promise.reject(new Error('store down'));
+
+    const done = await viaChallenge(t, legacy(0));
+
+    expect(done.ok && done.value.recoveryCodes).toBeNull();
+
+    expect(logged).toEqual([
+      'twoFactor: replacing an imported recovery code set failed',
+      'twoFactor: reporting a spent imported recovery code failed',
+    ]);
+  });
+
+  it('keeps the session and shows no codes when replacing the set fails, and reports the set that is left', async () => {
+    const logged: unknown[] = [];
+
+    const t = twoFactorApp(
+      { importedRecoveryCodes: legacyScheme },
+      {
+        logger: {
+          warn: () => undefined,
+          error: (message: string, context?: Record<string, unknown>) =>
+            logged.push({ message, context }),
+        },
+      },
+    );
+
+    const { userId } = await t.enrolled();
+
+    await importLegacyCodes(t.store, userId);
+
+    const replace = t.store.replaceRecoveryCodes.bind(t.store);
+
+    t.store.replaceRecoveryCodes = () => Promise.reject(new Error(`store down ${userId}`));
+
+    const done = await viaChallenge(t, legacy(0));
+
+    expect(done.ok).toBe(true);
+    expect(done.ok && done.value.recoveryCodes).toBeNull();
+
+    // The session row has its cookie: the caller got it and it validates.
+    const token = done.ok ? done.value.session.token : '';
+
+    expect((await t.auth.validateRequest({ token, meta: meta() })).ok).toBe(true);
+
+    expect(logged).toEqual([
+      {
+        message: 'twoFactor: replacing an imported recovery code set failed',
+        context: { error: 'Error' },
+      },
+    ]);
+
+    // Nothing was written, so the user is told of the two old codes still there.
+    await Promise.resolve();
+    expect(t.mailer.last('recovery-code-used')).toMatchObject({ userId, remaining: 2 });
+    expect(await t.store.countRecoveryCodes(userId)).toBe(2);
+
+    t.store.replaceRecoveryCodes = replace;
+    expect((await stepUpWith(t, done, legacy(1))).ok).toBe(true);
   });
 
   it('spends an imported code on a step-up without replacing the set (nothing could show new codes)', async () => {
@@ -91,6 +186,15 @@ describe('imported recovery codes', () => {
 
     expect((await stepUp(legacy(0))).ok).toBe(true);
     expect(await t.store.countRecoveryCodes(userId)).toBe(2);
+
+    // No rotation here, so the mail and the audit row count the old set.
+    await Promise.resolve();
+    expect(t.mailer.last('recovery-code-used')).toMatchObject({ userId, remaining: 2 });
+
+    expect(
+      t.audit.events.filter((e) => e.type === 'two_factor.recovery_code_used').pop()?.data,
+    ).toEqual({ remaining: 2, imported: true });
+
     expect(await stepUp(legacy(0))).toMatchObject({ ok: false, reason: 'wrong_recovery_code' });
     expect((await stepUp(legacy(1))).ok).toBe(true);
     expect(await t.store.countRecoveryCodes(userId)).toBe(1);
@@ -116,6 +220,9 @@ describe('imported recovery codes', () => {
 
     expect((await change(NEW_PASSWORD)).ok).toBe(true);
     expect(await t.store.countRecoveryCodes(userId)).toBe(2);
+
+    await Promise.resolve();
+    expect(t.mailer.last('recovery-code-used')).toMatchObject({ userId, remaining: 2 });
   });
 
   it('keeps the rest of the imported set and makes no new one when the session is refused after the code passed', async () => {
@@ -146,6 +253,10 @@ describe('imported recovery codes', () => {
     expect(await viaChallenge(t, legacy(0))).toMatchObject({ ok: false, reason: 'app_says_no' });
     expect(await t.store.countRecoveryCodes(userId)).toBe(2);
     expect(generated()).toBe(before);
+
+    // The spent code is still reported, with the set that is left.
+    await Promise.resolve();
+    expect(t.mailer.last('recovery-code-used')).toMatchObject({ userId, remaining: 2 });
 
     refuseNow = false;
 

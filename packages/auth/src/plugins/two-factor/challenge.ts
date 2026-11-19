@@ -20,7 +20,12 @@
  */
 import { confirmPending } from './enrollment';
 import { CHALLENGE_MAX_ATTEMPTS, CHALLENGE_PURPOSE, CHALLENGE_TTL_MS } from './options';
-import { checkProof, issueRecoveryCodes, type SecondFactorProof } from './proofs';
+import {
+  checkProof,
+  reportImportedCode,
+  rotateImportedSet,
+  type SecondFactorProof,
+} from './proofs';
 import { clientTag, factorAccount, limitIp, refused, type Runtime } from './runtime';
 import { recordStepUp } from './step-up';
 import { isTrustedDevice, trustDevice, type TrustedDevice } from './trusted-devices';
@@ -51,7 +56,10 @@ export interface PassedChallenge<A> {
   /**
    * Set when the challenge was an enrollment, or when it was passed with a
    * recovery code imported from the app's earlier scheme (the whole set was
-   * replaced): show these once.
+   * replaced): show these once. Null after an imported code when a
+   * concurrent login replaced the set instead (it shows the new codes) or
+   * the replacement failed (logged; the rest of the old set stays if the
+   * write did not land, and a new set can be generated from settings).
    */
   readonly recoveryCodes: string[] | null;
   /** Set when `rememberDevice` was asked for: set its cookie. */
@@ -154,6 +162,39 @@ export async function verifyChallenge<A>(
       meta,
     );
 
+  if (!proved.replaceImported || userId === null)
+    return pass<A>(runtime, input, { proved, userId, data, epoch });
+
+  // An imported code passed: it is reported once the set is settled, on every
+  // path from here, so the mail and the audit row count what the user holds.
+  let rotated: string[] | null = null;
+
+  try {
+    const passed = await pass<A>(runtime, input, { proved, userId, data, epoch });
+
+    rotated = passed.ok ? passed.value.recoveryCodes : null;
+
+    return passed;
+  } finally {
+    await reportImportedCode(runtime, userId, meta, rotated);
+  }
+}
+
+/** After a passed proof: spends the challenge, issues the session, rotates an imported set. */
+async function pass<A>(
+  runtime: Runtime,
+  input: VerifyChallengeInput,
+  passed: {
+    readonly proved: Extract<Proved, { ok: true }>;
+    readonly userId: string | null;
+    readonly data: Readonly<Record<string, string>>;
+    readonly epoch: number;
+  },
+): Promise<AuthResult<PassedChallenge<A>>> {
+  const { core } = runtime;
+  const { meta } = input;
+  const { proved, userId, data, epoch } = passed;
+
   const redeemed = await core.tokens.redeemLink(CHALLENGE_PURPOSE, input.challenge);
 
   if (redeemed.status !== 'valid')
@@ -204,9 +245,10 @@ export async function verifyChallenge<A>(
   );
 
   // Only now, with the challenge spent and the session issued: a refusal
-  // before this point leaves the rest of the imported set usable.
+  // before this point leaves the rest of the imported set usable. A failed
+  // rotation keeps the session (it exists already) and shows no codes.
   const recoveryCodes = proved.replaceImported
-    ? await issueRecoveryCodes(runtime, user.id, meta)
+    ? await rotateImportedSet(runtime, user.id, meta)
     : proved.recoveryCodes;
 
   return ok({ session, recoveryCodes, trustedDevice });
@@ -258,7 +300,14 @@ async function prove(
       : confirmed;
   }
 
-  const check = await checkProof(runtime, { userId, account, proof, blocked, meta });
+  const check = await checkProof(runtime, {
+    userId,
+    account,
+    proof,
+    blocked,
+    meta,
+    rotatesImported: true,
+  });
 
   return check.ok
     ? { ok: true, method: check.kind, recoveryCodes: null, replaceImported: check.imported }
