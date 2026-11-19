@@ -34,7 +34,6 @@
 import {
   AuthConfigError,
   fail,
-  sha256Hex,
   toMilliseconds,
   type AuthUser,
   type Duration,
@@ -349,23 +348,34 @@ export function pickRateLimitRule(
 const isExemptMeta = (meta: unknown): boolean =>
   (meta as RateLimitMeta | null | undefined)?.rateLimit === 'exempt';
 
+/** The core's `keyedHash` purpose for the user part of a counter key. */
+const USER_KEY_PURPOSE = 'auth-trpc/rate-limit-user';
+
 /**
- * The caller part of a counter key. A user is named by a hash of the user id
- * the core stored with the session, never anything the client sent, under
+ * The caller part of a counter key. A user is named by the core's keyed hash
+ * (an HMAC under a key derived from the server secret) of the user id the
+ * core stored with the session, never anything the client sent, under
  * `user:`, which no client IP (an address or `unknown`) can start with. So
- * the user and IP buckets never collide, the raw id stays out of the counter
- * store, and a cookie the core refused counts by IP like any anonymous call.
+ * the user and IP buckets never collide, a reader of the counter store cannot
+ * link a key to a guessable user id without the secret, and a cookie the core
+ * refused counts by IP like any anonymous call.
  */
-function callerOf(state: AuthState, keyBy: RateLimitKeyBy | undefined): string {
+function callerOf(
+  state: AuthState,
+  internals: Internals,
+  keyBy: RateLimitKeyBy | undefined,
+): string {
   const userId = keyBy === 'user' ? state.session?.userId : undefined;
 
-  return userId ? `user:${sha256Hex(`trpc-rate-limit:${userId}`)}` : state.meta.ip;
+  if (!userId) return state.meta.ip;
+
+  return `user:${internals.options.auth.context.keyedHash(USER_KEY_PURPOSE, userId)}`;
 }
 
 /**
  * Counts each call in a fixed window under a key of its own, so it never
  * shares a budget with a core door: `trpc:<name>:<ip>` by default, and
- * `trpc:<name>:user:<hash>` for a signed-in caller when `keyBy` is `user`.
+ * `trpc:<name>:user:<hmac>` for a signed-in caller when `keyBy` is `user`.
  * A procedure whose meta says `rateLimit: 'exempt'` is not counted. The core
  * flows already limit their own doors; use this on your procedures.
  */
@@ -383,10 +393,13 @@ export function rateLimitedBody(name: string, rule: TrpcRateLimitRule = DEFAULT_
     let hit;
 
     try {
-      hit = await auth.context.throttle.hit(`trpc:${name}:${callerOf(state, rule.keyBy)}`, {
-        limit,
-        window,
-      });
+      hit = await auth.context.throttle.hit(
+        `trpc:${name}:${callerOf(state, internals, rule.keyBy)}`,
+        {
+          limit,
+          window,
+        },
+      );
     } catch (error) {
       // Fail closed: no answer from the counter store is not a pass.
       auth.context.logger.error('auth-trpc rate limit could not count the call', {
