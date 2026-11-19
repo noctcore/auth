@@ -19,6 +19,17 @@ People reuse passwords. A table of stored passwords, or of fast hashes of them, 
 
 **Ask whether it has leaked.** The breach check sends only the first five characters of the password's SHA-1 to the Pwned Passwords range API and compares the rest locally, so the password never leaves the server. If the service is down, the check fails open: the password is accepted, a warning is logged and the `auth_breach_check{verdict="unavailable"}` metric goes up, so an outage is visible without blocking sign-ups.
 
+**Say why it was unavailable.** `pwnedPasswords()` returns a checker with a second method, `check(password)`, that checks exactly like calling it and returns the verdict with its cause, and the optional `onResult` option gets the same outcome for every check: clean, breached and unavailable. Use it to log or count, so a timeout shows apart from a changed response format. An unavailable outcome holds a `reason`:
+
+| `reason` | When |
+| --- | --- |
+| `timeout` | No answer within `timeoutMs`, while connecting or reading the body |
+| `network-error` | The request or the body read failed (DNS, TLS, a reset connection) |
+| `http-status` | An answer whose status is not a success; `status` holds the code |
+| `unparsable-body` | A success status with a body that is not range lines (an error page, a captive portal, a changed format) |
+
+An outcome never carries the password, its hash or the five-character prefix. The hook is not awaited and cannot change the verdict: the outcome it gets is frozen, and a hook that throws or rejects is reported to the checker's `logger` option (silent by default) with the error message only.
+
 **Bound the work.** Every door that hashes a password has a rate limit, and an input longer than the policy's maximum is never handed to the hasher at all.
 
 ## Where the package and the guide differ

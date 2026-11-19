@@ -41,7 +41,7 @@ Source: `password/policy.ts`, `password/breach.ts`, `create-auth.ts`.
 
 Length is counted in Unicode code points of the NFC form, so the same password typed on a phone and a desktop has the same length. There are no composition rules ("one digit, one symbol"): they push people toward predictable patterns, as NIST SP 800-63B notes, and the breach check does the job they were meant to do.
 
-`pwnedPasswords(options)` takes `timeoutMs` (default `3000`), `fetch`, `userAgent` (default `noctcore-auth`) and `baseUrl` (default the public range API). Only the first five hex characters of the password's SHA-1 leave the server.
+`pwnedPasswords(options)` takes `timeoutMs` (default `3000`), `fetch`, `userAgent` (default `noctcore-auth`) and `baseUrl` (default the public range API), `onResult` and `logger` (default silent). `onResult` is called with every outcome (`{ verdict, reason?, status? }`) to log or count it; it is not awaited, cannot change the verdict, and a throw is reported to `logger`. The checker's `check(password)` returns the same outcome. Outcomes never carry the password, its hash or the prefix. The reasons are listed in [Passwords](/auth/learn/passwords/). Only the first five hex characters of the password's SHA-1 leave the server.
 
 ## Session
 
