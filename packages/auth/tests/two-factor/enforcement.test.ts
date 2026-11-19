@@ -308,6 +308,20 @@ describe('a policy that fails', () => {
   });
 });
 
+describe('status', () => {
+  it('asks a custom enforcement function once per call', async () => {
+    const t = enforcedApp({ required: true, graceEndsAt: Date.now() + 60 * MINUTE });
+    const { session } = await t.signedIn();
+
+    t.policy.calls = 0;
+
+    const status = await t.auth.twoFactor.status(session);
+
+    expect(t.policy.calls).toBe(1);
+    expect(status).toMatchObject({ ok: true, value: { required: true } });
+  });
+});
+
 describe('sweepUnenrolled', () => {
   /** Signs up and in a user per email, enrolling those in `enrolled`. */
   async function population(t: ReturnType<typeof enforcedApp>) {
@@ -378,6 +392,37 @@ describe('sweepUnenrolled', () => {
         (e) => e.type === 'sessions.revoked' && e.reason === 'two-factor-required',
       ),
     ).toBe(true);
+  });
+
+  it('keeps the sessions of a user who enrolled after the first read', async () => {
+    const t = enforcedApp({ required: true });
+    const signed = await t.signedIn();
+    const real = t.store.findFactor.bind(t.store);
+    let reads = 0;
+
+    // The first read sees no factor; by the next one the user has enrolled.
+    t.store.findFactor = async (userId) =>
+      ++reads === 1 ? real(userId) : ({ confirmed: true } as never);
+
+    const result = await t.auth.twoFactor.sweepUnenrolled({ userIds: [signed.session.userId] });
+
+    expect(result).toEqual({ checked: 1, revoked: [], failed: 0 });
+    expect(reads).toBe(2);
+    expect(await t.sessionOf(signed.token)).not.toBeNull();
+  });
+
+  it('keeps the sessions of a user whose rule changed after the first read', async () => {
+    const t = enforcedApp({ required: true });
+    const signed = await t.signedIn();
+    let asked = 0;
+
+    t.policy.current = () => (++asked === 1 ? { required: true } : { required: false });
+
+    const result = await t.auth.twoFactor.sweepUnenrolled({ userIds: [signed.session.userId] });
+
+    expect(result).toEqual({ checked: 1, revoked: [], failed: 0 });
+    expect(asked).toBe(2);
+    expect(await t.sessionOf(signed.token)).not.toBeNull();
   });
 
   it('takes a plain array, and does nothing when enforcement is off', async () => {

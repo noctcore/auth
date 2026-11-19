@@ -12,7 +12,7 @@
  *
  * Guide: Learn, "Second factors"; Build, "Two-factor".
  */
-import { isRequired, standingOfUser } from './enforcement';
+import { assessUser, isRequired } from './enforcement';
 import { issueRecoveryCodes } from './proofs';
 import { refused, type Runtime } from './runtime';
 import { requireStepUp } from './step-up';
@@ -47,12 +47,14 @@ export async function status<A>(
 
   const factor = await runtime.store.findFactor(user.id);
   const enabled = factor?.confirmed === true;
+  // One answer from the policy, so `required` and `enforcement` agree.
+  const { required, standing } = await assessUser(runtime, user);
 
   return ok({
     enabled,
     pending: factor?.confirmed === false,
-    required: await isRequired(runtime, user),
-    enforcement: enabled ? null : await standingOfUser(runtime, user),
+    required,
+    enforcement: enabled ? null : standing,
     recoveryCodesRemaining: enabled ? await runtime.store.countRecoveryCodes(user.id) : 0,
   });
 }
