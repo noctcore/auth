@@ -286,6 +286,8 @@ Source: `session/legacy-sessions.ts`. Wraps a session store so sessions from the
 | `clock` | system clock | For tests. |
 | `logger` | none | Told about a malformed old session it dropped, with the user id only. |
 
+While the wrapper is installed, a token neither store knows is refused with the reason `session_adopting`, since another request may still be adopting it; `clearsSessionCookie(result)` is false for that refusal, so the adapters keep its cookie.
+
 ### `prismaStores(options)`
 
 Source: `packages/auth-prisma/src/user-store.ts`, `index.ts`.
