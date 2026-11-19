@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { adoptLegacySessions, AuthConfigError, type LegacySession } from '../../src';
+import { adoptLegacySessions, AuthConfigError, systemClock, type LegacySession } from '../../src';
 import { sha256Hex } from '../../src/crypto/hash';
 import { generateToken } from '../../src/crypto/random';
 import type { SessionStore } from '../../src/ports/stores';
@@ -269,6 +269,21 @@ describe('adoptLegacySessions', () => {
     legacy.rows.set(id, legacyRow('user-1', clock.now(), { idleTimeoutMs: -1 }));
 
     expect(await store.get(id)).toBeNull();
+  });
+
+  it('reads the system clock when none is given', async () => {
+    const legacy = legacyStore();
+
+    const store = adoptLegacySessions(new MemorySessionStore(systemClock), {
+      take: legacy.take,
+      maxTtl: '30d',
+    });
+
+    const id = sha256Hex(generateToken());
+
+    legacy.rows.set(id, legacyRow('user-1', Date.now()));
+
+    expect((await store.get(id))?.id).toBe(id);
   });
 
   it('refuses a maxTtl of zero', () => {
