@@ -111,9 +111,9 @@ export class CsrfMiddleware implements NestMiddleware {
     // Every cookie set here travels with the session cookie, so takes its SameSite.
     const sameSite = sameSiteFor(req, this.options);
 
-    // A token the core refused is cleared, so the browser stops sending it.
-    if (state.token !== null && state.session === null)
-      appendCookie(res, blankSessionCookie(this.options, sameSite));
+    // A token the core refused for good is cleared, so the browser stops
+    // sending it. One another request may still be adopting is kept.
+    if (state.clearCookie) appendCookie(res, blankSessionCookie(this.options, sameSite));
 
     if (!isSafeMethod(method)) {
       const secFetchSite = header(req, 'sec-fetch-site');
