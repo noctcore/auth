@@ -21,7 +21,9 @@
  * app's way on every path, and tried under the imported prefix when the
  * plugin's own hash did not match. The check reports an imported code; the
  * login challenge replaces the whole set once its session is issued, so the
- * old hashes leave the store. A hash that throws is read as no match.
+ * old hashes leave the store. Only one login rotates a set (a claim on a
+ * counter), so two concurrent logins with two imported codes never leave a
+ * set nobody was shown. A hash that throws is read as no match.
  *
  * Guide: Learn, "Second factors".
  */
@@ -32,6 +34,7 @@ import {
   normalizeRecoveryCode,
   RECOVERY_CODE_PURPOSE,
 } from './recovery-codes';
+import { CHALLENGE_TTL_MS } from './options';
 import type { Runtime } from './runtime';
 import { matchTotp } from './totp';
 import { NO_SUCH_USER_ID } from '../../ports/stores';
@@ -71,6 +74,12 @@ export interface ProofRequest {
   /** A refusal decided before the check: applied after the reads, before any write. */
   readonly blocked: string | null;
   readonly meta: RequestMeta;
+  /**
+   * The login challenge: it replaces the set when an imported code passes,
+   * and reports that code itself (`reportImportedCode`) once it knows the
+   * set the user ends with, so the mail and the audit row count that set.
+   */
+  readonly rotatesImported?: boolean;
 }
 
 /** Checks a proof against the user's confirmed factor. */
@@ -109,7 +118,9 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
     if (!consumed && !consumedImported) return failure('wrong_recovery_code');
 
     imported = consumedImported;
-    await recoveryCodeUsed(runtime, owner, request.meta, imported);
+
+    if (!(imported && request.rotatesImported === true))
+      await recoveryCodeUsed(runtime, owner, request.meta, imported);
   } else {
     // A pending factor's secret is decrypted like a confirmed one; only `owner` decides.
     const step = await totpStep(runtime, factor, request.proof.code);
@@ -153,7 +164,7 @@ async function importedHash(
     hash = await scheme.hash(code, { userId });
   } catch (error) {
     runtime.core.logger.error('twoFactor: importedRecoveryCodes.hash threw; read as no match', {
-      error: error instanceof Error ? error.name : typeof error,
+      error: errorName(error),
     });
 
     return null;
@@ -162,6 +173,11 @@ async function importedHash(
   return typeof hash === 'string' && hash.length > 0
     ? `${IMPORTED_RECOVERY_CODE_PREFIX}${hash}`
     : null;
+}
+
+/** A caught error for a log field: its name only, since a message could quote a code or a hash. */
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
 }
 
 /** A new set of recovery codes, replacing every old one in one write. Returned once, never stored. */
@@ -177,6 +193,57 @@ export async function issueRecoveryCodes(
   await runtime.core.emit({ type: 'two_factor.recovery_codes_generated', userId }, meta);
 
   return codes;
+}
+
+/**
+ * After a login passed with an imported code: replaces the user's whole set
+ * with new codes and returns them to show once. Returns null, keeping the
+ * session, when another login already claimed this set's rotation (two
+ * logins racing with two imported codes: the other one shows the live set)
+ * or when the claim or the write failed (logged).
+ * The claim lasts a challenge's lifetime, longer than any login that passed
+ * a code before the winner's write can still be on its way to its own.
+ */
+export async function rotateImportedSet(
+  runtime: Runtime,
+  userId: string,
+  meta: RequestMeta,
+): Promise<string[] | null> {
+  try {
+    const claim = await runtime.core.throttle.hit(`two-factor-rotation:${userId}`, {
+      limit: 1,
+      window: `${CHALLENGE_TTL_MS}ms`,
+    });
+
+    return claim.allowed ? await issueRecoveryCodes(runtime, userId, meta) : null;
+  } catch (error) {
+    runtime.core.logger.error('twoFactor: replacing an imported recovery code set failed', {
+      error: errorName(error),
+    });
+
+    return null;
+  }
+}
+
+/**
+ * Reports an imported code the login challenge spent, once the set is
+ * settled: `rotated` is the new set when this login replaced it, so the
+ * owner is told how many codes they now hold. Runs after the session may
+ * exist, so a failure is logged instead of thrown.
+ */
+export async function reportImportedCode(
+  runtime: Runtime,
+  userId: string,
+  meta: RequestMeta,
+  rotated: readonly string[] | null,
+): Promise<void> {
+  try {
+    await recoveryCodeUsed(runtime, userId, meta, true, rotated?.length);
+  } catch (error) {
+    runtime.core.logger.error('twoFactor: reporting a spent imported recovery code failed', {
+      error: errorName(error),
+    });
+  }
 }
 
 /**
@@ -198,22 +265,24 @@ export async function totpStep(
 
 /**
  * A recovery code was spent: the audit row (`imported` when it came from the
- * app's earlier scheme), and a mail to the owner saying how many are left.
+ * app's earlier scheme), and a mail to the owner saying how many are left:
+ * `remaining` when the caller knows it (a set it just made), else the count.
  */
 async function recoveryCodeUsed(
   runtime: Runtime,
   userId: string,
   meta: RequestMeta,
   imported: boolean,
+  remaining?: number,
 ): Promise<void> {
-  const remaining = await runtime.store.countRecoveryCodes(userId);
+  const left = remaining ?? (await runtime.store.countRecoveryCodes(userId));
   const user = await runtime.core.users.findById(userId);
 
   await runtime.core.emit(
     {
       type: 'two_factor.recovery_code_used',
       userId,
-      data: imported ? { remaining, imported: true } : { remaining },
+      data: imported ? { remaining: left, imported: true } : { remaining: left },
     },
     meta,
   );
@@ -224,7 +293,7 @@ async function recoveryCodeUsed(
     type: 'recovery-code-used',
     to: user.email,
     userId,
-    remaining,
+    remaining: left,
     at: new Date(runtime.core.clock.now()),
   });
 }

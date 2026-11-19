@@ -21,8 +21,18 @@ export interface ImportedRecoveryCodes {
    * deterministic: a per-code salted hash (bcrypt, Argon2) cannot be looked
    * up, so those users re-enroll instead. `userId` is there for a scheme
    * that salted per user. The input is a string of at most 64 characters.
+   *
+   * It runs on every recovery-code proof, also when the check is already
+   * going to refuse (a blocked or locked challenge, an unknown user), so the
+   * work is the same; there `userId` is `NO_SUCH_USER_ID`, an id no store
+   * issues. Do not assume the user exists, and do not look anything up that
+   * fails for an unknown id.
+   *
    * It should not throw: a throw is logged (the error's name only) and read
-   * as no match, so the proof is refused like a wrong code.
+   * as no match, so the proof is refused like a wrong code. The public answer
+   * is the same either way, but the audit reason differs: when the input is
+   * not in the plugin's own code format either, the refusal is recorded as
+   * `malformed_recovery_code`, not `wrong_recovery_code`.
    */
   readonly hash: (
     code: string,
@@ -87,8 +97,11 @@ export interface TwoFactorOptions {
   /**
    * Accept recovery codes imported from the app's earlier scheme, each once.
    * Passing the login challenge with one replaces the user's whole set with
-   * new codes once the session is issued, which
-   * the challenge returns. Default: none accepted.
+   * new codes once the session is issued, which the challenge returns; the
+   * mail and the audit row then count the new set. Of two logins racing with
+   * two imported codes only one replaces the set and shows it; the other
+   * gets its session with `recoveryCodes: null`. A failed replacement also
+   * keeps the session and returns null (logged). Default: none accepted.
    */
   readonly importedRecoveryCodes?: ImportedRecoveryCodes;
 }
