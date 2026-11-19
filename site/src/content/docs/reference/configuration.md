@@ -162,15 +162,15 @@ Each rule is `{ limit, window }`; a part you leave out keeps its default.
 | `login` | 10 per `'1m'` | IP |
 | `register` | 10 per `'1m'` | IP |
 | `password-reset-request` | 10 per `'1m'` | IP |
-| `password-reset-mail` | 3 per `'1h'` | user: reset mails one account can receive |
+| `password-reset-mail` | 3 per `'1h'` | user: reset mails one account can receive. Spent when the mail is handed over, so a mail dropped or failed afterwards still counts (see [Mail](/auth/build/mail/#a-dropped-or-failed-mail-still-spends-the-budget)) |
 | `password-reset` | 10 per `'1m'` | IP |
 | `password-reset-code` | 10 per `'1m'` | IP |
 | `password-reset-code-address` | 5 per `'15m'` | address: code guesses for one email from every IP |
 | `email-verification` | 10 per `'1m'` | IP |
-| `email-verification-request` | 3 per `'1h'` | user: verification mails one account can request |
+| `email-verification-request` | 3 per `'1h'` | user: verification mails one account can request. Spent before the mail is handed over, like `password-reset-mail` |
 | `password-change` | 5 per `'5m'` | user |
 | `reauthenticate` | 5 per `'5m'` | user |
-| `email-change-request` | 3 per `'1h'` | user: email change requests one account can make |
+| `email-change-request` | 3 per `'1h'` | user: email change requests one account can make. Spent before the mail is handed over, like `password-reset-mail` |
 | `email-change-address` | 3 per `'1h'` | address: email change requests naming one new address, from every account |
 | `email-change` | 10 per `'1m'` | IP: confirming an email change |
 | `email-change-revert` | 10 per `'1m'` | IP: using a revert link |
@@ -191,7 +191,7 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 | `metrics` | no-op | Counters such as breach check outages and door refusals. Labels never carry user input. |
 | `background.waitUntil` | none | Handed every background task's promise (mail, lock notices, a reset job without `enqueue`) as it starts, so a runtime that freezes after the response keeps it alive. See [Mail](/auth/build/mail/#keeping-sends-alive-and-bounding-them). `auth.flush()` waits for the same tasks on shutdown. |
 | `background.timeout` | none | Stop waiting on a task after this long; logged and counted as `timed_out`. The task is not cancelled. |
-| `background.maxPending` | none | While this many tasks are still running (timed out or not), new ones are dropped, logged and counted as `dropped`. Bounds memory when a mailer hangs. |
+| `background.maxPending` | none | While this many tasks are still running (timed out or not), new ones are dropped, logged and counted as `dropped`. Bounds memory when a mailer hangs. A dropped mail still spends the per-account mail budget of its door; see [Mail](/auth/build/mail/#a-dropped-or-failed-mail-still-spends-the-budget). |
 | `clock` | system clock | Injectable so tests move time instead of sleeping. |
 | `random` | `crypto.getRandomValues` | Injectable for tests. |
 
