@@ -23,8 +23,13 @@ export interface SessionOptions<A> {
   readonly attributes?: AttributeSchema<A>;
 }
 
+/**
+ * Why a token was refused. `adopting` is `unknown` behind
+ * `adoptLegacySessions`: no store knows the token, but another request may
+ * still be adopting it, so its cookie is kept (`clearsSessionCookie`).
+ */
 export type SessionRefusal =
-  'malformed' | 'unknown' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked';
+  'malformed' | 'unknown' | 'adopting' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked';
 
 export interface MintInput<A> {
   readonly userId: string;
