@@ -41,13 +41,20 @@ const SPELLINGS = ['zo\u00E9@example.com', 'z\u00F6e@example.com', 'zo\u00EB@exa
 
 function insensitiveApp(normalize?: 'standard' | 'unicode') {
   const users = new InsensitiveUserStore();
+  const warnings: Array<[string, Record<string, unknown> | undefined]> = [];
+
+  const logger = {
+    warn: (message: string, context?: Record<string, unknown>) => warnings.push([message, context]),
+    error: () => undefined,
+  };
 
   const t = setup({
     ...(normalize ? { email: { normalize } } : {}),
     stores: { ...memoryStores(), users },
+    logger,
   } as Parameters<typeof setup>[0]);
 
-  return { ...t, users };
+  return { ...t, users, warnings };
 }
 
 describe('a store that matches addresses case- and accent-insensitively', () => {
@@ -79,6 +86,30 @@ describe('a store that matches addresses case- and accent-insensitively', () => 
     expect((await t.auth.context.findCredentialByEmail(OWNER as NormalizedEmail))?.email).toBe(
       OWNER,
     );
+  });
+
+  it('logs the discarded row by user id, never by address', async () => {
+    const t = insensitiveApp('unicode');
+    const { session } = await t.signedInUser(OWNER);
+    const { userId } = session;
+    const before = t.warnings.length;
+
+    await t.auth.login({ email: SPELLINGS[0] ?? '', password: PASSWORD, meta: meta() });
+
+    const lines = t.warnings.slice(before);
+
+    expect(lines).toEqual([
+      [
+        'User store returned a row whose stored email is not the normalised address; treating it as not found',
+        { userId },
+      ],
+    ]);
+
+    expect(JSON.stringify(lines)).not.toMatch(/@/u);
+
+    // The address as stored finds the row with nothing logged.
+    await t.auth.login({ email: OWNER, password: PASSWORD, meta: meta() });
+    expect(t.warnings).toHaveLength(before + 1);
   });
 
   it('mails no reset to the account for another spelling', async () => {
