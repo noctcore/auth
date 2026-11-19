@@ -4,10 +4,11 @@
  * invitation becoming a way to take over an account or to learn which
  * addresses have one.
  *
- * Tokens are 256 random bits, stored only as a keyed hash, single use (spent
- * atomically by the store) and bound to the invited address. Creating needs a
- * session and the app's `authorize`; accepting needs the invited address,
- * verified. The plugin never scopes data: `onAccept` says what an accepted
+ * Tokens are 256 random bits, stored only as a SHA-256 (so they survive a
+ * rotation of the server secret), single use (spent atomically by the store)
+ * and bound to the invited address. Creating needs a session and the app's
+ * `authorize`; accepting needs the invited address, verified, and a session
+ * of its account unless `acceptWithoutSession` is on. The plugin never scopes data: `onAccept` says what an accepted
  * invitation means.
  *
  * ```ts
@@ -115,7 +116,11 @@ export function invitations<A = Record<string, never>>(options: InvitationsOptio
         list: (input: ListInvitationsInput<A>) => listInvitations(r, input),
         /** Withdraws a pending invitation. */
         revoke: (input: RevokeInvitationInput<A>) => revokeInvitation(r, input),
-        /** Accepts into the signed-in account, whose verified address must be the invited one. */
+        /**
+         * Accepts into the account with the invited, verified address: the
+         * signed-in one, or with `acceptWithoutSession` and `session: null`
+         * the one that holds the address. Issues no session.
+         */
         accept: (input: AcceptInvitationInput<A>) => acceptInvitation(r, input),
         /** Creates the account for an address that has none, and signs it in. */
         register: (input: RegisterByInvitationInput) => registerByInvitation<A>(r, input),
