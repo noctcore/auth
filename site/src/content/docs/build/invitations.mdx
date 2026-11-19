@@ -11,10 +11,10 @@ The invitations plugin, `@noctcore/auth/invitations`, sends an invitation to an 
 
 ## What it guarantees
 
-- **The token is a bearer secret, kept like one.** 256 random bits from the CSPRNG, mailed once, stored only as an HMAC under a key derived from your `secret` for invitations alone. A leaked table holds no usable link. The same key makes rotation matter: rotating `secret` voids every pending invitation, and each mailed link answers `invalid_token` (`unknown_token` in the audit trail, so a spike of them after a rotation is expected). Revoke and invite again, or ask the inviter to resend.
+- **The token is a bearer secret, kept like one.** 256 random bits from the CSPRNG, mailed once, stored only as its SHA-256. A leaked table holds no usable link. The hash uses no key, so rotating your `secret` leaves pending invitations working. Only invitations created before 0.6 are voided by a rotation: they were stored as an HMAC under a key derived from `secret`, and the plugin finds them through a fallback lookup under that old hash until they expire (30 days after the upgrade at most). After a rotation each of those answers `invalid_token` (`unknown_token` in the audit trail); revoke and invite again.
 - **One invitation, one accept.** Accepting spends the invitation through the store's atomic `consume`: of many concurrent accepts, from any number of browsers, exactly one runs `onAccept`. The conformance suite checks it for every store, against Postgres and Redis for the shipped ones.
-- **Only the invited address, verified.** `accept` needs a session whose account's address is verified and equals the invited one, both normalised. An unverified account, the kind an attacker registers ahead of the victim, never collects the invitation, and nothing is spent.
-- **No second factor is skipped.** `accept` issues no session. `register` creates only a new account and issues its session through the core's one seam with `via: 'invitation'`, so the two-factor plugin refuses it when the app requires a factor.
+- **Only the invited address, verified.** `accept` needs a session whose account's address is verified and equals the invited one, both normalised. With `acceptWithoutSession` on, `session: null` is accepted too, and the account is the one holding the invited address, under the same rule. An unverified account, the kind an attacker registers ahead of the victim, never collects the invitation, and nothing is spent.
+- **No second factor is skipped.** `accept` issues no session, with or without one passed in. `register` creates only a new account and issues its session through the core's one seam with `via: 'invitation'`, so the two-factor plugin refuses it when the app requires a factor.
 - **Creating is never open.** The plugin refuses to start without `authorize`, and `create`, `list` and `revoke` ask it with the acting user read from the user store. Accepting asks it again for the inviter (unless you turn `recheckInviter` off), so an invitation from someone who lost the right, or the account, is withdrawn instead of accepted.
 - **Nobody learns which addresses have accounts from `create`.** It never reads the invited address from the user store: its answer, its mail and its store calls are the same for every address. Junk, unknown and expired tokens all get `invalid_token`.
 - **Invitations cannot flood a mailbox.** One live invitation per scope and address: a repeat writes nothing and sends no mail. Creates are also limited per address (across scopes), per inviter and per IP.
@@ -43,6 +43,7 @@ Your own store must pass `invitationStoreConformance` (see [Writing a store adap
 | `url` | required | `(token) => string`, the link in the mail. Must be absolute and carry the token in the path or the fragment; a token in the query string is refused at startup. Serve the page with `Referrer-Policy: no-referrer`. |
 | `ttl` | `'7d'` | At most 30 days. |
 | `recheckInviter` | `true` | Ask `authorize` again for the inviter on accept. |
+| `acceptWithoutSession` | `false` | Let `accept` take `session: null`: the link alone then joins the account holding the invited, verified address, and signs nobody in. See [Accepting without a session](#accepting-without-a-session). Anything but `true` or `false` is refused at startup. |
 | `perAddress` | 3 per day | Invitations one address receives, across scopes, keyed by a keyed hash of the address. |
 | `perInviter` | 20 per hour | |
 | `perIp` | 10 per minute | Creates, accepts and registrations per client IP, counted together. |
@@ -58,12 +59,22 @@ The mail is the `invitation` event: `to`, `scope`, `inviterId`, `url` and `expir
 | `create({ session, scope, email, payload?, meta })` | `{ invitation }`, or `{ invitation: null }` when one is already pending | `invalid_email` (or `email_not_ascii` under the `ascii` email policy), `forbidden`, `rate_limited` |
 | `list({ session, scope, meta })` | the scope's live invitations | `forbidden` |
 | `revoke({ session, scope, id, meta })` | | `forbidden` (also for an unknown id) |
-| `accept({ session, token, meta })` | the invitation | `invalid_token`, `forbidden`, `rate_limited` |
+| `accept({ session, token, meta })` | the invitation | `invalid_token`, `forbidden`, `rate_limited`. `session` may be `null` only with `acceptWithoutSession` on; otherwise `forbidden` |
 | `register({ token, password, meta })` | `{ invitation, session }` | `invalid_token`, `email_in_use`, the password policy's codes, `rate_limited`, and any refusal of the session (for example `second_factor_required`) |
 
-The page at your `url` reads the token from the fragment. A signed-in visitor posts it to your accept route; a signed-out one chooses between signing in (then accept) and creating an account (register). `register` checks the password against the policy before it looks up the address, marks the new address verified (the token proved the mailbox), runs your `afterRegister` hooks, then `onAccept`, then issues the session. If the session is refused, the account and the membership already exist: the user signs in normally.
+The page at your `url` reads the token from the fragment. A signed-in visitor posts it to your accept route; a signed-out one chooses between signing in (then accept) and creating an account (register), or, with `acceptWithoutSession` on, accepts straight away. `register` checks the password against the policy before it looks up the address, marks the new address verified (the token proved the mailbox), runs your `afterRegister` hooks, then `onAccept`, then issues the session. If the session is refused, the account and the membership already exist: the user signs in normally.
 
-Every outcome writes an audit row: `invitation.created`, `invitation.deduplicated`, `invitation.revoked`, `invitation.accepted` (with `created` in `data`), `invitation.refused` (the reason names which check failed), and `register.created` for an account made by `register`.
+Every outcome writes an audit row: `invitation.created`, `invitation.deduplicated`, `invitation.revoked`, `invitation.accepted` (with `created` in `data`, and `withoutSession: true` for an accept with no session), `invitation.refused` (the reason names which check failed), and `register.created` for an account made by `register`.
+
+## Accepting without a session
+
+By default the page at your `url` sends a signed-out visitor to sign in before accepting. Turn `acceptWithoutSession` on and your accept route can pass `session: null` instead: the token, which only the invited mailbox received, then joins the account that holds the invited address. The rules stay the same: that address must be verified (an unverified account is refused with `forbidden` and nothing is spent), the inviter is checked again, and no session is issued, so the visitor still signs in normally afterwards and a second factor is never skipped. An address with no account answers `forbidden` and leaves the invitation for `register`. A locked-out account is attached too: the accept checks no password and issues no session, so a lockout does not stop it.
+
+The trade-off is that the mailbox alone now decides, without the account's password: anyone who reads a forwarded or leaked link can attach the account to the inviting organisation. Keep the token in the fragment and accept only on a POST from a click, so a mail scanner that fetches the link accepts nothing. Leave the option off if joining an organisation should need the account holder's own sign-in.
+
+## Moving an account to another organisation
+
+Nothing in the plugin ties an account to one organisation: accepting into an account that already belongs to another one works like any accept. Whether that adds a second seat or moves the account is your `onAccept`: an app with one organisation per account removes the old membership there and adds the new one. If your sessions carry the organisation (in a session attribute, say), end them after a move so no session keeps the old one, for example with the membership plugin's `revokeSessionsOnChange` or your own call to revoke the user's sessions. With `acceptWithoutSession` on, such a move happens on the strength of the mailbox alone; decide whether that is acceptable for your app before turning it on.
 
 ## When the inviter changes
 
