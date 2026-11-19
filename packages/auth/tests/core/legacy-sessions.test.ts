@@ -26,6 +26,22 @@ function legacyStore() {
   };
 }
 
+/** A session store whose `create` lands `ms` later, like a write on a database round trip. */
+function slowCreates(store: MemorySessionStore, ms: number): SessionStore {
+  return {
+    create: async (session, ttlMs) => {
+      await new Promise<void>((resolve) => setTimeout(resolve, ms));
+      await store.create(session, ttlMs);
+    },
+    get: (id) => store.get(id),
+    touch: (session) => store.touch(session),
+    delete: (userId, ids) => store.delete(userId, ids),
+    listByUser: (userId) => store.listByUser(userId),
+    getEpoch: (userId) => store.getEpoch(userId),
+    bumpEpoch: (userId) => store.bumpEpoch(userId),
+  };
+}
+
 function legacyRow(userId: string, now: number, overrides: Partial<LegacySession> = {}) {
   return {
     userId,
@@ -197,6 +213,42 @@ describe('adoptLegacySessions', () => {
     expect(a?.id).toBe(id);
     expect(b?.id).toBe(id);
     expect(await inner.listByUser('user-1')).toHaveLength(1);
+  });
+
+  it('lets the losing request see the session a slow store is still writing, on another instance', async () => {
+    const clock = manualClock(Date.UTC(2026, 0, 1));
+    const inner = slowCreates(new MemorySessionStore(clock), 10);
+    const legacy = legacyStore();
+    // Two app instances over the same stores, as two processes would be.
+    const first = adoptLegacySessions(inner, { take: legacy.take, maxTtl: '30d', clock });
+    const second = adoptLegacySessions(inner, { take: legacy.take, maxTtl: '30d', clock });
+    const id = sha256Hex(generateToken());
+
+    legacy.rows.set(id, legacyRow('user-1', clock.now()));
+
+    const [a, b] = await Promise.all([first.get(id), second.get(id)]);
+
+    expect(a?.id).toBe(id);
+    expect(b?.id).toBe(id);
+    expect(legacy.take).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when the winning write is slower than the wait', async () => {
+    const clock = manualClock(Date.UTC(2026, 0, 1));
+    const inner = slowCreates(new MemorySessionStore(clock), 300);
+    const legacy = legacyStore();
+    const first = adoptLegacySessions(inner, { take: legacy.take, maxTtl: '30d', clock });
+    const second = adoptLegacySessions(inner, { take: legacy.take, maxTtl: '30d', clock });
+    const id = sha256Hex(generateToken());
+
+    legacy.rows.set(id, legacyRow('user-1', clock.now()));
+
+    const [a, b] = await Promise.all([first.get(id), second.get(id)]);
+
+    expect(a?.id).toBe(id);
+    expect(b).toBeNull();
+    // The next request finds the session the winner wrote.
+    expect((await second.get(id))?.id).toBe(id);
   });
 
   it('answers null for a token no store knows', async () => {

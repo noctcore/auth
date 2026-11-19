@@ -9,7 +9,9 @@
  * - `take` removes the legacy record as it reads it, before the package
  *   session is written. A sign-out or revocation of the adopted session cannot
  *   be undone by the legacy record being adopted again, and of two requests
- *   racing on one cookie only one adopts it.
+ *   racing on one cookie only one adopts it. The other looks for the session
+ *   the first is writing, once more after a short wait, and is refused if it
+ *   is still missing.
  * - The adopted session is stamped with epoch 0, the epoch of a user whose
  *   sessions were never revoked. A sign-out everywhere or a password change
  *   after the switch bumps the epoch, so legacy sessions the user never
@@ -34,7 +36,11 @@ import { AuthConfigError } from '../shared/errors';
 export interface LegacySession {
   readonly userId: string;
   readonly createdAt: number;
-  /** When the user last proved a credential; `createdAt` when the legacy store did not record it. */
+  /**
+   * When the user last proved a credential: it grants fresh-auth standing
+   * (`requireFreshAuth`). Report `createdAt` unless the legacy store recorded
+   * a later sign-in or re-authentication.
+   */
   readonly authenticatedAt: number;
   readonly lastActiveAt: number;
   readonly expiresAt: number;
@@ -66,6 +72,13 @@ export interface LegacySessionOptions {
   readonly clock?: Clock;
   readonly logger?: Logger;
 }
+
+/**
+ * How long a request that lost the race for a legacy record waits before its
+ * last look for the session the winner is writing. Every cookie neither store
+ * knows pays it once while the wrapper is in place.
+ */
+const RACE_WAIT_MS = 50;
 
 const isTime = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -116,9 +129,19 @@ export function adoptLegacySessions(
   async function adopt(id: string): Promise<StoredSession | null> {
     const legacy = await options.take(id);
 
-    // A request racing this one on the same cookie may have taken the record
-    // and written the session a moment ago.
-    if (!legacy) return store.get(id);
+    // Nothing to adopt: either no legacy session, or a request racing this one
+    // on the same cookie took the record first. That request may still be
+    // inside `store.create` on a database round trip, so look once more after
+    // a short wait, then fail closed.
+    if (!legacy) {
+      const written = await store.get(id);
+
+      if (written) return written;
+
+      await new Promise<void>((resolve) => setTimeout(resolve, RACE_WAIT_MS));
+
+      return store.get(id);
+    }
 
     const now = clock.now();
     const session = convert(id, legacy, now);
