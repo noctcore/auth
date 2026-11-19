@@ -7,7 +7,7 @@
  */
 import { RequestMethod, type INestApplication } from '@nestjs/common';
 import { DiscoveryService, Reflector } from '@nestjs/core';
-import { FRESH_AUTH_KEY, PUBLIC_KEY, ROLES_KEY } from './tokens';
+import { FRESH_AUTH_KEY, PUBLIC_KEY, ROLES_KEY, TWO_FACTOR_ENROLLMENT_KEY } from './tokens';
 
 // Nest's own metadata keys (@nestjs/common/constants), stable since Nest 6.
 const PATH = 'path';
@@ -24,6 +24,8 @@ export interface RouteAccess {
   /** Each list must be satisfied (controller, then handler). */
   readonly roles: readonly (readonly string[])[];
   readonly freshAuth: boolean;
+  /** Marked `@TwoFactorEnrollment()`: an enrollment-only session may reach it. */
+  readonly twoFactorEnrollment: boolean;
 }
 
 /** Nest keeps a path as a string, or a list of them; the first one names the route. */
@@ -77,6 +79,9 @@ export function collectRoutes(discovery: DiscoveryService, reflector: Reflector)
         public: reflector.getAllAndOverride<boolean | undefined>(PUBLIC_KEY, targets) === true,
         roles,
         freshAuth: targets.some((target) => reflector.get(FRESH_AUTH_KEY, target) !== undefined),
+        twoFactorEnrollment: targets.some(
+          (target) => reflector.get(TWO_FACTOR_ENROLLMENT_KEY, target) === true,
+        ),
       });
     }
   }

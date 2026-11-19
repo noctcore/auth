@@ -23,6 +23,7 @@ export {
   Public,
   RequireFreshAuth,
   RequireRole,
+  TwoFactorEnrollment,
 } from './decorators';
 export type { AuthModuleOptions, CsrfOptions, NestAuth } from './options';
 export { describeRoutes, type RouteAccess } from './routes';

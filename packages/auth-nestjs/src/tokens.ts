@@ -13,3 +13,4 @@ export const AUTH_OPTIONS: unique symbol = Symbol.for('@noctcore/auth-nestjs:opt
 export const PUBLIC_KEY = '@noctcore/auth-nestjs:public';
 export const ROLES_KEY = '@noctcore/auth-nestjs:roles';
 export const FRESH_AUTH_KEY = '@noctcore/auth-nestjs:fresh-auth';
+export const TWO_FACTOR_ENROLLMENT_KEY = '@noctcore/auth-nestjs:two-factor-enrollment';

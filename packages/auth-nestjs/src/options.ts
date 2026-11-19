@@ -17,6 +17,7 @@ import {
   type SessionCookieConfig,
   type StoredSession,
   type TrustedHops,
+  type ValidatedSession,
   resolveClientIpHeader,
   resolveTrustedHops,
   toMilliseconds,
@@ -33,7 +34,7 @@ export interface NestAuth<U extends AuthUser = AuthUser> {
     token: string | null | undefined;
     meta?: RequestMeta;
     touch?: boolean;
-  }): Promise<AuthResult<StoredSession<unknown>>>;
+  }): Promise<AuthResult<ValidatedSession<unknown>>>;
   requireFreshAuth(session: StoredSession<unknown>): AuthResult<void>;
   /** Waits for background work (mail sends); the module calls it on shutdown, bounded. */
   flush?(options?: { readonly timeout?: Duration }): Promise<void>;

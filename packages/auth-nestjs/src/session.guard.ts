@@ -13,11 +13,14 @@
  *    CSRF middleware so it is validated once;
  * 2. the user, loaded from the store on this request, so a deleted user is
  *    signed out at once and roles are never read from a cookie or token;
- * 3. `@RequireRole()`, only after both of the above;
- * 4. `@RequireFreshAuth()`.
+ * 3. an `enrollment-only` session (the two-factor plugin's `enforcement`,
+ *    past the grace window) only on a route marked `@TwoFactorEnrollment()`,
+ *    refused elsewhere with 403 `two_factor_enrollment_required`;
+ * 4. `@RequireRole()`, only after all of the above;
+ * 5. `@RequireFreshAuth()`.
  *
  * `@Public()` lets a request through without a session, and skips steps 3
- * and 4, only on a route with no role or fresh-auth requirement; a route with
+ * to 5, only on a route with no role or fresh-auth requirement; a route with
  * one always needs a session (and `AuthModule` refuses to boot with such a
  * route, so the mistake is caught early). Steps 1 and 2 still run on a public
  * route: a session the request carries is resolved and its user loaded, so
@@ -41,11 +44,17 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { AuthErrorCode, AuthUser, StoredSession } from '@noctcore/auth';
+import type { AuthErrorCode, AuthUser, StoredSession, ValidatedSession } from '@noctcore/auth';
 import { isSafeMethod } from './csrf-tokens';
 import type { ResolvedOptions } from './options';
 import { csrfPassed, rawRequest, sessionState, setPrincipal, type RawRequest } from './request';
-import { AUTH_OPTIONS, FRESH_AUTH_KEY, PUBLIC_KEY, ROLES_KEY } from './tokens';
+import {
+  AUTH_OPTIONS,
+  FRESH_AUTH_KEY,
+  PUBLIC_KEY,
+  ROLES_KEY,
+  TWO_FACTOR_ENROLLMENT_KEY,
+} from './tokens';
 
 function refuse(status: number, code: AuthErrorCode | 'internal'): HttpException {
   return new HttpException({ error: { code } }, status);
@@ -106,11 +115,28 @@ export class SessionGuard implements CanActivate {
     if (open) return true;
     if (!session || !user) throw refuse(401, 'session_expired');
 
+    this.checkEnrollmentOnly(targets, session);
+
     for (const target of targets) await this.checkRoles(target, user);
 
     for (const target of targets) this.checkFreshness(target, session);
 
     return true;
+  }
+
+  /** An enrollment-only session reaches only a route marked `@TwoFactorEnrollment()` (or its controller). */
+  private checkEnrollmentOnly(
+    targets: readonly Target[],
+    session: ValidatedSession<unknown>,
+  ): void {
+    if (session.twoFactor?.state !== 'enrollment-only') return;
+
+    const marked = targets.some(
+      (target) =>
+        this.reflector.get<boolean | undefined>(TWO_FACTOR_ENROLLMENT_KEY, target) === true,
+    );
+
+    if (!marked) throw refuse(403, 'two_factor_enrollment_required');
   }
 
   private async checkRoles(target: Target, user: AuthUser): Promise<void> {
