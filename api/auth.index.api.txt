@@ -77,6 +77,7 @@ TOKEN_BYTES
 TRUST_PROXY_PRESETS
 Throttle
 accountKey
+adoptLegacySessions
 assertExactOrigins
 checkPasswordPolicy
 clientIp
@@ -126,6 +127,7 @@ verifyRequestOrigin
 
 ## declarations
 accountKey [function]: (normalizedEmail: string) => string
+adoptLegacySessions [function]: (store: SessionStore, options: LegacySessionOptions) => SessionStore
 assertExactOrigins [function]: (origins: readonly string[], option: string) => readonly string[]
 AttributeSchema [interface]<A>
     parse(value: unknown): A
@@ -295,6 +297,23 @@ IssueOptions [interface]<A>
 IssueVia [type] = 'password' | 'register' | 'second-factor' | 'password-change' | 'email-verified' | 'email-changed' | 'revoke-others' | 'reauthenticate' | (string & {})
 isTokenShape [function]: (value: unknown) => value is string
 isTrustedAddress [function]: (address: string, list: readonly string[]) => boolean
+LegacySession [interface]
+    readonly attributes?: unknown
+    readonly authenticatedAt: number
+    readonly createdAt: number
+    readonly expiresAt: number
+    readonly idleTimeoutMs: number
+    readonly ip?: string
+    readonly lastActiveAt: number
+    readonly persistentCookie?: boolean
+    readonly rememberMe: boolean
+    readonly userAgent?: string
+    readonly userId: string
+LegacySessionOptions [interface]
+    readonly clock?: Clock
+    readonly logger?: Logger
+    readonly maxTtl: Duration
+    take(id: string): Promise<LegacySession | null>
 LockoutOptions [interface]
     readonly baseLock?: Duration
     readonly deviceMaxAge?: Duration
