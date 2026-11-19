@@ -266,6 +266,17 @@ Source: `packages/auth-redis/src/options.ts`, `session-store.ts`.
 
 Run that Redis with `maxmemory-policy noeviction`: an evicting policy may drop an epoch (signing users out), a lockout counter (handing an attacker a fresh budget) or a lock key (ending a lock early).
 
+### `adoptLegacySessions(store, options)`
+
+Source: `session/legacy-sessions.ts`. Wraps a session store so sessions from the app's own store, from before the switch, are adopted on first use. See [Switching from your own sessions](/auth/build/store-adapter/#switching-from-your-own-sessions).
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `take` | required | `(id) => Promise<LegacySession \| null>`: removes and returns, in one atomic step, the old session stored under `id` (the SHA-256 hex of the cookie token). |
+| `maxTtl` | required | The longest an adopted session lives, counted from its `createdAt`; the store's `maxSessionTtlMs` wins when shorter. Set it to `session.rememberMeTtl`. Zero is refused with an `AuthConfigError`. |
+| `clock` | system clock | For tests. |
+| `logger` | none | Told about a malformed old session it dropped, with the user id only. |
+
 ### `prismaStores(options)`
 
 Source: `packages/auth-prisma/src/user-store.ts`, `index.ts`.
