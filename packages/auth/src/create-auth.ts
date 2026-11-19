@@ -33,7 +33,12 @@ import {
   revokeSession,
 } from './flows/session-management';
 import { requireFreshAuth, validateRequest } from './flows/session-validation';
-import { deviceCookieName, parseCookieHeader, sessionCookieName } from './http/cookie';
+import {
+  deviceCookieName,
+  parseCookieHeader,
+  resolveSameSite,
+  sessionCookieName,
+} from './http/cookie';
 import { DEFAULT_PASSWORD_POLICY } from './password/policy';
 import { systemClock } from './ports/clock';
 import { noopMetrics, silentLogger } from './ports/logger';
@@ -101,10 +106,13 @@ export function createAuth<
 
   const cookie = config.session?.cookie ?? {};
 
-  // Validates the cookie name now rather than on the first sign-in. SameSite
-  // is checked only when a cookie is built, so `'none'` without Secure throws
-  // at the first cookie, not here.
+  // Validates the cookie name now rather than on the first sign-in, and refuses
+  // a fixed `SameSite=None` without Secure at boot. A function-valued SameSite
+  // cannot be checked without a request, so it is checked by `resolveSameSite`
+  // when a cookie is built.
   sessionCookieName(cookie);
+
+  if (typeof cookie.sameSite !== 'function') resolveSameSite(cookie, undefined);
 
   const sessions = new SessionManager<A>(
     config.stores.sessions,

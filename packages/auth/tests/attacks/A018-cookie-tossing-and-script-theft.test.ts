@@ -4,12 +4,14 @@
 // injected script reads the cookie and sends it away.
 //
 // Stopped by: http/cookie.ts: the __Host- prefix whenever the cookie is Secure (no Domain,
-//   Path=/), HttpOnly always, SameSite=None refused without Secure.
+//   Path=/), HttpOnly always, SameSite=None refused without Secure; create-auth.ts: a
+//   fixed SameSite=None without Secure is refused when createAuth starts.
 // Learn: Sessions and expiry (/auth/learn/sessions-and-expiry/)
 import { describe, expect, it } from 'vitest';
 
 import { createSessionCookie, serializeCookie, sessionCookieName } from '../../src/http/cookie';
 import { AuthConfigError } from '../../src/shared/errors';
+import { setup } from './support';
 
 describe('A018: cookie tossing and reading the session cookie from script', () => {
   it('uses the __Host- prefix whenever it is Secure', () => {
@@ -48,5 +50,26 @@ describe('A018: cookie tossing and reading the session cookie from script', () =
     ).toThrow('SameSite=None requires a Secure cookie');
 
     expect(createSessionCookie({ sameSite: 'none' }, 't', at).attributes.secure).toBe(true);
+  });
+
+  it('refuses a fixed SameSite=None without Secure when createAuth starts, before any session', () => {
+    expect(() => setup({ session: { cookie: { sameSite: 'none', secure: false } } })).toThrow(
+      new AuthConfigError('SameSite=None requires a Secure cookie'),
+    );
+  });
+
+  it('still starts with the other combinations', () => {
+    expect(() => setup({ session: { cookie: { sameSite: 'none' } } })).not.toThrow();
+    expect(() => setup({ session: { cookie: { sameSite: 'lax', secure: false } } })).not.toThrow();
+
+    expect(() =>
+      setup({ session: { cookie: { sameSite: 'strict', secure: false } } }),
+    ).not.toThrow();
+  });
+
+  it('checks a function-valued SameSite only when a cookie is built', async () => {
+    const t = setup({ session: { cookie: { sameSite: () => 'none', secure: false } } });
+
+    await expect(t.signedInUser()).rejects.toThrow('SameSite=None requires a Secure cookie');
   });
 });
