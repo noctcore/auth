@@ -24,6 +24,7 @@ import security from '@noctcore/eslint-plugin-security';
 import stylistic from '@stylistic/eslint-plugin';
 import tseslint from 'typescript-eslint';
 
+import { exactEmailLookup } from './scripts/eslint/exact-email-lookup.js';
 import noSecretComparison from './scripts/eslint/no-secret-comparison.js';
 
 const TS = ['**/*.ts'];
@@ -293,22 +294,12 @@ export default tseslint.config(
   {
     // A lookup by address goes through `core.findCredentialByEmail`, which
     // treats a row whose stored address is not exactly the one asked for as
-    // not found: a store behind a case- or accent-insensitive collation would
-    // otherwise reach one account under several spellings. Any receiver other
-    // than `core` (a store, a destructured `users`, a renamed variable) is
-    // refused, not only `<x>.users`.
+    // not found. Any receiver other than `core` (a store, a destructured
+    // `users`, a renamed variable) is refused, as are computed and
+    // destructured spellings; scripts/eslint/exact-email-lookup.js lists them.
     files: ['packages/auth/src/*/**/*.ts'],
     ignores: ['packages/auth/src/core/auth-core.ts', 'packages/auth/src/testing/**'],
-    rules: {
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector:
-            "MemberExpression[property.name='findCredentialByEmail']:not([object.name='core']):not([object.property.name='core'])",
-          message: 'Look users up by address with core.findCredentialByEmail (exact match only).',
-        },
-      ],
-    },
+    rules: { 'no-restricted-syntax': ['error', ...exactEmailLookup] },
   },
   {
     files: ['packages/auth/src/crypto/hash.ts'],
