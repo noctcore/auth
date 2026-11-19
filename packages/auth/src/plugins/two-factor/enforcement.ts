@@ -86,19 +86,26 @@ function standingFrom(policy: ReadPolicy, now: number): TwoFactorStanding | null
     : { state: 'enrollment-only' };
 }
 
+/** What the policy says of a user without a confirmed factor: `required`, and the standing it implies. */
+export interface Assessment {
+  readonly required: boolean;
+  readonly standing: TwoFactorStanding | null;
+}
+
 /**
- * The standing of a user without a confirmed factor (the caller checked):
- * null when enforcement is off or the policy does not require one.
+ * Asks the policy once and derives both answers from it, so a custom
+ * `enforcement` function (often a database read) runs one time per call and
+ * `required` and `standing` cannot disagree. Without `enforcement`, the
+ * `required` option answers and there is no standing.
  */
-export async function standingOfUser(
-  runtime: Runtime,
-  user: AuthUser,
-): Promise<TwoFactorStanding | null> {
+export async function assessUser(runtime: Runtime, user: AuthUser): Promise<Assessment> {
   const { enforcement } = runtime.settings;
 
-  if (!enforcement) return null;
+  if (!enforcement) return { required: await runtime.settings.required({ user }), standing: null };
 
-  return standingFrom(await readPolicy(runtime, enforcement, user), runtime.core.clock.now());
+  const policy = await readPolicy(runtime, enforcement, user);
+
+  return { required: policy.required, standing: standingFrom(policy, runtime.core.clock.now()) };
 }
 
 /** The `sessionStanding` hook: installed only when `enforcement` is configured. */
@@ -117,18 +124,14 @@ export async function sessionStanding(
 
   if (!user) return { twoFactor: { state: 'enrollment-only' } };
 
-  const standing = await standingOfUser(runtime, user);
+  const { standing } = await assessUser(runtime, user);
 
   return standing ? { twoFactor: standing } : undefined;
 }
 
 /** Whether a factor is required of this user, under either option; a failed policy reads as required. */
 export async function isRequired(runtime: Runtime, user: AuthUser): Promise<boolean> {
-  const { enforcement } = runtime.settings;
-
-  if (enforcement) return (await readPolicy(runtime, enforcement, user)).required;
-
-  return runtime.settings.required({ user });
+  return (await assessUser(runtime, user)).required;
 }
 
 export interface SweepInput {
@@ -159,7 +162,7 @@ export interface SweepResult {
  * a revocation cannot be undone.
  */
 export async function sweepUnenrolled(runtime: Runtime, input: SweepInput): Promise<SweepResult> {
-  const { core, store } = runtime;
+  const { core } = runtime;
   const { enforcement } = runtime.settings;
   const revoked: string[] = [];
   let checked = 0;
@@ -170,29 +173,51 @@ export async function sweepUnenrolled(runtime: Runtime, input: SweepInput): Prom
   for await (const userId of input.userIds) {
     checked += 1;
 
-    const factor = await store.findFactor(userId);
+    const first = await pastGrace(runtime, enforcement, userId);
 
-    if (factor?.confirmed === true) continue;
+    if (first.failed) failed += 1;
 
-    const user = await core.users.findById(userId);
-
-    if (!user) continue;
-
-    const policy = await readPolicy(runtime, enforcement, user);
-
-    if (policy.failed) {
-      failed += 1;
-      continue;
-    }
-
-    if (standingFrom(policy, core.clock.now())?.state !== 'enrollment-only') continue;
+    if (first.user === null) continue;
 
     // No live session: nothing to end, and no audit row for nothing.
-    if ((await core.sessions.listActive(user.id)).length === 0) continue;
+    if ((await core.sessions.listActive(userId)).length === 0) continue;
 
-    await core.revokeAllSessions(user.id, TWO_FACTOR_REQUIRED_REVOCATION);
-    revoked.push(user.id);
+    // A revocation cannot be undone, and the reads above took time: a user who
+    // enrolled, or whose rule changed, since then keeps their sessions.
+    const again = await pastGrace(runtime, enforcement, userId);
+
+    if (again.user === null) continue;
+
+    await core.revokeAllSessions(again.user.id, TWO_FACTOR_REQUIRED_REVOCATION);
+    revoked.push(again.user.id);
   }
 
   return { checked, revoked, failed };
+}
+
+/**
+ * Reads the factor, the user and the policy now: the user when they are
+ * required, without a confirmed factor and past their grace window; null
+ * otherwise (`failed` when the policy threw, which is never a reason to revoke).
+ */
+async function pastGrace(
+  runtime: Runtime,
+  enforcement: TwoFactorEnforcement,
+  userId: string,
+): Promise<{ readonly user: AuthUser | null; readonly failed: boolean }> {
+  const none = { user: null, failed: false };
+
+  if ((await runtime.store.findFactor(userId))?.confirmed === true) return none;
+
+  const user = await runtime.core.users.findById(userId);
+
+  if (!user) return none;
+
+  const policy = await readPolicy(runtime, enforcement, user);
+
+  if (policy.failed) return { user: null, failed: true };
+
+  const standing = standingFrom(policy, runtime.core.clock.now());
+
+  return standing?.state === 'enrollment-only' ? { user, failed: false } : none;
 }
