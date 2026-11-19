@@ -65,14 +65,19 @@ describe('imported recovery codes', () => {
     expect((await viaChallenge(t, legacy(0))).ok).toBe(true);
 
     await Promise.resolve();
-    expect(t.mailer.last('recovery-code-used')).toMatchObject({ to: EMAIL, userId, remaining: 10 });
+    // Counted when the code was spent, before the session (and so the new set) existed.
+    expect(t.mailer.last('recovery-code-used')).toMatchObject({ to: EMAIL, userId, remaining: 2 });
 
     expect(t.audit.events.find((e) => e.type === 'two_factor.recovery_code_used')?.data).toEqual({
-      remaining: 10,
+      remaining: 2,
       imported: true,
     });
 
-    expect(t.audit.events.some((e) => e.type === 'two_factor.recovery_codes_generated')).toBe(true);
+    const types = t.audit.events.map((e) => e.type);
+
+    expect(types.lastIndexOf('two_factor.recovery_codes_generated')).toBeGreaterThan(
+      types.lastIndexOf('two_factor.recovery_code_used'),
+    );
   });
 
   it('spends an imported code on a step-up without replacing the set (nothing could show new codes)', async () => {
@@ -111,6 +116,116 @@ describe('imported recovery codes', () => {
 
     expect((await change(NEW_PASSWORD)).ok).toBe(true);
     expect(await t.store.countRecoveryCodes(userId)).toBe(2);
+  });
+
+  it('keeps the rest of the imported set and makes no new one when the session is refused after the code passed', async () => {
+    let refuseNow = false;
+
+    const t = twoFactorApp(
+      { importedRecoveryCodes: legacyScheme },
+      {
+        hooks: {
+          beforeSessionCreate: () =>
+            refuseNow
+              ? { refuse: true as const, code: 'forbidden' as const, reason: 'app_says_no' }
+              : undefined,
+        },
+      },
+    );
+
+    const { userId } = await t.enrolled();
+
+    await importLegacyCodes(t.store, userId);
+    refuseNow = true;
+
+    const generated = () =>
+      t.audit.events.filter((e) => e.type === 'two_factor.recovery_codes_generated').length;
+
+    const before = generated();
+
+    expect(await viaChallenge(t, legacy(0))).toMatchObject({ ok: false, reason: 'app_says_no' });
+    expect(await t.store.countRecoveryCodes(userId)).toBe(2);
+    expect(generated()).toBe(before);
+
+    refuseNow = false;
+
+    // The spent code stays spent; the others still work, and the next login moves the user over.
+    expect(await viaChallenge(t, legacy(0))).toMatchObject({
+      ok: false,
+      reason: 'wrong_recovery_code',
+    });
+
+    const done = await viaChallenge(t, legacy(1));
+
+    expect(done.ok && done.value.recoveryCodes).toHaveLength(10);
+  });
+
+  it('keeps the rest of the imported set when a concurrent redemption spent the challenge first', async () => {
+    const t = twoFactorApp({ importedRecoveryCodes: legacyScheme });
+    const { userId } = await t.enrolled();
+
+    await importLegacyCodes(t.store, userId);
+
+    const { challenge } = await t.challenged();
+    const redeemLink = t.auth.context.tokens.redeemLink.bind(t.auth.context.tokens);
+
+    Object.assign(t.auth.context.tokens, {
+      redeemLink: async (purpose: string, token: unknown) => (
+        await redeemLink(purpose, token),
+        redeemLink(purpose, token)
+      ),
+    });
+
+    const done = await t.auth.twoFactor.verifyChallenge({
+      challenge,
+      proof: { kind: 'recovery-code', code: legacy(0) },
+      meta: meta(),
+    });
+
+    expect(done).toMatchObject({ ok: false, reason: 'challenge_lost_race' });
+    expect(await t.store.countRecoveryCodes(userId)).toBe(2);
+  });
+
+  it('reads a hash that throws as no match, and logs only the error name', async () => {
+    const logged: unknown[] = [];
+
+    const t = twoFactorApp(
+      {
+        importedRecoveryCodes: {
+          hash: () => {
+            throw new TypeError(`bad input ${legacy(0)}`);
+          },
+        },
+      },
+      {
+        logger: {
+          warn: () => undefined,
+          error: (message: string, context?: Record<string, unknown>) =>
+            logged.push({ message, context }),
+        },
+      },
+    );
+
+    const { recoveryCodes, userId } = await t.enrolled();
+
+    await importLegacyCodes(t.store, userId, [legacy(0), legacy(1)]);
+
+    expect(await viaChallenge(t, legacy(0))).toMatchObject({
+      ok: false,
+      reason: 'malformed_recovery_code',
+    });
+
+    expect(await t.store.countRecoveryCodes(userId)).toBe(2);
+    expect(JSON.stringify(logged)).not.toContain(legacy(0));
+
+    expect(logged).toEqual([
+      {
+        message: 'twoFactor: importedRecoveryCodes.hash threw; read as no match',
+        context: { error: 'TypeError' },
+      },
+    ]);
+
+    expect(recoveryCodes).toHaveLength(10);
   });
 
   it('accepts nothing imported without the option', async () => {

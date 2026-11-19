@@ -8,9 +8,10 @@
 // one through a challenge that was never going to pass.
 //
 // Stopped by: plugins/two-factor/proofs.ts (an imported code is accepted only
-//   if the store deletes it, under a prefix the plugin's own hash never takes;
-//   spending one at login replaces the whole set, so the old hashes leave the
-//   store), plugins/two-factor/recovery-codes.ts (`importedRecoveryCodeHashes`),
+//   if the store deletes it, under a prefix the plugin's own hash never takes),
+//   plugins/two-factor/challenge.ts (a login that passes with one replaces the
+//   whole set once its session is issued, so the old hashes leave the store),
+//   plugins/two-factor/recovery-codes.ts (`importedRecoveryCodeHashes`),
 //   ports/two-factor.ts (`consumeRecoveryCode` is atomic; conformance checks it).
 // Learn: Second factors (/auth/learn/second-factors/)
 import { describe, expect, it } from 'vitest';
