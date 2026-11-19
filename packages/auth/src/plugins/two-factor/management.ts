@@ -12,9 +12,11 @@
  *
  * Guide: Learn, "Second factors"; Build, "Two-factor".
  */
+import { isRequired, standingOfUser } from './enforcement';
 import { issueRecoveryCodes } from './enrollment';
 import { refused, type Runtime } from './runtime';
 import { requireStepUp } from './step-up';
+import type { TwoFactorStanding } from '../../core/hooks';
 import type { StoredSession } from '../../ports/stores';
 import { fail, ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
@@ -26,6 +28,12 @@ export interface TwoFactorStatus {
   readonly pending: boolean;
   /** The app requires a factor of this user. */
   readonly required: boolean;
+  /**
+   * With `enforcement`: the user's standing now (grace with its end, or
+   * enrollment-only), as validation computes it. Null when enforcement is
+   * off, the factor is on, or none is required.
+   */
+  readonly enforcement: TwoFactorStanding | null;
   readonly recoveryCodesRemaining: number;
 }
 
@@ -43,7 +51,8 @@ export async function status<A>(
   return ok({
     enabled,
     pending: factor?.confirmed === false,
-    required: await runtime.settings.required({ user }),
+    required: await isRequired(runtime, user),
+    enforcement: enabled ? null : await standingOfUser(runtime, user),
     recoveryCodesRemaining: enabled ? await runtime.store.countRecoveryCodes(user.id) : 0,
   });
 }
@@ -67,7 +76,7 @@ export async function disable<A>(
 
   if (!factor) return ok({ disabled: false });
 
-  if (factor.confirmed && (await runtime.settings.required({ user })))
+  if (factor.confirmed && (await isRequired(runtime, user)))
     return refused(runtime, 'two_factor.refused', 'forbidden', 'factor_required', user.id, meta);
 
   const allowed = await requireStepUp(runtime, session);

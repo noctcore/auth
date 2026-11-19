@@ -56,7 +56,35 @@ export type RevocationReason =
   | 'evicted'
   /** The opt-in permanent lockout tier locked the account. */
   | 'locked-permanently'
+  /** The two-factor plugin's sweep: a factor is required, the grace window is over and none is set up. */
+  | 'two-factor-required'
   | (string & {});
+
+/**
+ * Where a session stands on the two-factor plugin's enforcement, on this
+ * request. Computed live on every validation, never stored.
+ */
+export type TwoFactorStanding =
+  /**
+   * A factor is required and not set up yet, but the grace window is open:
+   * the session works as usual. Remind the user before `graceEndsAt` (ms
+   * since the epoch).
+   */
+  | { readonly state: 'grace'; readonly graceEndsAt: number }
+  /**
+   * A factor is required, none is set up and the grace window is over (or
+   * the app's policy failed): the session may reach only the routes marked
+   * for enrollment. Everything else answers `two_factor_enrollment_required`.
+   */
+  | { readonly state: 'enrollment-only' };
+
+/** What `sessionStanding` hooks add to a validated session, for this request only. */
+export interface SessionStanding {
+  readonly twoFactor?: TwoFactorStanding;
+}
+
+/** A session `validateRequest` accepted, with its standing on this request. */
+export type ValidatedSession<A> = StoredSession<A> & SessionStanding;
 
 export interface AuthHooks<U extends AuthUser, A> {
   /** Attributes for a session being issued. On a re-issue `inherited` holds the old session's attributes. */
@@ -77,6 +105,16 @@ export interface AuthHooks<U extends AuthUser, A> {
     session: StoredSession<A>;
     meta: RequestMeta | undefined;
   }) => MaybePromise<HookResult>;
+  /**
+   * Runs on every validated request after `onSessionValidate` accepted the
+   * session: a standing to attach to it for this request (the two-factor
+   * plugin's grace or enrollment-only state). A standing never widens access:
+   * an `enrollment-only` from any hook wins over a `grace`. Keep it cheap.
+   */
+  sessionStanding: (context: {
+    session: StoredSession<A>;
+    meta: RequestMeta | undefined;
+  }) => MaybePromise<SessionStanding | undefined | void>;
   /**
    * After a correct password, before a session: return a challenge to finish
    * the login with a second factor instead. The first hook that returns one wins.
@@ -172,6 +210,7 @@ const HOOK_NAMES: readonly HookName[] = [
   'sessionAttributes',
   'beforeSessionCreate',
   'onSessionValidate',
+  'sessionStanding',
   'loginChallenge',
   'beforePasswordResetRequest',
   'beforePasswordReset',

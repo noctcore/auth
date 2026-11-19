@@ -123,7 +123,13 @@ describe('managing the factor', () => {
 
     expect(await t.auth.twoFactor.status(session)).toEqual({
       ok: true,
-      value: { enabled: false, pending: false, required: false, recoveryCodesRemaining: 0 },
+      value: {
+        enabled: false,
+        pending: false,
+        required: false,
+        enforcement: null,
+        recoveryCodesRemaining: 0,
+      },
     });
 
     await t.auth.twoFactor.enroll({ session, meta: meta() });
@@ -140,7 +146,13 @@ describe('managing the factor', () => {
 
     expect(await t.auth.twoFactor.status(grace.session)).toEqual({
       ok: true,
-      value: { enabled: true, pending: false, required: true, recoveryCodesRemaining: 10 },
+      value: {
+        enabled: true,
+        pending: false,
+        required: true,
+        enforcement: null,
+        recoveryCodesRemaining: 10,
+      },
     });
 
     await t.stores.users.softDelete(session.userId);

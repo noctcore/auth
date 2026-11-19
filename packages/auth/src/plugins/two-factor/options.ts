@@ -28,6 +28,25 @@ export interface TwoFactorOptions {
    * Default: never required.
    */
   readonly required?: (context: { readonly user: AuthUser }) => boolean | Promise<boolean>;
+  /**
+   * Enforcement with a grace period, checked live on every request: the
+   * app's policy for this user (look the user's tenant, role or plan up in
+   * here; the plugin never models tenants). While a factor is required and
+   * none is set up, sign-in works as usual and every validated session
+   * carries `twoFactor: { state: 'grace', graceEndsAt }` until the grace
+   * window ends; after that the session is `enrollment-only`, and the
+   * adapters let it reach only the routes marked for enrollment. A policy
+   * change takes effect on the next request, without a new sign-in.
+   *
+   * Runs on every validated request of a user without a confirmed factor
+   * (users with one stop at one store read), so keep it cheap: cache tenant
+   * policies in the app, and expect a change to apply once that cache does.
+   * A policy that throws is read as required with the grace window over
+   * (fail closed), logged by the error's name only.
+   *
+   * Replaces `required`: pass one or the other. Default: off.
+   */
+  readonly enforcement?: TwoFactorEnforcement;
   /** How long a second-factor proof counts for sensitive actions, per session. Default 10 min. */
   readonly stepUpWindow?: Duration;
   /**
@@ -45,9 +64,27 @@ export interface TwoFactorOptions {
   readonly perIp?: AttemptRule;
 }
 
+/** What the app's enforcement policy answers for one user. */
+export interface TwoFactorPolicy {
+  /** This user must set up a second factor. */
+  readonly required: boolean;
+  /**
+   * Until when a required user without a factor may still use the app as
+   * usual. Absent, null or already past: the grace window is over.
+   */
+  readonly graceEndsAt?: Date | number | null;
+}
+
+/** The app's enforcement policy, asked per user. */
+export type TwoFactorEnforcement = (context: {
+  readonly user: AuthUser;
+}) => TwoFactorPolicy | Promise<TwoFactorPolicy>;
+
 export interface TwoFactorSettings {
   readonly issuer: string;
   readonly required: (context: { readonly user: AuthUser }) => boolean | Promise<boolean>;
+  /** The enforcement policy, or null when `enforcement` is not configured. */
+  readonly enforcement: TwoFactorEnforcement | null;
   readonly stepUpWindowMs: number;
   readonly trustedDevices: { readonly ttlMs: number; readonly maxPerUser: number } | null;
   readonly attempts: AttemptRule;
@@ -76,6 +113,13 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
   if (options.issuer.includes(':'))
     throw new AuthConfigError('twoFactor: issuer may not contain a colon');
 
+  if (options.enforcement !== undefined && typeof options.enforcement !== 'function')
+    throw new AuthConfigError('twoFactor: enforcement must be a function');
+
+  // Two answers to "is a factor required" would disagree sooner or later.
+  if (options.enforcement !== undefined && options.required !== undefined)
+    throw new AuthConfigError('twoFactor: pass either required or enforcement, not both');
+
   const stepUpWindowMs = toMilliseconds(options.stepUpWindow ?? '10m');
 
   if (stepUpWindowMs <= 0) throw new AuthConfigError('twoFactor: stepUpWindow must be positive');
@@ -83,6 +127,7 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
   return {
     issuer: options.issuer,
     required: options.required ?? never,
+    enforcement: options.enforcement ?? null,
     stepUpWindowMs,
     trustedDevices: resolveTrustedDevices(options.trustedDevices),
     attempts: resolveRule('attempts', options.attempts ?? { limit: 5, window: '15m' }),

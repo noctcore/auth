@@ -43,6 +43,7 @@ export const AUTH_ERROR_TRPC_CODES: Readonly<Record<AuthErrorCode, TRPC_ERROR_CO
   fresh_auth_required: 'FORBIDDEN',
   second_factor_required: 'FORBIDDEN',
   invalid_second_factor: 'UNAUTHORIZED',
+  two_factor_enrollment_required: 'FORBIDDEN',
   forbidden: 'FORBIDDEN',
   self_target: 'FORBIDDEN',
   last_admin: 'CONFLICT',

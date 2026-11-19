@@ -37,6 +37,11 @@ export type AuthErrorCode =
   | 'fresh_auth_required'
   | 'second_factor_required'
   | 'invalid_second_factor'
+  /**
+   * The two-factor plugin's enforcement: the user must set up a second factor
+   * and the grace window is over, so this session reaches only enrollment.
+   */
+  | 'two_factor_enrollment_required'
   /** A hook refused for a reason that is safe to name only generically. */
   | 'forbidden'
   /** The membership plugin: an admin action aimed at the acting user. */

@@ -19,12 +19,18 @@
  * - `beforeEmailChange`: the same for an email change request, on top of the
  *   core's fresh-auth check, so a stolen session (even with the password)
  *   cannot move the account to a new address without the factor.
+ * - `sessionStanding` (only with `enforcement`): the grace or enrollment-only
+ *   standing of a required user without a factor, on every request
+ *   (enforcement.ts). With `enforcement`, `beforeSessionCreate` refuses only
+ *   for a confirmed factor: a required user without one signs in, and the
+ *   standing confines the session.
  * - `onSessionsRevoked`: a password change, a reset, revoke-all and the like
  *   also delete the trusted devices (they are already void by the epoch).
  *
  * Guide: Learn, "Second factors".
  */
 import { loginChallenge } from './challenge';
+import { sessionStanding } from './enforcement';
 import { checkProof, parseProof } from './proofs';
 import { factorAccount, limitIp, type Runtime } from './runtime';
 import { hasStepUp } from './step-up';
@@ -45,11 +51,18 @@ const PASSES_ENFORCEMENT: ReadonlySet<IssueVia> = new Set([
 /** Revocations that leave the user's trusted devices alone: one session ended, nothing was compromised. */
 const KEEPS_TRUSTED_DEVICES: ReadonlySet<string> = new Set(['logout', 'revoke-one', 'evicted']);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function twoFactorHooks(runtime: () => Runtime): HookInput<AuthUser, any> {
+export function twoFactorHooks(
+  runtime: () => Runtime,
+  options: { readonly enforced: boolean },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): HookInput<AuthUser, any> {
   return {
     loginChallenge: (context) => loginChallenge(runtime(), context),
     beforeSessionCreate: ({ user, via }) => enforce(runtime(), user, via),
+    // Only with `enforcement`: without it, validation reads nothing extra.
+    ...(options.enforced
+      ? { sessionStanding: ({ session }) => sessionStanding(runtime(), session) }
+      : {}),
     beforePasswordReset: ({ user, secondFactor, meta }) =>
       demandProof(runtime(), user, secondFactor, meta, 'reset'),
     beforePasswordChange: ({ user, session, secondFactor, meta }) =>
@@ -67,11 +80,18 @@ async function enforce(runtime: Runtime, user: AuthUser, via: IssueVia): Promise
 
   const factor = await runtime.store.findFactor(user.id);
 
-  if (factor?.confirmed === true || (await runtime.settings.required({ user })))
-    return refuse(`second_factor_required:${via}`, 'second_factor_required');
+  if (factor?.confirmed === true) return refusedWithoutFactor(via);
+
+  // With `enforcement`, a required user without a factor still gets a
+  // session: validation confines it (grace, then enrollment-only).
+  if (!runtime.settings.enforcement && (await runtime.settings.required({ user })))
+    return refusedWithoutFactor(via);
 
   return undefined;
 }
+
+const refusedWithoutFactor = (via: IssueVia): HookResult =>
+  refuse(`second_factor_required:${via}`, 'second_factor_required');
 
 /** A proof with the request, for a user with a confirmed factor; nothing for one without. */
 async function demandProof(
