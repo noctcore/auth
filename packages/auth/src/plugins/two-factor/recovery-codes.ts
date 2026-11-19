@@ -10,10 +10,14 @@
  *   and a row copied onto another account matches nothing.
  * - Spent by an atomic delete in the store, so one code never signs in twice.
  * - Regenerating replaces the whole set in one write: every old code dies.
+ * - Codes imported from an app's earlier scheme are stored under a prefix of
+ *   their own, so the plugin can tell them from its own and never matches one
+ *   by its own hash. Spending one at login moves the user onto a new set.
  *
  * Guide: Learn, "Second factors".
  */
 import { randomBytes, type RandomSource } from '../../crypto/random';
+import { AuthConfigError } from '../../shared/errors';
 
 export const RECOVERY_CODE_COUNT = 10;
 const RECOVERY_CODE_LENGTH = 10;
@@ -54,4 +58,34 @@ export function normalizeRecoveryCode(input: unknown): string | null {
   const lower = compact.toLowerCase();
 
   return SHAPE.test(lower) ? lower : null;
+}
+
+/** The prefix of an imported code's hash in the store: no hash the plugin computes starts with it. */
+export const IMPORTED_RECOVERY_CODE_PREFIX = 'imported:';
+
+/** Longest input handed to the app's `importedRecoveryCodes.hash`. */
+const MAX_IMPORTED_INPUT = 64;
+
+/**
+ * The stored form of recovery code hashes carried over from an app's earlier
+ * scheme: pass the result to the store's `replaceRecoveryCodes(userId, ...)`
+ * from the migration script. Only the plugin's `importedRecoveryCodes.hash`
+ * option checks them; without it they match nothing.
+ */
+export function importedRecoveryCodeHashes(hashes: readonly string[]): string[] {
+  return hashes.map((hash) => {
+    if (typeof hash !== 'string' || hash.length === 0)
+      throw new AuthConfigError(
+        'twoFactor: an imported recovery code hash must be a non-empty string',
+      );
+
+    return `${IMPORTED_RECOVERY_CODE_PREFIX}${hash}`;
+  });
+}
+
+/** The typed input as the app's hash sees it, or null when it cannot be a code: not a string, or longer than any code. */
+export function importedRecoveryCodeInput(input: unknown): string | null {
+  return typeof input === 'string' && input.length > 0 && input.length <= MAX_IMPORTED_INPUT
+    ? input
+    : null;
 }

@@ -14,8 +14,7 @@
  * Guide: Learn, "Second factors"; Build, "Two-factor".
  */
 import { CHALLENGE_PURPOSE, ENROLLMENT_TTL_MS } from './options';
-import { recoveryCodeHash, totpStep } from './proofs';
-import { generateRecoveryCodes } from './recovery-codes';
+import { issueRecoveryCodes, totpStep } from './proofs';
 import { clientTag, factorAccount, limitIp, refused, type Runtime } from './runtime';
 import { recordStepUp } from './step-up';
 import { encodeTotpSecret, generateTotpSecret, totpUri } from './totp';
@@ -188,21 +187,6 @@ export async function confirmPending(
   }
 
   return { ok: true, recoveryCodes };
-}
-
-/** A new set of recovery codes, replacing every old one in one write. Returned once, never stored. */
-export async function issueRecoveryCodes(
-  runtime: Runtime,
-  userId: string,
-  meta: RequestMeta,
-): Promise<string[]> {
-  const codes = generateRecoveryCodes(runtime.core.random);
-  const hashes = codes.map((code) => recoveryCodeHash(runtime, userId, code.replace('-', '')));
-
-  await runtime.store.replaceRecoveryCodes(userId, hashes);
-  await runtime.core.emit({ type: 'two_factor.recovery_codes_generated', userId }, meta);
-
-  return codes;
 }
 
 export interface ConfirmEnrollmentInput<A> {

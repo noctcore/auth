@@ -1,12 +1,20 @@
 // Shared setup for the two-factor tests: an app with the plugin on in-memory
 // stores, a test cipher that binds each ciphertext to its user, and helpers
 // that walk a user through sign-up, enrollment and the login challenge.
+import { createHash } from 'node:crypto';
+
 import { decodeBase32IgnorePadding } from '@oslojs/encoding';
 
 import type { AuthUser, IssuedSession, StoredSession } from '../../src';
 import { generateToken } from '../../src/crypto/random';
 import { timeStep, totpCode } from '../../src/plugins/two-factor/totp';
-import { twoFactor, type SecretCipher, type TwoFactorOptions } from '../../src/plugins/two-factor';
+import {
+  importedRecoveryCodeHashes,
+  twoFactor,
+  type ImportedRecoveryCodes,
+  type SecretCipher,
+  type TwoFactorOptions,
+} from '../../src/plugins/two-factor';
 import { MemoryTwoFactorStore } from '../../src/testing';
 import { meta, PASSWORD, setup } from '../flows/setup';
 
@@ -183,4 +191,36 @@ export function recordTwoFactorCalls(store: MemoryTwoFactorStore, calls: string[
 
     target[method] = (...args: unknown[]) => (calls.push(`twoFactor.${method}`), original(...args));
   }
+}
+
+/**
+ * Recovery codes as an app might have stored them before moving onto the
+ * plugin: 16 Crockford base32 characters, kept as the unsalted SHA-256 hex of
+ * the upper-cased code without dashes.
+ */
+export const LEGACY_CODES = ['K7Q2-M9XW-4T8Z-P3RD', 'H5N1-C6VB-0YJ2-GF7A', 'W3ZT-8KQM-2NXD-5PRB'];
+
+const LEGACY_SHAPE = /^[0-9A-HJKMNP-TV-Z]{16}$/u;
+
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+/** The old app's hash of a typed code, or null when it cannot be one of its codes. */
+export function legacyHash(code: string): string | null {
+  const compact = code.replace(/[\s-]/gu, '').toUpperCase();
+
+  return LEGACY_SHAPE.test(compact) ? sha256(compact) : null;
+}
+
+/** The plugin option that accepts the old app's codes. */
+export const legacyScheme: ImportedRecoveryCodes = { hash: (code) => legacyHash(code) };
+
+/** What the migration script does: replaces the user's set with the old app's hashes. */
+export async function importLegacyCodes(
+  store: MemoryTwoFactorStore,
+  userId: string,
+  codes: readonly string[] = LEGACY_CODES,
+): Promise<void> {
+  const hashes = codes.map((code) => legacyHash(code) ?? '');
+
+  await store.replaceRecoveryCodes(userId, importedRecoveryCodeHashes(hashes));
 }
