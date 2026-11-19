@@ -76,9 +76,11 @@ AuthedMiddleware [const]: NestTrpcMiddlewareClass
 authErrorFormatter [function]: <TShape extends ShapeLike>(opts: { shape: TShape; error: TRPCError; }) => AuthErrorShape<TShape>
 AuthErrorShape [type]<TShape extends ShapeLike> = Omit<TShape, 'data' | 'message'> & { readonly message: string; readonly data: Omit<TShape['data'], 'stack'> & { /** Set on an auth refusal: the public code, and when to retry on `rate_limited`. */ readonly auth: PublicAuthError | null; /** Set when the input failed validation: where and what kind, never the value. */ readonly input: readonly PublicInputIssue[] | null; }; }
 AuthGuardMiddleware [const]: NestTrpcMiddlewareClass
-AuthMiddlewares [interface]<TContext, TMeta, TErrorShape>
+AuthMiddlewareOptions [interface]<TTier extends string = string>
+    readonly rateLimits?: Readonly<Record<TTier, TrpcRateLimitRule>>
+AuthMiddlewares [interface]<TContext, TMeta, TErrorShape, TTier extends string = never>
     freshAuth(maxAge?: Duration): TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
-    rateLimited(name: string, rule?: RateLimitRule): TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
+    rateLimited(name: string, rule?: TrpcRateLimitRule | TTier): TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
     readonly authed: TRPCMiddlewareBuilder<TContext, TMeta, PrincipalOf<TContext>, unknown>
     readonly csrf: TRPCMiddlewareBuilder<TContext, TMeta, object, unknown>
     readonly protectedProcedure: AuthProcedureBuilder<TContext, TMeta, PrincipalOf<TContext>, TErrorShape>
@@ -110,7 +112,7 @@ AuthWriter [interface]<U extends AuthUser = AuthUser, A = unknown>
     user(): Promise<U | null>
 changePasswordInput [const]: z.ZodObject<{ currentPassword: z.ZodString; newPassword: z.ZodString; secondFactor: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 createAuthContext [function]: <U extends AuthUser, A = unknown>(options: AuthContextOptions<U, A>) => AuthContextFactory<U, A>
-createAuthMiddlewares [function]: <TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>(t: AuthRoot<TContext, TMeta, TErrorShape>) => AuthMiddlewares<TContext, TMeta, TErrorShape>
+createAuthMiddlewares [function]: <TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape, TTier extends string = never>(t: AuthRoot<TContext, TMeta, TErrorShape>, options?: AuthMiddlewareOptions<TTier>) => AuthMiddlewares<TContext, TMeta, TErrorShape, TTier>
 CsrfMiddleware [const]: NestTrpcMiddlewareClass
 CsrfOptions [interface]
     readonly allowSameSite?: boolean
@@ -149,7 +151,10 @@ PublicAuthError [interface]
 PublicInputIssue [interface]
     readonly code: string
     readonly path: readonly (string | number)[]
-RateLimitMiddleware [const]: (name: string, rule?: RateLimitRule) => NestTrpcMiddlewareClass
+RateLimitKeyBy [type] = 'ip' | 'user'
+RateLimitMeta [interface]
+    readonly rateLimit?: 'exempt'
+RateLimitMiddleware [const]: (name: string, rule?: TrpcRateLimitRule) => NestTrpcMiddlewareClass
 reauthenticateInput [const]: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
 registerInput [const]: z.ZodObject<{ email: z.ZodString; password: z.ZodString; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 requestPasswordResetInput [const]: z.ZodObject<{ email: z.ZodString; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
@@ -173,6 +178,8 @@ TrpcAuth [interface]<U extends AuthUser = AuthUser, A = unknown>
     readonly cookieName: string
     requireFreshAuth(session: StoredSession<A>): AuthResult<void>
     validateRequest(input: { token: string | null | undefined; meta?: RequestMeta; touch?: boolean; }): Promise<AuthResult<ValidatedSession<A>>>
+TrpcRateLimitRule [interface]
+    readonly keyBy?: RateLimitKeyBy
 userOutput [const]: z.ZodObject<{ id: z.ZodString; email: z.ZodString; emailVerified: z.ZodBoolean; }, z.core.$strip>
 verificationRequestOutput [const]: z.ZodObject<{ sent: z.ZodBoolean; }, z.core.$strip>
 verifyEmailCodeInput [const]: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
