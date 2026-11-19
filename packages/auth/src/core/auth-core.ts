@@ -108,7 +108,22 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   async findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null> {
     const found = await this.users.findCredentialByEmail(email);
 
-    return found?.email === email ? found : null;
+    if (!found) return null;
+
+    if (found.email !== email) {
+      // A row stored in a spelling the normaliser would not produce (written
+      // outside the flows, or read through an insensitive collation) is not
+      // this address: its owner cannot sign in by it until the row is fixed.
+      // Logged with the user id only, never an address.
+      this.logger.warn(
+        'User store returned a row whose stored email is not the normalised address; treating it as not found',
+        { userId: found.id },
+      );
+
+      return null;
+    }
+
+    return found;
   }
 
   requireFreshAuth(session: StoredSession<A>): AuthResult<void> {
