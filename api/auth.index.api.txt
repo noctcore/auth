@@ -80,6 +80,7 @@ accountKey
 adoptLegacySessions
 assertExactOrigins
 checkPasswordPolicy
+clearsSessionCookie
 clientIp
 createAuth
 createBlankSessionCookie
@@ -220,6 +221,7 @@ CaptchaVerifier [interface]
 ChangedEmail [interface]<A>
     readonly session: IssuedSession<A>
 checkPasswordPolicy [function]: (password: string, policy?: PasswordPolicy) => PasswordPolicyVerdict
+clearsSessionCookie [function]: (result: AuthResult<unknown>) => boolean
 clientIp [function]: (input: { remoteAddress: string | undefined; forwardedFor?: string | readonly string[] | null | undefined; trustedHops: TrustedHops; trustedHeader?: string | readonly string[] | null | undefined; }) => string | undefined
 Clock [interface]
     now(): number
@@ -521,7 +523,7 @@ SessionOptions [interface]<A>
     readonly maxPerUser?: number | null
     readonly rememberMeTtl?: Duration
     readonly touchInterval?: Duration
-SessionRefusal [type] = 'malformed' | 'unknown' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked'
+SessionRefusal [type] = 'malformed' | 'unknown' | 'adopting' | 'expired' | 'idle' | 'epoch' | 'corrupt' | 'revoked'
 SessionStanding [interface]
     readonly twoFactor?: TwoFactorStanding
 SessionStore [interface]
