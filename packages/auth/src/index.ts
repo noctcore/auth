@@ -122,6 +122,11 @@ export type {
 export type { MembershipStore, MemberWrite, StoredMember } from './ports/membership';
 export type { InvitationStore, StoredInvitation } from './ports/invitations';
 export { SessionManager } from './session/session-manager';
+export {
+  adoptLegacySessions,
+  type LegacySession,
+  type LegacySessionOptions,
+} from './session/legacy-sessions';
 export type {
   AttributeSchema,
   MintInput,
