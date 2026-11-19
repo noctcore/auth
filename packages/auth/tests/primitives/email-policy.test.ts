@@ -2,6 +2,7 @@
 // answers for mixed case, internationalised domains, composed and decomposed
 // input, confusables and non-ASCII input, and how a custom normaliser is
 // checked at startup and on every call.
+import { domainToUnicode } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -181,6 +182,14 @@ describe('the unicode policy', () => {
       'alice@b\u00FCcher.de:80',
       'alice@[::1].com',
       'alice@127.1',
+      'alice@127.0.0.1',
+      'alice@10.0.0.1',
+      'alice@x.example\u3002com',
+      'alice@x.example\uFF0Ecom',
+      'alice@x.\u1FB3\u03B1.com',
+      'alice@x.\u03B1\u0345.com',
+      'alice@x.\u1C80\u0430.com',
+      'alice@x.\u1C88\u0430.com',
       'alice@example.com(x)',
       'alice@example.com;x',
       'alice@exa_mple.com',
@@ -200,6 +209,33 @@ describe('the unicode policy', () => {
       '\u7528\u6237@\u4F8B\u5B50.\u5E7F\u544A',
     );
   });
+
+  it('accepts a domain only when the URL parser maps it back to the labels typed', () => {
+    // Every code point from U+0080 to U+2FFFF in a label of its own and next to
+    // letters of a few scripts: whatever the policy accepts, UTS 46 must give
+    // back unchanged, so no accepted domain is another spelling of a host.
+    const contexts = ['', 'a', '\u03B1', '\u0430', '\u4E00'];
+    const remapped: string[] = [];
+
+    for (let point = 0x80; point < 0x30000; point++) {
+      if (point >= 0xd800 && point <= 0xdfff) continue;
+
+      const char = String.fromCodePoint(point);
+
+      for (const around of contexts) {
+        const verdict = policy('unicode')(`a@x.${around}${char}${around}.com`);
+
+        if (!verdict.ok) continue;
+
+        const domain = verdict.email.slice(2);
+
+        if (domainToUnicode(new URL(`http://${domain}/`).hostname) !== domain)
+          remapped.push(point.toString(16));
+      }
+    }
+
+    expect(remapped).toEqual([]);
+  }, 60_000);
 
   it('refuses a very long input before any Unicode work', () => {
     const normalize = vi.spyOn(String.prototype, 'normalize');

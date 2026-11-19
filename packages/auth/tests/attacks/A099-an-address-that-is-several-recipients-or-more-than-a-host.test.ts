@@ -7,14 +7,17 @@
 // mailbox as a separate account), quoting or a domain literal. Or, under the
 // unicode policy, a domain the URL parser reads as more than a host name
 // (`victim@example.com:25`, `victim@evil.test/x`, `victim@ex%41mple.com`,
-// `victim@exa_mple.com`), so one mailbox has spellings treated as different accounts.
+// `victim@exa_mple.com`), a domain UTS 46 would remap (an ideographic full stop
+// for a dot, a Greek iota subscript, an old Cyrillic letter form) or an IPv4
+// address, so one mailbox has spellings treated as different accounts.
 //
 // Stopped by: shared/email.ts: one rule for every policy, built in and custom: no whitespace,
 //   control character or RFC 5322 special besides the one @ (`, ; : < > ( ) " \ [ ]`); the unicode
 //   policy takes a domain only when it has no port, path, query, fragment, credentials or
-//   percent escape, an ASCII one comes back from the URL parser unchanged, and every label of
-//   its ASCII (punycode) form is letters, digits and inner hyphens.
-//   Unit tests: tests/primitives/email-policy.test.ts.
+//   percent escape, every label of its ASCII (punycode) form is letters, digits and inner
+//   hyphens and decodes back to exactly the label typed (shared/punycode.ts), and its last
+//   label is not all digits.
+//   Unit tests: tests/primitives/email-policy.test.ts, tests/primitives/punycode.test.ts.
 // Learn: Security defaults (/auth/security/)
 import { describe, expect, it } from 'vitest';
 
@@ -44,6 +47,10 @@ const MORE_THAN_A_HOST = [
   'victim@example.com;x',
   'victim@exa_mple.com',
   'victim@-example.com',
+  'victim@127.0.0.1',
+  'victim@x.example\u3002com',
+  'victim@x.\u1FB3\u03B1.com',
+  'victim@x.\u1C80\u0430.com',
 ];
 
 const keepsAsTyped: EmailNormalizer = (email) => {
