@@ -22,15 +22,35 @@ export interface TenantRule {
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** The policy is asked on every request of a member without a factor: cache the rule briefly. */
+const RULE_TTL = 30_000;
+const MAX_CACHED_RULES = 10_000;
+
+/**
+ * The policy is asked on every request of a member without a factor: cache the
+ * rule briefly. An entry is written on a miss only, so it expires after
+ * `RULE_TTL` however active the user is, and the map never holds more than
+ * `MAX_CACHED_RULES` entries.
+ */
 function tenantPolicy(loadRule: (user: AuthUser) => Promise<TenantRule>) {
   const cache = new Map<string, { rule: TenantRule; until: number }>();
 
   return async ({ user }: { readonly user: AuthUser }): Promise<TwoFactorPolicy> => {
+    const now = Date.now();
     const hit = cache.get(user.id);
-    const rule = hit && hit.until > Date.now() ? hit.rule : await loadRule(user);
+    let rule = hit && hit.until > now ? hit.rule : undefined;
 
-    cache.set(user.id, { rule, until: Date.now() + 30_000 });
+    if (!rule) {
+      rule = await loadRule(user);
+
+      if (cache.size >= MAX_CACHED_RULES) {
+        for (const [id, entry] of cache) if (entry.until <= now) cache.delete(id);
+      }
+
+      // Still full of live entries: drop the oldest (a Map keeps insertion order).
+      if (cache.size >= MAX_CACHED_RULES) cache.delete(cache.keys().next().value as string);
+
+      cache.set(user.id, { rule, until: now + RULE_TTL });
+    }
 
     if (!rule.requiredSince) return { required: false };
 
