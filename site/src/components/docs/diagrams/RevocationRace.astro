@@ -1,0 +1,211 @@
+---
+/**
+ * Revocation races: a login with the old password racing a password change,
+ * on one time axis. The login reads the user's epoch before it checks the
+ * credential (flows/login.ts); the change writes the new hash, then bumps the
+ * epoch, then deletes the sessions it finds (session-manager.ts, revokeAll),
+ * which cannot include a session not minted yet. The mint stamps the epoch
+ * the login read, re-reads it, and rolls the session back on a mismatch
+ * (session-manager.ts, mint: `epoch_fence`). The login is drawn as the attack
+ * (someone who knew the old password); the fence's rollback is its refusal.
+ * There are no real values on the axis: the epoch is "n", then "n + 1".
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+
+type Who = 'login' | 'change';
+
+interface Event {
+  readonly who: Who;
+  readonly lines: readonly [string, string];
+  /** The epoch this event reads or writes, drawn as a leader to the track. */
+  readonly epoch?: 'read' | 'bump';
+}
+
+const events: readonly Event[] = [
+  { who: 'login', lines: ['reads the', 'epoch: n'], epoch: 'read' },
+  { who: 'login', lines: ['checks the', 'old password'] },
+  { who: 'change', lines: ['writes the', 'new hash'] },
+  { who: 'change', lines: ['bumps the', 'epoch: n + 1'], epoch: 'bump' },
+  { who: 'change', lines: ['deletes what', 'it finds'] },
+  { who: 'login', lines: ['mints a', 'session: n'] },
+  { who: 'login', lines: ['re-reads:', 'n + 1'], epoch: 'read' },
+];
+
+const narrowText: readonly string[] = [
+  'login reads the epoch: n',
+  'login checks the old password',
+  'change writes the new hash',
+  'change bumps the epoch: n + 1',
+  'change deletes the sessions|it finds, not this one',
+  'login mints a session: n',
+  'login re-reads: n + 1, not n',
+];
+
+const wide = {
+  w: 680,
+  h: 352,
+  x: [64, 148, 226, 318, 410, 496, 580],
+  login: 116,
+  track: 192,
+  change: 262,
+  start: 30,
+  stop: 630,
+};
+
+const narrow = {
+  w: 360,
+  h: 660,
+  y: [116, 172, 228, 284, 340, 410, 466],
+  login: 92,
+  change: 36,
+  col: 136,
+  start: 72,
+  stop: 528,
+};
+
+const lane = (who: Who, L: { login: number; change: number }) =>
+  who === 'login' ? L.login : L.change;
+const bumpX = wide.x[3] ?? 0;
+
+const title = 'A login racing a password change cannot keep its session';
+const description =
+  'Time runs from left to right, not to scale. Someone who knew the old password starts a login: ' +
+  'it reads the user\'s epoch, n, then checks the old password. Meanwhile the password change ' +
+  'writes the new hash, bumps the epoch to n + 1 and deletes the sessions it can find, which ' +
+  'cannot include a session not minted yet. The login then mints its session stamped n, re-reads ' +
+  'the epoch, finds n + 1 and rolls the session back. Had the mint come first, the session would ' +
+  'carry n and validation would refuse it at its first request. A crash after the bump leaves ' +
+  'old sessions in the store, but each carries a stale epoch, so validation refuses them too.';
+---
+
+<DiagramFrame id="revocation-race" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">ONE USER, ONE TIME AXIS</text>
+    <text class="nc-d-note" x={wide.w - 24} y="30" text-anchor="end">
+      time, not to scale
+    </text>
+
+    <text class="nc-d-label" x="24" y={wide.login - 52}>login, old password</text>
+    <circle class="nc-d-attack-node" cx={wide.start} cy={wide.login} r="5" />
+    <path class="nc-d-attack" d={`M${wide.start + 8} ${wide.login}H${wide.stop - 8}`} />
+    <Stop x={wide.stop} y={wide.login} across="horizontal" />
+    <text class="nc-d-stop-text" x={wide.stop} y={wide.login + 26} text-anchor="middle">
+      rolled back
+    </text>
+
+    <text class="nc-d-label" x="24" y={wide.change - 16}>password change</text>
+    <path class="nc-d-route" d={`M${wide.start} ${wide.change}H${wide.stop}`} />
+    <circle class="nc-d-node" cx={wide.start} cy={wide.change} r="5" />
+
+    <text class="nc-d-note" x="24" y={wide.track + 24}>user's epoch</text>
+    <path
+      class="nc-d-post"
+      d={`M${wide.start} ${wide.track + 6}H${bumpX}V${wide.track - 6}H${wide.stop}`}
+    />
+    <text class="nc-d-value" x={(wide.start + bumpX) / 2 + 40} y={wide.track + 24} text-anchor="middle">n</text>
+    <text class="nc-d-value" x={(bumpX + wide.stop) / 2} y={wide.track - 14} text-anchor="middle">n + 1</text>
+
+    {
+      events.map((event, i) => {
+        const x = wide.x[i] ?? 0;
+        const y = lane(event.who, wide);
+        const above = event.who === 'login';
+
+        return (
+          <g>
+            {event.who === 'change' ? (
+              <circle class="nc-d-node" cx={x} cy={y} r="4" />
+            ) : (
+              <path class="nc-d-post" d={`M${x} ${y - 8}V${y + 8}`} />
+            )}
+            {event.epoch && (
+              <path
+                class="nc-d-leader"
+                d={above ? `M${x} ${y + 10}V${wide.track - 8}` : `M${x} ${y - 10}V${wide.track + 8}`}
+              />
+            )}
+            {event.lines.map((line, j) => (
+              <text
+                class={j === 1 ? 'nc-d-value' : 'nc-d-note'}
+                x={x}
+                y={above ? y - 34 + j * 15 : y + 26 + j * 15}
+                text-anchor="middle"
+              >
+                {line}
+              </text>
+            ))}
+          </g>
+        );
+      })
+    }
+
+    <text class="nc-d-note" x="24" y={wide.h - 14}>
+      A crash after the bump leaves sessions stamped n: validation refuses every one.
+    </text>
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="16" y="24">ONE USER, ONE TIME AXIS</text>
+    <text class="nc-d-label" x={narrow.col} y="56">login, old password</text>
+    <path class="nc-d-leader" d={`M${narrow.login + 10} 52H${narrow.col - 8}`} />
+    <text class="nc-d-label" x={narrow.col} y="80">password change</text>
+    <path class="nc-d-leader" d={`M${narrow.change + 10} 76H${narrow.col - 8}`} />
+
+    <circle class="nc-d-attack-node" cx={narrow.login} cy={narrow.start - 20} r="5" />
+    <path class="nc-d-attack" d={`M${narrow.login} ${narrow.start - 12}V${narrow.stop - 8}`} />
+    <Stop x={narrow.login} y={narrow.stop} across="vertical" />
+    <text class="nc-d-stop-text" x={narrow.col} y={narrow.stop + 4}>rolled back</text>
+
+    <path class="nc-d-route" d={`M${narrow.change} ${narrow.start + 4}V${narrow.stop + 40}`} />
+    <circle class="nc-d-node" cx={narrow.change} cy={narrow.start + 4} r="5" />
+
+    {
+      events.map((event, i) => {
+        const y = narrow.y[i] ?? 0;
+        const x = lane(event.who, narrow);
+        const lines = (narrowText[i] ?? '').split('|');
+
+        return (
+          <g>
+            {event.who === 'change' ? (
+              <circle class="nc-d-node" cx={x} cy={y} r="4" />
+            ) : (
+              <path class="nc-d-post" d={`M${x - 8} ${y}H${x + 8}`} />
+            )}
+            <path class="nc-d-leader" d={`M${x + 12} ${y}H${narrow.col - 8}`} />
+            {lines.map((line, j) => (
+              <text class="nc-d-note" x={narrow.col} y={y + 4 + j * 15}>
+                {line}
+              </text>
+            ))}
+          </g>
+        );
+      })
+    }
+
+    <text class="nc-d-note" x="16" y={narrow.h - 70}>time runs down, not to scale</text>
+    <text class="nc-d-note" x="16" y={narrow.h - 44}>A crash after the bump leaves</text>
+    <text class="nc-d-note" x="16" y={narrow.h - 29}>sessions stamped n: validation</text>
+    <text class="nc-d-note" x="16" y={narrow.h - 14}>refuses every one.</text>
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>The epoch, not the delete, is the revocation</strong>: a session minted on the old epoch
+    is rolled back at mint or refused at its first request, whatever the cleanup found.
+  </Fragment>
+</DiagramFrame>

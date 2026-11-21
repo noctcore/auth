@@ -1,0 +1,233 @@
+---
+/**
+ * Captcha: where the check sits and what it refuses. On login, sign-up and
+ * the reset request it runs before the door's rate limit, any store call and
+ * any password hash (core/auth-core.ts, checkCaptcha, called first in
+ * flows/login.ts, register.ts and password-reset-request.ts). A token solved
+ * on another hostname or for another door is `reject` (captcha_failed); no
+ * answer from the provider is `unavailable` (captcha_unavailable), never a
+ * pass (http/turnstile.ts). Both refusals stop the request at the first post,
+ * so the later posts only reach the request that passed.
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+
+/** The default `timeoutMs` in http/turnstile.ts; the Learn numbers test reads it. */
+const TIMEOUT_MS = 5000;
+
+const later = ['Door limit', 'Store calls', 'Password hash'];
+
+interface Refusal {
+  readonly name: string;
+  readonly code: string;
+  readonly why: string;
+}
+
+const refusals: readonly Refusal[] = [
+  {
+    name: 'token from elsewhere',
+    code: 'captcha_failed',
+    why: 'other hostname or door',
+  },
+  {
+    name: 'provider down',
+    code: 'captcha_unavailable',
+    why: `no answer in ${TIMEOUT_MS} ms`,
+  },
+];
+
+const wide = {
+  w: 680,
+  h: 316,
+  captchaX: 196,
+  laterX: [340, 452, 564],
+  solved: 116,
+  refused: [206, 284],
+  start: 30,
+  end: 640,
+};
+
+const narrow = {
+  w: 360,
+  h: 610,
+  captchaY: 196,
+  laterY: [396, 456, 516],
+  solved: 32,
+  refused: [72, 112],
+  col: 140,
+  end: 574,
+};
+
+const title = 'The captcha is checked first, and an outage counts as a failure';
+const description =
+  'On login, sign-up and the password reset request, three requests reach the captcha check, ' +
+  'which comes before the door limit, any store call and any password hash. A token solved on ' +
+  'your own form for this door passes and goes on through the door limit, the store calls and the ' +
+  'password hash. A token solved on another hostname, or for another door, is rejected with ' +
+  `captcha_failed. A request the provider does not answer within ${TIMEOUT_MS} ms is refused with ` +
+  'captcha_unavailable, never let through. Neither refused request reaches the later steps.';
+---
+
+<DiagramFrame id="captcha-order" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">LOGIN, SIGN-UP, RESET REQUEST</text>
+
+    <text class="nc-d-label" x={wide.captchaX} y="62" text-anchor="middle">Captcha</text>
+    <text class="nc-d-code" x={wide.captchaX} y="80" text-anchor="middle">captcha.verify</text>
+    <path class="nc-d-post" d={`M${wide.captchaX} 92V${(wide.refused[1] ?? 0) + 22}`} />
+    {
+      later.map((name, i) => {
+        const x = wide.laterX[i] ?? 0;
+
+        return (
+          <g>
+            <text class="nc-d-label" x={x} y="80" text-anchor="middle">
+              {name}
+            </text>
+            <path class="nc-d-post" d={`M${x} 92V${wide.solved + 24}`} />
+          </g>
+        );
+      })
+    }
+
+    <text class="nc-d-label" x="24" y={wide.solved - 18}>solved here</text>
+    <path class="nc-d-route" d={`M${wide.start} ${wide.solved}H${wide.end - 7}`} />
+    <circle class="nc-d-node" cx={wide.start} cy={wide.solved} r="5" />
+    {
+      [wide.captchaX, ...wide.laterX].map((x) => (
+        <circle class="nc-d-node" cx={x} cy={wide.solved} r="4" />
+      ))
+    }
+    <circle class="nc-d-node-open" cx={wide.end} cy={wide.solved} r="7" />
+    <text class="nc-d-note" x={wide.captchaX + 10} y={wide.solved + 24}>pass</text>
+
+    {
+      refusals.map((refusal, i) => {
+        const y = wide.refused[i] ?? 0;
+
+        return (
+          <g>
+            <text class="nc-d-label" x="24" y={y - 18}>
+              {refusal.name}
+            </text>
+            <circle class="nc-d-attack-node" cx={wide.start} cy={y} r="5" />
+            <path class="nc-d-attack" d={`M${wide.start + 8} ${y}H${wide.captchaX - 8}`} />
+            <Stop x={wide.captchaX} y={y} across="horizontal" />
+            <text class="nc-d-stop-text" x={wide.captchaX + 18} y={y + 4}>
+              {refusal.code}
+            </text>
+            <text class="nc-d-note" x={wide.captchaX + 18} y={y + 22}>
+              {refusal.why}
+            </text>
+          </g>
+        );
+      })
+    }
+
+    <text class="nc-d-note" x={wide.laterX[0] ?? 0} y={wide.solved + 48}>
+      a refused token never reaches the
+    </text>
+    <text class="nc-d-note" x={wide.laterX[0] ?? 0} y={wide.solved + 63}>
+      rate limit, the store or the hasher
+    </text>
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="16" y="24">LOGIN, SIGN-UP, RESET</text>
+
+    <text class="nc-d-label" x={narrow.col} y="62">solved here</text>
+    {
+      refusals.map((refusal, i) => (
+        <text class="nc-d-label" x={narrow.col} y={90 + i * 28}>
+          {refusal.name}
+        </text>
+      ))
+    }
+    {
+      [narrow.solved, ...narrow.refused].map((x, i) => (
+        <path class="nc-d-leader" d={`M${x + 10} ${58 + i * 28}H${narrow.col - 8}`} />
+      ))
+    }
+
+    <text class="nc-d-label" x={narrow.col} y={narrow.captchaY - 26}>Captcha</text>
+    <text class="nc-d-code" x={narrow.col} y={narrow.captchaY - 8}>captcha.verify</text>
+    <path class="nc-d-post" d={`M16 ${narrow.captchaY}H${narrow.w - 16}`} />
+
+    {
+      refusals.map((refusal, i) => {
+        const y = narrow.captchaY + 30 + i * 52;
+
+        return (
+          <g>
+            <text class="nc-d-stop-text" x={narrow.col} y={y}>
+              {refusal.code}
+            </text>
+            <text class="nc-d-note" x={narrow.col} y={y + 17}>
+              {refusal.why}
+            </text>
+          </g>
+        );
+      })
+    }
+
+    {
+      later.map((name, i) => {
+        const y = narrow.laterY[i] ?? 0;
+
+        return (
+          <g>
+            <path class="nc-d-post" d={`M16 ${y}H${narrow.refused[0] ?? 0}`} />
+            <text class="nc-d-label" x={narrow.col} y={y + 5}>
+              {name}
+            </text>
+            <path class="nc-d-leader" d={`M${narrow.solved + 12} ${y}H${narrow.col - 8}`} />
+          </g>
+        );
+      })
+    }
+
+    <path class="nc-d-route" d={`M${narrow.solved} 58V${narrow.end - 7}`} />
+    <circle class="nc-d-node" cx={narrow.solved} cy="58" r="5" />
+    {
+      [narrow.captchaY, ...narrow.laterY].map((y) => (
+        <circle class="nc-d-node" cx={narrow.solved} cy={y} r="4" />
+      ))
+    }
+    <circle class="nc-d-node-open" cx={narrow.solved} cy={narrow.end} r="7" />
+    <text class="nc-d-label" x={narrow.col} y={narrow.end + 5}>handled</text>
+    <path class="nc-d-leader" d={`M${narrow.solved + 12} ${narrow.end}H${narrow.col - 8}`} />
+
+    {
+      narrow.refused.map((x, i) => (
+        <>
+          <circle class="nc-d-attack-node" cx={x} cy={86 + i * 28} r="5" />
+          <path class="nc-d-attack" d={`M${x} ${94 + i * 28}V${narrow.captchaY - 8}`} />
+          <Stop x={x} y={narrow.captchaY} across="vertical" />
+        </>
+      ))
+    }
+
+    <text class="nc-d-note" x={narrow.col} y={narrow.captchaY + 150}>a refused token never</text>
+    <text class="nc-d-note" x={narrow.col} y={narrow.captchaY + 165}>reaches what follows</text>
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>The captcha is the first thing a request meets, and it fails closed</strong>: a token
+    solved elsewhere and a provider that does not answer are both refused before any rate limit,
+    store call or password hash.
+  </Fragment>
+</DiagramFrame>
