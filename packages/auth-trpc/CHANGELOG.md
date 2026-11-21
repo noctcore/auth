@@ -1,5 +1,28 @@
 # @noctcore/auth-trpc
 
+## 0.7.0
+
+### Minor Changes
+
+- [#134](https://github.com/noctcore/auth/pull/134) [`eb87941`](https://github.com/noctcore/auth/commit/eb8794111d0d893fa4473aa0703a978b4af15059) Thanks [@Shironex](https://github.com/Shironex)! - Both adapters can now validate a request without counting it as activity, so a page that polls on a timer no longer keeps an idle session alive for its whole absolute lifetime. The default is unchanged: every request touches.
+  
+  - NestJS: a new `touch` option on `AuthModule`, `true`, `false` or a predicate `(request) => boolean` over the request's method, path (a global prefix included, no query string) and headers. It runs before the one validation of the request. A request it marks passive is answered with its session and leaves `lastActiveAt` alone. New exported type `TouchRequest`.
+  - tRPC: a new `touch` option on `createAuthContext`, `true`, `false` or a predicate `(path) => boolean` asked about each procedure path of the request, and a procedure meta `touch: false` (on `AuthProcedureMeta`). Both are read from the calls tRPC parsed before it built the context. A batch touches when any of its procedures is active, and a request whose adapter names no calls touches as before.
+  - The CSRF checks and the guards' decisions do not change with the option, and the session is still validated once per request.
+
+- [#135](https://github.com/noctcore/auth/pull/135) [`f4f0852`](https://github.com/noctcore/auth/commit/f4f085256879f203a3ebb998695de571d7cf57ab) Thanks [@Shironex](https://github.com/Shironex)! - Both adapters now hand the CSRF token to a client that cannot read the API's cookies, such as a desktop shell on its own scheme or a web app on another origin than the API. Until now such a client had no token for its first sign-in, nor for any unsafe request after a restart with a persistent session.
+  
+  - NestJS: `SessionCookies.csrfToken(request, response)` returns `{ csrfToken }` for a `@Public()` GET route (for example `GET /csrf-token`). It is exactly the token `CsrfMiddleware` set or kept as the `csrf` cookie on that response, minting the pre-session and the cookie when missing, and it marks the response `Cache-Control: no-store`. It throws an `AuthConfigError` on an exempt path (which still mints nothing) and on an unsafe method.
+  - tRPC: `ctx.auth.csrfToken()` returns `{ csrfToken }` in a public query sent with GET, with the same guarantees. It throws an `AuthConfigError` on a request with an unsafe method, on a streamed batch (`httpBatchStreamLink`) and in a subscription.
+  - tRPC: `authResponseMeta(responseMeta)` wraps the app's `responseMeta` (or stands alone as `authResponseMeta()`) and keeps `Cache-Control: no-store` on every response that handed out a token, dropping these headers the app returned: `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control`, every `*-CDN-Cache-Control` (such as `Cloudflare-CDN-Cache-Control`), `X-Accel-Expires` and `Edge-Control`. A proxy-specific cache header outside this list is not touched; keep such rules off the token route. Without it, tRPC lets the headers `responseMeta` returns replace or join the `no-store` the call set, so a caching rule there (such as `s-maxage` on public queries, or a CDN or proxy cache header) could put the token in a shared cache. Pass it to every tRPC handler you create that serves the token query; on nestjs-trpc 2.14.0 and later that is `TRPCModule.forRoot({ trpc: { responseMeta: authResponseMeta(yours) } })`. Before 2.14.0 nestjs-trpc has no `responseMeta`, so nothing inside tRPC can replace the `no-store`: keep cache-setting middleware off the base path, or serve the token from Nest with `SessionCookies.csrfToken`.
+  - NestJS: `no-store` does not reach a cache inside the app. Keep the token route out of `CacheInterceptor`, any other response cache, and any interceptor or middleware that sets `Cache-Control` after the handler.
+  - The token stays bound to the session or pre-session and the cookie is still required next to it, and an unsafe request from an origin outside the allowlist is refused on its `Origin` and `Sec-Fetch-Site` whatever the token, and whatever the app's CORS lets a page read, so reading it from a response grants nothing a cross-site page could use. Attack tests A100 and A101 pin that.
+
+### Patch Changes
+
+- Updated dependencies [[`1a9c977`](https://github.com/noctcore/auth/commit/1a9c977b4db46fbb4d8be774dffad7f0cdbc7950)]:
+  - @noctcore/auth@0.7.0
+
 ## 0.6.0
 
 ### Minor Changes
