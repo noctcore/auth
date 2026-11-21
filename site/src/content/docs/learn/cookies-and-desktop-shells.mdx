@@ -115,7 +115,7 @@ Reading the token from a response grants nothing a cross-site page could use. Th
   });
   ```
 
-- **NestJS**: Nest's `CacheInterceptor` caches GET responses by URL inside the app, and on a hit the handler never runs, so `no-store` never reaches it: every caller gets the first caller's token. Keep the token route out of it (no `@CacheKey` or `@CacheTTL` on it, and skip it in `trackBy` when the interceptor is global through `APP_INTERCEPTOR`) and out of any other response cache.
+- **NestJS**: Nest's `CacheInterceptor` caches GET responses by URL inside the app, and on a hit the handler never runs, so `no-store` never reaches it: every caller gets the first caller's token. Keep the token route out of it (no `@CacheKey` or `@CacheTTL` on it, and skip it in `trackBy` when the interceptor is global through `APP_INTERCEPTOR`) and out of any other response cache, and any interceptor or middleware that sets `Cache-Control` after the handler, which would replace the `no-store`.
 
 <Aside type="caution" title="Never cache the token route">
   Leave the token query or route out of every caching rule, and on tRPC do not wrap only some of

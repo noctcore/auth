@@ -75,7 +75,9 @@ export class SessionCookies {
    * route out of Nest's `CacheInterceptor` (no `@CacheKey`/`@CacheTTL` on it,
    * and skip it in `trackBy` when the interceptor is global through
    * `APP_INTERCEPTOR`) and any other response cache, or every caller gets
-   * the first caller's token. Throws an `AuthConfigError` on a request the
+   * the first caller's token. An interceptor or middleware of yours that
+   * sets `Cache-Control` after the handler replaces the `no-store`: keep it
+   * off this route too. Throws an `AuthConfigError` on a request the
    * middleware handed no token: an exempt path (which mints nothing) or an
    * unsafe method.
    */
