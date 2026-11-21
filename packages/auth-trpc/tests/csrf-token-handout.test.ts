@@ -128,7 +128,7 @@ describe.each(['fetch', 'node'] as const)('ctx.auth.csrfToken on the %s adapter'
 });
 
 // An app's own `responseMeta` runs after the procedures and its headers
-// replace the `no-store` the call set; `authResponseMeta` keeps it.
+// replace or join the `no-store` the call set; `authResponseMeta` keeps it.
 const CACHED = 'public, s-maxage=60';
 
 const appMeta: Record<'headers' | 'object', () => ResponseMeta> = {
@@ -165,6 +165,31 @@ describe.each(['fetch', 'node'] as const)('authResponseMeta on the %s adapter', 
       expect(batch.lastHeaders.get('cache-control')).toBe('no-store');
     },
   );
+
+  // A CDN reads these instead of `Cache-Control`, so they go too.
+  it.each([
+    ['headers', 'CDN-Cache-Control'],
+    ['object', 'CDN-Cache-Control'],
+    ['object', 'Cloudflare-CDN-Cache-Control'],
+    ['headers', 'Surrogate-Control'],
+    ['object', 'Surrogate-Control'],
+  ] as const)('drops a %s-form %s from the token response', async (form, name) => {
+    const rule = 'public, max-age=60';
+
+    const meta = (): ResponseMeta => ({
+      headers: form === 'headers' ? new Headers({ [name]: rule }) : { [name]: rule },
+    });
+
+    env = await boot({ transport, responseMeta: authResponseMeta(meta) });
+    const browser = new Browser(env);
+
+    await browser.client.health.query();
+    expect(browser.lastHeaders.get(name)).toBe(rule);
+
+    await browser.client.csrfToken.query();
+    expect(browser.lastHeaders.get(name)).toBeNull();
+    expect(browser.lastHeaders.get('cache-control')).toBe('no-store');
+  });
 
   it('works with no app responseMeta', async () => {
     env = await boot({ transport, responseMeta: authResponseMeta() });
