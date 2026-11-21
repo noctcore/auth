@@ -41,12 +41,15 @@ export interface CoreDependencies<U extends AuthUser, A> {
   readonly attributeSchema: AttributeSchema<A> | undefined;
   /** The normaliser resolved from `email.normalize`: every address goes through it. */
   readonly emails: ResolvedEmailNormalizer;
-  /** Key for trusted-device tokens, derived from the server secret. */
-  readonly deviceKey: Uint8Array;
-  /** Key for the public session handles, derived from the server secret. */
-  readonly handleKey: Uint8Array;
-  /** Root of the per-purpose keys behind `keyedHash`, derived from the server secret. */
-  readonly pluginKey: Uint8Array;
+  /**
+   * Keys for trusted-device tokens, derived from the server secret and from
+   * each previous secret of a rotation: current first, the only one that signs.
+   */
+  readonly deviceKeys: readonly [Uint8Array, ...Uint8Array[]];
+  /** Keys for the public session handles, current first, the only one that names a session. */
+  readonly handleKeys: readonly [Uint8Array, ...Uint8Array[]];
+  /** Roots of the per-purpose keys behind `keyedHash`, current first, the only one that stores. */
+  readonly pluginKeys: readonly [Uint8Array, ...Uint8Array[]];
   /** How recent a credential proof must be for a sensitive action. */
   readonly freshAuthAgeMs: number;
   readonly clock: Clock;

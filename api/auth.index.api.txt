@@ -150,6 +150,7 @@ AuthConfig [interface]<U extends AuthUser, A, P extends readonly AuthPlugin[]>
     readonly password: { readonly hasher: PasswordHasher; /** Default 12 to 256 characters. */ readonly policy?: Partial<PasswordPolicy>; /** `pwnedPasswords()` recommended. False disables the check. Fails open either way. */ readonly breachCheck?: BreachChecker | false; }
     readonly passwordReset?: { /** Default `link`. `code` sends digits that are exchanged for a short ticket. */ readonly kind?: 'link' | 'code'; /** Default 1 h for links, 15 min for codes. */ readonly ttl?: Duration; readonly digits?: number; readonly maxAttempts?: number; /** Lifetime of the ticket a verified code becomes. Default 10 min. */ readonly ticketTtl?: Duration; /** * Put the request on your queue; your worker calls `auth.jobs.processPasswordReset(job)`. * Without it the job runs detached in-process, which keeps the response * time independent of the address but is lost if the process dies. */ readonly enqueue?: (job: PasswordResetJob) => Promise<void>; /** A completed reset proves the mailbox, so it marks the address verified. Default true. */ readonly markEmailVerified?: boolean; }
     readonly plugins?: P
+    readonly previousSecret?: Uint8Array | string | readonly (Uint8Array | string)[]
     readonly random?: RandomSource
     readonly registration?: { /** * Answer `email_in_use` for a taken address instead of the uniform answer * plus an "account exists" mail. Default false (enumeration safe). */ readonly revealExisting?: boolean; /** * Issue a session on registration. Only allowed with `revealExisting`, or the session would reveal the account is new. * Issuing it is work only a new address does, so it shows in sign-up timing; the answer already says the same. */ readonly autoLogin?: boolean; }
     readonly secret: Uint8Array | string
@@ -374,7 +375,7 @@ normalizeEmail [function]: (input: unknown) => NormalizedEmail | null
 normalizePassword [function]: (password: string) => string
 ok [function]: { <T>(value: T): AuthSuccess<T>; (): AuthSuccess<void>; }
 OneTimeTokens [class]
-    (new) (store: TokenStore, clock: Clock, random: RandomSource, secret: Uint8Array | undefined): OneTimeTokens
+    (new) (store: TokenStore, clock: Clock, random: RandomSource, secret: Uint8Array | readonly Uint8Array[] | undefined): OneTimeTokens
     extendLink(purpose: string, token: unknown, expiresAt: number): Promise<void>
     findKeyed(purpose: string, key: string): Promise<{ readonly userId: string; readonly data: Readonly<Record<string, string>>; } | null>
     findLive(purpose: string, userId: string): Promise<{ readonly data: Readonly<Record<string, string>>; readonly expiresAt: number; } | null>
@@ -384,8 +385,8 @@ OneTimeTokens [class]
     private classify
     private codeHash
     private readonly clock
+    private readonly keys
     private readonly random
-    private readonly secret
     private readonly store
     putKeyed(purpose: string, userId: string, key: string, ttlMs: number, data?: Record<string, string>): Promise<void>
     redeemCode(purpose: string, userId: string | null, code: unknown, maxAttempts: number): Promise<TokenRedemption>
@@ -416,7 +417,9 @@ PluginContext [interface]<U extends AuthUser, A>
     hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>
     issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>
     keyedHash(purpose: string, message: string): string
+    keyedHashes(purpose: string, message: string): readonly [string, ...string[]]
     mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void
+    matchesSessionHandle(sessionId: string, handle: string): boolean
     normalizeEmail(input: unknown): NormalizedEmail | null
     notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason, options?: { scope?: string; }): Promise<void>
     parseEmail(input: unknown): AuthResult<NormalizedEmail>

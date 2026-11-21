@@ -8,7 +8,7 @@ import { firstRefusal, type HookLists, type IssueVia, type RevocationReason } fr
 import type { IssuedSession, IssueOptions, PluginContext, SessionAccess } from './plugin-context';
 import { narrowSessions } from './session-access';
 import { resolveSessionAttributes } from './session-attributes';
-import { hmacSha256Base64url, hmacSha256Hex } from '../crypto/hash';
+import { hmacSha256Base64url, hmacSha256Hex, secretsEqual } from '../crypto/hash';
 import { deriveKey } from '../crypto/keys';
 import { generateToken, type RandomSource } from '../crypto/random';
 import {
@@ -86,11 +86,32 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   }
 
   sessionHandle(sessionId: string): string {
-    return hmacSha256Base64url(this.#deps.handleKey, sessionId);
+    return hmacSha256Base64url(this.#deps.handleKeys[0], sessionId);
+  }
+
+  /**
+   * Whether `handle` names the session stored under `sessionId`, under the
+   * current handle key or a previous secret's. Every key is tried.
+   */
+  matchesSessionHandle(sessionId: string, handle: string): boolean {
+    const matches = this.#deps.handleKeys.map((key) =>
+      secretsEqual(hmacSha256Base64url(key, sessionId), handle),
+    );
+
+    return matches.includes(true);
   }
 
   keyedHash(purpose: string, message: string): string {
-    return hmacSha256Hex(deriveKey(this.#deps.pluginKey, purpose), message);
+    return hmacSha256Hex(deriveKey(this.#deps.pluginKeys[0], purpose), message);
+  }
+
+  keyedHashes(purpose: string, message: string): readonly [string, ...string[]] {
+    const [current, ...previous] = this.#deps.pluginKeys;
+
+    return [
+      hmacSha256Hex(deriveKey(current, purpose), message),
+      ...previous.map((key) => hmacSha256Hex(deriveKey(key, purpose), message)),
+    ];
   }
 
   normalizeEmail(input: unknown): NormalizedEmail | null {
@@ -403,7 +424,13 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   /** A trusted-device cookie for a session just issued at `epoch`. */
   #deviceCookie(userId: string, epoch: number, origin: string | undefined): CookieSpec {
     const issuedAt = this.clock.now();
-    const token = createDeviceToken(this.#deps.deviceKey, { userId, epoch, issuedAt }, this.random);
+
+    const token = createDeviceToken(
+      this.#deps.deviceKeys[0],
+      { userId, epoch, issuedAt },
+      this.random,
+    );
+
     const maxAgeSeconds = Math.floor(this.throttle.deviceMaxAgeMs / 1000);
 
     return deviceCookie(this.cookie, token, maxAgeSeconds, origin);
@@ -441,14 +468,16 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     );
   }
 
-  /** The device id when `token` is a valid, unexpired device token for this user at this epoch. */
+  /**
+   * The device id when `token` is a valid, unexpired device token for this
+   * user at this epoch, under the current device key or a previous secret's.
+   * Every key is tried; the next sign-in writes a new cookie under the current one.
+   */
   verifyDevice(userId: string, epoch: number, token: string | null | undefined): string | null {
-    return verifyDeviceToken(this.#deps.deviceKey, token, {
-      userId,
-      epoch,
-      now: this.clock.now(),
-      maxAgeMs: this.throttle.deviceMaxAgeMs,
-    });
+    const check = { userId, epoch, now: this.clock.now(), maxAgeMs: this.throttle.deviceMaxAgeMs };
+    const ids = this.#deps.deviceKeys.map((key) => verifyDeviceToken(key, token, check));
+
+    return ids.find((id) => id !== null) ?? null;
   }
 
   async revokeAllSessions(

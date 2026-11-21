@@ -77,7 +77,7 @@ export async function revokeSession<U extends AuthUser, A>(
   // live copy of the caller's session, not from the object passed in. The
   // check comes before any lookup, so a stale session gets the same refusal
   // for every handle that is not its own.
-  if (input.handle !== core.sessionHandle(input.session.id)) {
+  if (!core.matchesSessionHandle(input.session.id, input.handle)) {
     const fresh = await core.requireFreshLiveSession(input.session);
 
     if (!fresh.ok) return fresh;
@@ -85,8 +85,10 @@ export async function revokeSession<U extends AuthUser, A>(
 
   // Only the caller's own sessions are searched: a handle is never resolved
   // across users, so another user's handle finds nothing here.
-  const target = (await core.sessions.listActive(userId)).find(
-    (s) => core.sessionHandle(s.id) === input.handle,
+  // A handle listed before a secret rotation still names its session while
+  // the previous secret is configured; the next list shows the current one.
+  const target = (await core.sessions.listActive(userId)).find((s) =>
+    core.matchesSessionHandle(s.id, input.handle),
   );
 
   const ids = target ? await core.sessions.revoke(userId, [target.id]) : [];
