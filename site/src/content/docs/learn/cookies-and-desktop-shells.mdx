@@ -82,6 +82,23 @@ A cookie with `SameSite=None` is sent on requests other sites start too, so the 
 
 **`AuthModule.forRoot` takes the same `csrf.crossSiteOrigins`.** Entries are matched exactly, scheme, host and port; a wildcard, `null` or anything that is not an origin stops the app at boot. The list is empty by default, so nothing changes until you name an origin.
 
+### How a shell gets its CSRF token
+
+The page usually reads the double-submit token from the `csrf` cookie. A shell cannot: its `document.cookie` holds only its own origin's cookies, never `__Host-csrf`, a host-only cookie of the API host. The same holds for a web app on another origin than the API. Its engine still stores the API's cookies and sends them back; only its script cannot read them.
+
+So both adapters return the token from a safe request:
+
+- **NestJS**: `SessionCookies.csrfToken(req, res)` in a `@Public()` GET route, such as `GET /csrf-token` answering `{ csrfToken }`.
+- **tRPC**: `ctx.auth.csrfToken()` in a public query, sent with GET through `httpLink` or `httpBatchLink`.
+
+Either returns exactly the token the same response sets or keeps as the cookie, minting the pre-session and the cookie when missing, as any safe request does, and marks the response `Cache-Control: no-store`. The shell keeps the token in memory and echoes it in `x-csrf-token`:
+
+1. **At start**, before its first sign-in, it reads a token bound to its pre-session.
+2. **After a sign-in or any rotation**, it uses the token the flow returns (`SessionCookies.set`, `ctx.auth.setSession`), since the old one stops verifying when the new session cookie lands.
+3. **After a restart** with a persistent session, its memory and the browser-session cookies are gone but the session cookie is not, so it reads the route again and gets a token bound to that session.
+
+Reading the token from a response grants nothing a cross-site page could use. CORS keeps the body from other origins, the token is bound to the session or pre-session it was read for, and the cookie is still required next to it. An exempt path mints nothing, so the call refuses there, and it refuses on an unsafe method too.
+
 ### Limits for shells and other clients
 
 <Aside type="caution" title="Test the shell before relying on None">
@@ -119,6 +136,8 @@ The guide asks for `HttpOnly` and `Secure`, and says `SameSite` mitigates many c
 | [A033](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A033-csrf-through-trpc.test.ts) | Cross-site request forgery against a tRPC mutation | `auth-trpc/middlewares.ts` |
 | [A079](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A079-cross-site-origin-allowlist-through-nest.test.ts) | Riding the cross-site origin allowlist, through the Nest adapter | `auth-nestjs/csrf.middleware.ts`, `auth-nestjs/session-cookies.ts` |
 | [A080](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A080-cross-site-origin-allowlist-through-trpc.test.ts) | Riding the cross-site origin allowlist, through the tRPC adapter | `auth-trpc/context.ts`, `auth-trpc/csrf-tokens.ts` |
+| [A100](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A100-handed-out-csrf-token-through-nest.test.ts) | Using a token read from the Nest token route for another session or pre-session | `auth-nestjs/session-cookies.ts`, `auth-nestjs/csrf.middleware.ts` |
+| [A101](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A101-handed-out-csrf-token-through-trpc.test.ts) | Using a token read from `ctx.auth.csrfToken()` for another session or pre-session | `auth-trpc/context.ts` |
 
 </div>
 

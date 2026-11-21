@@ -101,6 +101,8 @@ The guide's first recommendation is the `Sec-Fetch-Site` check, then `Origin`, t
 | [A033](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A033-csrf-through-trpc.test.ts)                          | Cross-site request forgery against a tRPC mutation                      | `auth-trpc/middlewares.ts`       |
 | [A079](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A079-cross-site-origin-allowlist-through-nest.test.ts) | Riding the cross-site origin allowlist, through the Nest adapter        | `auth-nestjs/csrf.middleware.ts` |
 | [A080](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A080-cross-site-origin-allowlist-through-trpc.test.ts)   | Riding the cross-site origin allowlist, through the tRPC adapter        | `auth-trpc/context.ts`           |
+| [A100](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A100-handed-out-csrf-token-through-nest.test.ts) | Using a token read from the Nest token route for another session or pre-session | `auth-nestjs/session-cookies.ts` |
+| [A101](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A101-handed-out-csrf-token-through-trpc.test.ts) | Using a token read from `ctx.auth.csrfToken()` for another session or pre-session | `auth-trpc/context.ts` |
 
 </div>
 
