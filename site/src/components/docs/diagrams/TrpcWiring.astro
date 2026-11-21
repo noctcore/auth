@@ -1,0 +1,357 @@
+---
+/**
+ * tRPC guide: how a call reaches a procedure. The client (client.ts) splits
+ * mutations onto httpLink, one per request, and queries onto
+ * httpBatchStreamLink. On the server, createAuthContext (server.ts) builds
+ * ctx.auth once per HTTP request. Then each procedure runs the checks of its
+ * chain (router.ts): login on publicProcedure with writesCookies, exportData
+ * on protectedProcedure with freshAuth and rateLimited. Under each check, the
+ * public code a refusal carries (middlewares.ts). The fresh-proof age is read
+ * from the router sample, and build-guides.test.ts checks the chains and the
+ * codes against the sample and the package.
+ */
+import routerTs from '../../../../snippets/build/trpc/router.ts?raw';
+import DiagramFrame from '../DiagramFrame.astro';
+
+const freshAge = /\.use\(freshAuth\('(\w+)'\)\)/u.exec(routerTs)?.[1] ?? '';
+
+interface Check {
+  /** The check, as the reader meets it in router.ts. */
+  name: string;
+  /** True when `name` is code. */
+  code: boolean;
+  /** The public code the refusal carries. */
+  refusal: string;
+}
+
+interface Lane {
+  procedure: string;
+  base: string;
+  /** How many leading checks the base procedure brings. */
+  baseChecks: number;
+  checks: readonly Check[];
+  end: string;
+}
+
+const lanes: readonly Lane[] = [
+  {
+    procedure: 'login',
+    base: 'publicProcedure',
+    baseChecks: 1,
+    checks: [
+      { name: 'CSRF', code: false, refusal: 'forbidden' },
+      { name: '.use(writesCookies)', code: true, refusal: 'internal, if streamed' },
+    ],
+    end: 'setSession writes cookies',
+  },
+  {
+    procedure: 'exportData',
+    base: 'protectedProcedure',
+    baseChecks: 2,
+    checks: [
+      { name: 'CSRF', code: false, refusal: 'forbidden' },
+      { name: 'session', code: false, refusal: 'session_expired' },
+      { name: `freshAuth('${freshAge}')`, code: true, refusal: 'fresh_auth_required' },
+      { name: 'rateLimited', code: true, refusal: 'rate_limited' },
+    ],
+    end: '',
+  },
+];
+
+const KICKER_CLIENT = 'BROWSER, src/client.ts';
+const KICKER_PROCS = 'EACH PROCEDURE READS ctx.auth';
+const CONTEXT_CODE = 'authContext.node(opts)';
+const CONTEXT_LINES = [
+  'or .fetch(opts), once per request',
+  'ctx.auth: session, client IP,',
+  'CSRF checks, query cookies',
+];
+const MUTATIONS = { code: 'httpLink', note: 'mutations, one per request' };
+const QUERIES = { code: 'httpBatchStreamLink', note: 'queries, streamed' };
+const LEGEND = 'under each check: the public code it refuses with';
+
+/** DM Mono at 12px: about 7.2px a character. */
+const MONO = 7.2;
+/** "your page" in Manrope at 14px, strong. */
+const YOUR_PAGE_WIDTH = 68;
+
+const wide = {
+  w: 680,
+  h: 476,
+  start: 40,
+  fork: 104,
+  up: 76,
+  down: 124,
+  branchText: 126,
+  box: { x: 400, y: 46, w: 268, h: 108 },
+  divider: 182,
+  laneY: [282, 390],
+  checkX: [
+    [180, 330],
+    [180, 300, 440, 575],
+  ],
+  end: 652,
+};
+
+const narrow = {
+  w: 360,
+  h: 744,
+  start: 54,
+  left: 40,
+  right: 200,
+  branchTop: 96,
+  box: { x: 16, y: 150, w: 328, h: 84 },
+  divider: 262,
+  title: [318, 478],
+  laneTop: [334, 494],
+  checkY: [
+    [366, 406],
+    [526, 566, 606, 646],
+  ],
+  laneEnd: [440, 682],
+  text: 64,
+};
+
+const title = 'How a tRPC call reaches a procedure';
+const description =
+  'In the browser, createClient in client.ts sends each mutation on httpLink, one per request, and ' +
+  'batches queries on httpBatchStreamLink. On the server, authContext.node(opts), or .fetch(opts) on ' +
+  'the fetch adapter, builds ctx.auth once per HTTP request: the session, the client IP, the CSRF ' +
+  'checks and, on a query, the cookies the page needs. Each procedure then runs the checks of its ' +
+  'chain. login is built on publicProcedure, which checks CSRF on a mutation and refuses with ' +
+  'forbidden, and uses writesCookies, which refuses with internal on a streamed batch; its handler ' +
+  'calls setSession, which writes the cookies. exportData is built on protectedProcedure, which ' +
+  'checks CSRF (forbidden) and the session (session_expired), then uses ' +
+  `freshAuth('${freshAge}') (fresh_auth_required) and rateLimited (rate_limited) before its handler runs.`;
+---
+
+<DiagramFrame id="trpc-wiring" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">{KICKER_CLIENT}</text>
+
+    <!-- The client splits mutations from queries. -->
+    <text class="nc-d-label" x="24" y={(wide.up + wide.down) / 2 - 16}>your page</text>
+    <text class="nc-d-code" x="24" y={(wide.up + wide.down) / 2 + 28}>splitLink</text>
+    <circle class="nc-d-node" cx={wide.start} cy={(wide.up + wide.down) / 2} r="5"></circle>
+    <path
+      class="nc-d-route"
+      d={`M${wide.start} ${(wide.up + wide.down) / 2}H${wide.fork}`}
+    ></path>
+    {
+      [
+        { y: wide.up, link: MUTATIONS, above: true },
+        { y: wide.down, link: QUERIES, above: false },
+      ].map(({ y, link, above }) => {
+        const ty = above ? y - 10 : y + 20;
+
+        return (
+          <g>
+            <path
+              class="nc-d-route"
+              d={`M${wide.fork} ${(wide.up + wide.down) / 2}V${y}H${wide.box.x - 8}`}
+            />
+            <text class="nc-d-code" x={wide.branchText} y={ty}>
+              {link.code}
+            </text>
+            <text
+              class="nc-d-note"
+              x={wide.branchText + link.code.length * MONO + 10}
+              y={ty}
+            >
+              {link.note}
+            </text>
+          </g>
+        );
+      })
+    }
+
+    <rect
+      class="nc-d-box nc-d-box--key"
+      x={wide.box.x}
+      y={wide.box.y}
+      width={wide.box.w}
+      height={wide.box.h}
+      rx="4"
+    />
+    <text class="nc-d-code" x={wide.box.x + 14} y={wide.box.y + 26}>{CONTEXT_CODE}</text>
+    {
+      CONTEXT_LINES.map((line, j) => (
+        <text class="nc-d-note" x={wide.box.x + 14} y={wide.box.y + 46 + j * 18}>
+          {line}
+        </text>
+      ))
+    }
+
+    <path class="nc-d-rule" d={`M16 ${wide.divider}H${wide.w - 16}`}></path>
+    <text class="nc-d-kicker" x="24" y={wide.divider + 28}>{KICKER_PROCS}</text>
+
+    {
+      lanes.map((lane, li) => {
+        const y = wide.laneY[li] ?? 0;
+        const xs = wide.checkX[li] ?? [];
+        const baseFrom = xs[0] ?? 0;
+        const baseTo = xs[lane.baseChecks - 1] ?? 0;
+        const baseMid = (baseFrom + baseTo) / 2;
+
+        return (
+          <g>
+            <text class="nc-d-label" x="24" y={y - 22}>
+              {lane.procedure}
+            </text>
+            <text class="nc-d-code" x={baseMid} y={y - 50} text-anchor="middle">
+              {lane.base}
+            </text>
+            {lane.baseChecks > 1 && (
+              <path class="nc-d-leader" d={`M${baseFrom} ${y - 42}H${baseTo}`} />
+            )}
+            <path class="nc-d-route" d={`M${wide.start} ${y}H${wide.end - 7}`} />
+            <circle class="nc-d-node" cx={wide.start} cy={y} r="5" />
+            <circle class="nc-d-node-open" cx={wide.end} cy={y} r="7" />
+            {lane.end && (
+              <text class="nc-d-note" x={wide.w - 12} y={y - 22} text-anchor="end">
+                {lane.end}
+              </text>
+            )}
+            {lane.checks.map((check, ci) => {
+              const x = xs[ci] ?? 0;
+
+              return [
+                <text
+                  class={check.code ? 'nc-d-code' : 'nc-d-note'}
+                  x={x}
+                  y={y - 22}
+                  text-anchor="middle"
+                >
+                  {check.name}
+                </text>,
+                <path class="nc-d-post" d={`M${x} ${y - 10}V${y + 10}`} />,
+                <circle class="nc-d-node" cx={x} cy={y} r="4" />,
+                <text class="nc-d-stop-text" x={x} y={y + 30} text-anchor="middle">
+                  {check.refusal}
+                </text>,
+              ];
+            })}
+          </g>
+        );
+      })
+    }
+
+    <text class="nc-d-note" x="24" y={wide.h - 18}>{LEGEND}</text>
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="16" y="28">{KICKER_CLIENT}</text>
+
+    <circle class="nc-d-node" cx={narrow.left} cy={narrow.start} r="5"></circle>
+    <text class="nc-d-label" x={narrow.left + 16} y={narrow.start + 5}>your page</text>
+    <text class="nc-d-code" x={narrow.left + 16 + YOUR_PAGE_WIDTH + 12} y={narrow.start + 5}>splitLink</text>
+    <path class="nc-d-route" d={`M${narrow.left} ${narrow.start}V${narrow.box.y - 8}`}></path>
+    <path
+      class="nc-d-route"
+      d={`M${narrow.left} ${narrow.start + 20}H${narrow.right}V${narrow.box.y - 8}`}
+    ></path>
+    {
+      [
+        { x: narrow.left, link: MUTATIONS, lines: ['mutations, one', 'per request'] },
+        { x: narrow.right, link: QUERIES, lines: ['queries, streamed'] },
+      ].map(({ x, link, lines }) => (
+        <g>
+          <text class="nc-d-code" x={x + 12} y={narrow.branchTop}>
+            {link.code}
+          </text>
+          {lines.map((line, j) => (
+            <text class="nc-d-note" x={x + 12} y={narrow.branchTop + 16 + j * 15}>
+              {line}
+            </text>
+          ))}
+        </g>
+      ))
+    }
+
+    <rect
+      class="nc-d-box nc-d-box--key"
+      x={narrow.box.x}
+      y={narrow.box.y}
+      width={narrow.box.w}
+      height={narrow.box.h}
+      rx="4"
+    />
+    <text class="nc-d-code" x={narrow.box.x + 14} y={narrow.box.y + 22}>{CONTEXT_CODE}</text>
+    {
+      CONTEXT_LINES.map((line, j) => (
+        <text class="nc-d-note" x={narrow.box.x + 14} y={narrow.box.y + 40 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+
+    <path class="nc-d-rule" d={`M16 ${narrow.divider}H${narrow.w - 16}`}></path>
+    <text class="nc-d-kicker" x="16" y={narrow.divider + 26}>{KICKER_PROCS}</text>
+
+    {
+      lanes.map((lane, li) => {
+        const top = narrow.laneTop[li] ?? 0;
+        const ys = narrow.checkY[li] ?? [];
+        const endY = narrow.laneEnd[li] ?? 0;
+        const procWidth = lane.procedure.length * 8.4;
+
+        return (
+          <g>
+            <text class="nc-d-label" x="16" y={narrow.title[li]}>
+              {lane.procedure}
+            </text>
+            <text class="nc-d-code" x={16 + procWidth + 12} y={narrow.title[li]}>
+              {lane.base}
+            </text>
+            <path class="nc-d-route" d={`M${narrow.left} ${top}V${endY - 7}`} />
+            <circle class="nc-d-node" cx={narrow.left} cy={top} r="5" />
+            <circle class="nc-d-node-open" cx={narrow.left} cy={endY} r="7" />
+            {lane.end && (
+              <text class="nc-d-note" x={narrow.text} y={endY + 4}>
+                {lane.end}
+              </text>
+            )}
+            {lane.checks.map((check, ci) => {
+              const y = ys[ci] ?? 0;
+
+              return [
+                <path class="nc-d-post" d={`M${narrow.left - 10} ${y}H${narrow.left + 10}`} />,
+                <circle class="nc-d-node" cx={narrow.left} cy={y} r="4" />,
+                <text class={check.code ? 'nc-d-code' : 'nc-d-note'} x={narrow.text} y={y - 3}>
+                  {check.name}
+                </text>,
+                <text class="nc-d-stop-text" x={narrow.text} y={y + 13}>
+                  {check.refusal}
+                </text>,
+              ];
+            })}
+          </g>
+        );
+      })
+    }
+
+    <text class="nc-d-note" x="16" y={narrow.h - 32}>under each check: the public</text>
+    <text class="nc-d-note" x="16" y={narrow.h - 17}>code it refuses with</text>
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>Mutations travel one per request, the context is built once per request, and each
+    procedure refuses at the first check its chain fails</strong>, with nothing but a public code.
+    The base procedure brings the CSRF check, and on <code>protectedProcedure</code> the session
+    check, ahead of everything the chain adds.
+  </Fragment>
+</DiagramFrame>
