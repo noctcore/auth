@@ -103,8 +103,11 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
    * `Surrogate-Control`, `CDN-Cache-Control`, every `*-CDN-Cache-Control`,
    * `X-Accel-Expires` and `Edge-Control`. A proxy-specific cache header
    * outside this list is not touched; keep such rules off the token route,
-   * and keep the query out of any caching rule. nestjs-trpc passes no
-   * `responseMeta`, so there is nothing to wrap there.
+   * and keep the query out of any caching rule. On nestjs-trpc 2.14.0 and
+   * later, pass it as `trpc: { responseMeta: authResponseMeta(yours) }`;
+   * before 2.14.0 there is no `responseMeta`, so keep cache-setting
+   * middleware off the base path or serve the token from Nest with
+   * `SessionCookies.csrfToken`.
    * The token stays bound to the session or pre-session and the cookie is
    * still required next to it. Whatever your CORS setup lets a page on
    * another origin read, its unsafe requests are refused on the `Origin`
