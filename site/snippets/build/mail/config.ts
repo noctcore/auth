@@ -1,9 +1,9 @@
-import type { Auth, AuthConfig, AuthUser, PasswordResetJob } from '@noctcore/auth';
+import type { Auth, AuthConfig, AuthMailEvent, AuthUser, PasswordResetJob } from '@noctcore/auth';
 import { queueMailer } from './mailer';
-import type { OutgoingMail, Queue } from './queue';
+import type { Queue } from './queue';
 
 export interface MailQueues {
-  readonly mail: Queue<OutgoingMail>;
+  readonly mail: Queue<AuthMailEvent>;
   readonly passwordResets: Queue<PasswordResetJob>;
 }
 
