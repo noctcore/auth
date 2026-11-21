@@ -1,0 +1,258 @@
+---
+/**
+ * Cookies and desktop shells: three requests to one API. The `sameSite`
+ * function (session.cookie.sameSite, resolved by resolveSameSite in
+ * http/cookie.ts) gives the web page Lax and the shell's own scheme None
+ * with Secure. The CSRF check (verifyFetchSite, csrf.crossSiteOrigins in the
+ * adapters) lets the shell's cross-site requests through because its exact
+ * origin is listed, and refuses every other cross-site request. Another
+ * site's request first loses the Lax cookie in the browser (an ink mark:
+ * nothing is refused there), then is refused by the allowlist.
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+
+type Mark = 'pass' | 'stripped' | 'refused';
+
+interface Lane {
+  readonly name: string;
+  readonly origin: string;
+  readonly attack: boolean;
+  /** At the cookie post, then at the allowlist post. */
+  readonly marks: readonly [Mark, Mark];
+  readonly notes: readonly [string, string];
+}
+
+const lanes: readonly Lane[] = [
+  {
+    name: 'your web page',
+    origin: 'https://app.example',
+    attack: false,
+    marks: ['pass', 'pass'],
+    notes: ['Lax, sent', 'same-origin'],
+  },
+  {
+    name: 'desktop shell',
+    origin: 'app://desktop',
+    attack: false,
+    marks: ['pass', 'pass'],
+    notes: ['None; Secure, sent', 'listed, passes'],
+  },
+  {
+    name: 'another site',
+    origin: 'cross-site',
+    attack: true,
+    marks: ['stripped', 'refused'],
+    notes: ['Lax, left off', 'not listed, refused'],
+  },
+];
+
+const posts = [
+  { name: 'Cookie', code: 'session.cookie.sameSite' },
+  { name: 'Cross-site allowlist', code: 'csrf.crossSiteOrigins' },
+];
+
+const noteClass = (mark: Mark) => (mark === 'refused' ? 'nc-d-stop-text' : 'nc-d-note');
+
+const wide = {
+  w: 680,
+  h: 352,
+  postX: [300, 492],
+  laneY: [132, 212, 292],
+  start: 30,
+  end: 640,
+};
+
+const narrow = {
+  w: 360,
+  h: 540,
+  postY: [232, 386],
+  laneX: [32, 72, 112],
+  col: 144,
+  start: 174,
+  end: 494,
+};
+
+const title = 'A desktop shell gets SameSite=None, and only its origin gets past the allowlist';
+const description =
+  'Three requests reach the same API. Your web page at https://app.example gets its session ' +
+  'cookie with SameSite=Lax from the sameSite function, sends it on a same-origin request and is ' +
+  'handled. The desktop shell at app://desktop is cross-site; the function gives its cookie ' +
+  'SameSite=None with Secure, so the cookie travels, and its requests pass the CSRF check because ' +
+  'app://desktop is listed exactly in csrf.crossSiteOrigins. A request another site starts in a ' +
+  'browser loses the Lax cookie there, and the CSRF check refuses it because its origin is not ' +
+  'listed. The signed double-submit token is still required of every request.';
+---
+
+<DiagramFrame id="cookies-shell" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">ONE API, THREE ORIGINS</text>
+
+    {
+      posts.map((post, i) => {
+        const x = wide.postX[i] ?? 0;
+
+        return (
+          <g>
+            <text class="nc-d-label" x={x} y="62" text-anchor="middle">
+              {post.name}
+            </text>
+            <text class="nc-d-code" x={x} y="80" text-anchor="middle">
+              {post.code}
+            </text>
+            <path class="nc-d-post" d={`M${x} 92V${(wide.laneY[2] ?? 0) + 30}`} />
+          </g>
+        );
+      })
+    }
+
+    {
+      lanes.map((lane, l) => {
+        const y = wide.laneY[l] ?? 0;
+        const firstX = wide.postX[0] ?? 0;
+        const secondX = wide.postX[1] ?? 0;
+
+        return (
+          <g>
+            <text class="nc-d-label" x="24" y={y - 30}>
+              {lane.name}
+            </text>
+            <text class="nc-d-note" x="24" y={y - 14}>
+              {lane.origin}
+            </text>
+            {lane.attack ? (
+              <>
+                <circle class="nc-d-attack-node" cx={wide.start} cy={y} r="5" />
+                <path class="nc-d-attack" d={`M${wide.start + 8} ${y}H${firstX - 8}`} />
+                <path
+                  class="nc-d-attack nc-d-attack--past"
+                  d={`M${firstX + 10} ${y}H${secondX - 8}`}
+                />
+              </>
+            ) : (
+              <>
+                <path class="nc-d-route" d={`M${wide.start} ${y}H${wide.end - 7}`} />
+                <circle class="nc-d-node" cx={wide.start} cy={y} r="5" />
+                <circle class="nc-d-node" cx={firstX} cy={y} r="4" />
+                <circle class="nc-d-node" cx={secondX} cy={y} r="4" />
+                <circle class="nc-d-node-open" cx={wide.end} cy={y} r="7" />
+              </>
+            )}
+            {lane.marks.map((mark, i) =>
+              mark === 'pass' ? null : (
+                <Stop x={wide.postX[i] ?? 0} y={y} across="horizontal" kind={mark} />
+              ),
+            )}
+            {lane.notes.map((note, i) => (
+              <text class={noteClass(lane.marks[i] ?? 'pass')} x={(wide.postX[i] ?? 0) + 10} y={y + 24}>
+                {note}
+              </text>
+            ))}
+          </g>
+        );
+      })
+    }
+    <text class="nc-d-label" x={wide.w - 12} y={(wide.laneY[0] ?? 0) - 18} text-anchor="end">
+      handled
+    </text>
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="16" y="24">ONE API, THREE ORIGINS</text>
+
+    {
+      lanes.map((lane, l) => {
+        const x = narrow.laneX[l] ?? 0;
+        const y = 62 + l * 36;
+
+        return (
+          <g>
+            <text class="nc-d-label" x={narrow.col} y={y}>
+              {lane.name}
+            </text>
+            <text class="nc-d-note" x={narrow.col} y={y + 15}>
+              {lane.origin}
+            </text>
+            <path class="nc-d-leader" d={`M${x + 10} ${y - 4}H${narrow.col - 8}`} />
+            {lane.attack ? (
+              <>
+                <circle class="nc-d-attack-node" cx={x} cy={y - 4} r="5" />
+                <path
+                  class="nc-d-attack"
+                  d={`M${x} ${y + 4}V${(narrow.postY[0] ?? 0) - 8}`}
+                />
+                <path
+                  class="nc-d-attack nc-d-attack--past"
+                  d={`M${x} ${(narrow.postY[0] ?? 0) + 10}V${(narrow.postY[1] ?? 0) - 8}`}
+                />
+              </>
+            ) : (
+              <>
+                <path class="nc-d-route" d={`M${x} ${y - 4}V${narrow.end - 7}`} />
+                <circle class="nc-d-node" cx={x} cy={y - 4} r="5" />
+                {narrow.postY.map((py) => (
+                  <circle class="nc-d-node" cx={x} cy={py} r="4" />
+                ))}
+                <circle class="nc-d-node-open" cx={x} cy={narrow.end} r="7" />
+              </>
+            )}
+            {lane.marks.map((mark, i) =>
+              mark === 'pass' ? null : (
+                <Stop x={x} y={narrow.postY[i] ?? 0} across="vertical" kind={mark} />
+              ),
+            )}
+          </g>
+        );
+      })
+    }
+
+    {
+      posts.map((post, i) => {
+        const y = narrow.postY[i] ?? 0;
+
+        return (
+          <g>
+            <text class="nc-d-label" x={narrow.col} y={y - 26}>
+              {post.name}
+            </text>
+            <text class="nc-d-code" x={narrow.col} y={y - 8}>
+              {post.code}
+            </text>
+            <path class="nc-d-post" d={`M16 ${y}H${narrow.w - 16}`} />
+            {lanes.map((lane, l) => (
+              <text
+                class={noteClass(lane.marks[i] ?? 'pass')}
+                x={narrow.col}
+                y={y + 24 + l * 17}
+              >
+                {`${['web', 'shell', 'other'][l]}: ${lane.notes[i]}`}
+              </text>
+            ))}
+          </g>
+        );
+      })
+    }
+    <text class="nc-d-label" x={narrow.col} y={narrow.end + 5}>handled</text>
+    <path class="nc-d-leader" d={`M${(narrow.laneX[1] ?? 0) + 12} ${narrow.end}H${narrow.col - 8}`} />
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>The shell's cookie gets <code>SameSite=None</code> and its exact origin is listed</strong>,
+    so it signs in like the web page, while a request another site starts loses its cookie and is
+    refused.
+  </Fragment>
+</DiagramFrame>

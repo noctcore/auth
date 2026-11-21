@@ -1,0 +1,225 @@
+---
+/**
+ * Enumeration: a login for a known address and one for an unknown address
+ * cross the same three steps and leave with the same answer (flows/login.ts).
+ * The unknown address looks itself up under an id no store issues
+ * (NO_SUCH_USER_ID), spends counters keyed on the address
+ * (throttle/counter-keys.ts) and verifies against a dummy hash made by the
+ * same hasher (password/hasher.ts, dummyHashFor). Nothing is refused here
+ * that the other path is not refused too, so the drawing has no salmon: both
+ * paths are blue, and the point is that they look alike.
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+
+interface Step {
+  readonly name: string;
+  /** What both paths do here. */
+  readonly same: readonly string[];
+  /** What the known address uses. */
+  readonly known: string;
+  /** What the unknown address uses in its place. */
+  readonly unknown: string;
+}
+
+const steps: readonly Step[] = [
+  {
+    name: 'Store calls',
+    same: ['address, epoch,', 'credential by id'],
+    known: 'its own id',
+    unknown: 'an id no store issues',
+  },
+  {
+    name: 'Lockout gate',
+    same: ['counters keyed', 'on the address'],
+    known: 'same counters',
+    unknown: 'same counters',
+  },
+  {
+    name: 'Password verify',
+    same: ['one full verify,', 'same parameters'],
+    known: 'the stored hash',
+    unknown: 'a dummy hash',
+  },
+];
+
+const ANSWER = 'invalid_credentials';
+
+/** The internal reason of each path, which only the audit trail sees. */
+const REASONS = ['wrong_password', 'unknown_user'];
+
+const wide = {
+  w: 680,
+  h: 286,
+  postX: [150, 280, 410],
+  known: 150,
+  unknown: 228,
+  start: 30,
+  end: 520,
+};
+
+const narrow = {
+  w: 360,
+  h: 640,
+  postY: [150, 296, 442],
+  known: 36,
+  unknown: 92,
+  col: 132,
+  start: 92,
+  merge: 540,
+};
+
+const title = 'A known and an unknown address do the same work at login';
+const description =
+  'Two logins with a wrong password reach the same door, one for an address that has an account ' +
+  'and one for an address that has none. Both cross the same three steps. First the same store ' +
+  'calls: the address lookup, the epoch read and a credential lookup by id, which for the unknown ' +
+  'address uses an id no store issues. Then the lockout gate, whose counters are keyed on the ' +
+  'address, so both spend and check counters alike. Then one full password verify with the same ' +
+  'parameters: against the stored hash for the known address, against a dummy hash for the ' +
+  `unknown one. Both leave with the same answer, ${ANSWER}; the reason that tells them apart ` +
+  'stays on the server.';
+---
+
+<DiagramFrame id="enumeration-login" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">LOGIN, WRONG PASSWORD</text>
+
+    {
+      steps.map((step, i) => {
+        const x = wide.postX[i] ?? 0;
+
+        return (
+          <g>
+            <text class="nc-d-label" x={x} y="62" text-anchor="middle">
+              {step.name}
+            </text>
+            {step.same.map((line, j) => (
+              <text class="nc-d-note" x={x} y={82 + j * 15} text-anchor="middle">
+                {line}
+              </text>
+            ))}
+            <path class="nc-d-post" d={`M${x} 112V${wide.unknown + 12}`} />
+            {i !== 1 && (
+              <text class="nc-d-note" x={x + 8} y={wide.known - 12}>
+                {step.known}
+              </text>
+            )}
+            {i !== 1 && (
+              <text class="nc-d-note" x={x} y={wide.unknown + 32} text-anchor="middle">
+                {step.unknown}
+              </text>
+            )}
+          </g>
+        );
+      })
+    }
+
+    <text class="nc-d-label" x="24" y={wide.known + 30}>known address</text>
+    <text class="nc-d-label" x="24" y={wide.unknown - 18}>unknown address</text>
+    <text class="nc-d-label" x={wide.end + 16} y="62">Answer</text>
+    <text class="nc-d-note" x={wide.end + 16} y="82">the same code;</text>
+    <text class="nc-d-note" x={wide.end + 16} y="97">the reason stays</text>
+    <text class="nc-d-note" x={wide.end + 16} y="112">on the server</text>
+
+    {
+      [wide.known, wide.unknown].map((y, l) => (
+        <>
+          <path class="nc-d-route" d={`M${wide.start} ${y}H${wide.end - 7}`} />
+          <circle class="nc-d-node" cx={wide.start} cy={y} r="5" />
+          {wide.postX.map((x) => (
+            <circle class="nc-d-node" cx={x} cy={y} r="4" />
+          ))}
+          <circle class="nc-d-node-open" cx={wide.end} cy={y} r="7" />
+          <text class="nc-d-code" x={wide.end + 16} y={y + 4}>
+            {ANSWER}
+          </text>
+          <text class="nc-d-note" x={wide.end + 16} y={y + 24}>
+            {`(${REASONS[l]})`}
+          </text>
+        </>
+      ))
+    }
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="16" y="24">LOGIN, WRONG PASSWORD</text>
+    <text class="nc-d-label" x={narrow.col} y="62">known address</text>
+    <path class="nc-d-leader" d={`M${narrow.known + 10} 58H${narrow.col - 8}`} />
+    <text class="nc-d-label" x={narrow.col} y="90">unknown address</text>
+    <path class="nc-d-leader" d={`M${narrow.unknown + 10} 86H${narrow.col - 8}`} />
+
+    {
+      steps.map((step, i) => {
+        const y = narrow.postY[i] ?? 0;
+        const lines: { cls: string; text: string }[] = [
+          ...step.same.map((text) => ({ cls: 'nc-d-note', text })),
+          ...(i === 1
+            ? []
+            : [
+                { cls: 'nc-d-note', text: `known: ${step.known}` },
+                { cls: 'nc-d-note', text: `unknown: ${step.unknown}` },
+              ]),
+        ];
+
+        return (
+          <g>
+            <text class="nc-d-label" x={narrow.col} y={y - 10}>
+              {step.name}
+            </text>
+            <path class="nc-d-post" d={`M16 ${y}H${narrow.w - 16}`} />
+            {lines.map((line, j) => (
+              <text class={line.cls} x={narrow.col} y={y + 22 + j * 15}>
+                {line.text}
+              </text>
+            ))}
+          </g>
+        );
+      })
+    }
+
+    {
+      [narrow.known, narrow.unknown].map((x, l) => (
+        <>
+          <path
+            class="nc-d-route"
+            d={`M${x} ${narrow.start}V${narrow.merge - 44}C${x} ${narrow.merge - 16} ${(narrow.known + narrow.unknown) / 2} ${narrow.merge - 16} ${(narrow.known + narrow.unknown) / 2} ${narrow.merge}`}
+          />
+          <circle class="nc-d-node" cx={x} cy={58 + l * 28} r="5" />
+          <path class="nc-d-route" d={`M${x} ${58 + l * 28}V${narrow.start}`} />
+          {narrow.postY.map((y) => (
+            <circle class="nc-d-node" cx={x} cy={y} r="4" />
+          ))}
+        </>
+      ))
+    }
+    <circle
+      class="nc-d-node-open"
+      cx={(narrow.known + narrow.unknown) / 2}
+      cy={narrow.merge + 7}
+      r="7"
+    />
+    <text class="nc-d-label" x={narrow.col} y={narrow.merge + 2}>one answer</text>
+    <text class="nc-d-code" x={narrow.col} y={narrow.merge + 22}>{ANSWER}</text>
+    <text class="nc-d-note" x={narrow.col} y={narrow.merge + 44}>the reason stays</text>
+    <text class="nc-d-note" x={narrow.col} y={narrow.merge + 59}>on the server</text>
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>An unknown address pays for the same work as a known one</strong>: the same store
+    calls, the same counters and a full verify against a dummy hash, then the same answer.
+  </Fragment>
+</DiagramFrame>

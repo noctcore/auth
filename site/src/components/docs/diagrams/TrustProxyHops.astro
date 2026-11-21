@@ -1,0 +1,196 @@
+---
+/**
+ * Trust proxy: the example request of the page, one proxy in front of the
+ * app. The client wrote the left entry of X-Forwarded-For itself, the proxy
+ * appended the middle one, and the socket address is the proxy's. clientIp
+ * (http/ip.ts) puts the socket address after the header's entries and steps
+ * back `trustedHops` entries from the right; the drawing asks clientIp
+ * itself for each pick, so it cannot drift from the code. The dashed rule is
+ * where the entries your proxy wrote begin: a count that crosses it lets the
+ * client choose its IP. Nothing is refused here, so nothing is salmon: the
+ * right count is the blue path, the wrong ones are ink.
+ */
+import { clientIp } from '@noctcore/auth';
+import DiagramFrame from '../DiagramFrame.astro';
+
+/** The example on the page; the batch B test checks both against its text block. */
+const FORWARDED_FOR = '192.0.2.66, 198.51.100.23';
+const SOCKET = '203.0.113.9';
+
+const entries = [...FORWARDED_FOR.split(', '), SOCKET];
+
+interface Column {
+  readonly writer: { readonly wide: string; readonly narrow: string };
+  readonly verdict: readonly string[];
+}
+
+const columns: readonly Column[] = [
+  {
+    writer: { wide: 'the client wrote it', narrow: 'client wrote' },
+    verdict: ["the client's", 'own words'],
+  },
+  {
+    writer: { wide: 'your proxy appended it', narrow: 'proxy appended' },
+    verdict: ['the client,', 'as the proxy', 'saw it'],
+  },
+  {
+    writer: { wide: "the proxy's own address", narrow: 'the proxy' },
+    verdict: ['the proxy:', 'one bucket', 'for everyone'],
+  },
+];
+
+/** For each count, the column clientIp picks. */
+const picks = [0, 1, 2].map((hops) => ({
+  hops,
+  column: entries.indexOf(
+    clientIp({ remoteAddress: SOCKET, forwardedFor: FORWARDED_FOR, trustedHops: hops }) ?? '',
+  ),
+}));
+const RIGHT = 1;
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  readonly colX: readonly number[];
+  readonly kicker: string;
+  readonly header: number;
+  readonly entry: number;
+  readonly line: number;
+  readonly from: number;
+}
+
+const layouts: readonly Layout[] = [
+  {
+    kind: 'wide',
+    w: 680,
+    h: 312,
+    colX: [150, 340, 530],
+    kicker: 'ONE PROXY IN FRONT OF THE APP',
+    header: 62,
+    entry: 98,
+    line: 168,
+    from: 650,
+  },
+  {
+    kind: 'narrow',
+    w: 360,
+    h: 330,
+    colX: [64, 182, 300],
+    kicker: 'ONE PROXY IN FRONT',
+    header: 62,
+    entry: 98,
+    line: 172,
+    from: 346,
+  },
+];
+
+const title = 'Counting trusted hops from the right of X-Forwarded-For';
+const description =
+  `One proxy sits in front of the app. The request arrives with X-Forwarded-For ${FORWARDED_FOR} ` +
+  `from the socket address ${SOCKET}. The client wrote ${entries[0]} itself; the proxy appended ` +
+  `${entries[1]}, the address it saw the request come from; ${SOCKET} is the proxy. clientIp puts ` +
+  'the socket address after the header and steps back trustedHops entries from the right. ' +
+  picks
+    .map(
+      ({ hops, column }) =>
+        `With ${hops} trusted hops it picks ${entries[column]}, ${(columns[column]?.verdict ?? []).join(' ').replace(':', ',')}.`,
+    )
+    .join(' ') +
+  ' Only the count that matches the proxies you run stops before the entries the client wrote.';
+---
+
+<DiagramFrame id="trust-proxy-hops" title={title} description={description}>
+  {
+    layouts.map((L) => {
+      const left = L.kind === 'wide' ? 24 : 16;
+      const boundary = ((L.colX[0] ?? 0) + (L.colX[1] ?? 0)) / 2;
+      const rightX = L.colX[RIGHT] ?? 0;
+
+      return (
+        <svg
+          class={`nc-d nc-d--${L.kind}`}
+          viewBox={`0 0 ${L.w} ${L.h}`}
+          width={L.w}
+          height={L.h}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <text class="nc-d-kicker" x={left} y="26">
+            {L.kicker}
+          </text>
+
+          <text
+            class="nc-d-code"
+            x={((L.colX[0] ?? 0) + (L.colX[1] ?? 0)) / 2}
+            y={L.header}
+            text-anchor="middle"
+          >
+            X-Forwarded-For
+          </text>
+          <text class="nc-d-code" x={L.colX[2]} y={L.header} text-anchor="middle">
+            socket
+          </text>
+
+          {entries.map((entry, i) => (
+            <g>
+              <text class="nc-d-value" x={L.colX[i]} y={L.entry} text-anchor="middle">
+                {entry}
+              </text>
+              <text class="nc-d-note" x={L.colX[i]} y={L.entry + 20} text-anchor="middle">
+                {columns[i]?.writer[L.kind]}
+              </text>
+            </g>
+          ))}
+
+          <path class="nc-d-rule" d={`M${boundary} ${L.header + 14}V${L.h - 12}`} />
+          <text class="nc-d-note" x={boundary - 10} y={L.h - 20} text-anchor="end">
+            {L.kind === 'wide' ? 'the client writes' : 'client'}
+          </text>
+          <text class="nc-d-note" x={boundary + 10} y={L.h - 20}>
+            {L.kind === 'wide' ? 'your proxy writes' : 'your proxy'}
+          </text>
+
+          <text class="nc-d-note" x={L.from} y={L.line - 16} text-anchor="end">
+            {L.kind === 'wide' ? 'stepping back from the right' : 'from the right'}
+          </text>
+          <path class="nc-d-route" d={`M${L.from} ${L.line}H${rightX + 8}`} />
+          <path class="nc-d-leader" d={`M${rightX - 10} ${L.line}H${(L.colX[0] ?? 0) + 8}`} />
+
+          {picks.map(({ hops, column }) => {
+            const x = L.colX[column] ?? 0;
+            const right = column === RIGHT;
+
+            return (
+              <g>
+                {right ? (
+                  <circle class="nc-d-node-open" cx={x} cy={L.line} r="7" />
+                ) : (
+                  <rect class="nc-d-cell" x={x - 6} y={L.line - 6} width="12" height="12" rx="2" />
+                )}
+                <text class="nc-d-code" x={x} y={L.line + 30} text-anchor="middle">
+                  {`trustedHops: ${hops}`}
+                </text>
+                {(columns[column]?.verdict ?? []).map((line, j) => (
+                  <text
+                    class={right ? 'nc-d-label' : 'nc-d-note'}
+                    x={x}
+                    y={L.line + 52 + j * 17}
+                    text-anchor="middle"
+                  >
+                    {line}
+                  </text>
+                ))}
+              </g>
+            );
+          })}
+        </svg>
+      );
+    })
+  }
+
+  <Fragment slot="caption">
+    <strong>Trust exactly as many hops as you run proxies</strong>: one too few gives every client
+    the proxy's address, one too many lets the client choose its own.
+  </Fragment>
+</DiagramFrame>
