@@ -1,0 +1,129 @@
+---
+title: Sessions and expiry
+description: Opaque tokens, hashed storage, absolute and idle expiry, and why a revoked session stays dead.
+---
+
+import { Code, TabItem, Tabs } from '@astrojs/starlight/components';
+import InShort from '../../../components/docs/InShort.astro';
+import SessionLifecycle from '../../../components/docs/diagrams/SessionLifecycle.astro';
+import sessionTs from '../../../../snippets/learn/session.ts?raw';
+import devicesTs from '../../../../snippets/learn/signed-in-devices.ts?raw';
+
+<InShort>
+  <Fragment slot="threat">
+    Whoever holds the session value is the user, so a leaked store or a cookie that never expires
+    gives the account away.
+  </Fragment>
+  <Fragment slot="rule">
+    An opaque random token, only its hash in the store, two clocks that end every session, and no
+    late write that can bring a revoked one back.
+  </Fragment>
+  <Fragment slot="where">`session/session-manager.ts`, configured under `session`.</Fragment>
+</InShort>
+
+## What goes wrong
+
+A session is a bearer credential: whoever holds the value is the user. Two things make that dangerous. If the server stores the value itself, a leaked store (a database dump, a Redis snapshot, a backup) hands the attacker every live session. And if sessions never expire, one stolen cookie works forever.
+
+<SessionLifecycle />
+
+## The rule
+
+Make the token worthless to anyone who reads the store, end every session on two clocks, and never let a write bring one back.
+
+### The token is opaque and random
+
+The cookie carries 32 bytes from a cryptographically secure random source. It encodes nothing: no user id, no expiry, nothing to forge or parse.
+
+### The store keeps only the hash
+
+The store key is the SHA-256 of the token, never the token. A leaked store cannot be replayed, because the attacker holds hashes and needs the preimage. SHA-256 is enough here (no slow password hash) because the input already has 256 bits of entropy, so there is nothing to brute force.
+
+### Two expiries, for two threats
+
+| Expiry                   | Default                             | What it bounds                          |
+| ------------------------ | ----------------------------------- | --------------------------------------- |
+| Absolute (`absoluteTtl`) | 24 hours, 30 days with remember me  | The damage of a stolen cookie.          |
+| Idle (`idleTimeout`)     | 30 minutes, 7 days with remember me | Sessions left open on a shared machine. |
+
+- **Absolute** is the store's TTL on the session record. However active the user is, the session ends when the TTL does.
+- **Idle** is per session: if the user has not been seen for the idle window, the session is rejected.
+
+### Refreshing last-active without resurrecting
+
+Validating a session would otherwise write on every request. Instead, the stored last-active time is refreshed at most once per interval, and the write is careful in two ways:
+
+- **Update only if it exists.** A plain "set" could recreate a record that was revoked a moment earlier, between the read and the write. Update-only-if-exists means a revoked session can never be resurrected by a late refresh.
+- **Keep the remaining TTL.** A refresh never extends the absolute expiry.
+
+### A cap per user, and word of what it ends
+
+A user holds at most `session.maxPerUser` sessions (10 by default). Issuing one more evicts the oldest, after the new session is written, so sign-ins racing at the cap still end up within it.
+
+An evicted session is gone like a revoked one, but whatever the app holds for it (an open socket, a cache entry) is not, so the library names it:
+
+- the issued session carries the evicted sessions' handles in `evictedHandles` (the names the session list showed, safe for a client) and their store keys in `evicted` (server-side only, like `session.id`);
+- `onSessionsRevoked` fires with reason `evicted`, the same store keys as `sessionIds` and the same handles as `sessionHandles`.
+
+Each eviction is reported once: when two racing sign-ins both pick the same oldest session, or a sign-in evicts a session while it is being signed out, only the call whose delete removed it reports it, under its own reason. That needs a session store whose `delete` returns the ids it removed; the memory and Redis stores do. The hook is awaited on the sign-in that evicts, so hand slow cleanup to a queue.
+
+## Session handles
+
+A "where you're signed in" page needs a name for each session, so the user can sign one out. The store key would do, but it is the storage identity of a bearer secret: anything that reads the page (a script injected into it, a browser extension, a shared screen, a client log) would learn the key of every session on the account, and could match those keys against a leaked session store.
+
+So `auth.sessions.list(session)` names each session by a **handle** instead: an HMAC-SHA-256 of the store key under a key derived from the server secret, as 43 characters of unpadded base64url. A plain hash of the key would hide it too, but anyone holding a leaked store could compute it and match the two; the HMAC needs the secret as well. The handle never has the 64-character hex shape of a store key, so the two cannot be mixed up.
+
+**Revoking by handle.** `auth.sessions.revoke({ session, handle, meta })` looks the handle up among the caller's own live sessions only. A handle it does not find (garbage, a raw store key, a session already gone, or another user's session) answers `{ revoked: false }`, every time the same, so revoke cannot tell anyone whether a handle belongs to someone. Revoking another device still needs a fresh password proof, asked before any lookup.
+
+**The current session** is the entry with `current: true`. Signing it out is better done with `logout`, which also clears the cookie.
+
+**Correlating server-side.** `onSessionsRevoked` receives `sessionHandles` beside `sessionIds`, in the same order, so a socket server or a client cache keyed by handle can drop the right entries, whatever the reason (`revoke-one`, `evicted`, `password-change` and the rest). `auth.sessions.handle(session.id)` gives the handle of any session id you hold on the server.
+
+**Rotating the server secret** changes every handle (sessions themselves survive it). A client holding an old handle gets `{ revoked: false }` and lists again.
+
+### Upgrading to handles
+
+Up to `@noctcore/auth` 0.5 the list returned the store key as `id`, and revoke took it as `id`. Both are now `handle`, and a store key is no longer accepted by revoke: it answers `{ revoked: false }`, like any handle it does not know. Rename the field in your list and revoke routes (and in `revokeSessionInput` and `sessionSummaryOutput` with the tRPC adapter), and drop any session ids a client kept: list again and use the handles it returns. Code that kept store keys on the server, from `session.id` or the hook's `sessionIds`, can map them with `auth.sessions.handle(id)`.
+
+## In code
+
+The defaults written out, and the two routes behind a "where you're signed in" page.
+
+<Tabs>
+  <TabItem label="The defaults">
+    <Code code={sessionTs} lang="ts" title="session.ts" />
+  </TabItem>
+  <TabItem label="Signed-in devices">
+    <Code code={devicesTs} lang="ts" title="signed-in-devices.ts" />
+  </TabItem>
+</Tabs>
+
+## Where the package and the guide differ
+
+- **Token shape.** The guide recommends a session id plus a separate secret, so the session can be referenced without exposing a credential. The package keeps a single random token and uses its SHA-256 as the store key, which keeps sessions issued by the existing apps valid on adoption. That key never goes to a client: what an app lists and revokes is a separate handle, above.
+- **Refresh interval.** The guide suggests refreshing the expiry hourly or daily. The package refreshes last-active at most once a minute, because the default idle timeout is 30 minutes; the refresh never moves the absolute expiry.
+- **Sign-out on password change.** The guide leaves it to the user. The package always revokes every session and re-issues the current one.
+- **Revoking sessions.** As the guide asks, revoking another device's session, or every other session at once, needs a fresh credential proof (within 10 minutes), so a stolen session cannot sign the owner out. Signing out of the current device needs none.
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test                                                                                                                                            | Attack                                                                                               | Stopped by                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| [A010](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A010-stolen-cookie-after-password-change.test.ts)                 | A stolen session cookie outliving a password change                                                  | `flows/password-change.ts`, `session/session-manager.ts` |
+| [A017](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A017-leaked-store-replay.test.ts)                                 | Replaying secrets from a leaked store                                                                | `session/session-manager.ts`, `crypto/hash.ts`           |
+| [A018](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A018-cookie-tossing-and-script-theft.test.ts)                     | Cookie tossing and reading the session cookie from script                                            | `http/cookie.ts`                                         |
+| [A028](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A028-fresh-auth-stale-proof.test.ts)                       | Passing a fresh-auth check with a stale proof                                                        | `auth-nestjs/session.guard.ts`                           |
+| [A087](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A087-session-store-key-through-the-session-list.test.ts)          | Reading a session's store key through the session list, or revoking another user's session by handle | `flows/session-management.ts`                            |
+| [A097](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A097-reviving-a-revoked-session-through-the-legacy-store.test.ts) | Bringing back a revoked session through the legacy store an app adopts sessions from                 | `session/legacy-sessions.ts`                             |
+
+</div>
+
+## Further reading
+
+[Sessions](https://auth.pilcrowonpaper.com/sessions) and [Auth sessions](https://auth.pilcrowonpaper.com/auth-sessions) in Pilcrow's auth guide.
+
+## Related
+
+[Revocation races and the epoch fence](/auth/learn/revocation-races/) covers how revoking every session of a user stays correct while a login is in flight.
