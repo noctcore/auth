@@ -76,7 +76,7 @@ Whoever holds the store holds hashes, and to use one they would need a token tha
 
 **The server secret.** With the secret and a leaked table, the code HMACs can be searched again, which is why codes also expire within minutes and run out of attempts.
 
-- Rotating the secret voids outstanding codes, recovery codes and the lockout's device cookies.
+- Rotating the secret voids outstanding codes, recovery codes and the lockout's device cookies, unless the old secret stays configured as `previousSecret` for a grace window: values it made then still verify, and everything new is keyed under the current secret only.
 - It never voids sessions, links, pending invitations or the two-factor plugin's trusted-device tokens, whose hashes use no key.
 
 **Hashes in your own responses.** The session id an app lists and revokes is the token's hash, which is not a credential, but a store row has other fields worth keeping private. The tRPC adapter's output schemas strip everything they do not name (attack [A030](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A030-hash-field-in-an-output.test.ts)).

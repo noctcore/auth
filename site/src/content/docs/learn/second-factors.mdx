@@ -90,6 +90,8 @@ They are the weak link, so:
 <Aside type="caution" title="Rotating the secret voids every recovery code">
   The HMAC key is derived from the auth `secret`. After a rotation, ask every user with a factor
   to generate a new set: their `status` still counts the old rows, which no longer match anything.
+  With the old secret kept as `previousSecret`, the old codes keep working until you remove it,
+  which gives users a window to make the new set.
 </Aside>
 
 ### Codes carried over are a bridge, not a second format
