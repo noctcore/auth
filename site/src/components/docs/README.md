@@ -1,0 +1,163 @@
+# Learn page template
+
+How a Learn page is built, and how its diagram is drawn. The pilot pages are `learn/csrf.mdx`,
+`learn/brute-force-and-lockout.mdx` and `learn/sessions-and-expiry.mdx`; copy from them.
+
+## Page order
+
+1. **In short** (`InShort.astro`), right under the frontmatter. Three slots, one sentence each:
+   `threat` (what goes wrong), `rule` (what the package does about it), `where` (the module and its
+   config key). No numbers that are not also in the body. `where` names at most two
+   identifiers: the module, not every function in it.
+2. **What goes wrong.** The attack, in prose. A page with no attack to show (a design choice, a
+   concept) calls this section **The problem** and passes `first="The problem"` to `InShort`.
+3. **The diagram**, directly after it. One per page; another only when a separate mechanism needs
+   its own picture, placed under the `###` it explains (the brute force page has three: the budgets,
+   the locks, the owner's device). A page whose point is a single value or a list (a table of
+   defaults says it better) gets no diagram: a drawing must show something moving or being decided.
+4. **The rule.** One lead sentence under the `##`, then one `###` per rule, so the right rail lists
+   them. Inside: short paragraphs, a list where the text was a list in disguise, a Markdown table for defaults (budget, default, what it
+   stops), an `<Aside type="caution">` for a trade-off the reader must not miss. Keep every fact,
+   number, config key, link and attack id of the old page; change the wording only.
+5. **In code.** A typechecked sample from `site/snippets/learn/`, imported with `?raw` and shown with
+   `<Code>`. Two samples go in `<Tabs>` (the defaults written out, then the API in use).
+6. **Where the package and the guide differ.**
+7. **Attack tests.** A Markdown table inside `<div class="nc-attacks">` (blank lines around it):
+   `| Test | Attack | Stopped by |`, one row per attack in `packages/auth/tests/attacks/ATTACKS.md`
+   that names the page, the link text being the bare id. "Stopped by" is one code chip per file,
+   `http/csrf.ts` in the core and `auth-trpc/middlewares.ts` in an adapter. On a phone the rows
+   stack.
+8. **Further reading**, then **Related** if the page had it.
+
+### The body
+
+- A paragraph or bullet runs at most about three lines at the content width. Longer, it becomes
+  several short paragraphs, each led by a **bold phrase** that says the point.
+- Cases with an outcome ("the test suite runs ...") are a two-column table, not prose.
+- An attack id in prose links to its test, like the table does.
+
+A page becomes `.mdx` when it uses a component. The file name is the only thing that changes: the
+URL stays the same.
+
+## Numbers are checked
+
+Add the page to `PAGES` in `site/scripts/learn-numbers.test.ts` when you convert it. Every digit on
+the page must then come from a fact phrase built from the package source, and the page must link
+every attack test `ATTACKS.md` files under it. Diagram numbers are not typed into the diagram: the
+diagram imports the code sample (`snippets/learn/*.ts`) and the test checks the sample against the
+source. A constant the sample cannot hold (like the lock factor) is a named `const` in the diagram
+that the test reads.
+
+## Drawing a diagram
+
+A diagram is an Astro component in `diagrams/` that renders a `DiagramFrame` with two `<svg>`
+drawings: `nc-d nc-d--wide` (viewBox 680 wide, for the content column) and `nc-d nc-d--narrow`
+(viewBox 360 wide, for phones). The frame shows the one that fits its own width. Both get
+`aria-hidden="true"`; the frame carries `role="img"`, the `title` and a full `description` in
+sentences, so a screen reader hears one account. The same description sits under the caption behind
+**Text version**: SVG text does not grow with a text-only zoom, so the words must be on the page too.
+Draw both at roughly 1:1 scale: the narrow drawing takes over below a 39rem plate and is capped
+near its own size, so its text never renders far below its CSS size.
+
+Put positions in a layout object per drawing and map over the data; do not copy the drawing twice by
+hand. Lay out text with mono widths in mind (12px DM Mono is about 7.2px a character) and check the
+result in headless screenshots at 1440 and 390, in both themes.
+
+### The vocabulary
+
+Use the classes in `src/styles/docs.css`, never a color value:
+
+| Class                         | Use                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nc-d-tick`                   | A request along a route. Say so on the drawing ("each tick: a request").                                                                                                                                                                                                                                                                                                                                         |
+| `nc-d-route`                  | The legitimate path: pale blue at night, brand blue by day.                                                                                                                                                                                                                                                                                                                                                      |
+| `nc-d-node`, `nc-d-node-open` | Where a path starts (filled) and where it arrives (open ring).                                                                                                                                                                                                                                                                                                                                                   |
+| `nc-d-attack-node`            | Where the attack starts (filled salmon dot).                                                                                                                                                                                                                                                                                                                                                                     |
+| `nc-d-attack`                 | The attack: salmon, dashed `5 7`. Add `nc-d-attack--past` (fine, dotted, faint) for what happens only if the layer before missed it.                                                                                                                                                                                                                                                                             |
+| `Stop.astro`                  | A mark across a path. `kind="refused"` (default): salmon bar and dot, the package turns a request away. `kind="end"`: ink bar, something ends on schedule (an expiry, a sign-out). `kind="stripped"`: ink bar and open ring, the request goes on minus what made it dangerous (the browser drops the cookie). It draws `nc-d-stop`, `nc-d-stop-dot`, `nc-d-end` and `nc-d-strip-ring`: never use those directly. |
+| `nc-d-post`                   | A checkpoint line the request crosses.                                                                                                                                                                                                                                                                                                                                                                           |
+| `nc-d-rule`, `nc-d-leader`    | Dashed dividers and caps; dotted leaders from a note to what it names.                                                                                                                                                                                                                                                                                                                                           |
+| `nc-d-cell`, `nc-d-span`      | A counted attempt; a span of time (a lock), in ink. `nc-d-span--ghost` for an example span.                                                                                                                                                                                                                                                                                                                      |
+| `nc-d-label`                  | A name on the drawing (Manrope, strong).                                                                                                                                                                                                                                                                                                                                                                         |
+| `nc-d-code`                   | A config key or function name (DM Mono, accent).                                                                                                                                                                                                                                                                                                                                                                 |
+| `nc-d-note`, `nc-d-value`     | An annotation (DM Mono, muted); a number that matters (DM Mono, strong).                                                                                                                                                                                                                                                                                                                                         |
+| `nc-d-stop-text`              | Text about the stop itself (DM Mono, salmon).                                                                                                                                                                                                                                                                                                                                                                    |
+| `nc-d-kicker`                 | One small uppercase header for a panel, like the brand art's "LOGIN / MODULE MAP".                                                                                                                                                                                                                                                                                                                               |
+
+### Checking a drawing
+
+Run the dev server (`bun run dev` in `site/`) and shoot each page headless at 1440 and 390 wide, in
+both themes (set `localStorage['starlight-theme']` to `dark` or `light` before load). On each visible
+`svg.nc-d`, compare the `getBBox()` of every `<text>`: no two may overlap, none may leave the
+viewBox. Read the crops at full size; a label that touches a line counts as a collision. Never look
+at the screen itself, only at images the headless browser writes.
+
+### Style rules
+
+- **Show the mechanism.** Every mark is something the code does: a budget, a check, a lock, an
+  expiry. No decoration, no icons, no padlocks or shields.
+- **Salmon means the package refuses something here**, nothing else: the attack line, its stop bar
+  and the text about that refusal. An expiry, a sign-out or a lock's length is ink (`kind="end"`,
+  `nc-d-span`), even when it ends a session, and so is a defence that disarms a request without
+  refusing it (`kind="stripped"`). Blue is the legitimate path.
+- **One mechanism per frame.** A frame shows one mechanism and sits under the `###` that explains
+  it. The narrow drawing may run to about 700 units tall if each lane reads on its own within one
+  phone screen (about 640 CSS px); past that, or with a second mechanism, split it.
+- **Real text, real values.** Labels are `<text>`, never outlined paths; values come from the code
+  sample, config keys are spelled as in the package.
+- **Say "not to scale"** when a time axis is not.
+- **A caption is the takeaway**, one or two sentences with the key phrase in `<strong>`. A reader
+  who sees only the In short box, the drawing and the caption should get the page's point.
+- **No motion.** The diagrams are static; the landing page is the only place that animates.
+- No em or en dashes anywhere, in labels, descriptions or captions.
+
+## Skeleton
+
+```mdx
+---
+title: Topic
+description: One sentence.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import InShort from '../../../components/docs/InShort.astro';
+import TopicDiagram from '../../../components/docs/diagrams/TopicDiagram.astro';
+import topicTs from '../../../../snippets/learn/topic.ts?raw';
+
+<InShort>
+  <Fragment slot="threat">What goes wrong, in one sentence.</Fragment>
+  <Fragment slot="rule">What the package does about it.</Fragment>
+  <Fragment slot="where">`module/file.ts`, configured under `key`.</Fragment>
+</InShort>
+
+## What goes wrong
+
+<TopicDiagram />
+
+## The rule
+
+One lead sentence.
+
+### First rule
+
+## In code
+
+<Code code={topicTs} lang="ts" title="topic.ts" />
+
+## Where the package and the guide differ
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test | Attack | Stopped by |
+| ---- | ------ | ---------- |
+
+</div>
+
+## Further reading
+```
+
+A new diagram starts from the smallest pilot, `diagrams/LockoutDevice.astro`: one `layouts` array
+with a wide and a narrow entry, a `title`, a `description` that says everything the drawing does,
+and a caption.
