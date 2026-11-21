@@ -102,6 +102,13 @@ export interface PluginContext<U extends AuthUser, A> {
    */
   keyedHash(purpose: string, message: string): string;
   /**
+   * `keyedHash` under the current key first, then under the key of each
+   * previous secret of a rotation (`previousSecret`). For looking up or
+   * comparing a value stored before the rotation: try each, and store only
+   * the first. One entry when no previous secret is configured.
+   */
+  keyedHashes(purpose: string, message: string): readonly [string, ...string[]];
+  /**
    * The public handle of the session stored under `sessionId`: an HMAC of the
    * store key under a key derived from the server secret, as unpadded
    * base64url. `sessions.list` shows it, `sessions.revoke` takes it and
@@ -110,6 +117,12 @@ export interface PluginContext<U extends AuthUser, A> {
    * changes every handle (never a session).
    */
   sessionHandle(sessionId: string): string;
+  /**
+   * Whether `handle` names the session stored under `sessionId`: its handle
+   * under the current secret, or under a previous secret of a rotation, so a
+   * handle listed before the rotation still revokes. Constant time per key.
+   */
+  matchesSessionHandle(sessionId: string, handle: string): boolean;
   /**
    * The address in the one spelling the configured `email.normalize` policy
    * gives, or null when the policy refuses it. Every comparison of two

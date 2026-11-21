@@ -11,7 +11,7 @@ import type { AuthConfig, AuthPlugin, PasswordResetJob } from './core/config';
 import { mergeHooks } from './core/hooks';
 import type { PluginContext } from './core/plugin-context';
 import { checkPlugins, namespacePluginFlows, type PluginFlows } from './core/plugins';
-import { deriveKey, toSecret } from './crypto/keys';
+import { deriveKeys, toPreviousSecrets, toSecret } from './crypto/keys';
 import { cryptoRandom } from './crypto/random';
 import * as emailChange from './flows/email-change';
 import { clearEmailRevertLockout, lockoutHooks } from './flows/email-lockout';
@@ -86,12 +86,19 @@ export function createAuth<
 
   const settings = resolveSettings(config);
   const secret = toSecret(config.secret);
+
+  // The current secret first: it alone signs and stores, the previous ones only verify.
+  const secrets: [Uint8Array, ...Uint8Array[]] = [
+    secret,
+    ...toPreviousSecrets(config.previousSecret, secret),
+  ];
+
   const plugins = (config.plugins ?? []) as readonly AuthPlugin[];
   // One secret, a separate key per use: a code HMAC can never double as a device token.
-  const codeKey = deriveKey(secret, 'codes');
-  const deviceKey = deriveKey(secret, 'device');
-  const pluginKey = deriveKey(secret, 'plugins');
-  const handleKey = deriveKey(secret, 'session-handles');
+  const codeKeys = deriveKeys(secrets, 'codes');
+  const deviceKeys = deriveKeys(secrets, 'device');
+  const pluginKeys = deriveKeys(secrets, 'plugins');
+  const handleKeys = deriveKeys(secrets, 'session-handles');
 
   checkPlugins(plugins, { captcha: Boolean(config.captcha) });
 
@@ -130,7 +137,7 @@ export function createAuth<
 
   assertStoreOutlivesSessions(config.stores.sessions, sessions);
 
-  const tokens = new OneTimeTokens(config.stores.tokens, clock, random, codeKey);
+  const tokens = new OneTimeTokens(config.stores.tokens, clock, random, codeKeys);
 
   const throttle = new Throttle(config.stores.counters, clock, config.throttle?.lockout);
 
@@ -157,9 +164,9 @@ export function createAuth<
     cookie,
     attributeSchema: config.session?.attributes,
     emails,
-    deviceKey,
-    handleKey,
-    pluginKey,
+    deviceKeys,
+    handleKeys,
+    pluginKeys,
     freshAuthAgeMs: settings.freshAuthAgeMs,
     clock,
     random,

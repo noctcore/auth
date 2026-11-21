@@ -114,12 +114,25 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
   };
   /**
    * Server secret, at least 32 bytes. Separate keys are derived from it for
-   * code HMACs, trusted-device tokens and session handles. Rotating it
-   * invalidates outstanding codes and device cookies, never sessions, and
+   * code HMACs, trusted-device tokens, session handles and plugins' keyed
+   * hashes. Rotating it without `previousSecret` invalidates outstanding
+   * codes, device cookies and two-factor recovery codes, never sessions, and
    * changes every session handle (`sessions.list`), so a client holding an
    * old handle must list again. Keep it apart from your CSRF secret.
    */
   readonly secret: Uint8Array | string;
+  /**
+   * The secret (or secrets, newest first) a rotation replaced, kept for a
+   * grace window. Every key is derived from each of them too: a code, device
+   * cookie, session handle or keyed hash made under one still verifies, while
+   * everything new is signed and stored under `secret` only. Each must be at
+   * least 32 bytes and differ from `secret` and from the others. Remove it
+   * once the longest-lived value has expired: the trusted-device max age
+   * (`throttle.lockout.deviceMaxAge`, 30 days by default), and only after users
+   * holding two-factor recovery codes from before the rotation have made a
+   * new set, since those never expire. Default none.
+   */
+  readonly previousSecret?: Uint8Array | string | readonly (Uint8Array | string)[];
   readonly email?: {
     /**
      * How an address is normalised before it is compared, stored or used as a

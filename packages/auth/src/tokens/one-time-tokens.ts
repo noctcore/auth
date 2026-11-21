@@ -6,7 +6,9 @@
  * - Links are 32 random bytes; only their SHA-256 is stored.
  * - Codes (6 to 9 digits) are stored as an HMAC under the server secret, bound
  *   to purpose and user, because a plain hash of a 6-digit code is reversed in
- *   milliseconds from a leaked table. Each code has an attempt cap enforced by
+ *   milliseconds from a leaked table. During a secret rotation a code is
+ *   checked under the current key and each previous one (all of them, every
+ *   time), while a new code is only ever stored under the current key. Each code has an attempt cap enforced by
  *   an atomic increment BEFORE the comparison, so parallel guesses cannot
  *   exceed it. A correct code is exchanged for a short-lived link-style ticket,
  *   so the code itself is never what authorises the password write.
@@ -45,18 +47,26 @@ export type TokenRedemption =
 const CODE_PATTERN = /^\d{6,9}$/u;
 
 export class OneTimeTokens {
+  /** Current first; codes are stored under the first only. */
+  private readonly keys: readonly Uint8Array[];
+
   constructor(
     private readonly store: TokenStore,
     private readonly clock: Clock,
     private readonly random: RandomSource,
-    /** Server secret for code HMACs. Codes are refused when it is absent. */
-    private readonly secret: Uint8Array | undefined,
-  ) {}
+    /**
+     * Key for code HMACs, or the keys of a secret rotation, current first.
+     * Codes are refused when it is absent.
+     */
+    secret: Uint8Array | readonly Uint8Array[] | undefined,
+  ) {
+    this.keys = secret === undefined ? [] : secret instanceof Uint8Array ? [secret] : [...secret];
+  }
 
-  private codeHash(purpose: string, userId: string, code: string): string {
-    if (!this.secret) throw new Error('A server secret is required for code tokens');
+  private codeHash(purpose: string, userId: string, code: string, key = this.keys[0]): string {
+    if (!key) throw new Error('A server secret is required for code tokens');
 
-    return hmacSha256Hex(this.secret, `${purpose}:${userId}:${code}`);
+    return hmacSha256Hex(key, `${purpose}:${userId}:${code}`);
   }
 
   async issueLink(
@@ -141,8 +151,15 @@ export class OneTimeTokens {
     // an id no user can have), so neither the work nor the round trips depend
     // on whether the account exists.
     const candidate = typeof code === 'string' && CODE_PATTERN.test(code) ? code : '000000';
-    const expected = this.codeHash(purpose, userId ?? NO_SUCH_USER_ID, candidate);
-    const found = await this.store.findByUser(purpose, userId ?? NO_SUCH_USER_ID);
+    const subject = userId ?? NO_SUCH_USER_ID;
+    const expected = this.codeHash(purpose, subject, candidate);
+
+    // The previous keys of a rotation, each paid for on every try.
+    const previous = this.keys
+      .slice(1)
+      .map((key) => this.codeHash(purpose, subject, candidate, key));
+
+    const found = await this.store.findByUser(purpose, subject);
 
     if (userId === null || typeof code !== 'string' || !CODE_PATTERN.test(code))
       return { status: 'unknown' };
@@ -162,7 +179,10 @@ export class OneTimeTokens {
       return { status: 'exhausted', namedUserId: userId };
     }
 
-    if (!hexDigestsEqual(found.hash, expected)) {
+    // Every candidate is compared, so the time does not say which key matched.
+    const matches = [expected, ...previous].map((hash) => hexDigestsEqual(found.hash, hash));
+
+    if (!matches.includes(true)) {
       if (attempt >= maxAttempts) await this.store.deleteByUser(userId, [purpose]);
 
       return { status: 'mismatch', namedUserId: userId };

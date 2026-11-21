@@ -241,7 +241,7 @@ NewLock [interface]
     readonly until: number
 NormalizedEmail [type] = string & { readonly __normalizedEmail: true; }
 OneTimeTokens [class]
-    (new) (store: TokenStore, clock: Clock, random: RandomSource, secret: Uint8Array | undefined): OneTimeTokens
+    (new) (store: TokenStore, clock: Clock, random: RandomSource, secret: Uint8Array | readonly Uint8Array[] | undefined): OneTimeTokens
     extendLink(purpose: string, token: unknown, expiresAt: number): Promise<void>
     findKeyed(purpose: string, key: string): Promise<{ readonly userId: string; readonly data: Readonly<Record<string, string>>; } | null>
     findLive(purpose: string, userId: string): Promise<{ readonly data: Readonly<Record<string, string>>; readonly expiresAt: number; } | null>
@@ -251,8 +251,8 @@ OneTimeTokens [class]
     private classify
     private codeHash
     private readonly clock
+    private readonly keys
     private readonly random
-    private readonly secret
     private readonly store
     putKeyed(purpose: string, userId: string, key: string, ttlMs: number, data?: Record<string, string>): Promise<void>
     redeemCode(purpose: string, userId: string | null, code: unknown, maxAttempts: number): Promise<TokenRedemption>
@@ -275,7 +275,9 @@ PluginContext [interface]<U extends AuthUser, A>
     hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>
     issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>
     keyedHash(purpose: string, message: string): string
+    keyedHashes(purpose: string, message: string): readonly [string, ...string[]]
     mail(event: DistributiveOmit<AuthMailEvent, 'dedupeKey'>): void
+    matchesSessionHandle(sessionId: string, handle: string): boolean
     normalizeEmail(input: unknown): NormalizedEmail | null
     notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason, options?: { scope?: string; }): Promise<void>
     parseEmail(input: unknown): AuthResult<NormalizedEmail>
