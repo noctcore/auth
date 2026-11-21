@@ -9,13 +9,20 @@
  * the page can make its next unsafe request without another round trip.
  * Rotation (sign-in, re-authentication, a password change, revoking the other
  * sessions, verifying an address) all goes through `set`.
+ *
+ * A client that cannot read the API's cookies (a desktop shell on its own
+ * scheme, a web app on another origin than the API) reads the current token
+ * from a safe request with `csrfToken`. That grants nothing a cross-site page
+ * could use: the token stays bound to the session or pre-session, the cookie
+ * is still required next to it, and CORS keeps the body from other origins.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { IssuedSession } from '@noctcore/auth';
+import { AuthConfigError, type IssuedSession } from '@noctcore/auth';
 import { csrfCookie, newPreSession, preSessionBinding, sessionBinding } from './csrf-tokens';
 import type { ResolvedOptions } from './options';
 import {
   appendCookie,
+  handedCsrfToken,
   principalOf,
   rawRequest,
   rawResponse,
@@ -52,6 +59,31 @@ export class SessionCookies {
     appendCookie(res, csrf.cookie);
 
     return { csrfToken: csrf.token };
+  }
+
+  /**
+   * The CSRF token for the request's session or pre-session, for a client
+   * that cannot read the `csrf` cookie: call it from a `@Public()` GET route
+   * (such as `GET /csrf-token`) and return the result. It is exactly the
+   * token `CsrfMiddleware` set or kept as the cookie on this response,
+   * minting the pre-session and the cookie when missing, as on any safe
+   * request. The response is marked `Cache-Control: no-store`. Throws an
+   * `AuthConfigError` on a request the middleware handed no token: an exempt
+   * path (which mints nothing) or an unsafe method.
+   */
+  csrfToken(request: unknown, response: unknown): { csrfToken: string } {
+    const token = handedCsrfToken(rawRequest(request));
+
+    if (token === undefined) {
+      throw new AuthConfigError(
+        'SessionCookies.csrfToken needs a safe request (GET) that CsrfMiddleware checked: ' +
+          'the route is on an exempt path or was called with an unsafe method.',
+      );
+    }
+
+    rawResponse(response).setHeader('cache-control', 'no-store');
+
+    return { csrfToken: token };
   }
 
   /**

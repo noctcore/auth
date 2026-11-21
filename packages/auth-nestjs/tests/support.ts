@@ -100,6 +100,20 @@ export class AccountController {
     return { ok: true };
   }
 
+  /** For a client that cannot read the `csrf` cookie: the documented route shape. */
+  @Public()
+  @Get('csrf-token')
+  csrfToken(@Req() req: unknown, @Res({ passthrough: true }) res: unknown) {
+    return this.cookies.csrfToken(req, res);
+  }
+
+  /** The same call on an unsafe method, which the middleware hands no token. */
+  @Public()
+  @Post('csrf-token')
+  csrfTokenByPost(@Req() req: unknown, @Res({ passthrough: true }) res: unknown) {
+    return this.cookies.csrfToken(req, res);
+  }
+
   @Public()
   @Get('whoami')
   whoami(@CurrentUser() user: AuthUser | null) {
@@ -265,9 +279,17 @@ export class StaffController {
 @Public()
 @Controller('open')
 export class OpenController {
+  constructor(@Inject(SessionCookies) private readonly cookies: SessionCookies) {}
+
   @Get()
   index() {
     return { open: true };
+  }
+
+  /** On the exempt path: the middleware never runs, so there is no token to hand out. */
+  @Get('webhook')
+  token(@Req() req: unknown, @Res({ passthrough: true }) res: unknown) {
+    return this.cookies.csrfToken(req, res);
   }
 
   @Post('webhook')
@@ -408,6 +430,7 @@ interface Answer {
   readonly status: number;
   readonly body: Record<string, unknown>;
   readonly setCookies: readonly string[];
+  readonly headers: Readonly<Record<string, unknown>>;
 }
 
 /** Keeps cookies, and sends what a same-origin page sends, unless told otherwise. */
@@ -461,7 +484,12 @@ export class Browser {
       else this.cookies.set(name, value);
     }
 
-    return { status: response.status, body: response.body as Record<string, unknown>, setCookies };
+    return {
+      status: response.status,
+      body: response.body as Record<string, unknown>,
+      setCookies,
+      headers: response.headers as Record<string, unknown>,
+    };
   }
 
   /** Visits a page (which hands out the CSRF cookie) and signs in. */
