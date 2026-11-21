@@ -171,6 +171,10 @@ export function buildRouter(auth: TestAuth) {
     poll: publicProcedure.meta({ touch: false }).query(async ({ ctx }) => ({
       user: (await ctx.auth.user())?.id ?? null,
     })),
+    /** For a client that cannot read the `csrf` cookie. */
+    csrfToken: publicProcedure.output(csrfTokenOutput).query(({ ctx }) => ctx.auth.csrfToken()),
+    /** The same call in a mutation, which mints no token. */
+    csrfTokenByPost: publicProcedure.mutation(({ ctx }) => ctx.auth.csrfToken()),
     me: protectedProcedure.output(userOutput).query(({ ctx }) => ctx.user),
     /** Returns more than the user: the output schema must strip it. */
     leaky: protectedProcedure
@@ -338,6 +342,7 @@ export class Browser {
   override: Record<string, string | null> = {};
   readonly client;
   lastSetCookies: string[] = [];
+  lastHeaders = new Headers();
   lastStatus = 0;
 
   constructor(
@@ -383,6 +388,7 @@ export class Browser {
     const response = await this.env.transport(String(input), { ...init, headers });
 
     this.lastStatus = response.status;
+    this.lastHeaders = response.headers;
     this.lastSetCookies = response.headers.getSetCookie();
 
     for (const line of this.lastSetCookies) {
