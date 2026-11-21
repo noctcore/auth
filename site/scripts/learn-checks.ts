@@ -89,6 +89,7 @@ const NOT_NUMBERS = [
   /\bIPv[46]\b/gu, // address family names
   /\bbase64url\b/gu,
   /`@noctcore\/auth` \d+\.\d+/gu, // a past release named in an upgrade note
+  /\bnestjs-trpc \d+\.\d+\.\d+\b/gu, // the nestjs-trpc release an option arrived in
   /\b(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}\b/gu, // documentation ranges (RFC 5737)
   /^\d+\. /gmu, // ordered list markers
 ];

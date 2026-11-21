@@ -116,7 +116,7 @@ Reading the token from a response grants nothing a cross-site page could use. Th
   ```
 
 - **nestjs-trpc 2.14.0 and later**: `TRPCModule.forRoot({ trpc: { ... } })` passes the native adapter options, `responseMeta` included, on to tRPC, so wrap yours there: `trpc: { responseMeta: authResponseMeta(appResponseMeta) }`. Its `trpc.middleware` hook runs on the same requests and can set a cache header too: keep it from doing so on the token query.
-- **nestjs-trpc before 2.14.0**: there is no `responseMeta`, so nothing inside tRPC can replace the `no-store`. Keep any Express or Fastify middleware of yours that sets a cache header off the tRPC base path, or serve the token from the Nest side instead, with `SessionCookies.csrfToken` in a `@Public()` GET route, which the bullet below covers.
+- **Earlier nestjs-trpc releases**: there is no `responseMeta`, so nothing inside tRPC can replace the `no-store`. Keep any Express or Fastify middleware of yours that sets a cache header off the tRPC base path, or serve the token from the Nest side instead, with `SessionCookies.csrfToken` in a `@Public()` GET route, which the bullet below covers.
 
 - **NestJS**: Nest's `CacheInterceptor` caches GET responses by URL inside the app, and on a hit the handler never runs, so `no-store` never reaches it: every caller gets the first caller's token. Keep the token route out of it (no `@CacheKey` or `@CacheTTL` on it, and skip it in `trackBy` when the interceptor is global through `APP_INTERCEPTOR`) and out of any other response cache, and any interceptor or middleware that sets `Cache-Control` after the handler, which would replace the `no-store`.
 
