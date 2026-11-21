@@ -457,3 +457,77 @@
     color: var(--nc-text-strong);
   }
 }
+
+/* ==========================================================================
+ * Build guides
+ * The guide summary, the wiring diagram vocabulary and the build steps. The
+ * rules for using them are in src/components/docs/README.md, under "Build
+ * guide template".
+ * ========================================================================== */
+
+/* ---------- Guide summary ---------- */
+/* GuideSummary.astro reuses the In short band; only the label column is wider. */
+.sl-markdown-content .nc-guide dl {
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+}
+
+@media (max-width: 40rem) {
+  .sl-markdown-content .nc-guide dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Wiring diagrams ---------- */
+/* A module, store or service the guide wires in: a quiet plate on the plate. */
+.nc-d .nc-d-box {
+  fill: color-mix(in oklch, var(--nc-bg-raised) 70%, transparent);
+  stroke: var(--nc-line);
+  stroke-width: 1;
+}
+
+/* The piece the others hang from (the auth instance, the context): its outline in the path color. */
+.nc-d .nc-d-box--key {
+  stroke: var(--nc-path);
+  stroke-width: 1.25;
+}
+
+/* A dependency: what one piece holds or calls. Solid and thin, so it never reads as a request. */
+.nc-d .nc-d-wire {
+  fill: none;
+  stroke: var(--nc-muted);
+  stroke-width: 1.25;
+}
+
+/* ---------- Build steps ---------- */
+/* Each step of <Steps> opens with an h3 (Starlight wraps it in .sl-heading-wrapper). */
+.sl-markdown-content .sl-steps > li > .sl-heading-wrapper:first-child {
+  margin-top: 0;
+}
+
+.sl-markdown-content .sl-steps > li + li {
+  margin-top: 2rem;
+}
+
+/* A config key or call in the first column names the row: keep it on one line. */
+.sl-markdown-content .sl-steps td:first-child code {
+  white-space: nowrap;
+}
+
+/*
+ * On a phone the rail would cost every code block a fifth of its width. The
+ * number stays beside the step's heading; what follows the heading takes the
+ * full column, and the space between steps marks where the next one begins.
+ */
+@media (max-width: 40rem) {
+  .sl-markdown-content .sl-steps > li::after {
+    display: none;
+  }
+
+  .sl-markdown-content .sl-steps > li > :not(:first-child) {
+    margin-inline-start: calc(-1 * (var(--bullet-size) + 1rem));
+  }
+
+  .sl-markdown-content .sl-steps > li + li {
+    margin-top: 2.5rem;
+  }
+}

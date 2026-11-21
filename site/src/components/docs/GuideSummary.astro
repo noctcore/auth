@@ -1,0 +1,32 @@
+---
+/**
+ * The summary at the top of a Build guide, the sibling of InShort on Learn
+ * pages: the same open band, three lines, always the same three. A reader who
+ * stops here should know what they will have built, what has to be in place
+ * first, and what to run to see it work. Fill each slot with one sentence of
+ * Markdown:
+ *
+ *   <GuideSummary>
+ *     <Fragment slot="build">A tRPC router whose procedures ...</Fragment>
+ *     <Fragment slot="needs">[A Node server](/auth/build/node-server/) ...</Fragment>
+ *     <Fragment slot="check">`router.test.ts` passes: ...</Fragment>
+ *   </GuideSummary>
+ *
+ * `needs` names prior guides as links and services by name (Redis, Postgres).
+ * `check` names something a reader can run or observe, taken from the guide's
+ * "Check it works" section, never a promise the guide does not test.
+ */
+const id = 'guide-summary';
+---
+
+<section class="nc-inshort nc-guide" aria-labelledby={id}>
+  <p class="nc-inshort__label" id={id}>This guide</p>
+  <dl>
+    <dt>You build</dt>
+    <dd><slot name="build" /></dd>
+    <dt>You need first</dt>
+    <dd><slot name="needs" /></dd>
+    <dt>It works when</dt>
+    <dd><slot name="check" /></dd>
+  </dl>
+</section>
