@@ -89,6 +89,11 @@ One procedure per HTTP request writes cookies. If two session-writing procedures
 
 A fetch `Request` carries no peer address, so pass it from your server (on Bun, `server.requestIP(req)?.address`). Behind proxies, count them in `trustedHops` as on Node, or list them by address: with a list and no peer address, nothing is trusted.
 
+
+### Background polls
+
+Every request that carries a session counts as activity and refreshes its last-active time, at most once per `touchInterval`. For procedures the page calls on its own, such as a poll on a timer, mark them passive so an idle session still expires while only they are called (see [Background polls](/auth/learn/sessions-and-expiry/#background-polls)): set `touch: false` in the procedure's meta, or pass `createAuthContext` a `touch` predicate over procedure paths, such as `touch: (path) => path !== 'notifications.count'`. Both are read from the calls tRPC parsed before it built the context, and a batch touches when any of its procedures is active. A passive call is still answered with its session, and the CSRF verdict and the guarded procedures do not change. `touch: false` on `createAuthContext` touches on no request; the default touches on every one.
+
 ## The client
 
 <Code code={clientTs} lang="ts" title="src/client.ts" />

@@ -53,6 +53,20 @@ Safe methods (`GET`, `HEAD`, `OPTIONS`) skip the CSRF check, never the session c
 
 `csrf.exempt` lists paths that skip the middleware entirely, such as a webhook that proves itself with a signature. Nothing is minted on an exempt path, and the guard still applies to it: mark the webhook route `@Public()` as well, and check its signature in the handler.
 
+
+### Background polls
+
+Every request that carries a session counts as activity and refreshes its last-active time, at most once per `touchInterval`. For requests the page makes on its own, such as a poll on a timer, pass `touch` a predicate that returns false, so an idle session still expires while only those arrive (see [Background polls](/auth/learn/sessions-and-expiry/#background-polls)):
+
+```ts
+AuthModule.forRoot({
+  // ...
+  touch: (request) => !(request.method === 'GET' && request.path === '/api/notifications/count'),
+});
+```
+
+The predicate sees the method, the path (a global prefix included, no query string) and the headers, and runs before the one validation of the request. It cannot read route decorators: the middleware validates the session before Nest picks a handler. A passive request is still answered with its session, and the CSRF checks and the guard's decisions do not change. `touch: false` touches on no request; the default, `true`, on every one.
+
 ## Signing in and out
 
 <Code code={authControllerTs} lang="ts" title="src/auth.controller.ts" />
