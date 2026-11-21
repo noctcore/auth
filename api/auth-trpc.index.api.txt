@@ -204,6 +204,7 @@ MiddlewareCall [interface]<TResult>
 PrincipalOf [type]<TContext> = TContext extends AuthContext<infer U, infer A> ? Principal<U, A> : Principal
 RequestCalls [interface]
     readonly calls: readonly { readonly path: string; readonly procedure?: { readonly _def?: { readonly meta?: unknown; }; } | null | undefined; }[]
+    readonly type?: string | undefined
 ShapeLike [interface]
     readonly data: { readonly stack?: string | undefined; }
     readonly message: string

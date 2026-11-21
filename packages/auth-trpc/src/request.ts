@@ -25,6 +25,8 @@ export interface HttpRequest {
   readonly remoteAddress: string | undefined;
   /** The procedure calls tRPC parsed, or none when the adapter did not say. */
   readonly calls: RequestCalls['calls'];
+  /** True when tRPC said the request calls a subscription (its response is a stream). */
+  readonly subscription: boolean;
 }
 
 /** Where the adapter writes `Set-Cookie` headers. */
@@ -40,6 +42,8 @@ export interface RequestCalls {
     readonly path: string;
     readonly procedure?: { readonly _def?: { readonly meta?: unknown } } | null | undefined;
   }[];
+  /** The type of the procedures called: `query`, `mutation`, `subscription` or `unknown`. */
+  readonly type?: string | undefined;
 }
 
 /** Sets one response header (`Cache-Control`), replacing any value it had. */
@@ -86,6 +90,7 @@ export function fromFetch(
       forwardedFor: header('x-forwarded-for'),
       remoteAddress,
       calls: input.info?.calls ?? [],
+      subscription: input.info?.type === 'subscription',
     },
     write: (spec) => input.resHeaders.append('set-cookie', serializeCookie(spec)),
     setHeader: (name, value) => {
@@ -115,6 +120,7 @@ export function fromNode(input: NodeContextInput): {
       forwardedFor: req.headers['x-forwarded-for'],
       remoteAddress: req.socket?.remoteAddress,
       calls: input.info?.calls ?? [],
+      subscription: input.info?.type === 'subscription',
     },
     // Adds a header, keeping the cookies already set on the response.
     write: (spec) => {

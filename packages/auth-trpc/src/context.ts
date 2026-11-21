@@ -105,9 +105,9 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
    * another origin read, its unsafe requests are refused on the `Origin`
    * allowlist and `Sec-Fetch-Site` before the token is compared, so a read
    * token is useless cross-site. Throws an `AuthConfigError` on a request
-   * sent with an unsafe method (where nothing is minted) and on a streamed
-   * batch (`httpBatchStreamLink`), whose headers go out before any procedure
-   * runs.
+   * sent with an unsafe method (where nothing is minted), on a streamed
+   * batch (`httpBatchStreamLink`) and on a subscription, whose headers go
+   * out before any procedure runs.
    */
   csrfToken(): { csrfToken: string };
 }
@@ -381,11 +381,11 @@ async function resolveState(
   const tokenHandedOut = { value: false };
 
   const csrfToken = (): { csrfToken: string } => {
-    if (handed === undefined || streamed) {
+    if (handed === undefined || streamed || request.subscription) {
       throw new AuthConfigError(
         'ctx.auth.csrfToken() needs a query sent with GET through httpLink or httpBatchLink: ' +
           'a request with an unsafe method mints no token, and a streamed batch ' +
-          '(httpBatchStreamLink) sends its headers before any procedure runs.',
+          '(httpBatchStreamLink) or a subscription sends its headers before any procedure runs.',
       );
     }
 
