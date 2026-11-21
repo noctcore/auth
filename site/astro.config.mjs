@@ -48,6 +48,7 @@ export default defineConfig({
         './src/styles/landing.css',
         './src/styles/motion.css',
         './src/styles/docs.css',
+        './src/styles/reference.css',
       ],
       components: { Hero: './src/components/Hero.astro' },
       expressiveCode: {

@@ -1,0 +1,230 @@
+/*
+ * The configuration reference (reference/configuration.mdx): the key tables
+ * drawn by components/reference/ConfigTable.astro and the group index at the
+ * top. Built to be scanned for one key: the key's last segment is the
+ * strongest thing in a row, the default sits in its own column in mono, and
+ * the description is one line. Every color is a token.
+ */
+
+/* ---------- Group index ---------- */
+.nc-ref-index {
+  margin-block: 1.25rem 0;
+}
+
+.nc-ref-index ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sl-markdown-content .nc-ref-index li {
+  margin: 0;
+}
+
+.nc-ref-index a {
+  display: inline-block;
+  padding-block: 0.15rem;
+  font-size: 0.9375rem;
+  color: var(--nc-text-soft);
+  text-decoration-color: var(--nc-line);
+  text-underline-offset: 0.25em;
+}
+
+.nc-ref-index a:hover {
+  color: var(--nc-text-strong);
+  text-decoration-color: currentColor;
+}
+
+/* ---------- Key tables ---------- */
+.sl-markdown-content .nc-ref table {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+  overflow: visible;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.nc-ref thead th {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--nc-muted);
+  border-bottom-color: var(--nc-line);
+}
+
+.nc-ref thead th:nth-child(1) {
+  width: 37%;
+}
+
+.nc-ref thead th:nth-child(2) {
+  width: 18%;
+}
+
+.sl-markdown-content .nc-ref :is(th, td) {
+  padding-block: 0.65rem;
+  padding-inline: 0.75rem;
+  border-bottom-color: var(--nc-line-soft);
+  vertical-align: baseline;
+}
+
+.sl-markdown-content .nc-ref :is(th, td):first-child {
+  padding-inline-start: 0;
+}
+
+.sl-markdown-content .nc-ref :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.sl-markdown-content .nc-ref tbody th {
+  font-family: inherit;
+  font-weight: 400;
+}
+
+/* The key: the path is quiet, the last segment carries the row. */
+.nc-ref__anchor {
+  display: inline-block;
+  padding-block: 0.125rem;
+  text-decoration: none;
+}
+
+/* A link mark beside the key on hover and focus, so the key reads as its own link. */
+.nc-ref__anchor::after {
+  content: '#' / '';
+  margin-inline-start: 0.4em;
+  font-family: var(--nc-font-mono);
+  font-size: 0.8125rem;
+  color: var(--nc-muted);
+  opacity: 0;
+}
+
+.nc-ref tr:hover .nc-ref__anchor::after,
+.nc-ref__anchor:focus-visible::after {
+  opacity: 1;
+}
+
+.sl-markdown-content .nc-ref__key code {
+  padding: 0;
+  font-size: 0.8125rem;
+  background: none;
+  border: 0;
+  overflow-wrap: anywhere;
+}
+
+.nc-ref__path {
+  color: var(--nc-muted);
+}
+
+.nc-ref__leaf {
+  font-weight: 500;
+  color: var(--nc-text-strong);
+}
+
+.nc-ref__anchor:hover .nc-ref__leaf,
+.nc-ref__anchor:focus-visible .nc-ref__leaf {
+  color: var(--nc-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+
+.nc-ref__type {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: var(--nc-font-mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--nc-muted);
+  overflow-wrap: anywhere;
+}
+
+.nc-ref__default {
+  font-size: 0.875rem;
+  color: var(--nc-text-soft);
+}
+
+.sl-markdown-content .nc-ref__default code {
+  padding: 0;
+  font-size: 0.875rem;
+  color: var(--nc-text-strong);
+  background: none;
+  border: 0;
+}
+
+.nc-ref__default--word {
+  color: var(--nc-muted);
+}
+
+.nc-ref__does {
+  color: var(--nc-text);
+}
+
+/* A row reached by its link: tinted, so the eye lands on it. */
+.nc-ref tr:target {
+  background: var(--nc-accent-soft);
+}
+
+.sl-markdown-content .nc-ref tr:target > :first-child {
+  padding-inline-start: 0.5rem;
+}
+
+.sl-markdown-content .nc-ref tr:target > :last-child {
+  padding-inline-end: 0.5rem;
+}
+
+/* ---------- Phones: one row, one block ---------- */
+@media (max-width: 40rem) {
+  .sl-markdown-content .nc-ref table,
+  .nc-ref tbody,
+  .nc-ref tr {
+    display: block;
+    width: auto;
+  }
+
+  .nc-ref thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .nc-ref tr {
+    padding-block: 0.8rem;
+    border-bottom: 1px solid var(--nc-line-soft);
+  }
+
+  .sl-markdown-content .nc-ref :is(th, td) {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+
+  .nc-ref__type {
+    margin-top: 0.1rem;
+  }
+
+  .sl-markdown-content .nc-ref .nc-ref__default {
+    margin-top: 0.45rem;
+  }
+
+  .nc-ref__default::before {
+    content: attr(data-label) ' ';
+    font-family: var(--nc-font-mono);
+    font-size: 0.75rem;
+    color: var(--nc-muted);
+  }
+
+  .sl-markdown-content .nc-ref .nc-ref__does {
+    margin-top: 0.2rem;
+  }
+
+  .sl-markdown-content .nc-ref tr:target > :is(:first-child, :last-child) {
+    padding-inline: 0;
+  }
+
+  .nc-ref tr:target {
+    padding-inline: 0.5rem;
+  }
+}

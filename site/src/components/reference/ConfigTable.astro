@@ -1,0 +1,100 @@
+---
+/**
+ * One table of the configuration reference. Rows come from config-keys.ts:
+ *
+ *   <ConfigTable rows={session} />
+ *   <ConfigTable rows={argon2idOptions} prefix="argon2id" label="Option" />
+ *   <ConfigTable rows={doors} prefix="throttle-doors" label="Door" third="Keyed by" />
+ *   <ConfigTable rows={essentials} link />
+ *
+ * Each row carries the id `rowId(key, prefix)` and its key links to itself,
+ * so a reader can copy the link to one key. With `link`, the rows carry no
+ * id and each key links to its full row elsewhere on the page instead (the
+ * summary at the top). Under 40rem the rows stack: key and type, then the
+ * default, then the description, each labelled.
+ */
+import { rowId, type ConfigRow } from './config-keys';
+
+interface Props {
+  rows: readonly ConfigRow[];
+  /** Prepended to each row id, for option tables whose names repeat (`clock`). */
+  prefix?: string;
+  /** Link each key to its full row instead of giving it an id. */
+  link?: boolean;
+  /** The first column's header. */
+  label?: string;
+  /** The last column's header. */
+  third?: string;
+}
+
+const { rows, prefix, link = false, label = 'Key', third = 'What it does' } = Astro.props;
+
+const escape = (text: string) =>
+  text.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;').replace(/"/gu, '&quot;');
+
+/** One line of inline Markdown: `code`, [text](/auth/...) and **bold**, nothing else. */
+function inline(text: string): string {
+  const codes: string[] = [];
+  let html = escape(text).replace(/`([^`]+)`/gu, (_, code: string) => {
+    codes.push(`<code>${code}</code>`);
+
+    return `\u0000${codes.length - 1}\u0000`;
+  });
+
+  html = html
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/gu, '<a href="$2">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/gu, '<strong>$1</strong>');
+
+  return html.replace(/\u0000(\d+)\u0000/gu, (_, i: string) => codes[Number(i)] ?? '');
+}
+
+/** The key with a break chance after each dot, its last segment strong. */
+function keyHtml(key: string): string {
+  const cut = key.lastIndexOf('.') + 1;
+  const head = escape(key.slice(0, cut)).replace(/\./gu, '.<wbr>');
+
+  return `${head ? `<span class="nc-ref__path">${head}</span>` : ''}<span class="nc-ref__leaf">${escape(key.slice(cut))}</span>`;
+}
+
+/** A default with no code in it (none, required, off) is a word, not a value. */
+const isWord = (value: string) => !value.includes('`') && !/\d/u.test(value);
+
+const hasType = rows.some((row) => row.type !== undefined);
+---
+
+<div class="nc-ref">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">{label}</th>
+        <th scope="col">Default</th>
+        <th scope="col">{third}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((row) => {
+          const id = rowId(row.key, prefix);
+          const href = `#${link && row.anchor ? row.anchor : id}`;
+
+          return (
+            <tr id={link ? undefined : id}>
+              <th scope="row" class="nc-ref__key">
+                <a href={href} class="nc-ref__anchor">
+                  <code set:html={keyHtml(row.key)} />
+                </a>
+                {hasType && row.type && <span class="nc-ref__type">{row.type}</span>}
+              </th>
+              <td
+                class:list={['nc-ref__default', { 'nc-ref__default--word': isWord(row.default) }]}
+                data-label="Default"
+                set:html={inline(row.default)}
+              />
+              <td class="nc-ref__does" set:html={inline(row.does)} />
+            </tr>
+          );
+        })
+      }
+    </tbody>
+  </table>
+</div>
