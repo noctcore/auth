@@ -38,6 +38,7 @@ import {
   blankSessionCookie,
   header,
   markCsrfPassed,
+  pathOf,
   rawRequest,
   rawResponse,
   sameSiteFor,
@@ -49,13 +50,6 @@ import { AUTH_OPTIONS } from './tokens';
 
 const FORBIDDEN = JSON.stringify({ error: { code: 'forbidden' } });
 const INTERNAL = JSON.stringify({ error: { code: 'internal' } });
-
-function pathOf(req: RawRequest): string {
-  const url = req.originalUrl ?? req.url ?? '/';
-  const query = url.indexOf('?');
-
-  return query === -1 ? url : url.slice(0, query);
-}
 
 function send(res: RawResponse, status: number, body: string): void {
   res.statusCode = status;

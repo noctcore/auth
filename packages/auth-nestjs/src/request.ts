@@ -4,7 +4,9 @@
  *
  * - The session is validated through the core only (`readSessionToken` and
  *   `validateRequest`), once per request, so the middleware and the guard can
- *   never disagree about who is signed in.
+ *   never disagree about who is signed in. The `touch` option decides, before
+ *   that one validation, whether the request counts as activity: the
+ *   middleware runs before Nest picks a handler, so route metadata cannot.
  * - The client IP comes from the core's `clientIp`, through the configured
  *   trusted proxies (and the trusted client IP header, when one is set);
  *   Express's `req.ip` and its trust-proxy setting are never read.
@@ -87,6 +89,14 @@ export function rawResponse(res: unknown): RawResponse {
   return raw ?? (res as RawResponse);
 }
 
+/** The request path without the query string, a global prefix included. */
+export function pathOf(req: RawRequest): string {
+  const url = req.originalUrl ?? req.url ?? '/';
+  const query = url.indexOf('?');
+
+  return query === -1 ? url : url.slice(0, query);
+}
+
 export function header(req: RawRequest, name: string): string | undefined {
   const value = req.headers[name];
 
@@ -132,7 +142,13 @@ async function resolveSession(req: RawRequest, options: ResolvedOptions): Promis
 
   if (token === null) return { token, session: null, clearCookie: false, meta };
 
-  const result = await options.auth.validateRequest({ token, meta });
+  const touch = options.touch({
+    method: req.method ?? 'GET',
+    path: pathOf(req),
+    headers: req.headers,
+  });
+
+  const result = await options.auth.validateRequest({ token, meta, touch });
 
   return {
     token,

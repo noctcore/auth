@@ -55,6 +55,7 @@ AuthModuleOptions [interface]<U extends AuthUser = AuthUser>
     readonly csrf: CsrfOptions
     readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>
     readonly shutdownTimeout?: Duration
+    readonly touch?: boolean | ((request: TouchRequest) => boolean)
     readonly trustedHops: TrustedHops
 configureTrustProxy [function]: (app: INestApplication, env: TrustProxyEnv) => TrustedHops
 CsrfMiddleware [class]
@@ -107,6 +108,10 @@ SessionGuard [class]
     private checkRoles
     private readonly options
     private readonly reflector
+TouchRequest [interface]
+    readonly headers: IncomingHttpHeaders
+    readonly method: string
+    readonly path: string
 trustedHopsFromEnv [function]: (env: TrustProxyEnv) => TrustedHops
 TrustProxyEnv [interface]
     readonly NODE_ENV?: string | undefined
@@ -122,4 +127,5 @@ ResolvedOptions [interface]
     readonly roles: ((user: AuthUser) => readonly string[] | Promise<readonly string[]>) | undefined
     readonly secure: boolean
     readonly shutdownTimeout: Duration
+    readonly touch: (request: TouchRequest) => boolean
     readonly trustedHops: TrustedHops

@@ -3,6 +3,7 @@
  * origin allowlist or a nonsense hop count stops the app before it listens
  * instead of letting it run with a check that quietly passes everything.
  */
+import type { IncomingHttpHeaders } from 'node:http';
 import {
   assertExactOrigins,
   AuthConfigError,
@@ -85,6 +86,15 @@ export interface CsrfOptions {
   readonly headerName?: string;
 }
 
+/** What a `touch` predicate sees of a request. */
+export interface TouchRequest {
+  /** `GET`, `POST`, ... as the client sent it. */
+  readonly method: string;
+  /** The request path, a global prefix included, without the query string. */
+  readonly path: string;
+  readonly headers: IncomingHttpHeaders;
+}
+
 export interface AuthModuleOptions<U extends AuthUser = AuthUser> {
   /** The `createAuth(...)` result. */
   readonly auth: NestAuth<U>;
@@ -115,6 +125,17 @@ export interface AuthModuleOptions<U extends AuthUser = AuthUser> {
    * up, logs what it left running and lets the app close. Default `'10s'`.
    */
   readonly shutdownTimeout?: Duration;
+  /**
+   * Whether a request counts as activity for the session's idle timeout.
+   * `true` (the default) refreshes the session's last-active time, at most
+   * once per `touchInterval`, on every request. A predicate decides per
+   * request, before the session is validated: return false for traffic the
+   * page makes on its own (a poll on a timer, a status check), so an idle
+   * session still expires while only such requests arrive. `false` touches
+   * on no request. A passive request is still answered with its session,
+   * and the CSRF checks and the guard's decisions do not change.
+   */
+  readonly touch?: boolean | ((request: TouchRequest) => boolean);
 }
 
 /** How long shutdown waits for background work by default. */
@@ -130,6 +151,8 @@ export interface ResolvedOptions {
   /** The session cookie config the adapter's cookies take their `SameSite` from. */
   readonly cookie: SessionCookieConfig;
   readonly shutdownTimeout: Duration;
+  /** Whether this request refreshes the session's last-active time. */
+  readonly touch: (request: TouchRequest) => boolean;
   readonly csrf: {
     readonly secrets: readonly Uint8Array[];
     /** `allowedOrigins` and `crossSiteOrigins` together: every origin the Origin check accepts. */
@@ -188,6 +211,8 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
   if (!(shutdownMilliseconds(shutdownTimeout) > 0))
     throw new AuthConfigError('shutdownTimeout must be a duration longer than zero');
 
+  const touch = resolveTouch(options.touch);
+
   // The session cookie is `__Host-` prefixed exactly when it is Secure, and
   // the CSRF cookies follow it, so one setting decides all three.
   const secure = auth.cookieName.startsWith('__Host-');
@@ -207,6 +232,7 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     secure,
     cookie,
     shutdownTimeout,
+    touch,
     csrf: {
       secrets,
       allowedOrigins: [...csrf.allowedOrigins, ...crossSiteOrigins],
@@ -218,6 +244,15 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
       preSessionCookieName: secure ? '__Host-presession' : 'presession',
     },
   };
+}
+
+/** The `touch` option as a predicate; anything but a boolean or a function stops the boot. */
+function resolveTouch(touch: AuthModuleOptions['touch']): (request: TouchRequest) => boolean {
+  if (touch === undefined || touch === true) return () => true;
+  if (touch === false) return () => false;
+  if (typeof touch === 'function') return (request) => touch(request) !== false;
+
+  throw new AuthConfigError('touch must be a boolean or a function of the request');
 }
 
 /** The shutdown bound in milliseconds, or `NaN` when it is not a duration. */
