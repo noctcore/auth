@@ -97,7 +97,31 @@ Either returns exactly the token the same response sets or keeps as the cookie, 
 2. **After a sign-in or any rotation**, it uses the token the flow returns (`SessionCookies.set`, `ctx.auth.setSession`), since the old one stops verifying when the new session cookie lands.
 3. **After a restart** with a persistent session, its memory and the browser-session cookies are gone but the session cookie is not, so it reads the route again and gets a token bound to that session.
 
-Reading the token from a response grants nothing a cross-site page could use. CORS keeps the body from other origins, the token is bound to the session or pre-session it was read for, and the cookie is still required next to it. An exempt path mints nothing, so the call refuses there, and it refuses on an unsafe method too.
+Reading the token from a response grants nothing a cross-site page could use. The token is bound to the session or pre-session it was read for, and the cookie is still required next to it. And whatever your CORS setup lets a page on another origin read (this library configures none, and even a permissive `cors({ origin: true, credentials: true })` changes nothing here), that page's unsafe requests are refused on the `Origin` allowlist and the `Sec-Fetch-Site` check before the token is compared. An exempt path mints nothing, so the call refuses there, and it refuses on an unsafe method too. On tRPC it also refuses in a subscription and on a streamed batch, whose headers go out before any procedure runs.
+
+### Keep the token out of every cache
+
+`no-store` only helps if nothing replaces it or answers before it is set. A cached token is still bound to its first caller, so the next caller cannot use it, but it has leaked all the same.
+
+- **tRPC**: tRPC applies your `responseMeta` after the procedures ran, and its headers replace the `no-store` the call set. That is where tRPC's caching recipe puts `s-maxage` on public queries, which is just what the token query looks like. Wrap your function in `authResponseMeta`, or pass `authResponseMeta()` when you have none: on a response that handed out a token it drops every `Cache-Control` yours returns, so `no-store` goes out on every adapter, batched queries included.
+
+  ```ts
+  import { authResponseMeta } from '@noctcore/auth-trpc';
+
+  createHTTPHandler({
+    router,
+    createContext: (opts) => authContext.node(opts),
+    responseMeta: authResponseMeta(appResponseMeta),
+  });
+  ```
+
+- **NestJS**: Nest's `CacheInterceptor` caches GET responses by URL inside the app, and on a hit the handler never runs, so `no-store` never reaches it: every caller gets the first caller's token. Keep the token route out of it (no `@CacheKey` or `@CacheTTL` on it, and skip it in `trackBy` when the interceptor is global through `APP_INTERCEPTOR`) and out of any other response cache.
+
+<Aside type="caution" title="Never cache the token route">
+  Leave the token query or route out of every caching rule, and on tRPC do not wrap only some of
+  your handlers in `authResponseMeta`. A CDN or proxy that ignores `Cache-Control` must skip the
+  path too.
+</Aside>
 
 ### Limits for shells and other clients
 
