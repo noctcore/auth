@@ -25,7 +25,7 @@ export {
   RequireRole,
   TwoFactorEnrollment,
 } from './decorators';
-export type { AuthModuleOptions, CsrfOptions, NestAuth } from './options';
+export type { AuthModuleOptions, CsrfOptions, NestAuth, TouchRequest } from './options';
 export { describeRoutes, type RouteAccess } from './routes';
 export { SessionCookies } from './session-cookies';
 export { SessionGuard } from './session.guard';
