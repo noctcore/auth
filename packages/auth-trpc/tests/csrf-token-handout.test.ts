@@ -171,12 +171,14 @@ describe.each(['fetch', 'node'] as const)('authResponseMeta on the %s adapter', 
     ['headers', 'CDN-Cache-Control'],
     ['object', 'CDN-Cache-Control'],
     ['object', 'Cloudflare-CDN-Cache-Control'],
+    ['headers', 'Cloudflare-CDN-Cache-Control'],
     ['headers', 'Surrogate-Control'],
     ['object', 'Surrogate-Control'],
     ['headers', 'X-Accel-Expires'],
     ['object', 'X-Accel-Expires'],
     ['headers', 'Edge-Control'],
     ['object', 'Edge-Control'],
+    ['object', 'cDn-CaChE-cOnTrOl'],
   ] as const)('drops a %s-form %s from the token response', async (form, name) => {
     const rule = 'public, max-age=60';
 
@@ -193,6 +195,22 @@ describe.each(['fetch', 'node'] as const)('authResponseMeta on the %s adapter', 
     await browser.client.csrfToken.query();
     expect(browser.lastHeaders.get(name)).toBeNull();
     expect(browser.lastHeaders.get('cache-control')).toBe('no-store');
+  });
+
+  it('drops an array-valued object header from the token response', async () => {
+    const meta = (): ResponseMeta => ({
+      headers: { 'Surrogate-Control': ['max-age=60', 'content="ESI/1.0"'], 'x-app': 'kept' },
+    });
+
+    env = await boot({ transport, responseMeta: authResponseMeta(meta) });
+    const browser = new Browser(env);
+
+    await browser.client.health.query();
+    expect(browser.lastHeaders.get('surrogate-control')).toBe('max-age=60, content="ESI/1.0"');
+
+    await browser.client.csrfToken.query();
+    expect(browser.lastHeaders.get('surrogate-control')).toBeNull();
+    expect(browser.lastHeaders.get('x-app')).toBe('kept');
   });
 
   it('works with no app responseMeta', async () => {
