@@ -17,8 +17,7 @@
 //   unsafe request still needs that cookie next to the header and a binding
 //   that matches its own session (the core's `verifyCsrfToken`). An unsafe
 //   request from an origin outside the allowlist is refused on its Origin and
-//   `Sec-Fetch-Site` before the token is even compared, so CORS settings do
-//   not decide it.
+//   `Sec-Fetch-Site`, whatever the token, so CORS settings do not decide it.
 // Learn: CSRF (/auth/learn/csrf/); Cookies and desktop shells; core A008, A079
 import { afterEach, describe, expect, it } from 'vitest';
 import { boot, Browser, CSRF_SECRET, EMAIL, ORIGIN, PASSWORD, type Booted } from '../support';
