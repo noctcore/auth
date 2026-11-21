@@ -42,7 +42,7 @@ import {
   verifyEmailLinkInput,
   type AuthContextOf,
   type AuthContextOptions,
-  type RateLimitMeta,
+  type AuthProcedureMeta,
 } from '../src';
 
 export const ORIGIN = 'http://app.test';
@@ -93,7 +93,7 @@ export type Context = AuthContextOf<TestAuth>;
 export function buildRouter(auth: TestAuth) {
   const t = initTRPC
     .context<Context>()
-    .meta<RateLimitMeta>()
+    .meta<AuthProcedureMeta>()
     .create({ errorFormatter: authErrorFormatter });
 
   const { publicProcedure, protectedProcedure, freshAuth, role, rateLimited, writesCookies } =
@@ -167,6 +167,10 @@ export function buildRouter(auth: TestAuth) {
           ...(issued && ctx.auth.setSession(issued)),
         };
       }),
+    /** A poll the page makes on a timer: it never counts as activity. */
+    poll: publicProcedure.meta({ touch: false }).query(async ({ ctx }) => ({
+      user: (await ctx.auth.user())?.id ?? null,
+    })),
     me: protectedProcedure.output(userOutput).query(({ ctx }) => ctx.user),
     /** Returns more than the user: the output schema must strip it. */
     leaky: protectedProcedure

@@ -114,6 +114,13 @@ export interface AuthProcedureMeta extends RateLimitMeta {
    * `two_factor_enrollment_required`. It opens nothing else.
    */
   readonly twoFactorEnrollment?: boolean;
+  /**
+   * `false`: a call to this procedure does not count as activity for the
+   * session's idle timeout (a poll the page makes on a timer). The session
+   * is still validated and the procedure's guards still apply. A batch
+   * touches when any of its procedures does.
+   */
+  readonly touch?: false;
 }
 
 const allowsEnrollmentOnly = (meta: unknown): boolean =>
