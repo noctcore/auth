@@ -1,0 +1,117 @@
+---
+title: Why tokens are hashed
+description: What a leaked store or log gives an attacker, a fast hash for random tokens versus a keyed or slow one for short secrets, and what hashing at rest does not protect.
+---
+
+import { Code, TabItem, Tabs } from '@astrojs/starlight/components';
+import InShort from '../../../components/docs/InShort.astro';
+import TokenHashing from '../../../components/docs/diagrams/TokenHashing.astro';
+import hashedTs from '../../../../snippets/learn/why-tokens-are-hashed.ts?raw';
+import linksTs from '../../../../snippets/learn/why-tokens-are-hashed-links.ts?raw';
+
+<InShort>
+  <Fragment slot="threat">
+    A database dump, a snapshot or a log line that holds tokens is a list of live sessions and
+    unused reset links, and nothing in the app notices the copy.
+  </Fragment>
+  <Fragment slot="rule">
+    Store only a hash and look tokens up by it: SHA-256 for a random token, an HMAC under the server
+    secret for a code a person types.
+  </Fragment>
+  <Fragment slot="where">
+    `tokens/one-time-tokens.ts` for links and codes, `session/session-manager.ts` for sessions.
+  </Fragment>
+</InShort>
+
+## What goes wrong
+
+Secrets leak from places other than the cookie: a database dump, a Redis snapshot, a backup, a read replica someone can query, a log line that printed a row.
+
+If the store holds the tokens themselves, every such leak is a list of live sessions and unused reset links, ready to use without going near the login form. A leak is also quiet: nothing in the app notices that a copy of the table exists somewhere else.
+
+<TokenHashing />
+
+## The rule
+
+Keep a hash in the store, chosen by how guessable the secret is, and never compare a token at all.
+
+### Store the hash, never the token
+
+Whoever holds the store holds hashes, and to use one they would need a token that hashes to it.
+
+| Secret | Stored as |
+| --- | --- |
+| Session token | The session store key is the SHA-256 of the session token |
+| Email verification and reset links, the reset ticket, email change and revert links | SHA-256 |
+| The two-factor plugin's login challenges and its trusted-device tokens | SHA-256 |
+| Invitation tokens | SHA-256: they are random like links |
+| Codes a person types | HMAC-SHA-256 under a key derived from the server secret, over the purpose, the user id and the code |
+| Recovery codes | HMAC-SHA-256, under their own derived key |
+
+### A fast hash for a random token, a keyed one for a code
+
+**A password needs a slow hash.** A password gets a slow, salted hash because people choose from a small, predictable set, which an attacker can try at billions of fast hashes a second (see [Passwords](/auth/learn/passwords/)).
+
+**A random token does not.** A 32-byte random token has no such set: SHA-256 is fast, but there are far too many tokens to try, so a slow hash would add cost and no safety.
+
+**A code a person types is the opposite case**: with 8 digits by default, hashing every possible code takes moments, so a plain hash would be reversed straight from a leaked table. Codes are therefore stored as an HMAC: without the secret the table cannot be searched, and a row copied onto another account or purpose matches nothing.
+
+### Compare without leaking
+
+**A token is never compared at all**: its hash is the key it is looked up by. A code's HMAC is compared with the stored one in constant time ([A078](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A078-secret-comparison-timing.test.ts)).
+
+**The same answer on every runtime.** On Node, Bun and Deno the comparison runs on `crypto.timingSafeEqual`, found at runtime so that bundles for other runtimes never import `node:crypto`; everywhere else it runs on a JavaScript loop that never stops early. Both answer the same.
+
+**Only lengths can differ.** Two values of different lengths are unequal straight away, which reveals only that the lengths differ, and every comparison is between digests of a fixed length (secrets of any length, such as CSRF tokens, are hashed first).
+
+### What hashing at rest does not protect
+
+**A token in use.** Whoever reads the cookie in the browser, a request body, a URL or a log of requests has the token itself, not its hash.
+
+- Put link tokens in the URL path or fragment and send `Referrer-Policy: no-referrer`.
+- Keep secrets out of query strings: the tRPC adapter refuses a query whose input names one, attack [A029](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A029-secret-in-a-query.test.ts).
+- Never log request bodies of the auth routes.
+
+**Write access to the store.** An attacker who can write can insert a session row for a token they made, reset counters or change a password hash. The store is inside the trust boundary: protect it with network isolation, credentials and TLS.
+
+**The server secret.** With the secret and a leaked table, the code HMACs can be searched again, which is why codes also expire within minutes and run out of attempts.
+
+- Rotating the secret voids outstanding codes, recovery codes and the lockout's device cookies.
+- It never voids sessions, links, pending invitations or the two-factor plugin's trusted-device tokens, whose hashes use no key.
+
+**Hashes in your own responses.** The session id an app lists and revokes is the token's hash, which is not a credential, but a store row has other fields worth keeping private. The tRPC adapter's output schemas strip everything they do not name (attack [A030](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A030-hash-field-in-an-output.test.ts)).
+
+## In code
+
+A token of the app's own, kept the way the package keeps its own, and link tokens kept out of logs.
+
+<Tabs>
+  <TabItem label="Hash at rest">
+    <Code code={hashedTs} lang="ts" title="why-tokens-are-hashed.ts" />
+  </TabItem>
+  <TabItem label="Links out of logs">
+    <Code code={linksTs} lang="ts" title="why-tokens-are-hashed-links.ts" />
+  </TabItem>
+</Tabs>
+
+## Where the package and the guide differ
+
+The guide hashes its session secret with SHA-256 before storage and compares the hash in constant time, next to a separate session id. The package hashes the same way but uses the hash itself as the lookup key, so no comparison is needed and no separate id exists. It also stores short codes, which the guide's sessions page does not cover, as keyed HMACs instead of plain hashes.
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test | Attack | Stopped by |
+| ---- | ------ | ---------- |
+| [A017](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A017-leaked-store-replay.test.ts) | Replaying secrets from a leaked store | `session/session-manager.ts`, `tokens/one-time-tokens.ts`, `crypto/hash.ts` |
+| [A029](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A029-secret-in-a-query.test.ts) | Sending a secret in a query, where it lands in URLs and logs | `auth-trpc/secret-queries.ts` |
+| [A030](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A030-hash-field-in-an-output.test.ts) | Leaking a password or token hash through a tRPC output | `auth-trpc/schemas.ts` |
+| [A078](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A078-secret-comparison-timing.test.ts) | Learning a secret from how long its comparison takes | `crypto/hash.ts` |
+
+</div>
+
+## Further reading
+
+- [Sessions](https://auth.pilcrowonpaper.com/sessions) in Pilcrow's auth guide.
+- [Entropy and tokens](/auth/learn/entropy-and-tokens/) for why a token has enough bits to need no slow hash.
