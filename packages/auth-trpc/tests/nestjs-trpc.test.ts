@@ -14,6 +14,7 @@ import { z } from 'zod';
 import {
   AuthGuardMiddleware,
   authErrorFormatter,
+  authResponseMeta,
   createAuthContext,
   FreshAuthMiddleware,
   loginInput,
@@ -52,6 +53,11 @@ class AccountRouter {
   @Query({ output: z.object({ ok: z.boolean() }), meta: { auth: 'public' } })
   health() {
     return { ok: true };
+  }
+
+  @Query({ output: z.object({ csrfToken: z.string() }), meta: { auth: 'public' } })
+  csrfToken(@Ctx() ctx: Ctx) {
+    return ctx.auth.csrfToken();
   }
 
   @UseMiddlewares(WritesCookiesMiddleware)
@@ -141,7 +147,7 @@ describe('nestjs-trpc', () => {
     await app.close();
   });
 
-  async function start() {
+  async function start(responseMeta?: ReturnType<typeof authResponseMeta>) {
     current = makeAuth();
     roles.clear();
 
@@ -158,7 +164,7 @@ describe('nestjs-trpc', () => {
           basePath: '/trpc',
           context: AppContext,
           globalMiddlewares: [AuthGuardMiddleware],
-          trpc: { errorFormatter: authErrorFormatter },
+          trpc: { errorFormatter: authErrorFormatter, ...(responseMeta ? { responseMeta } : {}) },
           logger: { log: () => undefined, error: () => undefined, warn: () => undefined },
         }),
       ],
@@ -329,5 +335,27 @@ describe('nestjs-trpc', () => {
 
     expect(answer.status).toBe(500);
     expect(answer.body.error?.message).toBe('internal');
+  });
+
+  // nestjs-trpc 2.14 passes `trpc.responseMeta` on to tRPC's adapter, where
+  // it would replace the `no-store` of the token response without the wrapper.
+  it('keeps no-store on the token through trpc.responseMeta wrapped in authResponseMeta', async () => {
+    const rule = 'public, s-maxage=60';
+
+    const { url, browser } = await start(
+      authResponseMeta(() => ({
+        headers: { 'cache-control': rule, 'cdn-cache-control': rule },
+      })),
+    );
+
+    await call(browser, url, 'account.health');
+    expect(browser.lastHeaders.get('cache-control')).toBe(rule);
+
+    expect((await call(browser, url, 'account.csrfToken')).body.result?.data).toEqual({
+      csrfToken: browser.csrf,
+    });
+
+    expect(browser.lastHeaders.get('cache-control')).toBe('no-store');
+    expect(browser.lastHeaders.get('cdn-cache-control')).toBeNull();
   });
 });
