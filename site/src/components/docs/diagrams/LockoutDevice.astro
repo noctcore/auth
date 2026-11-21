@@ -1,0 +1,130 @@
+---
+/**
+ * Brute force, part three: the owner's device under a lock. A correct
+ * password with a valid device cookie gets through; wrong guesses through
+ * device cookies reserve slots in a small budget shared by all of the
+ * account's devices, and the attempt past it is refused (throttle.ts,
+ * reserveDeviceSlots). Every number comes from snippets/learn/lockout.ts.
+ */
+import { lockout } from '../../../../snippets/learn/lockout';
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+import { ordinal, shortDuration, toMs } from './duration';
+
+const device = shortDuration(toMs(lockout.perDevice.window));
+const deviceLimit = lockout.perDevice.limit;
+
+const CELL = 18;
+const PITCH = 24;
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  readonly barX: number;
+  readonly barW: number;
+  /** The correct-password row and the wrong-guess row. */
+  readonly correct: number;
+  readonly wrong: number;
+  readonly budgetLines: readonly string[];
+}
+
+const layouts: readonly Layout[] = [
+  {
+    kind: 'wide',
+    w: 680,
+    h: 214,
+    barX: 112,
+    barW: 360,
+    correct: 78,
+    wrong: 156,
+    budgetLines: [`${deviceLimit} per ${device}, for all of the account's devices together`],
+  },
+  {
+    kind: 'narrow',
+    w: 360,
+    h: 230,
+    barX: 100,
+    barW: 176,
+    correct: 78,
+    wrong: 156,
+    budgetLines: [`${deviceLimit} per ${device}, for all of`, `the account's devices together`],
+  },
+];
+
+const title = 'Your own device gets a correct password through a lock';
+const description =
+  `Under any lock, a login that carries the owner's valid device cookie is not refused by the lock: ` +
+  `a correct password gets in. Wrong guesses through device cookies are limited to ${deviceLimit} per ${device}, ` +
+  `for all of the account's devices together; the ${ordinal(deviceLimit + 1)} attempt is refused.`;
+---
+
+<DiagramFrame id="lockout-device" title={title} description={description}>
+  {
+    layouts.map((L) => {
+      const capX = L.barX + L.barW;
+      const stopX = L.barX + deviceLimit * PITCH + CELL / 2;
+
+      return (
+        <svg
+          class={`nc-d nc-d--${L.kind}`}
+          viewBox={`0 0 ${L.w} ${L.h}`}
+          width={L.w}
+          height={L.h}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <text class="nc-d-kicker" x="24" y="30">
+            YOUR OWN DEVICE, UNDER A LOCK
+          </text>
+
+          <text class="nc-d-note" x="24" y={L.correct - 16}>
+            a correct password gets in
+          </text>
+          <text class="nc-d-note" x={capX} y={L.correct + 26} text-anchor="end">
+            any lock
+          </text>
+          <rect
+            class="nc-d-span nc-d-span--ghost"
+            x={L.barX}
+            y={L.correct - 7}
+            width={L.barW}
+            height="14"
+            rx="2"
+          />
+          <path class="nc-d-route" d={`M30 ${L.correct}H${capX + 30}`} />
+          <circle class="nc-d-node" cx="30" cy={L.correct} r="5" />
+          <circle class="nc-d-node-open" cx={capX + 36} cy={L.correct} r="6" />
+
+          <text class="nc-d-note" x="24" y={L.wrong - 16}>
+            wrong guesses
+          </text>
+          {Array.from({ length: deviceLimit }, (_, i) => (
+            <rect
+              class="nc-d-cell"
+              x={L.barX + i * PITCH}
+              y={L.wrong - CELL / 2}
+              width={CELL}
+              height={CELL}
+              rx="2"
+            />
+          ))}
+          <Stop x={stopX} y={L.wrong} across="horizontal" />
+          <text class="nc-d-stop-text" x={stopX} y={L.wrong - 16} text-anchor="middle">
+            {ordinal(deviceLimit + 1)}
+          </text>
+          {L.budgetLines.map((line, j) => (
+            <text class="nc-d-note" x="24" y={L.wrong + 32 + j * 15}>
+              {line}
+            </text>
+          ))}
+        </svg>
+      );
+    })
+  }
+
+  <Fragment slot="caption">
+    <strong>A lock does not keep the owner out</strong>: their device cookie lets a correct
+    password through, and gives an attacker who steals it only a few guesses.
+  </Fragment>
+</DiagramFrame>

@@ -1,0 +1,47 @@
+---
+/**
+ * The frame every Learn diagram sits in: the blueprint plate, a text
+ * alternative and a caption. The drawing goes in the default slot as two
+ * <svg> elements, `nc-d nc-d--wide` and `nc-d nc-d--narrow`, each with
+ * aria-hidden="true": the frame's width picks one (see docs.css), and the
+ * plate carries role="img" with `title` as its name and `description` as its
+ * full text alternative, so a screen reader hears one clean account instead
+ * of every label twice.
+ *
+ * The caption slot holds the one sentence a reader should take away, in
+ * Markdown when used from MDX. The description is read out from a hidden copy
+ * (a closed <details> does not count for aria-describedby) and shown behind
+ * "Text version" for readers who enlarge text (SVG text does not follow a
+ * text-only zoom) or want the account in words.
+ */
+interface Props {
+  /** Short accessible name, like an image title. */
+  title: string;
+  /** Everything the drawing says, in sentences, for readers who cannot see it. */
+  description: string;
+  /** Unique on the page; prefixes the ids the frame links. */
+  id: string;
+}
+
+const { title, description, id } = Astro.props;
+const descId = `${id}-desc`;
+const hasCaption = Astro.slots.has('caption');
+---
+
+<figure class="nc-figure not-content" id={id}>
+  <div class="nc-figure__plate" role="img" aria-label={title} aria-describedby={descId}>
+    <slot />
+  </div>
+  {
+    hasCaption && (
+      <figcaption>
+        <slot name="caption" />
+      </figcaption>
+    )
+  }
+  <p class="nc-sr-only" id={descId}>{description}</p>
+  <details class="nc-figure__text">
+    <summary>Text version</summary>
+    <p aria-hidden="true">{description}</p>
+  </details>
+</figure>

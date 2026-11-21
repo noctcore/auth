@@ -1,0 +1,276 @@
+---
+/**
+ * Sessions and expiry: four ways a session ends, on one time axis. Kept in
+ * use, it still ends at the absolute expiry (the store TTL); left open, it
+ * ends after the idle window; a password change ends it at once, a late
+ * refresh cannot bring it back, and this device gets a new one; one sign-in
+ * over the cap evicts the oldest. Values from snippets/learn/session.ts.
+ */
+import { session } from '../../../../snippets/learn/session';
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+import { ordinal, shortDuration, toMs } from './duration';
+
+const absolute = shortDuration(toMs(session.absoluteTtl));
+const rememberMe = shortDuration(toMs(session.rememberMeTtl));
+const idle = shortDuration(toMs(session.idleTimeout({ rememberMe: false, attributes: undefined })));
+const idleRemembered = shortDuration(
+  toMs(session.idleTimeout({ rememberMe: true, attributes: undefined })),
+);
+const touch = shortDuration(toMs(session.touchInterval));
+const over = ordinal(session.maxPerUser + 1);
+
+/** Where things happen along the axis, as a share of its length (not to scale). */
+const AT = { idleFrom: 0.27, idleLength: 0.32, revoked: 0.45, late: 0.13, evicted: 0.53 } as const;
+const TICK_GAP = 0.06;
+
+interface Lane {
+  readonly title: string;
+  /** Lines under the title: a config key is code, anything else a note. */
+  readonly lines: readonly { readonly text: string; readonly code?: true }[];
+}
+
+const lanes: readonly Lane[] = [
+  {
+    title: 'Kept in use',
+    lines: [
+      { text: `absoluteTtl ${absolute}`, code: true },
+      { text: `or ${rememberMe}, remember me` },
+    ],
+  },
+  {
+    title: 'Left open',
+    lines: [{ text: `idleTimeout ${idle}`, code: true }, { text: `or ${idleRemembered}, remember me` }],
+  },
+  { title: 'Password changed', lines: [{ text: 'every session ends' }] },
+  { title: 'Over the cap', lines: [{ text: `maxPerUser ${session.maxPerUser}`, code: true }] },
+];
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  readonly x0: number;
+  readonly x1: number;
+  /** Where each lane's title sits, and its route. */
+  readonly lanes: readonly { readonly title: number; readonly route: number }[];
+  readonly axis: number;
+  readonly lateLines: readonly string[];
+  readonly evictedLines: readonly string[];
+  /** The legend for the ticks: beside the kicker, or under it. */
+  readonly legend: { readonly x: number; readonly y: number; readonly anchor: 'start' | 'end' };
+}
+
+const wide: Layout = {
+  kind: 'wide',
+  w: 680,
+  h: 448,
+  x0: 196,
+  x1: 640,
+  lanes: [86, 170, 254, 338].map((y) => ({ title: y - 6, route: y })),
+  axis: 402,
+  lateLines: ['a late refresh finds no record'],
+  evictedLines: [`an ${over} sign-in for the user ends the oldest`],
+  legend: { x: 656, y: 32, anchor: 'end' },
+};
+
+const narrow: Layout = {
+  kind: 'narrow',
+  w: 360,
+  h: 680,
+  x0: 28,
+  x1: 332,
+  lanes: [
+    { title: 78, route: 150 },
+    { title: 218, route: 296 },
+    { title: 350, route: 420 },
+    { title: 506, route: 554 },
+  ],
+  axis: 636,
+  lateLines: ['a late refresh', 'finds no record'],
+  evictedLines: [`an ${over} sign-in for the user`, 'ends the oldest'],
+  legend: { x: 24, y: 50, anchor: 'start' },
+};
+
+const layouts = [wide, narrow];
+
+/** Ticks for requests along a stretch of route. */
+function ticks(from: number, to: number, gap: number): number[] {
+  const out: number[] = [];
+
+  for (let x = from + gap; x < to - gap / 2; x += gap) out.push(x);
+
+  return out;
+}
+
+const title = 'Four ways a session ends';
+const description =
+  `A session kept in use still ends at its absolute expiry, the store's TTL on the record: ${absolute} after sign-in, ` +
+  `or ${rememberMe} with remember me. Its last-active time is written at most once per ${touch}, and never past that TTL. ` +
+  `A session left open ends after ${idle} with no request, or ${idleRemembered} with remember me. ` +
+  `A password change ends every session of the user at once; a refresh still in flight finds no record to update, ` +
+  `so it cannot bring the session back, and the device that changed the password gets a new session. ` +
+  `An ${over} sign-in for the same user evicts the oldest session.`;
+---
+
+<DiagramFrame id="session-lifecycle" title={title} description={description}>
+  {
+    layouts.map((L) => {
+      const span = L.x1 - L.x0;
+      const at = (share: number) => L.x0 + share * span;
+      const gap = TICK_GAP * span;
+      const wideLayout = L.kind === 'wide';
+      const titleX = 24;
+      const codeY = (lane: { title: number }, j: number) =>
+        wideLayout ? lane.title + 18 + j * 16 : lane.title + 18 + j * 16;
+      const [kept, open, changed, cap] = L.lanes as [
+        { title: number; route: number },
+        { title: number; route: number },
+        { title: number; route: number },
+        { title: number; route: number },
+      ];
+      const idleFrom = at(AT.idleFrom);
+      const idleTo = at(AT.idleFrom + AT.idleLength);
+      const revokedAt = at(AT.revoked);
+      const lateTo = at(AT.revoked + AT.late);
+      const evictedAt = at(AT.evicted);
+
+      return (
+        <svg
+          class={`nc-d nc-d--${L.kind}`}
+          viewBox={`0 0 ${L.w} ${L.h}`}
+          width={L.w}
+          height={L.h}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <text class="nc-d-kicker" x="24" y="32">
+            FOUR WAYS A SESSION ENDS
+          </text>
+          <text class="nc-d-note" x={L.legend.x} y={L.legend.y} text-anchor={L.legend.anchor}>
+            each tick: a request
+          </text>
+
+          {lanes.map((lane, i) => {
+            const y = L.lanes[i] ?? { title: 0, route: 0 };
+
+            return (
+              <g>
+                <text class="nc-d-label" x={titleX} y={y.title}>
+                  {lane.title}
+                </text>
+                {lane.lines.map((line, j) => (
+                  <text class={line.code ? 'nc-d-code' : 'nc-d-note'} x={titleX} y={codeY(y, j)}>
+                    {line.text}
+                  </text>
+                ))}
+                <circle class="nc-d-node" cx={L.x0} cy={y.route} r="5" />
+              </g>
+            );
+          })}
+
+          {/* Kept in use: requests all the way, and still the TTL ends it. */}
+          <path class="nc-d-route" d={`M${L.x0} ${kept.route}H${L.x1 - 8}`} />
+          {ticks(L.x0, L.x1, gap).map((x) => (
+            <path class="nc-d-tick" d={`M${x} ${kept.route - 6}v12`} />
+          ))}
+          <Stop x={L.x1} y={kept.route} across="horizontal" kind="end" />
+          <text class="nc-d-value" x={L.x1} y={kept.route - 16} text-anchor="end">
+            absolute expiry
+          </text>
+          <text class="nc-d-note" x={L.x0} y={kept.route + 26}>
+            {`last-active written at most once per ${touch}`}
+          </text>
+
+          {/* Left open: the last request, then the idle window runs out. */}
+          <path class="nc-d-route" d={`M${L.x0} ${open.route}H${idleFrom}`} />
+          {[...ticks(L.x0, idleFrom, gap), idleFrom].map((x) => (
+            <path class="nc-d-tick" d={`M${x} ${open.route - 6}v12`} />
+          ))}
+          <path class="nc-d-leader" d={`M${idleFrom + 4} ${open.route}H${idleTo - 8}`} />
+          <path
+            class="nc-d-rule"
+            d={`M${idleFrom} ${open.route - 12}v-6H${idleTo}v6`}
+          />
+          <text
+            class="nc-d-note"
+            x={(idleFrom + idleTo) / 2}
+            y={open.route - 24}
+            text-anchor="middle"
+          >
+            {`${idle}, no request`}
+          </text>
+          <Stop x={idleTo} y={open.route} across="horizontal" kind="end" />
+          <text class="nc-d-value" x={idleTo + 14} y={open.route + 4}>
+            idle expiry
+          </text>
+
+          {/* Password changed: ends now, a late refresh cannot revive it, this device starts over. */}
+          <path class="nc-d-route" d={`M${L.x0} ${changed.route}H${revokedAt - 8}`} />
+          {ticks(L.x0, revokedAt, gap).map((x) => (
+            <path class="nc-d-tick" d={`M${x} ${changed.route - 6}v12`} />
+          ))}
+          <Stop x={revokedAt} y={changed.route} across="horizontal" kind="end" />
+          <text class="nc-d-value" x={revokedAt - 10} y={changed.route - 16} text-anchor="end">
+            revoked
+          </text>
+          <path
+            class="nc-d-attack"
+            d={`M${revokedAt + 12} ${changed.route}H${lateTo - 8}`}
+          />
+          <Stop x={lateTo} y={changed.route} across="horizontal" />
+          {L.lateLines.map((line, j) => (
+            <text
+              class="nc-d-stop-text"
+              x={revokedAt + 12}
+              y={changed.route - 16 - (L.lateLines.length - 1 - j) * 15}
+            >
+              {line}
+            </text>
+          ))}
+          <path
+            class="nc-d-route"
+            d={`M${revokedAt} ${changed.route + 9}V${changed.route + 26}H${L.x1}`}
+          />
+          <circle class="nc-d-node-open" cx={L.x1} cy={changed.route + 26} r="5" />
+          <text class="nc-d-note" x={L.x1} y={changed.route + 48} text-anchor="end">
+            this device: a new session
+          </text>
+
+          {/* Over the cap: the oldest goes when one more is issued. */}
+          <path class="nc-d-route" d={`M${L.x0} ${cap.route}H${evictedAt - 8}`} />
+          {ticks(L.x0, evictedAt, gap).map((x) => (
+            <path class="nc-d-tick" d={`M${x} ${cap.route - 6}v12`} />
+          ))}
+          <Stop x={evictedAt} y={cap.route} across="horizontal" kind="end" />
+          <text class="nc-d-value" x={evictedAt + 14} y={cap.route + 4}>
+            evicted
+          </text>
+          {L.evictedLines.map((line, j) => (
+            <text class="nc-d-note" x={L.x0} y={cap.route + 26 + j * 15}>
+              {line}
+            </text>
+          ))}
+
+          {/* The axis: from sign-in to the absolute expiry, not to scale. */}
+          <path class="nc-d-post" d={`M${L.x0} ${L.axis}H${L.x1}`} />
+          <path class="nc-d-post" d={`M${L.x0} ${L.axis - 5}v10M${L.x1} ${L.axis - 5}v10`} />
+          <text class="nc-d-note" x={L.x0} y={L.axis + 22}>
+            sign-in
+          </text>
+          <text class="nc-d-note" x={(L.x0 + L.x1) / 2} y={L.axis + 22} text-anchor="middle">
+            not to scale
+          </text>
+          <text class="nc-d-value" x={L.x1} y={L.axis + 22} text-anchor="end">
+            {`+${absolute}`}
+          </text>
+        </svg>
+      );
+    })
+  }
+
+  <Fragment slot="caption">
+    <strong>Activity keeps a session from going idle, never from expiring</strong>, and a refresh
+    can never bring an ended session back.
+  </Fragment>
+</DiagramFrame>

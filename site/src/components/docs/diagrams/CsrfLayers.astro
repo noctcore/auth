@@ -1,0 +1,261 @@
+---
+/**
+ * CSRF: a same-origin request and a forged cross-site one cross the same
+ * three checkpoints. The real request passes all three. The first layer
+ * strips the forged one of its cookie (an ink mark: nothing is refused, the
+ * request just carries no session); the later two refuse it. The faded
+ * continuations show the case each later layer exists for.
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+
+interface Gate {
+  name: string;
+  code: readonly string[];
+  pass: string;
+  stop: string;
+  /** False where the request goes on, minus its cookie. */
+  refuses: boolean;
+}
+
+const gates: readonly Gate[] = [
+  {
+    name: 'SameSite=Lax',
+    code: ['session.cookie.sameSite'],
+    pass: 'cookie sent',
+    stop: 'sent without the cookie',
+    refuses: false,
+  },
+  {
+    name: 'Where it came from',
+    code: ['verifyFetchSite', 'verifyRequestOrigin'],
+    pass: 'own origin',
+    stop: 'not same-origin: refused',
+    refuses: true,
+  },
+  {
+    name: 'Signed token',
+    code: ['verifyCsrfToken'],
+    pass: 'token valid',
+    stop: 'no valid token',
+    refuses: true,
+  },
+];
+
+/** What gets past the layer before each later one. */
+const gaps: readonly (readonly string[])[] = [
+  ['if the cookie goes:', 'a sibling subdomain', 'or an old browser'],
+  ['if it is let through:', 'a listed origin', 'that runs script'],
+];
+
+/** DM Mono at 12px: about 7.2px a character. */
+const MONO = 7.2;
+const stopClass = (gate: Gate) => (gate.refuses ? 'nc-d-stop-text' : 'nc-d-note');
+const stopKind = (gate: Gate) => (gate.refuses ? 'refused' : 'stripped');
+
+const wide = {
+  w: 680,
+  h: 372,
+  gateX: [178, 400, 576],
+  divider: 276,
+  real: 150,
+  forged: 262,
+  start: 40,
+  end: 652,
+};
+
+const narrow = {
+  w: 360,
+  h: 690,
+  gateY: [210, 432, 590],
+  divider: 266,
+  real: 40,
+  forged: 120,
+  start: 104,
+  end: 652,
+  col: 150,
+};
+
+const title = 'Three layers against a forged cross-site request';
+const description =
+  'Two requests reach the same POST route. A request from your own page carries the session cookie, ' +
+  'says Sec-Fetch-Site same-origin and echoes a valid signed token, so it passes all three layers ' +
+  'and is handled. A hidden form on another site posts to /change-email. The first layer, ' +
+  'SameSite=Lax on the session cookie, is in the browser: the request still goes, but without the ' +
+  'cookie, so it carries no session. If the cookie goes anyway, from a sibling subdomain or an old ' +
+  'browser, the second layer on the server, verifyFetchSite or verifyRequestOrigin, refuses it ' +
+  'because it is not same-origin. If it is let through because it comes from a listed ' +
+  'cross-site origin that runs script, the third layer, verifyCsrfToken, refuses it because it ' +
+  'holds no valid signed token.';
+---
+
+<DiagramFrame id="csrf-layers" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">BROWSER</text>
+    <text class="nc-d-kicker" x={wide.divider + 24} y="30">YOUR SERVER</text>
+    <path class="nc-d-rule" d={`M${wide.divider} 16V${wide.forged + 22}`}></path>
+
+    {
+      gates.map((gate, i) => {
+        const x = wide.gateX[i] ?? 0;
+        const top = gate.code.length > 1 ? 58 : 74;
+
+        return (
+          <g>
+            <text class="nc-d-label" x={x} y={top} text-anchor="middle">
+              {gate.name}
+            </text>
+            {gate.code.map((code, j) => (
+              <text class="nc-d-code" x={x} y={top + 18 + j * 16} text-anchor="middle">
+                {code}
+              </text>
+            ))}
+            <path class="nc-d-post" d={`M${x} 108V${wide.forged + 18}`} />
+            <text class="nc-d-note" x={x + 8} y={wide.real + 24}>
+              {gate.pass}
+            </text>
+            <text class={stopClass(gate)} x={x} y={wide.forged + 34} text-anchor="middle">
+              {gate.stop}
+            </text>
+          </g>
+        );
+      })
+    }
+
+    <!-- The real request: your page to the handler, through every layer. -->
+    <text class="nc-d-label" x="24" y={wide.real - 18}>your page</text>
+    <path class="nc-d-route" d={`M${wide.start} ${wide.real}H${wide.end - 7}`}></path>
+    <circle class="nc-d-node" cx={wide.start} cy={wide.real} r="5"></circle>
+    {wide.gateX.map((x) => <circle class="nc-d-node" cx={x} cy={wide.real} r="4" />)}
+    <circle class="nc-d-node-open" cx={wide.end} cy={wide.real} r="7"></circle>
+    <text class="nc-d-label" x={wide.w - 12} y={wide.real - 18} text-anchor="end">handled</text>
+
+    <!-- The forged request: stops at the first layer, and at each later one if it gets past. -->
+    <text class="nc-d-label" x="24" y={wide.forged - 36}>another site</text>
+    <text class="nc-d-note" x="24" y={wide.forged - 18}>POST /change-email</text>
+    <circle class="nc-d-attack-node" cx={wide.start} cy={wide.forged} r="5"></circle>
+    <path class="nc-d-attack" d={`M${wide.start + 8} ${wide.forged}H${(wide.gateX[0] ?? 0) - 8}`}
+    ></path>
+    {
+      [1, 2].map((i) => (
+        <path
+          class="nc-d-attack nc-d-attack--past"
+          d={`M${(wide.gateX[i - 1] ?? 0) + 10} ${wide.forged}H${(wide.gateX[i] ?? 0) - 8}`}
+        />
+      ))
+    }
+    {
+      gates.map((gate, i) => (
+        <Stop x={wide.gateX[i] ?? 0} y={wide.forged} across="horizontal" kind={stopKind(gate)} />
+      ))
+    }
+    {
+      gaps.map((lines, i) => {
+        // In the clear space between the two stop labels, so the leader touches neither.
+        const left = (wide.gateX[i] ?? 0) + ((gates[i]?.stop.length ?? 0) * MONO) / 2;
+        const right = (wide.gateX[i + 1] ?? 0) - ((gates[i + 1]?.stop.length ?? 0) * MONO) / 2;
+        const x = (left + right) / 2;
+
+        return [
+          <path class="nc-d-leader" d={`M${x} ${wide.forged + 14}V${wide.forged + 50}`} />,
+          ...lines.map((line, j) => (
+            <text class="nc-d-note" x={x} y={wide.forged + 66 + j * 15} text-anchor="middle">
+              {line}
+            </text>
+          )),
+        ];
+      })
+    }
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-label" x="16" y="54">your page</text>
+    <text class="nc-d-label" x={narrow.forged} y="54">another site</text>
+    <text class="nc-d-note" x={narrow.forged} y="72">POST /change-email</text>
+
+    <text class="nc-d-kicker" x={narrow.w - 16} y="24" text-anchor="end">BROWSER</text>
+    <text class="nc-d-kicker" x={narrow.w - 16} y={narrow.divider + 20} text-anchor="end"
+      >YOUR SERVER</text
+    >
+    <path class="nc-d-rule" d={`M16 ${narrow.divider}H${narrow.w - 16}`}></path>
+
+    {
+      gates.map((gate, i) => {
+        const y = narrow.gateY[i] ?? 0;
+        const top = y - 12 - gate.code.length * 16;
+
+        return (
+          <g>
+            <text class="nc-d-label" x={narrow.col} y={top}>
+              {gate.name}
+            </text>
+            {gate.code.map((code, j) => (
+              <text class="nc-d-code" x={narrow.col} y={top + 16 + j * 16}>
+                {code}
+              </text>
+            ))}
+            <path class="nc-d-post" d={`M16 ${y}H${narrow.w - 16}`} />
+            <text class={stopClass(gate)} x={narrow.col} y={y + 22}>
+              {gate.stop}
+            </text>
+          </g>
+        );
+      })
+    }
+
+    <path class="nc-d-route" d={`M${narrow.real} 96V${narrow.end - 7}`}></path>
+    <circle class="nc-d-node" cx={narrow.real} cy="96" r="5"></circle>
+    {narrow.gateY.map((y) => <circle class="nc-d-node" cx={narrow.real} cy={y} r="4" />)}
+    <circle class="nc-d-node-open" cx={narrow.real} cy={narrow.end} r="7"></circle>
+    <text class="nc-d-label" x={narrow.real + 18} y={narrow.end + 5}>handled</text>
+
+    <circle class="nc-d-attack-node" cx={narrow.forged} cy="96" r="5"></circle>
+    <path class="nc-d-attack" d={`M${narrow.forged} 104V${(narrow.gateY[0] ?? 0) - 8}`}></path>
+    {
+      [1, 2].map((i) => (
+        <path
+          class="nc-d-attack nc-d-attack--past"
+          d={`M${narrow.forged} ${(narrow.gateY[i - 1] ?? 0) + 10}V${(narrow.gateY[i] ?? 0) - 8}`}
+        />
+      ))
+    }
+    {
+      gates.map((gate, i) => (
+        <Stop x={narrow.forged} y={narrow.gateY[i] ?? 0} across="vertical" kind={stopKind(gate)} />
+      ))
+    }
+    {
+      gaps.map((lines, i) => {
+        const first = i === 0 ? narrow.divider + 56 : (narrow.gateY[1] ?? 0) + 56;
+
+        return [
+          <path class="nc-d-leader" d={`M${narrow.forged + 12} ${first - 4}H${narrow.col - 8}`} />,
+          ...lines.map((line, j) => (
+            <text class="nc-d-note" x={narrow.col} y={first + j * 15}>
+              {line}
+            </text>
+          )),
+        ];
+      })
+    }
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>The browser strips the forged request of its cookie, and two server checks refuse
+    it</strong>, each covering the case the layer before can miss. Your own page passes all three.
+  </Fragment>
+</DiagramFrame>
