@@ -1,0 +1,157 @@
+---
+title: Email change
+description: Why changing the account's email needs a fresh credential, a proof from the new mailbox and a way back for the old one, and what a revert does.
+---
+
+import { Aside, Code } from '@astrojs/starlight/components';
+import InShort from '../../../components/docs/InShort.astro';
+import EmailChangeFlow from '../../../components/docs/diagrams/EmailChangeFlow.astro';
+import emailChangeTs from '../../../../snippets/learn/email-change.ts?raw';
+
+<InShort>
+  <Fragment slot="threat">
+    Whoever controls the address can reset the password, so a few minutes in someone's session,
+    spent moving the email to an attacker's address, become the account for good.
+  </Fragment>
+  <Fragment slot="rule">
+    A fresh credential to ask, nothing moves until the new address proves itself, and the old
+    address gets a notice with a link that undoes the change.
+  </Fragment>
+  <Fragment slot="where">`flows/email-change.ts`, configured under `emailChange`.</Fragment>
+</InShort>
+
+## What goes wrong
+
+The email address is the account's recovery channel: whoever controls it can reset the password. So an attacker who holds a session for a few minutes (a stolen cookie, an unlocked laptop) does not need to keep it. Changing the email to their own address and then resetting the password turns minutes of access into the account, for good, and the owner's own mailbox is no longer the one that gets the reset links.
+
+Three weaker versions of the same flow help them further:
+
+- a change that applies before the new address is proved (typos and squatting);
+- a confirmation that says whether the new address already has an account (enumeration);
+- a notice to the old address that comes with no way to undo anything.
+
+<EmailChangeFlow />
+
+## The rule
+
+Ask for proof at both ends, keep the old address the owner's while the way back is open, and make the way back hold.
+
+### Fresh authentication, and the factor when there is one
+
+Asking for a change needs a session whose last password proof is inside `session.freshAuthAge`, 10 minutes by default. A stolen cookie on its own is refused ([A051](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A051-email-change-without-fresh-auth.test.ts)).
+
+With the two-factor plugin and a confirmed factor, the request also needs a step-up held by the session or a code with the request, the same rule as a password change ([A052](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A052-email-change-without-second-factor.test.ts)).
+
+### Nothing changes until the new address proves itself
+
+The old address stays the login. An 8-digit code goes to the new address:
+
+- it lives 15 minutes;
+- it is stored as an HMAC bound to the user;
+- it allows 5 wrong guesses, counted before each comparison ([A053](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A053-email-change-code-brute-force.test.ts));
+- it is single use ([A054](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A054-email-change-token-reuse.test.ts)).
+
+**The row names both addresses.** The stored row holds the new address and the one it replaces: a new request replaces the code, and a code for a change from an address the account no longer has is refused ([A055](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A055-email-change-token-for-another-address.test.ts)).
+
+**It is finished in a live session.** Like email verification, the code is typed in a live signed-in session of the same account, and a link (if you choose links) only works in one; a session revoked since the request cannot finish it.
+
+**It dies with the sessions.** A pending change dies when the owner changes or resets the password, or signs out of other devices or everywhere.
+
+### The same answer for a taken address
+
+A change to an address that already has an account, or that is held for another account (below), answers exactly like a change to a free one, after the same store calls. That address's owner gets an "in use" mail instead of a code ([A058](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A058-email-change-enumeration.test.ts)).
+
+### Unique at the moment it applies
+
+The store moves the address in one compare-and-set on the old address, and the unique email column decides races: of two accounts confirming one address at once, exactly one gets it ([A059](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A059-email-change-race.test.ts)).
+
+### A confirmed change ends every other session and tells the old address at once
+
+**The way back is written first.** Reset and verification tokens that went to the old address die and the revert link is written before the address moves, so no failure leaves a moved address without its way back.
+
+**Then the sessions end.** Every session of the account is revoked through the epoch fence and the caller's is re-issued. The old address is mailed the new one and the revert link.
+
+### The old address stays the owner's while the link lives
+
+Until the revert link expires or is used, the old address is held for the account that gave it up. Without the hold, the intruder could register the old address and leave the revert nowhere to go back to ([A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts)).
+
+- **Sign-up on it** gives the answer for an address with an account, and an "account exists" mail to the old address for its owner, after the same number of store round trips. A read of the holder stands where a taken or new address does its insert, so the timing is not the same; the lookup and mail run after the answer, as for a taken address.
+- **Another account's change to it** answers as taken.
+
+<Aside type="caution" title="The hold covers the library's own flows only">
+  An app's invitations, admin tools, first SSO sign-ins and imports must ask `auth.isAddressHeld`
+  before they create a user.
+</Aside>
+
+### The old address can undo it
+
+The revert link is 32 random bytes stored as SHA-256, single use ([A057](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A057-email-revert-token-replay.test.ts)), valid for 7 days or more, sent only to the old address and bound to it. Using it, in one write, moves the account back and removes the password, so the next sign-in needs a reset (mailed to the restored address). It then:
+
+- revokes every session, and with them the two-factor plugin's trusted devices;
+- voids every outstanding reset, verification and change token;
+- writes an audit row flagged for review.
+
+**It outlives the intruder's other moves.** A password change or a reset does not void the link ([A056](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A056-email-revert-after-password-change.test.ts)), and no second change can start while it lives, so the address it restores is the one the account had before the intruder came ([A060](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A060-retaking-the-account-after-a-revert.test.ts)).
+
+**It never removes a second factor.** It cannot tell the owner's from one an intruder enrolled, so every factor stays ([A063](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A063-stripping-the-owners-factor-with-a-revert.test.ts)).
+
+### The link is spent only when the address is back, and a refused revert locks the account out
+
+If the old address has an account anyway (an app path that skipped the hold, a race between sign-up's check and its insert, or a direct store write), the revert still removes the password, revokes every session, trusted device and pending token, answers `email_in_use` and writes an audit row flagged for review ([A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts)).
+
+**The account is locked out.** It still names the intruder's address, so no flow issues it a session, a reset request for it sends nothing and a reset link for it is refused, each with the usual answer ([A062](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A062-resetting-at-the-new-address-after-a-refused-revert.test.ts)).
+
+**The lockout never lapses**, and the owner's link lives as long. It ends only when the owner's revert finishes once the address is free, or when support clears it, which also voids the owner's link. A revert link only works while the account still names the address the change moved it to.
+
+### A repeat takeover is slower
+
+After a revert, the account may not change to the address it lost for 30 days ([A060](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A060-retaking-the-account-after-a-revert.test.ts)).
+
+## In code
+
+The defaults written out. The [Email change guide](/auth/build/email-change/) has the routes: request, confirm and revert.
+
+<Code code={emailChangeTs} lang="ts" title="email-change.ts" />
+
+## Where the package and the guide differ
+
+The guide's [email addresses](https://auth.pilcrowonpaper.com/email-addresses) page asks for a proof from the new address and a notice to the old one. The package adds the revert link, the fresh-auth and second-factor requirements, and the uniform answer for a taken address.
+
+## What it does not cover
+
+**The rest of the account.** A revert restores the address, not the rest of the account. It never removes a second factor, because it cannot tell the owner's from one an intruder enrolled. The owner's own factor stays, so the reset asks for it; one the intruder enrolled stays too, and the owner, who cannot pass it, needs support to verify them some other way and remove it.
+
+**An old address that has an account anyway.** The owner needs support to free it; until then the account stays locked out, however long that takes. Support clearing the lockout while the account still names the intruder's address would hand that address a working reset.
+
+**A second change soon after.** The user cannot change the address again until the revert link expires (7 days by default), even if they made the first change themselves.
+
+**A stalled new address.** Anyone signed in can use up a new address's request limit (3 an hour from every account) and stall changes to it for an hour.
+
+**An intruder with both mailboxes.** One who also controls the old mailbox can use the revert link like the owner.
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test | Attack | Stopped by |
+| ---- | ------ | ---------- |
+| [A051](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A051-email-change-without-fresh-auth.test.ts) | Changing the email from a session without a fresh credential proof | `flows/email-change.ts`, `core/auth-core.ts` |
+| [A052](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A052-email-change-without-second-factor.test.ts) | Changing the email of a two-factor account without the factor | `plugins/two-factor/hooks.ts`, `plugins/two-factor/step-up.ts`, `flows/email-change.ts` |
+| [A053](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A053-email-change-code-brute-force.test.ts) | Brute forcing the email change code | `tokens/one-time-tokens.ts`, `flows/email-change.ts` |
+| [A054](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A054-email-change-token-reuse.test.ts) | Reusing an email change code or link | `tokens/one-time-tokens.ts`, `flows/email-change.ts` |
+| [A055](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A055-email-change-token-for-another-address.test.ts) | Confirming an email change with a proof meant for another address or account | `tokens/one-time-tokens.ts`, `flows/email-change.ts`, `ports/stores.ts` |
+| [A056](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A056-email-revert-after-password-change.test.ts) | Keeping the account after an email change by changing the password | `flows/email-change.ts`, `flows/password-change.ts`, `flows/password-reset.ts` |
+| [A057](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A057-email-revert-token-replay.test.ts) | Replaying an email revert link | `flows/email-change.ts`, `tokens/one-time-tokens.ts` |
+| [A058](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A058-email-change-enumeration.test.ts) | Learning whether an address has an account through the email change answer | `flows/email-change.ts`, `ports/mail.ts` |
+| [A059](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A059-email-change-race.test.ts) | Racing two email changes | `tokens/one-time-tokens.ts`, `ports/stores.ts`, `flows/email-change.ts` |
+| [A060](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A060-retaking-the-account-after-a-revert.test.ts) | Taking the account back after the owner reverted the change | `flows/email-change.ts`, `plugins/two-factor/hooks.ts` |
+| [A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts) | Registering the old address so the revert has nowhere to go | `flows/email-reservation.ts`, `flows/register.ts`, `flows/email-change.ts` |
+| [A062](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A062-resetting-at-the-new-address-after-a-refused-revert.test.ts) | Resetting the password at the intruder's address after a refused revert | `flows/email-lockout.ts`, `flows/email-change.ts`, `flows/password-reset.ts`, `create-auth.ts` |
+| [A063](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A063-stripping-the-owners-factor-with-a-revert.test.ts) | Stripping the owner's second factor with an email revert | `flows/email-change.ts`, `plugins/two-factor/hooks.ts` |
+
+</div>
+
+## Further reading
+
+- [Email addresses](https://auth.pilcrowonpaper.com/email-addresses) in Pilcrow's auth guide.
+- [Email verification and account pre-hijacking](/auth/learn/email-verification/), [Second factors](/auth/learn/second-factors/) and [Revocation races and the epoch fence](/auth/learn/revocation-races/).
