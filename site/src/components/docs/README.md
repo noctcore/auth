@@ -31,6 +31,11 @@ How a Learn page is built, and how its diagram is drawn. The pilot pages are `le
 
 ### The body
 
+- A table of 4 or more columns does not fit a phone. Split it into two tables by topic (the design
+  choices page does), or wrap it in `<div class="nc-stack">` (blank lines around the table) so the
+  rows stack under 40rem: the first cell names the row and every other cell has to read on its
+  own, because the column names are hidden. Prefer the split when the columns need their headers.
+- An `<Aside type="caution">` tints its inline code amber on its own; no class is needed.
 - A paragraph or bullet runs at most about three lines at the content width. Longer, it becomes
   several short paragraphs, each led by a **bold phrase** that says the point.
 - Cases with an outcome ("the test suite runs ...") are a two-column table, not prose.
@@ -41,9 +46,11 @@ URL stays the same.
 
 ## Numbers are checked
 
-Add the page to `PAGES` in `site/scripts/learn-numbers.test.ts` when you convert it. Every digit on
-the page must then come from a fact phrase built from the package source, and the page must link
-every attack test `ATTACKS.md` files under it. Diagram numbers are not typed into the diagram: the
+Add the page to `PAGES` in `site/scripts/learn-numbers.test.ts` (or to the `PAGES` of the sibling
+test for its topic: `learn-credentials`, `learn-requests` or `learn-accounts`) when you convert it.
+Every digit on the page must then come from a fact phrase built from the package source, and the
+page must link every attack test `ATTACKS.md` files under it, under the page's exact title. The
+shared readers and checks are in `site/scripts/learn-checks.ts`. Diagram numbers are not typed into the diagram: the
 diagram imports the code sample (`snippets/learn/*.ts`) and the test checks the sample against the
 source. A constant the sample cannot hold (like the lock factor) is a named `const` in the diagram
 that the test reads.
@@ -75,8 +82,8 @@ Use the classes in `src/styles/docs.css`, never a color value:
 | `nc-d-attack-node`            | Where the attack starts (filled salmon dot).                                                                                                                                                                                                                                                                                                                                                                     |
 | `nc-d-attack`                 | The attack: salmon, dashed `5 7`. Add `nc-d-attack--past` (fine, dotted, faint) for what happens only if the layer before missed it.                                                                                                                                                                                                                                                                             |
 | `Stop.astro`                  | A mark across a path. `kind="refused"` (default): salmon bar and dot, the package turns a request away. `kind="end"`: ink bar, something ends on schedule (an expiry, a sign-out). `kind="stripped"`: ink bar and open ring, the request goes on minus what made it dangerous (the browser drops the cookie). It draws `nc-d-stop`, `nc-d-stop-dot`, `nc-d-end` and `nc-d-strip-ring`: never use those directly. |
-| `nc-d-post`                   | A checkpoint line the request crosses.                                                                                                                                                                                                                                                                                                                                                                           |
-| `nc-d-rule`, `nc-d-leader`    | Dashed dividers and caps; dotted leaders from a note to what it names.                                                                                                                                                                                                                                                                                                                                           |
+| `nc-d-post`                   | A checkpoint line the request crosses. Where full-height posts would cut through text (a wide drawing with several lanes), give each lane its own short tick, as the wide password reset drawing does.                                                                                                                                                                                                           |
+| `nc-d-rule`, `nc-d-leader`    | Dashed dividers and caps; dotted leaders from a note to what it names. A dashed `nc-d-rule` is too faint as a checkpoint line in dark mode: use the dotted `nc-d-leader` there.                                                                                                                                                                                                                                  |
 | `nc-d-cell`, `nc-d-span`      | A counted attempt; a span of time (a lock), in ink. `nc-d-span--ghost` for an example span.                                                                                                                                                                                                                                                                                                                      |
 | `nc-d-label`                  | A name on the drawing (Manrope, strong).                                                                                                                                                                                                                                                                                                                                                                         |
 | `nc-d-code`                   | A config key or function name (DM Mono, accent).                                                                                                                                                                                                                                                                                                                                                                 |
