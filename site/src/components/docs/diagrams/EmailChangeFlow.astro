@@ -1,0 +1,266 @@
+---
+/**
+ * Email change: the two-sided flow (flows/email-change.ts). A request needs
+ * a fresh password proof; a code goes to the new address, and nothing moves
+ * until it comes back; a confirmed change ends every other session and mails
+ * the old address a notice with a revert link. Until that link is used or lapses
+ * the old address is held for the account. A revert puts the address back, removes
+ * the password and ends every session, trusted device and pending token, but
+ * leaves second factors alone; then the account may not change back to the
+ * address it lost for a while. Values from snippets/learn/email-change.ts.
+ */
+import { emailChange, freshAuthAge } from '../../../../snippets/learn/email-change';
+import DiagramFrame from '../DiagramFrame.astro';
+import { shortDuration, toMs } from './duration';
+
+const fresh = shortDuration(toMs(freshAuthAge));
+const codeLife = shortDuration(toMs(emailChange.ttl));
+const revertLife = shortDuration(toMs(emailChange.revertTtl));
+const block = shortDuration(toMs(emailChange.blockAfterRevert));
+
+const text = {
+  request: ['request', `fresh auth: ${fresh}`],
+  code: `${emailChange.digits}-digit code, ${codeLife}`,
+  guesses: `${emailChange.maxAttempts} wrong guesses`,
+  confirmed: ['confirmed:', 'other sessions end'],
+  notice: 'notice, revert link',
+  hold: ['held for the account until the link', `is used or lapses: ${revertLife} or more`],
+  revert: {
+    title: 'A revert puts the address back',
+    lines: ['and removes the password;', 'every session, trusted device', 'and pending token ends'],
+    keeps: 'second factors stay',
+  },
+  block: [`${block}: no change back`, 'to the lost address'],
+};
+
+/** Wide: time runs left to right, the new address above the account, the old below. */
+const W = {
+  w: 680,
+  h: 384,
+  x0: 150,
+  request: 180,
+  confirm: 350,
+  revert: 520,
+  x1: 650,
+  newLane: 96,
+  account: 200,
+  oldLane: 310,
+  revertText: { x: 384, y: 84 },
+};
+
+/** Narrow: time runs down, both addresses branch to the right of the account. */
+const N = {
+  w: 360,
+  h: 588,
+  x: 40,
+  branch: 72,
+  notes: 96,
+  start: 84,
+  request: 110,
+  confirm: 254,
+  revert: 410,
+  end: 560,
+};
+
+const title = 'An email change, from both addresses';
+const description =
+  `Asking to change the address needs a session whose last password proof is within ${fresh}. ` +
+  `A ${emailChange.digits}-digit code goes to the new address; it lives ${codeLife} and allows ` +
+  `${emailChange.maxAttempts} wrong guesses, and nothing changes until it is typed in a live session of the account. ` +
+  'Confirming moves the address and ends every other session. The old address is mailed a notice and a ' +
+  `revert link that lives ${revertLife} or more, and until it is used or lapses the old address is held for the account. ` +
+  'A revert puts the address back and removes the password; every session, trusted device and pending ' +
+  `token ends, and second factors stay. For ${block} after a revert, the account may not change back to ` +
+  'the address it lost. Not to scale.';
+---
+
+<DiagramFrame id="email-change-flow" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${W.w} ${W.h}`}
+    width={W.w}
+    height={W.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">TWO ADDRESSES, ONE WAY BACK</text>
+    <text class="nc-d-note" x={W.w - 24} y="30" text-anchor="end">not to scale</text>
+
+    <text class="nc-d-label" x="24" y={W.newLane + 4}>New address</text>
+    <text class="nc-d-note" x="24" y={W.newLane + 22}>proves itself first</text>
+    <text class="nc-d-label" x="24" y={W.account + 4}>The account</text>
+    <text class="nc-d-label" x="24" y={W.oldLane + 4}>Old address</text>
+    <text class="nc-d-note" x="24" y={W.oldLane + 22}>keeps a way back</text>
+
+    <!-- The account, from the request to the end of the drawing. -->
+    <path class="nc-d-route" d={`M${W.x0} ${W.account}H${W.x1}`}></path>
+    <circle class="nc-d-node" cx={W.x0} cy={W.account} r="5"></circle>
+    {
+      text.request.map((line, j) => (
+        <text class={j === 0 ? 'nc-d-label' : 'nc-d-note'} x={W.request - 4} y={W.account + 24 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+
+    <!-- The new address: the code goes out, and comes back typed in a live session. -->
+    <path
+      class="nc-d-route"
+      d={`M${W.request} ${W.account}V${W.newLane}H${W.confirm}V${W.account}`}></path>
+    <circle class="nc-d-node" cx={W.request} cy={W.account} r="4"></circle>
+    <text class="nc-d-note" x={(W.request + W.confirm) / 2} y={W.newLane - 14} text-anchor="middle">
+      {text.code}
+    </text>
+    <text class="nc-d-note" x={(W.request + W.confirm) / 2} y={W.newLane + 24} text-anchor="middle">
+      {text.guesses}
+    </text>
+
+    <!-- Confirmed: the address moves, other sessions end, the old address hears at once. -->
+    <circle class="nc-d-node" cx={W.confirm} cy={W.account} r="4"></circle>
+    {
+      text.confirmed.map((line, j) => (
+        <text class={j === 0 ? 'nc-d-label' : 'nc-d-note'} x={W.confirm + 8} y={W.account + 24 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+
+    <!-- The old address: held while the link lives; the revert comes back up. -->
+    <rect
+      class="nc-d-span nc-d-span--ghost"
+      x={W.confirm}
+      y={W.oldLane - 7}
+      width={W.revert - W.confirm}
+      height="14"
+      rx="2"></rect>
+    <path
+      class="nc-d-route"
+      d={`M${W.confirm} ${W.account}V${W.oldLane}H${W.revert}V${W.account}`}></path>
+    <circle class="nc-d-node" cx={W.confirm} cy={W.oldLane} r="4"></circle>
+    <text class="nc-d-note" x={W.confirm + 8} y={W.oldLane - 14}>{text.notice}</text>
+    {
+      text.hold.map((line, j) => (
+        <text class="nc-d-note" x={W.confirm + 8} y={W.oldLane + 30 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+
+    <!-- The revert, and what it leaves. -->
+    <circle class="nc-d-node-open" cx={W.revert} cy={W.account} r="6"></circle>
+    <path class="nc-d-leader" d={`M${W.revert} ${W.account - 10}V${W.revertText.y + 78}`}></path>
+    <text class="nc-d-label" x={W.revertText.x} y={W.revertText.y}>{text.revert.title}</text>
+    {
+      text.revert.lines.map((line, j) => (
+        <text class="nc-d-note" x={W.revertText.x} y={W.revertText.y + 18 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+    <text class="nc-d-value" x={W.revertText.x} y={W.revertText.y + 18 + text.revert.lines.length * 16 + 2}>
+      {text.revert.keeps}
+    </text>
+
+    <!-- After the revert: the lost address stays off limits. -->
+    <rect
+      class="nc-d-span nc-d-span--ghost"
+      x={W.revert + 10}
+      y={W.account - 7}
+      width={W.x1 - W.revert - 10}
+      height="14"
+      rx="2"></rect>
+    {
+      text.block.map((line, j) => (
+        <text class="nc-d-note" x={W.revert + 10} y={W.account + 24 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${N.w} ${N.h}`}
+    width={N.w}
+    height={N.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">TWO ADDRESSES, ONE WAY BACK</text>
+    <text class="nc-d-note" x="24" y="50">time runs down, not to scale</text>
+    <text class="nc-d-label" x={N.notes} y={N.start + 4}>The account</text>
+
+    <path class="nc-d-route" d={`M${N.x} ${N.start}V${N.end}`}></path>
+    <circle class="nc-d-node" cx={N.x} cy={N.start} r="5"></circle>
+    <text class="nc-d-note" x={N.notes} y={N.request + 4}>
+      {`${text.request[0]}, ${text.request[1]}`}
+    </text>
+
+    <!-- The new address loop. -->
+    <path
+      class="nc-d-route"
+      d={`M${N.x} ${N.request}H${N.branch}V${N.confirm}H${N.x}`}></path>
+    <text class="nc-d-label" x={N.notes} y={N.request + 34}>New address</text>
+    <text class="nc-d-note" x={N.notes} y={N.request + 52}>{text.code}</text>
+    <text class="nc-d-note" x={N.notes} y={N.request + 68}>{text.guesses}</text>
+    <circle class="nc-d-node" cx={N.x} cy={N.confirm} r="4"></circle>
+    <text class="nc-d-note" x={N.notes} y={N.confirm + 4}>
+      {`${text.confirmed[0]} ${text.confirmed[1]}`}
+    </text>
+
+    <!-- The old address: held while the link lives, then the revert comes back. -->
+    <rect
+      class="nc-d-span nc-d-span--ghost"
+      x={N.branch - 7}
+      y={N.confirm}
+      width="14"
+      height={N.revert - N.confirm}
+      rx="2"></rect>
+    <path
+      class="nc-d-route"
+      d={`M${N.x} ${N.confirm}H${N.branch}V${N.revert}H${N.x}`}></path>
+    <text class="nc-d-label" x={N.notes} y={N.confirm + 38}>Old address</text>
+    <text class="nc-d-note" x={N.notes} y={N.confirm + 56}>{text.notice}</text>
+    {
+      text.hold.map((line, j) => (
+        <text class="nc-d-note" x={N.notes} y={N.confirm + 80 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+
+    <circle class="nc-d-node-open" cx={N.x} cy={N.revert} r="6"></circle>
+    <text class="nc-d-label" x={N.notes} y={N.revert + 4}>{text.revert.title}</text>
+    {
+      text.revert.lines.map((line, j) => (
+        <text class="nc-d-note" x={N.notes} y={N.revert + 22 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+    <text class="nc-d-value" x={N.notes} y={N.revert + 22 + text.revert.lines.length * 16 + 2}>
+      {text.revert.keeps}
+    </text>
+
+    <rect
+      class="nc-d-span nc-d-span--ghost"
+      x={N.x - 7}
+      y={N.revert + 12}
+      width="14"
+      height={N.end - N.revert - 12}
+      rx="2"></rect>
+    {
+      text.block.map((line, j) => (
+        <text class="nc-d-note" x={N.notes} y={N.end - 28 + j * 16}>
+          {line}
+        </text>
+      ))
+    }
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>Nothing moves until the new address proves itself, and the old address keeps a way
+    back</strong>: a revert restores the address and ends every session, but never removes a second
+    factor.
+  </Fragment>
+</DiagramFrame>
