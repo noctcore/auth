@@ -1,0 +1,138 @@
+---
+title: Enumeration
+description: How an auth API leaks who has an account, through answers, timing and lockout, and how each door is kept quiet.
+---
+
+import { Aside, Code } from '@astrojs/starlight/components';
+import InShort from '../../../components/docs/InShort.astro';
+import EnumerationLogin from '../../../components/docs/diagrams/EnumerationLogin.astro';
+import enumerationTs from '../../../../snippets/learn/enumeration.ts?raw';
+
+<InShort>
+  <Fragment slot="threat">
+    A door that answers, waits or locks differently for a real account tells anyone with a list of
+    addresses who uses the service.
+  </Fragment>
+  <Fragment slot="rule">
+    One answer per door, and the same work on both paths: an unknown address pays for the same
+    store calls, counters and password verify as a known one.
+  </Fragment>
+  <Fragment slot="where">
+    `flows/login.ts` and the other flows, with `password/verify.ts` for the dummy hash.
+  </Fragment>
+</InShort>
+
+## What goes wrong
+
+If a form answers "no account with this email" for one address and "wrong password" for another, anyone can test a list of addresses and learn who uses the service. For some services that fact alone is sensitive. It also makes guessing cheaper: the attacker spends their budget only on accounts that exist.
+
+The answer text is the obvious leak. The less obvious ones:
+
+- **timing**: a password hash takes tens of milliseconds, a missing row takes one;
+- **side effects**: only real accounts get locked, only real accounts trigger mail on the request path;
+- **every other door that takes an address**: sign-up and password reset as well as login.
+
+<EnumerationLogin />
+
+## The rule
+
+Every door gives one answer, and both of its paths do the same work.
+
+### One answer per door
+
+| Door              | What it answers                                                                                                                                                                                                                                    |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| *Login*           | An unknown address, a wrong password, a locked account and an account a hook refused all answer `invalid_credentials` (unless the app opts into `throttle.lockout.revealLocked`, below).                                                              |
+| *Registration*    | A taken address answers exactly like a new one. Its owner gets an "account exists" mail instead of a verification mail, so a real person who forgot they had an account still learns it.                                                            |
+| *Password reset*  | The request always answers the same.                                                                                                                                                                                                               |
+
+### The same work on both paths
+
+**Login makes the same store calls on every path**: the address lookup, the epoch read and a credential lookup by id (under an id no store issues, for an unknown address).
+
+**Then one full password verify**, against a dummy hash made with the same parameters when there is no real one.
+
+**A locked account takes the same path**: the verify still runs, its result is ignored.
+
+The other doors follow the same rule:
+
+- A reset-code check for an unknown address computes the same HMAC and makes the same token lookup as for a known one.
+- The lockout counters are keyed on the normalised address, not on the user id, so an unknown address spends and checks counters exactly like a known one.
+- Registration checks and hashes the password before it looks the address up.
+- The reset request does none of the per-account work on the response path: looking up the account, its mail limit and the mail itself run in a job, on your queue or detached.
+
+### Nothing waits on mail
+
+**A new lock's audit row and owner mail are not awaited in the request**; they run in the background with errors logged, so a known address does not answer slower than an unknown one.
+
+**No flow awaits delivery.** Sign-up, verification, password change, password reset and the lock notice call the `Mailer` and answer without awaiting the promise it returns, so a slow or hung delivery cannot hold a request open.
+
+**What `send` does before it returns that promise is still on the response path**, in most flows. A door that mails on one branch only answers slower on that branch, so `send` must only enqueue: a `send` that renders the template first puts the difference back into the response time. Sign-up hands its mails over from a background task, after a store call (see below).
+
+**Delivery is at most once**: a failed send is logged, never retried by the library. The `Mailer` must enqueue and return, never render or send over SMTP inline; a worker does that, and the queue retries a failed send.
+
+### What sign-up does on the response path
+
+**Both paths hash, then wait on one insert.** A taken address and a new one both hash the password, and the answer then waits on one insert, which stores a row for a new address and fails (or, with the Prisma store, is skipped) for a taken one.
+
+**The rest differs between the paths, so it runs off the response path**: a taken address looks its owner up and mails them `account-exists`, a new one writes its verification token and mails `verify-email`, and each writes its audit event. Sign-up therefore answers before its mail is handed over and before its audit event lands, and a failure there is logged, not answered.
+
+**Only a new address runs your `afterRegister` hooks** and, with `autoLogin`, issues a session; the hooks are awaited, so keep them fast and put slow work (a welcome mail, a CRM call) on your queue. `autoLogin` needs `revealExisting`, whose answer already names a taken address.
+
+Measured with Postgres and Redis on one laptop (`bun run bench:timing:stores`):
+
+| Where the owner lookup runs | Result                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| On the response path        | The taken path about 4.5 ms slower                                                    |
+| Off the path                | Three runs could not tell the two apart (\|t\| under 4.5, on a heavily loaded machine) |
+
+<Aside type="caution" title="Reduced, not closed">
+  The insert itself still differs, so treat this as reduced on the stores measured, not closed
+  everywhere: the register door's rate limit and a captcha bound how many samples an attacker
+  gets.
+</Aside>
+
+### Errors carry two fields
+
+Every failure has a public `code` and an internal `reason` (`unknown_user`, `wrong_password`, `locked`). Only `toPublicError` output goes to the client; the reason goes to the audit trail and metrics.
+
+## In code
+
+A `Mailer` that only enqueues, and a sign-up handler that sends only the public code. The [mail guide](/auth/build/mail/) has the queue and the worker.
+
+<Code code={enumerationTs} lang="ts" title="enumeration.ts" />
+
+## Where the package and the guide differ
+
+The guide argues against hiding whether an account exists: full protection is hard, and a vague error confuses users. Where an identity must be protected, it suggests a username instead of an email.
+
+**The package takes the stricter position by default**, because its users sign in with an email: the uniform answers above are on unless an app opts out with `registration.revealExisting`, which turns the registration answer into `email_in_use`.
+
+**Lockout stays uniform either way**, unless the app also opts into `throttle.lockout.revealLocked`: login then answers `account_locked` for a locked address. Unknown addresses lock and answer the same after the same work, so the answer alone does not prove an account exists, but it tells anyone that the address is locked and when the lock lifts, which a uniform answer never does (attack [A085](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A085-learning-lock-state-from-the-locked-answer.test.ts)).
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test | Attack | Stopped by |
+| ---- | ------ | ---------- |
+| [A003](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A003-enumeration-by-response.test.ts) | Account enumeration by the answer | `shared/errors.ts`, `flows/login.ts` |
+| [A004](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A004-enumeration-by-timing.test.ts) | Account enumeration by timing | `password/verify.ts`, `flows/login.ts` |
+| [A005](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A005-locked-account-oracle.test.ts) | The locked-account oracle | `throttle/throttle.ts`, `flows/lock-notice.ts` |
+| [A019](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A019-email-alias-account-merge.test.ts) | Two spellings of one address, or one spelling of two | `shared/email.ts` |
+| [A023](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A023-hung-mailer-holds-the-response.test.ts) | Holding responses up through a slow or hung mailer | `core/background.ts`, `core/auth-core.ts` |
+| [A031](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A031-enumeration-through-error-mapping.test.ts) | Telling accounts apart through the tRPC error | `auth-trpc/errors.ts` |
+| [A047](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A047-second-factor-timing.test.ts) | Telling a wrong code from an unknown challenge or a missing factor by timing | `plugins/two-factor/challenge.ts`, `plugins/two-factor/proofs.ts` |
+| [A050](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A050-second-factor-enumeration.test.ts) | Learning account state from second-factor answers | `flows/login.ts`, `plugins/two-factor/challenge.ts` |
+| [A058](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A058-email-change-enumeration.test.ts) | Learning whether an address has an account through the email change answer | `flows/email-change.ts` |
+| [A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts) | Registering the old address so the revert has nowhere to go | `flows/email-reservation.ts`, `flows/register.ts` |
+| [A074](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A074-learning-accounts-through-invitations.test.ts) | Learning whether an address has an account through invitations | `plugins/invitations/manage.ts`, `plugins/invitations/accept.ts` |
+| [A085](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A085-learning-lock-state-from-the-locked-answer.test.ts) | Learning account state from the explicit locked answer | `throttle/rules.ts`, `flows/login.ts` |
+| [A089](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A089-another-spelling-under-a-configured-email-policy.test.ts) | Another spelling of the victim's address under a configured email policy | `shared/email.ts`, `create-auth.ts` |
+
+</div>
+
+## Further reading
+
+- [Passwords](https://auth.pilcrowonpaper.com/passwords), last section, in Pilcrow's auth guide.
+- [Brute force and lockout](/auth/learn/brute-force-and-lockout/) for the counters behind the uniform lockout answer.
