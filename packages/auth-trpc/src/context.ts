@@ -96,12 +96,18 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
    * that cannot read the `csrf` cookie: return it from a public query. It is
    * exactly the token this response sets or keeps as the cookie, minted with
    * the pre-session when missing, as on any query sent with GET. The
-   * response is marked `Cache-Control: no-store`. The token stays bound to
-   * the session or pre-session and the cookie is still required next to it,
-   * so it grants nothing a cross-site page could use (CORS keeps the body
-   * from other origins). Throws an `AuthConfigError` on a request sent with
-   * an unsafe method (where nothing is minted) and on a streamed batch
-   * (`httpBatchStreamLink`), whose headers go out before any procedure runs.
+   * response is marked `Cache-Control: no-store`, but tRPC lets the headers
+   * of your `responseMeta` replace that one: wrap it in `authResponseMeta`
+   * (or pass `authResponseMeta()` when you have none) so the token never
+   * lands in a shared cache, and keep the query out of any caching rule.
+   * The token stays bound to the session or pre-session and the cookie is
+   * still required next to it. Whatever your CORS setup lets a page on
+   * another origin read, its unsafe requests are refused on the `Origin`
+   * allowlist and `Sec-Fetch-Site` before the token is compared, so a read
+   * token is useless cross-site. Throws an `AuthConfigError` on a request
+   * sent with an unsafe method (where nothing is minted) and on a streamed
+   * batch (`httpBatchStreamLink`), whose headers go out before any procedure
+   * runs.
    */
   csrfToken(): { csrfToken: string };
 }
@@ -154,6 +160,12 @@ export interface Internals {
    * batch: `writesCookies` claims it, and a second claim is refused.
    */
   readonly slot: { claimed: boolean };
+  /**
+   * Set when a procedure of the request returned `ctx.auth.csrfToken()`, so
+   * `authResponseMeta` keeps the app's `responseMeta` from replacing the
+   * `Cache-Control: no-store` the call set.
+   */
+  readonly tokenHandedOut: { value: boolean };
 }
 
 /** The header value `httpBatchStreamLink` sends; tRPC answers it with a streamed body. */
@@ -366,6 +378,8 @@ async function resolveState(
     }
   }
 
+  const tokenHandedOut = { value: false };
+
   const csrfToken = (): { csrfToken: string } => {
     if (handed === undefined || streamed) {
       throw new AuthConfigError(
@@ -376,6 +390,7 @@ async function resolveState(
     }
 
     setHeader('cache-control', 'no-store');
+    tokenHandedOut.value = true;
 
     return { csrfToken: handed };
   };
@@ -456,7 +471,14 @@ async function resolveState(
 
   const state: AuthState = base;
 
-  internals.set(state, { options, csrfOk, streamed, writers, slot: { claimed: false } });
+  internals.set(state, {
+    options,
+    csrfOk,
+    streamed,
+    writers,
+    slot: { claimed: false },
+    tokenHandedOut,
+  });
 
   return state;
 }

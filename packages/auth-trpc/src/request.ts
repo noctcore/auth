@@ -41,7 +41,8 @@ export interface RequestCalls {
     readonly procedure?: { readonly _def?: { readonly meta?: unknown } } | null | undefined;
   }[];
 }
-/** Sets one response header (`Cache-Control`). */
+
+/** Sets one response header (`Cache-Control`), replacing any value it had. */
 export type HeaderWriter = (name: string, value: string) => void;
 
 /** The fetch adapter's context options, as far as the adapter reads them. */
@@ -50,7 +51,11 @@ export interface FetchContextInput {
     readonly method: string;
     readonly headers: { get(name: string): string | null };
   };
-  readonly resHeaders: { append(name: string, value: string): void };
+  readonly resHeaders: {
+    append(name: string, value: string): void;
+    /** Present on a real `Headers`; used so a header is set once, not appended. */
+    set?(name: string, value: string): void;
+  };
   readonly info?: RequestCalls | undefined;
 }
 
@@ -83,8 +88,12 @@ export function fromFetch(
       calls: input.info?.calls ?? [],
     },
     write: (spec) => input.resHeaders.append('set-cookie', serializeCookie(spec)),
-    // Appended: `no-store` wins over any other cache directive next to it.
-    setHeader: (name, value) => input.resHeaders.append(name, value),
+    setHeader: (name, value) => {
+      const { resHeaders } = input;
+
+      if (resHeaders.set) resHeaders.set(name, value);
+      else resHeaders.append(name, value);
+    },
   };
 }
 
