@@ -1,0 +1,137 @@
+---
+/**
+ * Why tokens are hashed: the store keeps SHA-256(token), and the hash is the
+ * key a token is found by. Your user sends the token, the server hashes it
+ * and finds the row. Someone holding a leaked dump has only the hashes; sent
+ * back as a token, a hash is hashed again and matches no row (attack A017).
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+
+const wide = {
+  w: 680,
+  h: 316,
+  divider: 236,
+  hash: 330,
+  lookup: 500,
+  real: 136,
+  leaked: 226,
+  end: 640,
+};
+
+const narrow = {
+  w: 360,
+  h: 560,
+  real: 40,
+  leaked: 120,
+  col: 150,
+  divider: 176,
+  hash: 252,
+  lookup: 388,
+  start: 108,
+  end: 470,
+};
+
+const title = 'A leaked store key does not work as a token';
+const description =
+  'The store holds the SHA-256 of each session token and link token, never the token, and that hash is ' +
+  'the key the token is looked up by. Your user sends the token itself: the server hashes it, the hash ' +
+  'is a key in the store, and the row is found. Someone who copied the store holds only the hashes. Sent ' +
+  'back as a token, a stored hash is hashed again, and the hash of a hash is a key no row has, so the ' +
+  'request is refused. To use a row they would need a token that hashes to it.';
+---
+
+<DiagramFrame id="token-hashing" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">WHO SENDS WHAT</text>
+    <text class="nc-d-kicker" x={wide.divider + 24} y="30">YOUR SERVER</text>
+    <path class="nc-d-rule" d={`M${wide.divider} 16V${wide.leaked + 24}`}></path>
+
+    <text class="nc-d-label" x={wide.hash} y="70" text-anchor="middle">SHA-256</text>
+    <text class="nc-d-note" x={wide.hash} y="88" text-anchor="middle">of what was sent</text>
+    <path class="nc-d-post" d={`M${wide.hash} 102V${wide.leaked + 16}`}></path>
+    <text class="nc-d-label" x={wide.lookup} y="70" text-anchor="middle">Lookup</text>
+    <text class="nc-d-note" x={wide.lookup} y="88" text-anchor="middle">by that hash</text>
+    <path class="nc-d-post" d={`M${wide.lookup} 102V${wide.leaked + 16}`}></path>
+
+    <!-- Your user: the token, hashed, is a key in the store. -->
+    <text class="nc-d-label" x="24" y={wide.real - 18}>your user</text>
+    <text class="nc-d-note" x="24" y={wide.real + 26}>sends the token</text>
+    <path class="nc-d-route" d={`M40 ${wide.real}H${wide.end - 8}`}></path>
+    <circle class="nc-d-node" cx="40" cy={wide.real} r="5"></circle>
+    <circle class="nc-d-node" cx={wide.hash} cy={wide.real} r="4"></circle>
+    <circle class="nc-d-node" cx={wide.lookup} cy={wide.real} r="4"></circle>
+    <circle class="nc-d-node-open" cx={wide.end} cy={wide.real} r="7"></circle>
+    <text class="nc-d-code" x={wide.hash + 10} y={wide.real + 24}>SHA-256(token)</text>
+    <text class="nc-d-label" x={wide.w - 12} y={wide.real - 18} text-anchor="end">row found</text>
+
+    <!-- A leaked dump: the stored hash, sent as a token, is hashed again. -->
+    <text class="nc-d-label" x="24" y={wide.leaked - 18}>a leaked dump</text>
+    <text class="nc-d-note" x="24" y={wide.leaked + 26}>sends a stored hash</text>
+    <circle class="nc-d-attack-node" cx="40" cy={wide.leaked} r="5"></circle>
+    <path class="nc-d-attack" d={`M48 ${wide.leaked}H${wide.lookup - 8}`}></path>
+    <text class="nc-d-note" x={wide.hash + 10} y={wide.leaked - 12}>a hash of the hash</text>
+    <Stop x={wide.lookup} y={wide.leaked} across="horizontal" />
+    <text class="nc-d-stop-text" x={wide.lookup + 18} y={wide.leaked + 4}>no row has that key</text>
+
+    <text class="nc-d-value" x={wide.divider + 24} y={wide.h - 22}>
+      the store: SHA-256(token), never the token
+    </text>
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-label" x="16" y="56">your user</text>
+    <text class="nc-d-label" x={narrow.leaked - 12} y="56">a leaked dump</text>
+    <text class="nc-d-note" x="16" y="74">the token</text>
+    <text class="nc-d-note" x={narrow.leaked - 12} y="74">sends a stored hash</text>
+
+    <text class="nc-d-kicker" x={narrow.w - 16} y="24" text-anchor="end">WHO SENDS WHAT</text>
+    <text class="nc-d-kicker" x={narrow.w - 16} y={narrow.divider + 20} text-anchor="end">
+      YOUR SERVER
+    </text>
+    <path class="nc-d-rule" d={`M16 ${narrow.divider}H${narrow.w - 16}`}></path>
+
+    <text class="nc-d-label" x={narrow.col} y={narrow.hash - 12}>SHA-256</text>
+    <path class="nc-d-post" d={`M16 ${narrow.hash}H${narrow.w - 16}`}></path>
+    <text class="nc-d-code" x={narrow.col} y={narrow.hash + 24}>user: SHA-256(token)</text>
+    <text class="nc-d-note" x={narrow.col} y={narrow.hash + 40}>dump: a hash of the hash</text>
+
+    <text class="nc-d-label" x={narrow.col} y={narrow.lookup - 28}>Lookup</text>
+    <text class="nc-d-note" x={narrow.col} y={narrow.lookup - 12}>by that hash</text>
+    <path class="nc-d-post" d={`M16 ${narrow.lookup}H${narrow.w - 16}`}></path>
+
+    <path class="nc-d-route" d={`M${narrow.real} ${narrow.start}V${narrow.end - 7}`}></path>
+    <circle class="nc-d-node" cx={narrow.real} cy={narrow.start} r="5"></circle>
+    <circle class="nc-d-node" cx={narrow.real} cy={narrow.hash} r="4"></circle>
+    <circle class="nc-d-node" cx={narrow.real} cy={narrow.lookup} r="4"></circle>
+    <circle class="nc-d-node-open" cx={narrow.real} cy={narrow.end} r="7"></circle>
+    <text class="nc-d-label" x={narrow.real + 18} y={narrow.end + 5}>row found</text>
+
+    <circle class="nc-d-attack-node" cx={narrow.leaked} cy={narrow.start} r="5"></circle>
+    <path class="nc-d-attack" d={`M${narrow.leaked} ${narrow.start + 8}V${narrow.lookup - 8}`}></path>
+    <Stop x={narrow.leaked} y={narrow.lookup} across="vertical" />
+    <text class="nc-d-stop-text" x={narrow.col} y={narrow.lookup + 24}>no row has that key</text>
+
+    <text class="nc-d-value" x="16" y={narrow.h - 40}>the store: SHA-256(token),</text>
+    <text class="nc-d-value" x="16" y={narrow.h - 24}>never the token</text>
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>Whoever copies the store holds only hashes</strong>, and a hash sent back as a token is
+    hashed again into a key no row has.
+  </Fragment>
+</DiagramFrame>

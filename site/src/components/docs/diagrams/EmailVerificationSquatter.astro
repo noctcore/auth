@@ -1,0 +1,170 @@
+---
+/**
+ * Email verification: account pre-hijacking, and the proof that ends it. A
+ * squatter registers the victim's address first and keeps a session. When
+ * the owner proves the mailbox (a verification code in their session, or a
+ * reset), every session of the account is revoked (an ink mark: it ends on
+ * the package's schedule, nothing is refused there), and the squatter's next
+ * request is refused. A proof meant for another account or an older address
+ * is refused at the same point (attacks A012, A014). Code values from
+ * snippets/learn/email-verification.ts.
+ */
+import { emailVerification } from '../../../../snippets/learn/email-verification';
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+import { shortDuration, toMs } from './duration';
+
+const ttl = shortDuration(toMs(emailVerification.ttl));
+const code = `a code: ${emailVerification.digits} digits, lives ${ttl}, ${emailVerification.maxAttempts} wrong guesses`;
+
+const wide = {
+  w: 680,
+  h: 372,
+  proof: 380,
+  late: 548,
+  squatter: 122,
+  owner: 206,
+  stray: 290,
+  ownerFrom: 196,
+  end: 640,
+};
+
+const narrow = {
+  w: 360,
+  h: 640,
+  stray: 40,
+  owner: 100,
+  squatter: 160,
+  col: 192,
+  start: 104,
+  ownerFrom: 196,
+  proof: 300,
+  late: 416,
+  end: 520,
+};
+
+const title = "A squatter's session ends when the owner proves the mailbox";
+const description =
+  `A squatter registers the owner's address first, with a password they know, and stays signed in. ` +
+  `Later the owner proves the mailbox, by typing the verification code in their own session or by ` +
+  `completing a password reset. At that moment every session of the account is revoked: the squatter's ` +
+  `next request is refused, while the owner's own session is re-issued after a code, or the owner signs ` +
+  `in with the new password after a reset. A proof meant for another account, or mailed to an address ` +
+  `the account no longer has, is refused at the same point and verifies nothing. By default ${code}, ` +
+  `then it is deleted. Time runs left to right, not to scale.`;
+---
+
+<DiagramFrame id="email-verification-squatter" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">ACCOUNT PRE-HIJACKING</text>
+    <text class="nc-d-note" x={wide.w - 24} y="30" text-anchor="end">time, not to scale</text>
+
+    <text class="nc-d-label" x={wide.proof} y="62" text-anchor="middle">Mailbox proved</text>
+    <text class="nc-d-note" x={wide.proof} y="80" text-anchor="middle">a code, or a reset</text>
+    <path class="nc-d-post" d={`M${wide.proof} 94V${wide.stray + 14}`}></path>
+
+    <!-- The squatter: a live session until the proof, then refused. -->
+    <text class="nc-d-label" x="24" y={wide.squatter - 18}>squatter</text>
+    <text class="nc-d-note" x="24" y={wide.squatter + 26}>registers your address first</text>
+    <circle class="nc-d-attack-node" cx="40" cy={wide.squatter} r="5"></circle>
+    <path class="nc-d-attack" d={`M48 ${wide.squatter}H${wide.proof - 10}`}></path>
+    <Stop x={wide.proof} y={wide.squatter} across="horizontal" kind="end" />
+    <text class="nc-d-value" x={wide.proof + 14} y={wide.squatter - 16}>every session revoked</text>
+    <path class="nc-d-attack nc-d-attack--past" d={`M${wide.proof + 12} ${wide.squatter}H${wide.late - 8}`}></path>
+    <Stop x={wide.late} y={wide.squatter} across="horizontal" />
+    <text class="nc-d-stop-text" x={wide.late + 14} y={wide.squatter + 4}>refused</text>
+    <text class="nc-d-note" x={wide.late - 4} y={wide.squatter + 26} text-anchor="middle">its old session</text>
+
+    <!-- The owner: arrives later, proves the mailbox, and keeps the account. -->
+    <text class="nc-d-label" x={wide.ownerFrom - 16} y={wide.owner - 18}>owner</text>
+    <text class="nc-d-note" x={wide.ownerFrom - 16} y={wide.owner + 26}>arrives later</text>
+    <path class="nc-d-route" d={`M${wide.ownerFrom} ${wide.owner}H${wide.end - 8}`}></path>
+    <circle class="nc-d-node" cx={wide.ownerFrom} cy={wide.owner} r="5"></circle>
+    <circle class="nc-d-node" cx={wide.proof} cy={wide.owner} r="4"></circle>
+    <circle class="nc-d-node-open" cx={wide.end} cy={wide.owner} r="7"></circle>
+    <text class="nc-d-label" x={wide.w - 12} y={wide.owner - 18} text-anchor="end">verified</text>
+    <text class="nc-d-note" x={wide.w - 12} y={wide.owner + 26} text-anchor="end">
+      a fresh session, or sign in
+    </text>
+
+    <!-- A proof for another account or an older address: refused at the proof. -->
+    <text class="nc-d-label" x="24" y={wide.stray - 18}>a stray proof</text>
+    <text class="nc-d-note" x="24" y={wide.stray + 26}>another account, an old address</text>
+    <circle class="nc-d-attack-node" cx="40" cy={wide.stray} r="5"></circle>
+    <path class="nc-d-attack" d={`M48 ${wide.stray}H${wide.proof - 8}`}></path>
+    <Stop x={wide.proof} y={wide.stray} across="horizontal" />
+    <text class="nc-d-stop-text" x={wide.proof + 14} y={wide.stray + 4}>refused, verifies nothing</text>
+
+    <path class="nc-d-rule" d={`M24 ${wide.h - 44}H${wide.w - 24}`}></path>
+    <text class="nc-d-note" x="24" y={wide.h - 20}>{`${code}, then deleted`}</text>
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="16" y="26">ACCOUNT PRE-HIJACKING</text>
+    <text class="nc-d-note" x="16" y="44">time runs down, not to scale</text>
+    <text class="nc-d-label" x={narrow.stray - 16} y="84">a stray proof</text>
+    <text class="nc-d-label" x={narrow.squatter - 12} y="84">squatter</text>
+
+    <text class="nc-d-label" x={narrow.col} y={narrow.proof - 28}>Mailbox proved</text>
+    <text class="nc-d-note" x={narrow.col} y={narrow.proof - 12}>a code, or a reset</text>
+    <path class="nc-d-post" d={`M16 ${narrow.proof}H${narrow.w - 16}`}></path>
+
+    <!-- The stray proof. -->
+    <circle class="nc-d-attack-node" cx={narrow.stray} cy={narrow.start} r="5"></circle>
+    <path class="nc-d-attack" d={`M${narrow.stray} ${narrow.start + 8}V${narrow.proof - 8}`}></path>
+    <Stop x={narrow.stray} y={narrow.proof} across="vertical" />
+
+    <!-- The owner. -->
+    <text class="nc-d-label" x={narrow.owner - 16} y={narrow.ownerFrom - 16}>owner</text>
+    <path class="nc-d-route" d={`M${narrow.owner} ${narrow.ownerFrom}V${narrow.end - 8}`}></path>
+    <circle class="nc-d-node" cx={narrow.owner} cy={narrow.ownerFrom} r="5"></circle>
+    <circle class="nc-d-node" cx={narrow.owner} cy={narrow.proof} r="4"></circle>
+    <circle class="nc-d-node-open" cx={narrow.owner} cy={narrow.end} r="7"></circle>
+    <text class="nc-d-label" x={narrow.owner + 18} y={narrow.end + 5}>verified</text>
+    <text class="nc-d-note" x={narrow.owner + 18} y={narrow.end + 22}>a fresh session, or sign in</text>
+
+    <!-- The squatter. -->
+    <circle class="nc-d-attack-node" cx={narrow.squatter} cy={narrow.start} r="5"></circle>
+    <path class="nc-d-attack" d={`M${narrow.squatter} ${narrow.start + 8}V${narrow.proof - 10}`}></path>
+    <text class="nc-d-note" x={narrow.col} y={narrow.start + 4}>registers your</text>
+    <text class="nc-d-note" x={narrow.col} y={narrow.start + 19}>address first</text>
+    <Stop x={narrow.squatter} y={narrow.proof} across="vertical" kind="end" />
+    <path
+      class="nc-d-attack nc-d-attack--past"
+      d={`M${narrow.squatter} ${narrow.proof + 12}V${narrow.late - 8}`}
+    ></path>
+    <Stop x={narrow.squatter} y={narrow.late} across="vertical" />
+
+    <text class="nc-d-value" x={narrow.col} y={narrow.proof + 24}>every session revoked</text>
+    <text class="nc-d-stop-text" x={narrow.col} y={narrow.proof + 40}>stray proof: refused</text>
+    <text class="nc-d-stop-text" x={narrow.col} y={narrow.late + 4}>old session:</text>
+    <text class="nc-d-stop-text" x={narrow.col} y={narrow.late + 19}>refused</text>
+
+    <path class="nc-d-rule" d={`M16 ${narrow.h - 70}H${narrow.w - 16}`}></path>
+    <text class="nc-d-note" x="16" y={narrow.h - 46}>
+      {`a code: ${emailVerification.digits} digits, lives ${ttl},`}
+    </text>
+    <text class="nc-d-note" x="16" y={narrow.h - 30}>
+      {`${emailVerification.maxAttempts} wrong guesses, then deleted`}
+    </text>
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>Proving the mailbox signs everyone else out</strong>, so a squatter who registered first
+    loses the account the moment its owner arrives.
+  </Fragment>
+</DiagramFrame>

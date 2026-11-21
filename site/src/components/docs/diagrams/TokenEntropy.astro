@@ -1,0 +1,242 @@
+---
+/**
+ * Entropy and tokens: what a token is made of, and what the server does with
+ * one. generateToken fills TOKEN_BYTES bytes from crypto.getRandomValues and
+ * writes each as two lowercase hex characters. On the way back in, a value
+ * that is not exactly that shape is unknown without a store lookup
+ * (isTokenShape); a well-formed one is hashed and looked up, and only the
+ * lookup grants anything. TOKEN_BYTES is read by
+ * scripts/learn-batch-a.test.ts against the package's own constant.
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+
+/** Bytes in every token the package mints. */
+const TOKEN_BYTES = 32;
+
+const hexChars = TOKEN_BYTES * 2;
+const bits = TOKEN_BYTES * 8;
+
+/** One byte cell and its two hex cells share a column: the byte pitch is twice the hex pitch. */
+const BYTE = { size: 11, pitch: 14 };
+const HEX = { w: 5, h: 12, pitch: 7 };
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  /** Byte cells per row; hex cells per row is twice this. */
+  readonly perRow: number;
+  readonly cellsX: number;
+  readonly bytesY: number;
+  readonly hexY: number;
+}
+
+const wideL: Layout = { kind: 'wide', w: 680, h: 372, perRow: TOKEN_BYTES, cellsX: 168, bytesY: 70, hexY: 140 };
+const narrowL: Layout = {
+  kind: 'narrow',
+  w: 360,
+  h: 628,
+  perRow: TOKEN_BYTES / 2,
+  cellsX: 24,
+  bytesY: 72,
+  hexY: 178,
+};
+
+function cells(L: Layout, count: number, perRow: number, pitch: number, rowGap: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    x: L.cellsX + (i % perRow) * pitch,
+    row: Math.floor(i / perRow),
+    rowGap,
+  }));
+}
+
+const wide = { real: 254, junk: 322, shape: 300, hash: 450, end: 640 };
+const narrow = { real: 40, junk: 120, col: 150, start: 330, shape: 410, hash: 492, end: 564 };
+
+const title = 'What a token is made of, and what the server will look up';
+const description =
+  `generateToken fills ${TOKEN_BYTES} bytes from crypto.getRandomValues, ${bits} bits, and writes each byte ` +
+  `as two lowercase hex characters, so a token is ${hexChars} characters that encode nothing: no user id, ` +
+  `no expiry, no counter. When a value comes back, isTokenShape checks that it is exactly ${hexChars} ` +
+  `lowercase hex characters. Junk, a guess of another shape or a UUID is treated as unknown without a ` +
+  `store lookup. A token of the right shape is hashed with SHA-256 and looked up; the shape check is a ` +
+  `filter, and only the lookup grants anything.`;
+---
+
+<DiagramFrame id="token-entropy" title={title} description={description}>
+  {
+    [wideL, narrowL].map((L) => {
+      const isWide = L.kind === 'wide';
+      const bytes = cells(L, TOKEN_BYTES, L.perRow, BYTE.pitch, 15);
+      const hex = cells(L, hexChars, L.perRow * 2, HEX.pitch, 17);
+      const right = L.cellsX + L.perRow * BYTE.pitch - (BYTE.pitch - BYTE.size);
+      const bytesBottom = L.bytesY + (bytes.at(-1)?.row ?? 0) * 15 + BYTE.size;
+      const hexBottom = L.hexY + (hex.at(-1)?.row ?? 0) * 17 + HEX.h;
+
+      return (
+        <svg
+          class={`nc-d nc-d--${L.kind}`}
+          viewBox={`0 0 ${L.w} ${L.h}`}
+          width={L.w}
+          height={L.h}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <text class="nc-d-kicker" x={isWide ? 24 : 16} y="28">
+            A TOKEN, FROM BYTES TO LOOKUP
+          </text>
+
+          {/* The random bytes, then the same bytes as hex: two characters under each byte. */}
+          <text class="nc-d-label" x="24" y={isWide ? L.bytesY + 10 : L.bytesY - 12}>
+            random bytes
+          </text>
+          {bytes.map((c) => (
+            <rect
+              class="nc-d-cell"
+              x={c.x}
+              y={L.bytesY + c.row * c.rowGap}
+              width={BYTE.size}
+              height={BYTE.size}
+              rx="1.5"
+            />
+          ))}
+          <text class="nc-d-code" x={L.cellsX} y={bytesBottom + 22}>
+            crypto.getRandomValues
+          </text>
+          <text
+            class="nc-d-value"
+            x={isWide ? right : L.cellsX}
+            y={isWide ? bytesBottom + 22 : bytesBottom + 38}
+            text-anchor={isWide ? 'end' : 'start'}
+          >
+            {`${TOKEN_BYTES} bytes, ${bits} bits`}
+          </text>
+
+          <text class="nc-d-label" x="24" y={isWide ? L.hexY + 11 : L.hexY - 12}>
+            hex string
+          </text>
+          <text
+            class="nc-d-note"
+            x={isWide ? 24 : right}
+            y={isWide ? L.hexY + 28 : L.hexY - 12}
+            text-anchor={isWide ? 'start' : 'end'}
+          >
+            two per byte
+          </text>
+          {hex.map((c) => (
+            <rect
+              class="nc-d-span"
+              x={c.x}
+              y={L.hexY + c.row * c.rowGap}
+              width={HEX.w}
+              height={HEX.h}
+              rx="1"
+            />
+          ))}
+          <text class="nc-d-code" x={L.cellsX} y={hexBottom + 22}>
+            generateToken()
+          </text>
+          <text
+            class="nc-d-value"
+            x={isWide ? right : L.cellsX}
+            y={isWide ? hexBottom + 22 : hexBottom + 38}
+            text-anchor={isWide ? 'end' : 'start'}
+          >
+            {`${hexChars} lowercase hex characters`}
+          </text>
+
+          {isWide ? (
+            <>
+              <text class="nc-d-label" x={wide.shape} y="210" text-anchor="middle">
+                Shape check
+              </text>
+              <text class="nc-d-code" x={wide.shape} y="228" text-anchor="middle">
+                isTokenShape
+              </text>
+              <path class="nc-d-post" d={`M${wide.shape} 238V${wide.junk + 14}`} />
+              <text class="nc-d-label" x={wide.hash} y="228" text-anchor="middle">
+                SHA-256
+              </text>
+              <path class="nc-d-post" d={`M${wide.hash} 238V${wide.real + 14}`} />
+
+              <text class="nc-d-label" x="24" y={wide.real - 18}>
+                a token you issued
+              </text>
+              <path class="nc-d-route" d={`M40 ${wide.real}H${wide.end - 8}`} />
+              <circle class="nc-d-node" cx="40" cy={wide.real} r="5" />
+              <circle class="nc-d-node" cx={wide.shape} cy={wide.real} r="4" />
+              <circle class="nc-d-node" cx={wide.hash} cy={wide.real} r="4" />
+              <circle class="nc-d-node-open" cx={wide.end} cy={wide.real} r="7" />
+              <text class="nc-d-label" x={wideL.w - 12} y={wide.real - 18} text-anchor="end">
+                store lookup
+              </text>
+              <text class="nc-d-note" x={wideL.w - 12} y={wide.real + 26} text-anchor="end">
+                only the lookup grants anything
+              </text>
+
+              <text class="nc-d-note" x="24" y={wide.junk - 14}>
+                junk, a guess, a UUID
+              </text>
+              <circle class="nc-d-attack-node" cx="40" cy={wide.junk} r="5" />
+              <path class="nc-d-attack" d={`M48 ${wide.junk}H${wide.shape - 8}`} />
+              <Stop x={wide.shape} y={wide.junk} across="horizontal" />
+              <text class="nc-d-stop-text" x={wide.shape + 18} y={wide.junk + 4}>
+                {`not ${hexChars} hex: unknown, no lookup`}
+              </text>
+            </>
+          ) : (
+            <>
+              <path class="nc-d-rule" d={`M16 ${narrow.start - 62}H${narrowL.w - 16}`} />
+              <text class="nc-d-label" x="16" y={narrow.start - 34}>
+                a token you issued
+              </text>
+              <text class="nc-d-note" x={narrow.junk - 12} y={narrow.start - 16}>
+                junk, a guess, a UUID
+              </text>
+
+              <text class="nc-d-label" x={narrow.col} y={narrow.shape - 28}>
+                Shape check
+              </text>
+              <text class="nc-d-code" x={narrow.col} y={narrow.shape - 12}>
+                isTokenShape
+              </text>
+              <path class="nc-d-post" d={`M16 ${narrow.shape}H${narrowL.w - 16}`} />
+              <text class="nc-d-label" x={narrow.col} y={narrow.hash - 12}>
+                SHA-256
+              </text>
+              <path class="nc-d-post" d={`M16 ${narrow.hash}H${narrowL.w - 16}`} />
+
+              <path class="nc-d-route" d={`M${narrow.real} ${narrow.start}V${narrow.end - 7}`} />
+              <circle class="nc-d-node" cx={narrow.real} cy={narrow.start} r="5" />
+              <circle class="nc-d-node" cx={narrow.real} cy={narrow.shape} r="4" />
+              <circle class="nc-d-node" cx={narrow.real} cy={narrow.hash} r="4" />
+              <circle class="nc-d-node-open" cx={narrow.real} cy={narrow.end} r="7" />
+              <text class="nc-d-label" x={narrow.real + 18} y={narrow.end + 5}>
+                store lookup
+              </text>
+              <text class="nc-d-note" x={narrow.real + 18} y={narrow.end + 24}>
+                only the lookup grants anything
+              </text>
+
+              <circle class="nc-d-attack-node" cx={narrow.junk} cy={narrow.start} r="5" />
+              <path class="nc-d-attack" d={`M${narrow.junk} ${narrow.start + 8}V${narrow.shape - 8}`} />
+              <Stop x={narrow.junk} y={narrow.shape} across="vertical" />
+              <text class="nc-d-stop-text" x={narrow.col} y={narrow.shape + 24}>
+                {`not ${hexChars} hex: unknown,`}
+              </text>
+              <text class="nc-d-stop-text" x={narrow.col} y={narrow.shape + 39}>
+                no lookup
+              </text>
+            </>
+          )}
+        </svg>
+      );
+    })
+  }
+
+  <Fragment slot="caption">
+    <strong>Every bit of a token is random</strong>, so there is nothing to predict or parse, and a
+    value of any other shape never reaches the store.
+  </Fragment>
+</DiagramFrame>
