@@ -105,9 +105,7 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
 
     const importedKey = await importedHash(runtime, subject, request.proof.code);
 
-    const consumed =
-      code !== null &&
-      (await store.consumeRecoveryCode(subject, recoveryCodeHash(runtime, subject, code)));
+    const consumed = code !== null && (await consumeUnderAnyKey(runtime, subject, code));
 
     const consumedImported =
       !consumed && importedKey !== null && (await store.consumeRecoveryCode(subject, importedKey));
@@ -141,6 +139,24 @@ export async function checkProof(runtime: Runtime, request: ProofRequest): Promi
 /** The stored form of a normalised recovery code: an HMAC bound to its user. */
 export function recoveryCodeHash(runtime: Runtime, userId: string, code: string): string {
   return runtime.core.keyedHash(RECOVERY_CODE_PURPOSE, `${userId}:${code}`);
+}
+
+/**
+ * Spends the code stored under the current key, or under a previous secret
+ * of a rotation (`previousSecret`) when the current one finds none: codes
+ * issued before the rotation keep working while it lasts. Each try is one
+ * atomic consume, so a code is still spent at most once.
+ */
+async function consumeUnderAnyKey(
+  runtime: Runtime,
+  userId: string,
+  code: string,
+): Promise<boolean> {
+  for (const hash of runtime.core.keyedHashes(RECOVERY_CODE_PURPOSE, `${userId}:${code}`)) {
+    if (await runtime.store.consumeRecoveryCode(userId, hash)) return true;
+  }
+
+  return false;
 }
 
 /**
