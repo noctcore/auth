@@ -148,11 +148,6 @@ function attackTable(text: string): RegExpExecArray[] {
   return [...text.slice(start, text.indexOf('</div>', start)).matchAll(LINK)] as RegExpExecArray[];
 }
 
-/** Names ATTACKS.md still uses for a page besides its title. */
-const ALIASES: Record<string, readonly string[]> = {
-  'email-verification': ['Email verification'],
-};
-
 /**
  * For each page: every attack test it links exists, and every attack
  * ATTACKS.md files under the page's title has a row in its attack table.
@@ -161,7 +156,6 @@ export function attackLinkTests(slugs: readonly string[]): void {
   for (const slug of slugs) {
     const text = page(slug);
     const title = /^title: (.+)$/mu.exec(text)?.[1] ?? '';
-    const names = new Set([title, `Learn: ${title}`, ...(ALIASES[slug] ?? [])]);
     const links = [...text.matchAll(LINK)];
 
     it(`${slug} links attack tests that exist`, () => {
@@ -175,7 +169,7 @@ export function attackLinkTests(slugs: readonly string[]): void {
 
     it(`${slug} has a table row for every attack ATTACKS.md files under it`, () => {
       const named = [...attackIndex().matchAll(/^\| (A\d{3}) \| [^|]+ \| ([^|]+) \|/gmu)]
-        .filter(([, , pages = '']) => pages.split(';').some((p) => names.has(p.trim())))
+        .filter(([, , pages = '']) => pages.split(';').some((p) => p.trim() === title))
         .map(([, id]) => id);
       const rows = new Set(attackTable(text).map(([, id]) => id));
 
