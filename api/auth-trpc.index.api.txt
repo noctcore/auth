@@ -98,6 +98,7 @@ AuthRoot [interface]<TContext extends AuthContext<AuthUser, unknown>, TMeta exte
     readonly middleware: (fn: never) => unknown
     readonly procedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>
 AuthState [interface]<U extends AuthUser = AuthUser, A = unknown>
+    csrfToken(): { csrfToken: string; }
     readonly deviceToken: string | null
     readonly meta: RequestMeta
     readonly session: ValidatedSession<A> | null
@@ -107,6 +108,7 @@ AuthTRPCError [class]
     readonly auth: PublicAuthError
 AuthWriter [interface]<U extends AuthUser = AuthUser, A = unknown>
     clearSession(cookie: CookieSpec): { csrfToken: string; }
+    csrfToken(): { csrfToken: string; }
     readonly deviceToken: string | null
     readonly meta: RequestMeta
     readonly session: ValidatedSession<A> | null

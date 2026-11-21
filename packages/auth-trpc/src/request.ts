@@ -41,6 +41,8 @@ export interface RequestCalls {
     readonly procedure?: { readonly _def?: { readonly meta?: unknown } } | null | undefined;
   }[];
 }
+/** Sets one response header (`Cache-Control`). */
+export type HeaderWriter = (name: string, value: string) => void;
 
 /** The fetch adapter's context options, as far as the adapter reads them. */
 export interface FetchContextInput {
@@ -69,7 +71,7 @@ export interface NodeContextInput {
 export function fromFetch(
   input: FetchContextInput,
   remoteAddress: string | undefined,
-): { request: HttpRequest; write: CookieWriter } {
+): { request: HttpRequest; write: CookieWriter; setHeader: HeaderWriter } {
   const header = (name: string): string | undefined => input.req.headers.get(name) ?? undefined;
 
   return {
@@ -81,10 +83,16 @@ export function fromFetch(
       calls: input.info?.calls ?? [],
     },
     write: (spec) => input.resHeaders.append('set-cookie', serializeCookie(spec)),
+    // Appended: `no-store` wins over any other cache directive next to it.
+    setHeader: (name, value) => input.resHeaders.append(name, value),
   };
 }
 
-export function fromNode(input: NodeContextInput): { request: HttpRequest; write: CookieWriter } {
+export function fromNode(input: NodeContextInput): {
+  request: HttpRequest;
+  write: CookieWriter;
+  setHeader: HeaderWriter;
+} {
   const { req, res } = input;
 
   return {
@@ -108,6 +116,7 @@ export function fromNode(input: NodeContextInput): { request: HttpRequest; write
 
       res.setHeader('set-cookie', [...list, serializeCookie(spec)]);
     },
+    setHeader: (name, value) => res.setHeader(name, value),
   };
 }
 

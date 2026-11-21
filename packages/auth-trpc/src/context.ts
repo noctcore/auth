@@ -18,7 +18,9 @@
  *   gets `None` for its session gets it for the CSRF cookies too.
  * - Like the Nest adapter, a safe request hands out what the page needs to
  *   send mutations: a pre-session id when the browser has none yet, and a
- *   CSRF cookie bound to the current binding. A session token the core
+ *   CSRF cookie bound to the current binding. `ctx.auth.csrfToken()` returns
+ *   that same token for a client that cannot read the cookie (a desktop
+ *   shell on its own scheme, a web app on another origin than the API). A session token the core
  *   refused for good is cleared, so the browser stops sending it
  *   (`clearsSessionCookie`).
  * - A new session (sign-in and every rotation) is written with
@@ -66,6 +68,7 @@ import {
   requestMeta,
   type CookieWriter,
   type FetchContextInput,
+  type HeaderWriter,
   type HttpRequest,
   type NodeContextInput,
 } from './request';
@@ -88,6 +91,19 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
   readonly deviceToken: string | null;
   /** The session's user, loaded from the store once per request; null when signed out or deleted. */
   user(): Promise<U | null>;
+  /**
+   * The CSRF token for the request's session or pre-session, for a client
+   * that cannot read the `csrf` cookie: return it from a public query. It is
+   * exactly the token this response sets or keeps as the cookie, minted with
+   * the pre-session when missing, as on any query sent with GET. The
+   * response is marked `Cache-Control: no-store`. The token stays bound to
+   * the session or pre-session and the cookie is still required next to it,
+   * so it grants nothing a cross-site page could use (CORS keeps the body
+   * from other origins). Throws an `AuthConfigError` on a request sent with
+   * an unsafe method (where nothing is minted) and on a streamed batch
+   * (`httpBatchStreamLink`), whose headers go out before any procedure runs.
+   */
+  csrfToken(): { csrfToken: string };
 }
 
 /**
@@ -294,6 +310,7 @@ async function resolveState(
   options: ResolvedOptions,
   request: HttpRequest,
   write: CookieWriter,
+  setHeader: HeaderWriter,
 ): Promise<AuthState> {
   const { auth, csrf } = options;
   const meta = requestMeta(request, options);
@@ -325,6 +342,8 @@ async function resolveState(
 
   const csrfOk = csrfVerdict(options, request, bound, cookieToken);
   const streamed = isStreamedRequest((name) => request.header(name));
+  // The token this response sets or keeps as the cookie, on a safe request.
+  let handed: string | undefined;
 
   if (isSafeMethod(request.method)) {
     if (bound === null) {
@@ -336,8 +355,30 @@ async function resolveState(
 
     const current = csrfTokenValid(options, { cookieToken, headerToken: cookieToken, bound });
 
-    if (!current) write(csrfCookie(options, bound, sameSite).cookie);
+    if (current) {
+      // A current token verified against the cookie, so the cookie is set.
+      handed = cookieToken;
+    } else {
+      const fresh = csrfCookie(options, bound, sameSite);
+
+      write(fresh.cookie);
+      handed = fresh.token;
+    }
   }
+
+  const csrfToken = (): { csrfToken: string } => {
+    if (handed === undefined || streamed) {
+      throw new AuthConfigError(
+        'ctx.auth.csrfToken() needs a query sent with GET through httpLink or httpBatchLink: ' +
+          'a request with an unsafe method mints no token, and a streamed batch ' +
+          '(httpBatchStreamLink) sends its headers before any procedure runs.',
+      );
+    }
+
+    setHeader('cache-control', 'no-store');
+
+    return { csrfToken: handed };
+  };
 
   let user: Promise<AuthUser | null> | undefined;
 
@@ -403,6 +444,7 @@ async function resolveState(
     session,
     meta,
     deviceToken: auth.readDeviceToken(cookieHeader),
+    csrfToken,
     user: () => {
       user ??= session ? auth.context.users.findById(session.userId) : Promise.resolve(null);
 
@@ -448,9 +490,12 @@ export function createAuthContext<U extends AuthUser, A = unknown>(
   const create = async (pair: {
     request: HttpRequest;
     write: CookieWriter;
+    setHeader: HeaderWriter;
   }): Promise<{ auth: AuthState<U, A> }> => {
     try {
-      return { auth: (await resolveState(resolved, pair.request, pair.write)) as AuthState<U, A> };
+      const state = await resolveState(resolved, pair.request, pair.write, pair.setHeader);
+
+      return { auth: state as AuthState<U, A> };
     } catch (error) {
       resolved.auth.context.logger.error('auth-trpc could not resolve the request', {
         error: error instanceof Error ? error.name : typeof error,
