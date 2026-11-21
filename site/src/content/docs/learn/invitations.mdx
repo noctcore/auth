@@ -1,0 +1,119 @@
+---
+title: Invitations
+description: Why an invitation link is a credential, the ways invitation flows hand out accounts and seats they should not, and the rules the invitations plugin follows.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import InShort from '../../../components/docs/InShort.astro';
+import InvitationAccept from '../../../components/docs/diagrams/InvitationAccept.astro';
+import invitationsTs from '../../../../snippets/learn/invitations.ts?raw';
+
+<InShort>
+  <Fragment slot="threat">
+    An invitation link grants a seat, a role or a whole account to whoever holds it, so it fails
+    the way credentials fail: replayed, leaked, collected by a squatter or still working after the
+    inviter lost the right.
+  </Fragment>
+  <Fragment slot="rule">
+    Treat the token like a reset token, spend it in one atomic step, hand it only to a verified
+    owner of the invited address, and never let it sign anyone in.
+  </Fragment>
+  <Fragment slot="where">
+    The invitations plugin, `@noctcore/auth/invitations`, with the app's `authorize` check.
+  </Fragment>
+</InShort>
+
+## What goes wrong
+
+An invitation is a link that grants something: a seat in an organisation, a role, sometimes a whole account. Whoever holds it gets that, so it is a credential, and invitation flows tend to fail in the ways credentials fail, plus a few of their own:
+
+- **Replayed.** Clicked twice, opened in two browsers, or reused from a log after the invitee accepted, and a check-then-delete lets each request grant the seat again.
+- **Leaked.** A forwarded mail, a shared screen, a proxy log that recorded the query string, and someone signed in as themselves accepts it.
+- **Collected by a squatter.** An attacker registers the address first, never verifies it, and waits. An invitation that attaches to "the account with that address" hands the attacker the seat, and the victim later inherits an account the attacker still has a password for (account pre-hijacking).
+- **A way past the second factor.** Accepting logs the invitee in, so reading the victim's mail is enough to get past their second factor.
+- **An oracle or a mailer.** The invite form says "this user is already registered", or floods a victim from a loop.
+- **Still working later.** Anyone can invite, or an invitation sent by an admin who was demoted, or whose account was cleaned up after a takeover, still works.
+
+<InvitationAccept />
+
+## The rule
+
+The link proves the mailbox and nothing more, it works once, and the app decides who may send it, every time.
+
+### The token is treated like a password reset token
+
+256 bits from the CSPRNG, sent once in the mail, stored only as its SHA-256, so a leaked table holds no link: 256 random bits leave nothing to search, and the invitations live in a table of their own.
+
+**Rotating the secret leaves it working.** The hash uses no key, so rotating the server secret leaves pending invitations working. Only invitations created before 0.6 are voided by a rotation: they were stored as an HMAC under a key derived from the secret, and the plugin finds them through a fallback lookup under that old hash until they expire (30 days at most).
+
+**It expires.** It expires after 7 days by default, never more than 30, and an expired invitation answers exactly like one that never existed.
+
+**It stays out of logs.** The link carries the token in the path or the fragment, never the query string, which servers and proxies log; the plugin refuses a `url` that puts it there.
+
+### Spending is one atomic step
+
+The store's `consume` removes and returns the invitation at once; only the request that got it goes on to grant anything. Of many concurrent accepts exactly one succeeds ([A069](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A069-reusing-or-racing-an-invitation.test.ts)). The conformance suite checks that every store gives this guarantee, under concurrency.
+
+### Only a verified owner of the address collects it
+
+The invitation belongs to an address:
+
+- **Accepting into an existing account** needs that account's address to be verified and equal to the invited one, both normalised ([A070](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A070-accepting-with-another-address.test.ts)).
+- **An unverified account** is never attached and spends nothing: the squatter who registered the address first gets nothing ([A071](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A071-pre-hijacking-through-an-invitation.test.ts)).
+- **Creating an account from the invitation** is allowed only when the address has none; then the token, delivered to that mailbox, is proof enough to mark the new address verified. That is the only case where the plugin verifies an address.
+
+### Accepting never replaces signing in
+
+`accept` works on a session the user already has and issues none.
+
+**From the link alone, if the app allows it.** An app can let the link alone accept (`acceptWithoutSession`): then the account that holds the invited address joins, but only if that address is verified, so a squatter's unverified account still collects nothing. Still no session is issued, so the link never signs anyone in ([A096](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A096-accepting-an-invitation-without-a-session.test.ts)).
+
+**A new account goes through the seam.** `register` issues a session only for an account it just created, and through the same seam as every other session, so a second factor the app requires is asked for there too ([A073](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A073-skipping-a-second-factor-through-an-invitation.test.ts)). An account with a factor is never entered through an invitation.
+
+### The inviter's side is uniform and bounded
+
+Creating an invitation never looks up the invited address, so the answer and the mail are the same whether it has an account or not ([A074](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A074-learning-accounts-through-invitations.test.ts)).
+
+There is at most one live invitation per scope and address, and a repeat sends nothing. Each address can receive only a few invitations a day across all scopes, each inviter can send a limited number, and each IP is limited too ([A075](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A075-mail-bombing-through-invitations.test.ts)).
+
+### Permission is the app's, and it is asked every time
+
+The plugin will not start without an `authorize` check. It asks it for every create, list and revoke with the user read from the store, and asks it again for the inviter when an invitation is accepted.
+
+An inviter who lost the right or the account leaves nothing acceptable behind, and revoking all of an inviter's sessions deletes their pending invitations ([A076](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A076-inviting-without-the-right.test.ts)).
+
+## In code
+
+The plugin's limits written out. How to wire it, routes included: [Invitations](/auth/build/invitations/) in Build.
+
+<Code code={invitationsTs} lang="ts" title="invitations.ts" />
+
+## What it does not do
+
+**Tell the invited person from whoever reads the link.** The token proves the mailbox, by design, so anyone holding a leaked link can `register` the invited address while it has no account yet: they get an account on that address, verified, with the invited seat. Keep the lifetime short and revoke an invitation you suspect leaked.
+
+Once the address has an account, the link only works for that account: signed in by default, or, with `acceptWithoutSession` on, from the link alone, which then attaches that account to the inviting scope without its password ([A096](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A096-accepting-an-invitation-without-a-session.test.ts)).
+
+**Hide whether an address has an account from someone holding a live invitation to it.** Creating an account from the link is refused for a taken address, so that person can sign in instead. The holder is normally the owner of the mailbox, who can learn the same by asking for a password reset.
+
+**Decide what a seat or a role means**, or filter your queries by organisation: that is your app, in `onAccept` and in every request.
+
+**Decide moves between organisations.** Accepting into an account that already belongs elsewhere is allowed, and `onAccept` decides whether it adds a seat or moves the account. With `acceptWithoutSession` on, that move happens on the strength of the mailbox alone, which is why the option is off by default.
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test | Attack | Stopped by |
+| ---- | ------ | ---------- |
+| [A069](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A069-reusing-or-racing-an-invitation.test.ts) | Reusing an invitation, or racing two accepts of one | `plugins/invitations/accept.ts`, `ports/invitations.ts` |
+| [A070](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A070-accepting-with-another-address.test.ts) | Accepting an invitation with an account at another address | `plugins/invitations/accept.ts` |
+| [A071](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A071-pre-hijacking-through-an-invitation.test.ts) | Collecting an invitation with an unverified account (pre-hijacking) | `plugins/invitations/accept.ts` |
+| [A072](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A072-accepting-an-expired-invitation.test.ts) | Accepting an invitation after it expired | `plugins/invitations/accept.ts`, `plugins/invitations/options.ts` |
+| [A073](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A073-skipping-a-second-factor-through-an-invitation.test.ts) | Getting a session past a second factor through an invitation | `plugins/invitations/accept.ts`, `plugins/two-factor/hooks.ts` |
+| [A074](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A074-learning-accounts-through-invitations.test.ts) | Learning whether an address has an account through invitations | `plugins/invitations/manage.ts`, `plugins/invitations/accept.ts` |
+| [A075](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A075-mail-bombing-through-invitations.test.ts) | Mail bombing someone through repeated invitations | `plugins/invitations/manage.ts`, `ports/invitations.ts` |
+| [A076](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A076-inviting-without-the-right.test.ts) | Inviting without the right, or accepting after the inviter lost it | `plugins/invitations/options.ts`, `plugins/invitations/manage.ts`, `plugins/invitations/accept.ts`, `plugins/invitations/index.ts` |
+| [A096](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A096-accepting-an-invitation-without-a-session.test.ts) | Accepting an invitation without a session (`acceptWithoutSession`) | `plugins/invitations/accept.ts`, `plugins/invitations/options.ts` |
+
+</div>
