@@ -6,7 +6,7 @@ import {
   type InvitationsOptions,
 } from '../../src/plugins/invitations';
 import { MemoryInvitationStore, plainHasher } from '../../src/testing';
-import { setup } from '../flows/setup';
+import { SECRET, setup } from '../flows/setup';
 import { invitationApp, meta, PASSWORD, SCOPE } from './setup';
 
 const DAY = 24 * 60 * 60_000;
@@ -791,6 +791,53 @@ describe('invitations accept', () => {
     ).toMatchObject({ ok: true, value: { id: 'legacy' } });
 
     expect(await t.store.listByScope(SCOPE, t.clock.now())).toEqual([]);
+  });
+
+  it('finds a pre-0.6 row under a previous secret while previousSecret is set', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+    const bob = await t.user({ email: 'bob@example.com' });
+    const raw = 'f'.repeat(64);
+
+    await t.store.create(
+      {
+        id: 'legacy-rotated',
+        hash: t.auth.context.keyedHash('invitation', raw),
+        scope: SCOPE,
+        email: 'bob@example.com',
+        inviterId: inviter.userId,
+        payload: {},
+        createdAt: t.clock.now(),
+        expiresAt: t.clock.now() + DAY,
+      },
+      t.clock.now(),
+    );
+
+    const rotated = (previousSecret?: string) =>
+      createAuth({
+        stores: t.stores,
+        password: { hasher: plainHasher(), breachCheck: false },
+        secret: 'a-rotated-secret-that-is-also-32-bytes-or-more',
+        ...(previousSecret === undefined ? {} : { previousSecret }),
+        urls: {
+          resetPassword: (x) => `https://app.example/reset#${x}`,
+          verifyEmail: (x) => `https://app.example/verify#${x}`,
+        },
+        mailer: t.mailer,
+        audit: t.audit,
+        clock: t.clock,
+        plugins: [
+          invitations({ store: t.store, authorize: t.authorize, onAccept: t.onAccept, url }),
+        ],
+      });
+
+    expect(
+      await rotated().invitations.accept({ session: bob.session, token: raw, meta: meta() }),
+    ).toMatchObject({ ok: false, code: 'invalid_token' });
+
+    expect(
+      await rotated(SECRET).invitations.accept({ session: bob.session, token: raw, meta: meta() }),
+    ).toMatchObject({ ok: true, value: { id: 'legacy-rotated' } });
   });
 
   it('accepts an account that already belongs to another scope, leaving the move to onAccept', async () => {

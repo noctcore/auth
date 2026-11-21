@@ -147,6 +147,20 @@ export async function registerByInvitation<A>(
 }
 
 /**
+ * A row stored before 0.6 under the server secret's keyed hash: under the
+ * current secret, or a previous one of a rotation (`previousSecret`).
+ */
+async function findLegacy(r: Runtime, token: string): Promise<StoredInvitation | null> {
+  for (const hash of r.core.keyedHashes(LEGACY_TOKEN_PURPOSE, token)) {
+    const found = await r.store.findByHash(hash);
+
+    if (found) return found;
+  }
+
+  return null;
+}
+
+/**
  * The live invitation a token names. Every way of not finding one (junk,
  * unknown, expired) is the same `invalid_token`, after one per-IP hit.
  */
@@ -164,7 +178,7 @@ async function pending(
   const invitation =
     (await r.store.findByHash(tokenHash(token))) ??
     // Created before 0.6, under the server secret. Remove once those have expired.
-    (await r.store.findByHash(r.core.keyedHash(LEGACY_TOKEN_PURPOSE, token)));
+    (await findLegacy(r, token));
 
   if (!invitation) return refused(r, 'invalid_token', 'unknown_token', null, meta);
 
