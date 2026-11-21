@@ -9,6 +9,11 @@
 // The pages also have to link the attack tests that cover them: every attack
 // row in ATTACKS.md that names the page is linked from it, and every attack
 // test a page links exists.
+//
+// Some pages draw their numbers in a diagram from the code sample beside it
+// (snippets/learn/). Those samples are checked here against the source too,
+// so the page, the sample and the diagram cannot drift apart.
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +32,8 @@ import {
   type Duration,
 } from '@noctcore/auth';
 import { describe, expect, it } from 'bun:test';
+import { lockout } from '../snippets/learn/lockout';
+import { session } from '../snippets/learn/session';
 
 const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = join(SITE, '..');
@@ -37,9 +44,11 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** The page's Markdown, frontmatter included. */
+/** The page's Markdown or MDX, frontmatter included. */
 function page(slug: string): string {
-  return readFileSync(join(LEARN, `${slug}.md`), 'utf8');
+  const md = join(LEARN, `${slug}.md`);
+
+  return readFileSync(existsSync(md) ? md : join(LEARN, `${slug}.mdx`), 'utf8');
 }
 
 /** The source of a package file, relative to `packages/`. */
@@ -157,8 +166,34 @@ function rule(pattern: RegExp): { limit: number; minutes: number } {
 }
 
 const SESSION = 'auth/src/session/session-manager.ts';
-const absoluteTtlHours = inUnit(read(SESSION, /options\.absoluteTtl \?\? '(\w+)'/u), HOUR);
-const rememberMeTtlDays = inUnit(read(SESSION, /options\.rememberMeTtl \?\? '(\w+)'/u), DAY);
+const absoluteTtl = read(SESSION, /options\.absoluteTtl \?\? '(\w+)'/u);
+const rememberMeTtl = read(SESSION, /options\.rememberMeTtl \?\? '(\w+)'/u);
+const absoluteTtlHours = inUnit(absoluteTtl, HOUR);
+const rememberMeTtlDays = inUnit(rememberMeTtl, DAY);
+const touchInterval = read(SESSION, /options\.touchInterval \?\? '(\w+)'/u);
+const idleDefaults = /rememberMe \? '(\w+)' : '(\w+)'/u.exec(source(SESSION));
+const idleRemembered = idleDefaults?.[1] ?? '';
+const idleTimeout = idleDefaults?.[2] ?? '';
+const maxPerUser = num(SESSION, /options\.maxPerUser === undefined \? (\d+)/u);
+const freshAuthAge = read(SETTINGS, /freshAuthAge \?\? '(\w+)'/u);
+
+/** The lockout defaults, as throttle.ts reads them. */
+const lockoutDefault = (name: string) => read(THROTTLE, new RegExp(`lockout\\.${name} \\?\\? '(\\w+)'`, 'u'));
+const baseLock = lockoutDefault('baseLock');
+const maxLock = lockoutDefault('maxLock');
+const quietPeriod = lockoutDefault('quietPeriod');
+const deviceMaxAge = lockoutDefault('deviceMaxAge');
+const lockFactor = num(THROTTLE, /this\.baseLockMs \* (\d+) \*\* Math\.min/u);
+const perDevice = /windowRule\(lockout\.perDevice, (\d+), '(\w+)'\)/u;
+const revealLocked = read(THROTTLE, /lockout\.revealLocked \?\? (\w+);/u);
+
+const CSRF = 'auth/src/http/csrf.ts';
+const csrfNonceHex = num(CSRF, /const NONCE = \/\^\[0-9a-f\]\{(\d+)\}\$\/u;/u);
+const csrfSecretBytes = num(CSRF, /export const MIN_CSRF_SECRET_BYTES = (\d+);/u);
+
+/** A session handle is the HMAC-SHA-256 of the store key in unpadded base64url. */
+const handleLength = Math.ceil((createHash('sha256').digest().length * 8) / 6);
+const storeKeyLength = createHash('sha256').digest('hex').length;
 
 const loginDoor = DEFAULT_DOOR_LIMITS.login;
 
@@ -224,6 +259,29 @@ const PAGES: Record<string, readonly string[]> = {
     `after ${absoluteTtlHours} hours by default`,
     `${rememberMeTtlDays} days by default`,
   ],
+  csrf: [`the nonce is ${csrfNonceHex} hex characters`, `at least ${csrfSecretBytes} bytes`],
+  'brute-force-and-lockout': [
+    `${rule(perAccountIp).limit} attempts per ${rule(perAccountIp).minutes} minutes`,
+    `${rule(perAccount).limit} attempts per ${rule(perAccount).minutes} minutes from all sources`,
+    `locks the account for ${minutes(baseLock)} minutes, then ${minutes(baseLock) * lockFactor}, then ${minutes(baseLock) * lockFactor ** 2}, capped at ${inUnit(maxLock, HOUR)} hour`,
+    `renews a ${inUnit(quietPeriod, HOUR)}-hour quiet period`,
+    `resets the backoff to ${minutes(baseLock)} minutes`,
+    `(${rule(perDevice).limit} per ${rule(perDevice).minutes} minutes each)`,
+    `once the devices together hold ${rule(perDevice).limit} slots`,
+    `older than ${inUnit(deviceMaxAge, DAY)} days`,
+    `generous (${loginDoor.limit} a minute)`,
+  ],
+  'sessions-and-expiry': [
+    `carries ${TOKEN_BYTES} bytes`,
+    `${TOKEN_BYTES * 8} bits of entropy`,
+    `${absoluteTtlHours} hours, ${rememberMeTtlDays} days with remember me`,
+    `${minutes(idleTimeout)} minutes, ${inUnit(idleRemembered, DAY)} days with remember me`,
+    `(${maxPerUser} by default)`,
+    `as ${handleLength} characters of unpadded base64url`,
+    `the ${storeKeyLength}-character hex shape`,
+    `the default idle timeout is ${minutes(idleTimeout)} minutes`,
+    `(within ${minutes(freshAuthAge)} minutes)`,
+  ],
 };
 
 /** What may hold a digit on a checked page without being a fact. */
@@ -232,6 +290,8 @@ const NOT_NUMBERS = [
   /\bA\d{3}\b/gu, // attack ids
   /\bHMAC-SHA-256\b|\bSHA-256\b/gu,
   /\bIPv[46]\b/gu, // address family names
+  /\bbase64url\b/gu,
+  /`@noctcore\/auth` \d+\.\d+/gu, // a past release named in an upgrade note
   /\b(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}\b/gu, // documentation ranges (RFC 5737)
 ];
 
@@ -416,4 +476,53 @@ describe('Learn page attack links', () => {
       expect(named.filter((id) => !linked.has(id))).toEqual([]);
     });
   }
+});
+
+describe('Learn code samples and diagrams', () => {
+  const ms = (value: string | Duration) => toMilliseconds(value as Duration);
+
+  it('writes out the lockout defaults throttle.ts uses', () => {
+    for (const [name, pattern] of [
+      ['perAccountIp', perAccountIp],
+      ['perAccount', perAccount],
+      ['perDevice', perDevice],
+    ] as const) {
+      const { limit, minutes: window } = rule(pattern);
+
+      expect([lockout[name].limit, ms(lockout[name].window)]).toEqual([limit, window * MINUTE]);
+    }
+
+    expect(ms(lockout.baseLock)).toBe(ms(baseLock));
+    expect(ms(lockout.maxLock)).toBe(ms(maxLock));
+    expect(ms(lockout.quietPeriod)).toBe(ms(quietPeriod));
+    expect(ms(lockout.deviceMaxAge)).toBe(ms(deviceMaxAge));
+    expect(String(lockout.revealLocked)).toBe(revealLocked);
+  });
+
+  it('draws each new lock with the factor throttle.ts uses', () => {
+    const diagram = readFileSync(
+      join(SITE, 'src/components/docs/diagrams/LockoutLocks.astro'),
+      'utf8',
+    );
+
+    expect(Number(/const LOCK_FACTOR = (\d+);/u.exec(diagram)?.[1])).toBe(lockFactor);
+  });
+
+  it('writes out the session defaults session-manager.ts uses', () => {
+    expect(ms(session.absoluteTtl)).toBe(ms(absoluteTtl));
+    expect(ms(session.rememberMeTtl)).toBe(ms(rememberMeTtl));
+    expect(ms(session.idleTimeout({ rememberMe: false, attributes: undefined }))).toBe(
+      ms(idleTimeout),
+    );
+    expect(ms(session.idleTimeout({ rememberMe: true, attributes: undefined }))).toBe(
+      ms(idleRemembered),
+    );
+    expect(ms(session.touchInterval)).toBe(ms(touchInterval));
+    expect(session.maxPerUser).toBe(maxPerUser);
+  });
+
+  it('says "once a minute" and "a minute" only where the code means one minute', () => {
+    expect(ms(touchInterval)).toBe(MINUTE);
+    expect(ms(loginDoor.window)).toBe(MINUTE);
+  });
 });
