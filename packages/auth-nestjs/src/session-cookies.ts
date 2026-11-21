@@ -13,8 +13,11 @@
  * A client that cannot read the API's cookies (a desktop shell on its own
  * scheme, a web app on another origin than the API) reads the current token
  * from a safe request with `csrfToken`. That grants nothing a cross-site page
- * could use: the token stays bound to the session or pre-session, the cookie
- * is still required next to it, and CORS keeps the body from other origins.
+ * could use: the token stays bound to the session or pre-session and the
+ * cookie is still required next to it, and an unsafe request from an origin
+ * outside the allowlist is refused on its `Origin` and `Sec-Fetch-Site`
+ * before the token is compared. This library configures no CORS, and a
+ * permissive `cors({ origin: true, credentials: true })` does not change that.
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthConfigError, type IssuedSession } from '@noctcore/auth';
@@ -67,9 +70,14 @@ export class SessionCookies {
    * (such as `GET /csrf-token`) and return the result. It is exactly the
    * token `CsrfMiddleware` set or kept as the cookie on this response,
    * minting the pre-session and the cookie when missing, as on any safe
-   * request. The response is marked `Cache-Control: no-store`. Throws an
-   * `AuthConfigError` on a request the middleware handed no token: an exempt
-   * path (which mints nothing) or an unsafe method.
+   * request. The response is marked `Cache-Control: no-store`, which keeps
+   * it out of HTTP caches but not out of a cache inside the app: keep the
+   * route out of Nest's `CacheInterceptor` (no `@CacheKey`/`@CacheTTL` on it,
+   * and skip it in `trackBy` when the interceptor is global through
+   * `APP_INTERCEPTOR`) and any other response cache, or every caller gets
+   * the first caller's token. Throws an `AuthConfigError` on a request the
+   * middleware handed no token: an exempt path (which mints nothing) or an
+   * unsafe method.
    */
   csrfToken(request: unknown, response: unknown): { csrfToken: string } {
     const token = handedCsrfToken(rawRequest(request));
