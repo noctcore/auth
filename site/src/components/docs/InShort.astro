@@ -1,0 +1,36 @@
+---
+/**
+ * The summary at the top of a Learn page: three lines, always the same three.
+ * A reader who stops here should know what goes wrong, what the rule is and
+ * where the package keeps it. Fill each slot with one sentence of Markdown:
+ *
+ *   <InShort>
+ *     <Fragment slot="threat">A page on another site ...</Fragment>
+ *     <Fragment slot="rule">Never change state on `GET` ...</Fragment>
+ *     <Fragment slot="where">`http/csrf.ts` ...</Fragment>
+ *   </InShort>
+ *
+ * `where` names at most two identifiers: the module, not every function. A
+ * page with no attack to describe (a design choice, a concept) passes
+ * `first="The problem"` and fills the `threat` slot with the problem.
+ */
+interface Props {
+  /** The label of the first line. */
+  first?: string;
+}
+
+const { first = 'The threat' } = Astro.props;
+const id = 'in-short';
+---
+
+<section class="nc-inshort" aria-labelledby={id}>
+  <p class="nc-inshort__label" id={id}>In short</p>
+  <dl>
+    <dt>{first}</dt>
+    <dd><slot name="threat" /></dd>
+    <dt>The rule</dt>
+    <dd><slot name="rule" /></dd>
+    <dt>In the package</dt>
+    <dd><slot name="where" /></dd>
+  </dl>
+</section>

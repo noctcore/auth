@@ -1,0 +1,39 @@
+---
+/**
+ * A mark across a path. `refused` (the default) is the brand art's salmon
+ * bar with a dot: the package turns a request away here. `end` is an ink bar:
+ * something ends on schedule (an expiry, a sign-out), and nothing was
+ * refused. `stripped` is an ink bar with an open ring: the request goes on,
+ * but loses what made it dangerous (the browser leaves the cookie off). The
+ * bar crosses the line, so `across` is the direction of travel: a
+ * horizontal path gets a vertical bar.
+ */
+interface Props {
+  x: number;
+  y: number;
+  /** Direction the path travels in. */
+  across: 'horizontal' | 'vertical';
+  kind?: 'refused' | 'end' | 'stripped';
+}
+
+const { x, y, across, kind = 'refused' } = Astro.props;
+const half = 11;
+const d =
+  across === 'horizontal' ? `M${x} ${y - half}v${half * 2}` : `M${x - half} ${y}h${half * 2}`;
+---
+
+{
+  kind === 'refused' ? (
+    <>
+      <path class="nc-d-stop" d={d} />
+      <circle class="nc-d-stop-dot" cx={x} cy={y} r="3.5" />
+    </>
+  ) : kind === 'stripped' ? (
+    <>
+      <path class="nc-d-end" d={d} />
+      <circle class="nc-d-strip-ring" cx={x} cy={y} r="3.5" />
+    </>
+  ) : (
+    <path class="nc-d-end" d={d} />
+  )
+}

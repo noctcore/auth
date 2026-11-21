@@ -1,0 +1,140 @@
+---
+/**
+ * Brute force, part two: the length of each new lock (three times the last,
+ * capped) and the reset after a quiet day. Every number comes from the
+ * defaults in snippets/learn/lockout.ts.
+ */
+import { lockout } from '../../../../snippets/learn/lockout';
+import DiagramFrame from '../DiagramFrame.astro';
+import { ordinal, shortDuration, toMs } from './duration';
+
+/** Each new lock is this many times the last (throttle.ts); checked by learn-numbers.test.ts. */
+const LOCK_FACTOR = 3;
+const LOCKS_SHOWN = 5;
+
+const baseMs = toMs(lockout.baseLock);
+const capMs = toMs(lockout.maxLock);
+const locks = Array.from({ length: LOCKS_SHOWN }, (_, i) =>
+  Math.min(baseMs * LOCK_FACTOR ** i, capMs),
+);
+const quiet = shortDuration(toMs(lockout.quietPeriod));
+/** DM Mono at 12px: about 7.2px a character, for keeping lines clear of text. */
+const MONO = 7.2;
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  readonly firstLock: number;
+  readonly lockPitch: number;
+  readonly barX: number;
+  readonly barW: number;
+  readonly resetLines: readonly string[];
+}
+
+const layouts: readonly Layout[] = [
+  {
+    kind: 'wide',
+    w: 680,
+    h: 270,
+    firstLock: 72,
+    lockPitch: 30,
+    barX: 112,
+    barW: 360,
+    resetLines: [`${quiet} with no new lock: the next one is ${shortDuration(baseMs)} again`],
+  },
+  {
+    kind: 'narrow',
+    w: 360,
+    h: 284,
+    firstLock: 72,
+    lockPitch: 30,
+    barX: 100,
+    barW: 176,
+    resetLines: [`${quiet} with no new lock:`, `the next one is ${shortDuration(baseMs)} again`],
+  },
+];
+
+const title = 'A capped lock that decays after a quiet day';
+const description =
+  `Each new lock lasts ${LOCK_FACTOR} times the last, capped at ${shortDuration(capMs)}: ` +
+  `${locks.map(shortDuration).join(', ')}. ` +
+  `After ${quiet} with no new lock the next one is ${shortDuration(baseMs)} again.`;
+---
+
+<DiagramFrame id="lockout-locks" title={title} description={description}>
+  {
+    layouts.map((L) => {
+      const bar = (ms: number) => (ms / capMs) * L.barW;
+      const capX = L.barX + L.barW;
+      const lockY = (i: number) => L.firstLock + i * L.lockPitch;
+      const lastLock = lockY(LOCKS_SHOWN - 1);
+
+      // The cap line, broken around any value label that would sit on it.
+      const capTop = 44;
+      const capBottom = lastLock + 16;
+      const blocked = locks
+        .map((ms, i) => ({ from: L.barX + bar(ms) + 8, text: shortDuration(ms), y: lockY(i) }))
+        .filter(({ from, text }) => from < capX && from + text.length * MONO > capX)
+        .map(({ y }) => y);
+      const capPath = [capTop, ...blocked.flatMap((y) => [y - 11, y + 9]), capBottom]
+        .reduce<string[]>((parts, y, i, all) => {
+          if (i % 2 === 0) parts.push(`M${capX} ${y}V${all[i + 1] ?? y}`);
+
+          return parts;
+        }, [])
+        .join('');
+
+      return (
+        <svg
+          class={`nc-d nc-d--${L.kind}`}
+          viewBox={`0 0 ${L.w} ${L.h}`}
+          width={L.w}
+          height={L.h}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <text class="nc-d-kicker" x="24" y="34">
+            EACH NEW LOCK
+          </text>
+          <text class="nc-d-code" x={capX} y="34" text-anchor="middle">
+            {`maxLock ${shortDuration(capMs)}`}
+          </text>
+          <path class="nc-d-rule" d={capPath} />
+
+          {locks.map((ms, i) => (
+            <g>
+              <text class="nc-d-note" x="24" y={lockY(i) + 4}>
+                {`${ordinal(i + 1)} lock`}
+              </text>
+              <rect
+                class="nc-d-span"
+                x={L.barX}
+                y={lockY(i) - 7}
+                width={bar(ms)}
+                height="14"
+                rx="2"
+              />
+              <text class="nc-d-value" x={L.barX + bar(ms) + 8} y={lockY(i) + 4}>
+                {shortDuration(ms)}
+              </text>
+            </g>
+          ))}
+
+          <path class="nc-d-leader" d={`M24 ${lastLock + 24}H${L.w - 24}`} />
+          {L.resetLines.map((line, j) => (
+            <text class="nc-d-note" x="24" y={lastLock + 46 + j * 15}>
+              {line}
+            </text>
+          ))}
+
+        </svg>
+      );
+    })
+  }
+
+  <Fragment slot="caption">
+    <strong>No lock lasts longer than {shortDuration(capMs)}</strong>, and a quiet day starts the
+    ladder over. A lock that never lapses exists only if the app opts into it.
+  </Fragment>
+</DiagramFrame>

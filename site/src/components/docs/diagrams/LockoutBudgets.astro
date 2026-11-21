@@ -1,0 +1,150 @@
+---
+/**
+ * Brute force, part one: the two attempt budgets in one window. Each attempt
+ * takes its cell before the password is hashed; the attempt past a budget is
+ * refused. Every number comes from the defaults in snippets/learn/lockout.ts.
+ */
+import { lockout } from '../../../../snippets/learn/lockout';
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+import { ordinal, shortDuration, toMs } from './duration';
+
+const window = shortDuration(toMs(lockout.perAccount.window));
+const windowText = window.replace(' min', '-minute');
+
+const budgets = [
+  {
+    name: 'One account, one IP',
+    code: `perAccountIp: ${lockout.perAccountIp.limit} per ${window}`,
+    limit: lockout.perAccountIp.limit,
+    stop: 'refused, for this IP only',
+    after: 'the owner elsewhere still signs in',
+  },
+  {
+    name: 'One account, every IP',
+    code: `perAccount: ${lockout.perAccount.limit} per ${window}`,
+    limit: lockout.perAccount.limit,
+    stop: 'refused: account locked',
+    after: 'for a set length (below)',
+  },
+];
+
+const CELL = 18;
+const PITCH = 24;
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  readonly reserveLines: readonly string[];
+  readonly reserve: number;
+  /** Budget rows: where the name sits, and the middle of the cells. */
+  readonly rows: readonly { readonly name: number; readonly cells: number }[];
+  readonly cellsX: number;
+  /** Notes beside the stop (wide) or under the cells (narrow). */
+  readonly notesBeside: boolean;
+}
+
+const layouts: readonly Layout[] = [
+  {
+    kind: 'wide',
+    w: 680,
+    h: 214,
+    reserveLines: ['each attempt takes its cell before the password is hashed'],
+    reserve: 56,
+    rows: [
+      { name: 98, cells: 108 },
+      { name: 168, cells: 178 },
+    ],
+    cellsX: 220,
+    notesBeside: true,
+  },
+  {
+    kind: 'narrow',
+    w: 360,
+    h: 384,
+    reserveLines: ['each attempt takes its cell', 'before the password is hashed'],
+    reserve: 58,
+    rows: [
+      { name: 112, cells: 166 },
+      { name: 258, cells: 312 },
+    ],
+    cellsX: 24,
+    notesBeside: false,
+  },
+];
+
+const title = 'Two attempt budgets in one window';
+const description =
+  `Each login attempt takes a place in its budgets before the password is hashed. ` +
+  `In one ${windowText} window, one account may take ${lockout.perAccountIp.limit} attempts from one IP: ` +
+  `the ${ordinal(lockout.perAccountIp.limit + 1)} is refused for that IP only, and the owner on another network still signs in. ` +
+  `From every IP together it may take ${lockout.perAccount.limit}: the ${ordinal(lockout.perAccount.limit + 1)} is refused and locks the account.`;
+---
+
+<DiagramFrame id="lockout-budgets" title={title} description={description}>
+  {
+    layouts.map((L) => (
+      <svg
+        class={`nc-d nc-d--${L.kind}`}
+        viewBox={`0 0 ${L.w} ${L.h}`}
+        width={L.w}
+        height={L.h}
+        aria-hidden="true"
+        focusable="false"
+      >
+        <text class="nc-d-kicker" x="24" y="34">
+          {`ATTEMPTS IN ONE ${windowText.toUpperCase()} WINDOW`}
+        </text>
+        {L.reserveLines.map((line, j) => (
+          <text class="nc-d-note" x="24" y={L.reserve + j * 15}>
+            {line}
+          </text>
+        ))}
+
+        {budgets.map((b, r) => {
+          const row = L.rows[r] ?? { name: 0, cells: 0 };
+          const stopX = L.cellsX + b.limit * PITCH + CELL / 2;
+          const noteX = L.notesBeside ? stopX + 18 : 24;
+          const noteY = L.notesBeside ? row.cells + 4 : row.cells + 34;
+
+          return (
+            <g>
+              <text class="nc-d-label" x="24" y={row.name}>
+                {b.name}
+              </text>
+              <text class="nc-d-code" x="24" y={row.name + 18}>
+                {b.code}
+              </text>
+              {Array.from({ length: b.limit }, (_, i) => (
+                <rect
+                  class="nc-d-cell"
+                  x={L.cellsX + i * PITCH}
+                  y={row.cells - CELL / 2}
+                  width={CELL}
+                  height={CELL}
+                  rx="2"
+                />
+              ))}
+              <Stop x={stopX} y={row.cells} across="horizontal" />
+              <text class="nc-d-stop-text" x={stopX} y={row.cells - 16} text-anchor="middle">
+                {ordinal(b.limit + 1)}
+              </text>
+              <text class="nc-d-stop-text" x={noteX} y={noteY}>
+                {b.stop}
+              </text>
+              <text class="nc-d-note" x={noteX} y={noteY + 16}>
+                {b.after}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    ))
+  }
+
+  <Fragment slot="caption">
+    <strong>One IP alone can never lock the account</strong>: its own budget runs out first, and
+    only attempts from many IPs together reach the lock.
+  </Fragment>
+</DiagramFrame>
