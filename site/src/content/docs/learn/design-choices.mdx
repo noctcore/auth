@@ -1,0 +1,108 @@
+---
+title: Design choices
+description: Where the package follows Pilcrow's auth guide, where it is stricter, and the few places it deliberately does something else.
+---
+
+import InShort from '../../../components/docs/InShort.astro';
+
+<InShort first="The problem">
+  <Fragment slot="threat">
+    The package follows Pilcrow's auth guide, but its behaviour comes from an implementation already
+    in production, and the two do not always agree.
+  </Fragment>
+  <Fragment slot="rule">
+    The stricter of the two wins, unless the owner decided otherwise, and every disagreement is
+    listed here once, with its reason.
+  </Fragment>
+  <Fragment slot="where">
+    The defaults of `createAuth`; each row links the Learn page that argues it.
+  </Fragment>
+</InShort>
+
+## The problem
+
+The package's behaviour comes from an auth implementation that already runs in production; its explanations and many of its defaults follow [Pilcrow's auth guide](https://auth.pilcrowonpaper.com/). Where the two disagreed, the stricter one won. This page lists every disagreement in one place.
+
+## The rule
+
+Each topic below sets the guide beside the package, then says why they differ.
+
+### Passwords
+
+| Topic               | Auth guide                         | Package                     |
+| ------------------- | ---------------------------------- | --------------------------- |
+| Argon2id cost       | 16 MiB, t=3, p=1                   | 19 MiB, t=3, p=1            |
+| Password length     | 8 to 10 minimum, 50 to 100 maximum | 12 minimum, 256 maximum     |
+| Password characters | printable ASCII is fine            | any Unicode, NFC-normalised |
+
+The reasons:
+
+- **Argon2id cost.** Memory from OWASP's floor, passes from the guide: the stricter of each.
+- **Password length.** 12 from the production implementation; 256 fits passphrases, and hashing cost is bounded by rate limits.
+- **Password characters.** Follows the guide's rule for apps that allow Unicode.
+
+### Accounts and guessing
+
+| Topic              | Auth guide                                      | Package                                                          |
+| ------------------ | ----------------------------------------------- | ---------------------------------------------------------------- |
+| Account existence  | explicit errors are acceptable                  | uniform answers by default, `revealExisting` to opt out          |
+| Lockout            | avoid lockouts and exponential backoff          | a capped lockout the owner's own devices get through (below)     |
+| Verification codes | 8 digits; hashing and attempt counting optional | 8 digits, HMAC at rest, 5 attempts, bound to account and address |
+
+The reasons:
+
+- **Account existence.** Owner decision: email is the login identifier. See [Enumeration](/auth/learn/enumeration/).
+- **Lockout.** Owner decision, shaped to remove victim lockout. See [Brute force and lockout](/auth/learn/brute-force-and-lockout/).
+- **Verification codes.** Stricter at no cost. See [Email verification](/auth/learn/email-verification/).
+
+**The lockout, in full.** The package keeps:
+
+- a capped lockout, per (account, IP) and per account, with a 1 h cap and the backoff reset after a quiet day;
+- no permanent tier, and the owner mailed;
+- a device cookie (30 days, voided by a password change, reset or revoke-all) that lets a correct password through a lock; only wrong guesses spend its small shared budget.
+
+### Sessions
+
+| Topic                                          | Auth guide                     | Package                                                                                |
+| ---------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------- |
+| Sessions after a password change               | ask the user                   | always revoke all, re-issue the current one, mail the owner                            |
+| Granular session revocation                    | requires identity verification | revoking another device, or every other device, requires fresh authentication (10 min) |
+| Action-specific sessions for sensitive actions | recommended                    | fresh-auth window on the session plus `reauthenticate`; second factors through hooks   |
+| Session token                                  | id plus separate hashed secret | random token; the store key is its SHA-256                                             |
+| Activity refresh                               | e.g. hourly or daily           | at most once a minute, update-only-if-exists                                           |
+
+The reasons:
+
+- **Sessions after a password change.** Production behaviour, stricter.
+- **Granular session revocation.** Follows the guide.
+- **Action-specific sessions for sensitive actions.** A step-up plugin can add single-use action sessions on the same seams.
+- **Session token.** Keeps sessions issued by existing deployments valid on adoption; the id an app sees is a hash, never a credential.
+- **Activity refresh.** Idle timeouts of 30 minutes need a finer refresh; the write can never resurrect a session.
+
+**The seams hold for plugins too.** A plugin adds a step on those seams, never a door around them: plugins and `auth.context` see sessions without a way to mint one, so every session goes through `issueSession` ([A016](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A016-plugin-mints-session.test.ts)).
+
+### Email and requests
+
+| Topic               | Auth guide                                   | Package                                                               |
+| ------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
+| Email normalisation | do not silently change input                 | trim, lowercase ASCII letters, refuse any non-ASCII character         |
+| CSRF                | `Sec-Fetch-Site`, then `Origin`, then tokens | Origin allowlist plus `Sec-Fetch-Site` when present plus signed token |
+
+The reasons:
+
+- **Email normalisation.** Prevents duplicate accounts that differ only in case (below).
+- **CSRF.** Apps with a desktop shell send cross-site requests by design. See [CSRF](/auth/learn/csrf/).
+
+**Stricter than NFC folding.** Unicode case folding is refused rather than applied, because it maps distinct characters onto ASCII ones (KELVIN SIGN to `k`); internationalised domains go in as punycode.
+
+**Migration.** An existing app must find stored addresses with non-ASCII characters before adopting, since those users can no longer sign in or reset by them, or set `email.normalize` to `unicode` or a function matching what it stores.
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test                                                                                                             | Attack                                      | Stopped by                                    |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------- |
+| [A016](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A016-plugin-mints-session.test.ts) | A plugin minting a session outside the seam | `core/plugin-context.ts`, `core/auth-core.ts` |
+
+</div>
