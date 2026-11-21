@@ -10,7 +10,8 @@
  * client choose its IP. Nothing is refused here, so nothing is salmon: the
  * right count is the blue path, the wrong ones are ink.
  */
-import { clientIp } from '@noctcore/auth';
+// From source, not the package: the site builds without building the packages first.
+import { clientIp } from '../../../../../packages/auth/src/http/ip';
 import DiagramFrame from '../DiagramFrame.astro';
 
 /** The example on the page; the batch B test checks both against its text block. */
