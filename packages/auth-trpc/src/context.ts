@@ -99,8 +99,11 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
    * response is marked `Cache-Control: no-store`, but tRPC lets the headers
    * of your `responseMeta` replace or join that one: wrap it in
    * `authResponseMeta` (or pass `authResponseMeta()` when you have none),
-   * which also drops the CDN and surrogate cache headers yours returns, and
-   * keep the query out of any caching rule. nestjs-trpc passes no
+   * which drops these headers yours returns: `Cache-Control`,
+   * `Surrogate-Control`, `CDN-Cache-Control`, every `*-CDN-Cache-Control`,
+   * `X-Accel-Expires` and `Edge-Control`. A proxy-specific cache header
+   * outside this list is not touched; keep such rules off the token route,
+   * and keep the query out of any caching rule. nestjs-trpc passes no
    * `responseMeta`, so there is nothing to wrap there.
    * The token stays bound to the session or pre-session and the cookie is
    * still required next to it. Whatever your CORS setup lets a page on

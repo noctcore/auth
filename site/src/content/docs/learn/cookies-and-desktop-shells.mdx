@@ -103,7 +103,7 @@ Reading the token from a response grants nothing a cross-site page could use. Th
 
 `no-store` only helps if nothing replaces it or answers before it is set. A cached token is still bound to its first caller, so the next caller cannot use it, but it has leaked all the same.
 
-- **tRPC**: tRPC applies your `responseMeta` after the procedures ran, and its headers replace or join the `no-store` the call set (a `Headers` object is appended on the fetch adapter). That is where tRPC's caching recipe puts `s-maxage` on public queries, which is just what the token query looks like, and a CDN may read `CDN-Cache-Control` or `Surrogate-Control` from there instead of `Cache-Control`. Wrap your function in `authResponseMeta`, or pass `authResponseMeta()` when you have none: on a response that handed out a token it drops every `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control` and `*-CDN-Cache-Control` (such as `Cloudflare-CDN-Cache-Control`) header yours returns, in either form, so `no-store` is the only cache rule that goes out, on the Node and fetch adapters, batched queries included. Pass it to every tRPC handler you create that serves the token query.
+- **tRPC**: tRPC applies your `responseMeta` after the procedures ran, and its headers replace or join the `no-store` the call set (a `Headers` object is appended on the fetch adapter). That is where tRPC's caching recipe puts `s-maxage` on public queries, which is just what the token query looks like, and a CDN or proxy may read its own header from there instead of `Cache-Control`. Wrap your function in `authResponseMeta`, or pass `authResponseMeta()` when you have none: on a response that handed out a token, on the Node and fetch adapters and batched queries included, it drops these headers yours returns, in either form and any case: `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control`, every `*-CDN-Cache-Control` (such as `Cloudflare-CDN-Cache-Control`), `X-Accel-Expires` and `Edge-Control`. A proxy-specific cache header outside this list is not touched; keep such rules off the token route. Pass it to every tRPC handler you create that serves the token query.
 
   ```ts
   import { authResponseMeta } from '@noctcore/auth-trpc';
@@ -123,6 +123,7 @@ Reading the token from a response grants nothing a cross-site page could use. Th
   Leave the token query or route out of every caching rule, and on tRPC do not wrap only some of
   your handlers in `authResponseMeta`. A cache rule set outside your app (a CDN or proxy
   configured to cache the path, or to ignore the response's cache headers) must skip the path too.
+  `authResponseMeta` drops these headers: `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control`, every `*-CDN-Cache-Control` (such as `Cloudflare-CDN-Cache-Control`), `X-Accel-Expires` and `Edge-Control`. A proxy-specific cache header outside this list is not touched; keep such rules off the token route.
 </Aside>
 
 ### Limits for shells and other clients
