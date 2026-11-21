@@ -103,7 +103,7 @@ Reading the token from a response grants nothing a cross-site page could use. Th
 
 `no-store` only helps if nothing replaces it or answers before it is set. A cached token is still bound to its first caller, so the next caller cannot use it, but it has leaked all the same.
 
-- **tRPC**: tRPC applies your `responseMeta` after the procedures ran, and its headers replace the `no-store` the call set. That is where tRPC's caching recipe puts `s-maxage` on public queries, which is just what the token query looks like. Wrap your function in `authResponseMeta`, or pass `authResponseMeta()` when you have none: on a response that handed out a token it drops every `Cache-Control` yours returns, so `no-store` goes out on every adapter, batched queries included.
+- **tRPC**: tRPC applies your `responseMeta` after the procedures ran, and its headers replace or join the `no-store` the call set (a `Headers` object is appended on the fetch adapter). That is where tRPC's caching recipe puts `s-maxage` on public queries, which is just what the token query looks like, and a CDN may read `CDN-Cache-Control` or `Surrogate-Control` from there instead of `Cache-Control`. Wrap your function in `authResponseMeta`, or pass `authResponseMeta()` when you have none: on a response that handed out a token it drops every `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control` and `*-CDN-Cache-Control` (such as `Cloudflare-CDN-Cache-Control`) header yours returns, in either form, so `no-store` is the only cache rule that goes out, on the Node and fetch adapters, batched queries included. Pass it to every tRPC handler you create that serves the token query.
 
   ```ts
   import { authResponseMeta } from '@noctcore/auth-trpc';
@@ -115,12 +115,14 @@ Reading the token from a response grants nothing a cross-site page could use. Th
   });
   ```
 
+- **nestjs-trpc**: its module options have no `responseMeta` (its Express and Fastify drivers pass only `router`, `createContext` and `onError` to tRPC), so there is nothing to wrap, and nothing in tRPC replaces the `no-store`. What can still replace it is an Express or Fastify middleware of yours on the tRPC base path that sets a cache header: keep it off that path. If you cannot, serve the token from the Nest side instead, with `SessionCookies.csrfToken` in a `@Public()` GET route, which the bullet below covers.
+
 - **NestJS**: Nest's `CacheInterceptor` caches GET responses by URL inside the app, and on a hit the handler never runs, so `no-store` never reaches it: every caller gets the first caller's token. Keep the token route out of it (no `@CacheKey` or `@CacheTTL` on it, and skip it in `trackBy` when the interceptor is global through `APP_INTERCEPTOR`) and out of any other response cache, and any interceptor or middleware that sets `Cache-Control` after the handler, which would replace the `no-store`.
 
 <Aside type="caution" title="Never cache the token route">
   Leave the token query or route out of every caching rule, and on tRPC do not wrap only some of
-  your handlers in `authResponseMeta`. A CDN or proxy that ignores `Cache-Control` must skip the
-  path too.
+  your handlers in `authResponseMeta`. A cache rule set outside your app (a CDN or proxy
+  configured to cache the path, or to ignore the response's cache headers) must skip the path too.
 </Aside>
 
 ### Limits for shells and other clients

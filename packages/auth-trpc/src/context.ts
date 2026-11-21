@@ -97,9 +97,11 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
    * exactly the token this response sets or keeps as the cookie, minted with
    * the pre-session when missing, as on any query sent with GET. The
    * response is marked `Cache-Control: no-store`, but tRPC lets the headers
-   * of your `responseMeta` replace that one: wrap it in `authResponseMeta`
-   * (or pass `authResponseMeta()` when you have none) so the token never
-   * lands in a shared cache, and keep the query out of any caching rule.
+   * of your `responseMeta` replace or join that one: wrap it in
+   * `authResponseMeta` (or pass `authResponseMeta()` when you have none),
+   * which also drops the CDN and surrogate cache headers yours returns, and
+   * keep the query out of any caching rule. nestjs-trpc passes no
+   * `responseMeta`, so there is nothing to wrap there.
    * The token stays bound to the session or pre-session and the cookie is
    * still required next to it. Whatever your CORS setup lets a page on
    * another origin read, its unsafe requests are refused on the `Origin`
