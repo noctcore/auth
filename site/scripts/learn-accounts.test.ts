@@ -8,72 +8,28 @@
 //
 // A few facts are the auth guide's own values, not the package's: they are
 // written out as literals below and marked as such.
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { DEFAULT_DOOR_LIMITS, TOKEN_BYTES, toMilliseconds, type Duration } from '@noctcore/auth';
+import { DEFAULT_DOOR_LIMITS, TOKEN_BYTES } from '@noctcore/auth';
 import { describe, expect, it } from 'bun:test';
 import { emailChange, freshAuthAge } from '../snippets/learn/email-change';
 import { invitationLimits } from '../snippets/learn/invitations';
 import { secondFactor } from '../snippets/learn/second-factor';
-
-const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
-const REPO = join(SITE, '..');
-const LEARN = join(SITE, 'src/content/docs/learn');
-const DIAGRAMS = join(SITE, 'src/components/docs/diagrams');
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/** The page's Markdown or MDX, frontmatter included. */
-function page(slug: string): string {
-  const md = join(LEARN, `${slug}.md`);
-
-  return readFileSync(existsSync(md) ? md : join(LEARN, `${slug}.mdx`), 'utf8');
-}
-
-/** The source of a package file, relative to `packages/`. */
-function source(path: string): string {
-  return readFileSync(join(REPO, 'packages', path), 'utf8');
-}
-
-function diagram(name: string): string {
-  return readFileSync(join(DIAGRAMS, `${name}.astro`), 'utf8');
-}
-
-/** The first capture of `pattern`, which must match exactly once in `text`. */
-function only(text: string, pattern: RegExp): string {
-  const matches = [...text.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))];
-
-  expect(matches.map((m) => m[0])).toHaveLength(1);
-
-  return matches[0]?.[1] ?? '';
-}
-
-const read = (path: string, pattern: RegExp) => only(source(path), pattern);
-const num = (path: string, pattern: RegExp) => Number(read(path, pattern));
-
-/** Every capture of `pattern` in a package file, which must agree on one value. */
-function readAll(path: string, pattern: RegExp, count: number): string {
-  const values = [...source(path).matchAll(new RegExp(pattern.source, `${pattern.flags}g`))].map(
-    (m) => m[1] ?? '',
-  );
-
-  expect(values).toHaveLength(count);
-  expect(new Set(values).size).toBe(1);
-
-  return values[0] ?? '';
-}
-
-const ms = (duration: string | Duration) => toMilliseconds(duration as Duration);
-
-/** A duration in the unit the pages write it in. */
-function inUnit(duration: string | Duration, unit: number): number {
-  expect(ms(duration) % unit).toBe(0);
-
-  return ms(duration) / unit;
-}
+import {
+  attackLinkTests,
+  DAY,
+  diagram,
+  HOUR,
+  inUnit,
+  MINUTE,
+  ms,
+  num,
+  numberTests,
+  only,
+  page,
+  read,
+  readAll,
+  source,
+  strayLines,
+} from './learn-checks';
 
 /** An AttemptRule default in a plugin's options file: `name ?? { limit: 5, window: '15m' }`. */
 function ruleDefault(path: string, name: string): { limit: number; window: string } {
@@ -223,42 +179,8 @@ const PAGES: Record<string, readonly string[]> = {
   ],
 };
 
-/** What may hold a digit on a checked page without being a fact. */
-const NOT_NUMBERS = [
-  /\]\([^)]*\)/gu, // link targets
-  /\bA\d{3}\b/gu, // attack ids
-  /\bHMAC-SHA-256\b|\bSHA-256\b|\bHMAC-SHA-1\b/gu,
-  /\bRFC \d{4}\b/gu,
-  /\bArgon2id\b/gu,
-];
-
-function missingFacts(text: string, facts: readonly string[]): string[] {
-  return facts.filter((fact, i) => {
-    const wanted = facts.slice(0, i + 1).filter((f) => f === fact).length;
-
-    return text.split(fact).length - 1 < wanted;
-  });
-}
-
-function strayLines(text: string, facts: readonly string[]): string[] {
-  let rest = text;
-
-  for (const fact of [...facts].sort((a, b) => b.length - a.length)) rest = rest.replace(fact, ' ');
-  for (const pattern of NOT_NUMBERS) rest = rest.replace(pattern, ' ');
-
-  return rest.split('\n').filter((line) => /\d/u.test(line));
-}
-
-describe('Learn page numbers, batch C', () => {
-  for (const [slug, facts] of Object.entries(PAGES)) {
-    it(`${slug} states the values the code uses`, () => {
-      expect(missingFacts(page(slug), facts)).toEqual([]);
-    });
-
-    it(`${slug} holds no number that is not checked here`, () => {
-      expect(strayLines(page(slug), facts)).toEqual([]);
-    });
-  }
+describe('Learn account page numbers', () => {
+  numberTests(PAGES);
 
   it('catches a checked number reused in a sentence the facts do not cover', () => {
     const slug = 'second-factors';
@@ -286,41 +208,11 @@ describe('Learn page numbers, batch C', () => {
   });
 });
 
-describe('Learn page attack links, batch C', () => {
-  const index = readFileSync(join(REPO, 'packages/auth/tests/attacks/ATTACKS.md'), 'utf8');
-  const LINK =
-    /\[(A\d{3})[^\]]*\]\(https:\/\/github\.com\/noctcore\/auth\/blob\/main\/(packages\/[a-z-]+\/tests\/attacks\/(A\d{3})-[a-z0-9-]+\.test\.ts)\)/gu;
-
-  for (const slug of Object.keys(PAGES)) {
-    const text = page(slug);
-    const title = /^title: (.+)$/mu.exec(text)?.[1] ?? '';
-    const links = [...text.matchAll(LINK)];
-
-    it(`${slug} links attack tests that exist`, () => {
-      expect(links.length).toBeGreaterThan(0);
-
-      for (const [, label, path, id] of links) {
-        expect(label).toBe(id);
-        expect(existsSync(join(REPO, path ?? ''))).toBe(true);
-      }
-    });
-
-    it(`${slug} links every attack ATTACKS.md files under it`, () => {
-      // ATTACKS.md names some pages as "Learn: <title>".
-      const named = [...index.matchAll(/^\| (A\d{3}) \| [^|]+ \| ([^|]+) \|/gmu)]
-        .filter(([, , pages = '']) =>
-          pages.split(';').some((p) => [title, `Learn: ${title}`].includes(p.trim())),
-        )
-        .map(([, id]) => id);
-      const linked = new Set(links.map(([, id]) => id));
-
-      expect(named.length).toBeGreaterThan(0);
-      expect(named.filter((id) => !linked.has(id))).toEqual([]);
-    });
-  }
+describe('Learn account attack links', () => {
+  attackLinkTests(Object.keys(PAGES));
 });
 
-describe('Learn code samples and diagrams, batch C', () => {
+describe('Learn account code samples and diagrams', () => {
   it('writes out the two-factor defaults options.ts uses', () => {
     expect([secondFactor.attempts.limit, ms(secondFactor.attempts.window)]).toEqual([
       factorAttempts.limit,
