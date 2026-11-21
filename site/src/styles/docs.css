@@ -414,3 +414,46 @@
     font-size: 0.75rem;
   }
 }
+
+/* ---------- Wide tables on a phone ---------- */
+/* Wrap a Markdown table of 4 or more columns in <div class="nc-stack">. On a phone each row
+   stacks: the first cell names the row, the others follow, one to a line. The column names go
+   with the header row, so every cell after the first has to read on its own; if one does not,
+   split the table. */
+@media (max-width: 40rem) {
+  .nc-stack table {
+    display: block;
+    border: 0;
+  }
+
+  .nc-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .nc-stack tbody {
+    display: block;
+  }
+
+  .nc-stack tr {
+    display: block;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--nc-line-soft);
+    background: none;
+  }
+
+  .nc-stack td {
+    display: block;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .nc-stack td:first-child {
+    font-weight: 600;
+    color: var(--nc-text-strong);
+  }
+}
