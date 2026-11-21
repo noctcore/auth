@@ -128,10 +128,16 @@ h1#_top {
   background: var(--nc-bg-raised);
 }
 
-.starlight-aside--caution,
 .starlight-aside--danger {
   border-color: color-mix(in oklch, var(--nc-accent) 45%, var(--nc-line));
   background: color-mix(in oklch, var(--nc-accent-soft) 60%, var(--nc-bg));
+}
+
+/* Caution: amber, so a trade-off never reads as a plain note. Salmon stays
+   reserved for "the package refuses something here". */
+.starlight-aside--caution {
+  border-color: color-mix(in oklch, var(--nc-amber) 50%, var(--nc-line));
+  background: var(--nc-amber-soft);
 }
 
 .starlight-aside__title {
@@ -141,6 +147,11 @@ h1#_top {
 
 .starlight-aside .starlight-aside__icon {
   color: var(--nc-accent);
+}
+
+.starlight-aside--caution .starlight-aside__title,
+.starlight-aside--caution .starlight-aside__icon {
+  color: var(--nc-amber);
 }
 
 /* Tables */

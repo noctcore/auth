@@ -56,6 +56,12 @@
   --nc-band-path: var(--nc-pale-blue);
   --nc-band-stop: oklch(0.755 0.073 38);
 
+  /* Caution: lamplight amber for a trade-off the reader must not miss. Kept
+     well away from the stop's hue (38): salmon means the package refuses
+     something, amber only asks the reader to look. */
+  --nc-amber: oklch(0.84 0.115 82); /* #F0C36F, 8.7:1 on its tint */
+  --nc-amber-soft: oklch(0.285 0.035 75); /* #342816 */
+
   --nc-code-bg: var(--nc-bg-deep);
 }
 
@@ -79,6 +85,9 @@
 
   --nc-path: var(--nc-blue);
   --nc-stop: oklch(0.507 0.092 37); /* #92513E */
+
+  --nc-amber: oklch(0.52 0.11 75); /* #8D5E00, 4.9:1 on its tint */
+  --nc-amber-soft: oklch(0.955 0.03 88); /* #F9F0DA */
 
   /* The passage band stays night on a day page. */
   --nc-band: var(--nc-night);
