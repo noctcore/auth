@@ -173,6 +173,10 @@ describe.each(['fetch', 'node'] as const)('authResponseMeta on the %s adapter', 
     ['object', 'Cloudflare-CDN-Cache-Control'],
     ['headers', 'Surrogate-Control'],
     ['object', 'Surrogate-Control'],
+    ['headers', 'X-Accel-Expires'],
+    ['object', 'X-Accel-Expires'],
+    ['headers', 'Edge-Control'],
+    ['object', 'Edge-Control'],
   ] as const)('drops a %s-form %s from the token response', async (form, name) => {
     const rule = 'public, max-age=60';
 

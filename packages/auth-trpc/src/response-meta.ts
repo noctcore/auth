@@ -1,24 +1,25 @@
 /**
- * Keeps a handed-out CSRF token out of the HTTP caches the app's
- * `responseMeta` could otherwise send it to.
+ * Keeps the cache headers of the app's `responseMeta` off a response that
+ * handed out a CSRF token.
  *
  * `ctx.auth.csrfToken()` marks its response `Cache-Control: no-store`, but
  * tRPC applies the app's `responseMeta` after the procedures ran and lets its
  * headers replace or join that one (the Node adapters write them with
  * `setHeader`, the fetch adapter sets a plain-object header and appends a
- * `Headers` one). A CDN may also read `CDN-Cache-Control` or
- * `Surrogate-Control` instead of `Cache-Control`. An app that caches its
+ * `Headers` one). A CDN or proxy may also read its own header instead of
+ * `Cache-Control`. An app that caches its
  * public queries there (tRPC's `s-maxage` recipe) would then let a shared
  * cache hand one caller's token to the next. The token is bound to its own
  * session or pre-session, so the next caller cannot use it, but it has
  * leaked all the same.
  *
  * `authResponseMeta(responseMeta)` wraps the app's function: on a response
- * that handed out a token it drops every `Cache-Control`,
- * `Surrogate-Control`, `CDN-Cache-Control` and `*-CDN-Cache-Control` header
- * the app returned (both header forms), so the `no-store` the call set is
- * the only cache rule that goes out, on the Node and fetch adapters. Any
- * other response gets the app's answer unchanged.
+ * that handed out a token it drops these headers the app returned, in either
+ * form and any case: `Cache-Control`, `Surrogate-Control`,
+ * `CDN-Cache-Control` and every `*-CDN-Cache-Control`, `X-Accel-Expires`
+ * and `Edge-Control`. The `no-store` the call set stays. A proxy-specific
+ * cache header outside this list is not touched; keep such rules off the
+ * token route. Any other response gets the app's answer unchanged.
  */
 import type { ResponseMeta } from '@trpc/server/http';
 import { internalsOf } from './context';
@@ -26,21 +27,24 @@ import { internalsOf } from './context';
 type MetaHeaders = NonNullable<ResponseMeta['headers']>;
 
 /**
- * True for a header that tells a cache how long to keep the response:
- * `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control` (RFC 9213) and
- * the vendor forms ending in `-CDN-Cache-Control` (such as
- * `Cloudflare-CDN-Cache-Control`), which a CDN reads instead of
- * `Cache-Control`.
+ * The cache headers `authResponseMeta` drops: `Cache-Control`,
+ * `Surrogate-Control`, `CDN-Cache-Control` (RFC 9213), `X-Accel-Expires`
+ * (nginx `proxy_cache`, which reads it before `Cache-Control`) and
+ * `Edge-Control` (Akamai). The vendor forms ending in `-CDN-Cache-Control`
+ * (such as `Cloudflare-CDN-Cache-Control`) go too.
  */
+const CACHE_HEADERS = new Set([
+  'cache-control',
+  'surrogate-control',
+  'cdn-cache-control',
+  'x-accel-expires',
+  'edge-control',
+]);
+
 function isCacheHeader(name: string): boolean {
   const lower = name.toLowerCase();
 
-  return (
-    lower === 'cache-control' ||
-    lower === 'surrogate-control' ||
-    lower === 'cdn-cache-control' ||
-    lower.endsWith('-cdn-cache-control')
-  );
+  return CACHE_HEADERS.has(lower) || lower.endsWith('-cdn-cache-control');
 }
 
 /** True when a procedure of this request returned `ctx.auth.csrfToken()`. */
@@ -70,10 +74,12 @@ function withoutCacheHeaders(headers: MetaHeaders): MetaHeaders {
 }
 
 /**
- * The `responseMeta` to pass to tRPC's handler: yours (or none), with
- * `Cache-Control: no-store` kept on every response that handed out a CSRF
- * token and the `Surrogate-Control`, `CDN-Cache-Control` and
- * `*-CDN-Cache-Control` headers yours returns dropped from it.
+ * The `responseMeta` to pass to tRPC's handler: yours (or none). On every
+ * response that handed out a CSRF token it drops these headers yours
+ * returns: `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control` and
+ * every `*-CDN-Cache-Control`, `X-Accel-Expires` and `Edge-Control`, so the
+ * call's `Cache-Control: no-store` stays. A proxy-specific cache header
+ * outside this list is not touched; keep such rules off the token route.
  *
  * ```ts
  * createHTTPHandler({ router, createContext, responseMeta: authResponseMeta(myResponseMeta) });
