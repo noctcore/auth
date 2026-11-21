@@ -20,6 +20,7 @@ import {
   TRPCClientError,
 } from '@trpc/client';
 import { initTRPC } from '@trpc/server';
+import type { ResponseMetaFn } from '@trpc/server/http';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { createHTTPHandler } from '@trpc/server/adapters/standalone';
 import { z } from 'zod';
@@ -270,6 +271,8 @@ export interface BootOptions {
   readonly maxPerUser?: number;
   /** App hooks for the core (a `sessionStanding` hook, say). */
   readonly hooks?: Hooks;
+  /** The `responseMeta` both adapters get, as an app would pass it. */
+  readonly responseMeta?: ResponseMetaFn<AppRouter>;
 }
 
 export async function boot(overrides: BootOptions = {}) {
@@ -302,12 +305,14 @@ export async function boot(overrides: BootOptions = {}) {
         req: new Request(input as string, init),
         router,
         createContext: (opts) => authContext.fetch(opts, { remoteAddress: '127.0.0.1' }),
+        ...(overrides.responseMeta ? { responseMeta: overrides.responseMeta } : {}),
       });
   } else {
     const handler = createHTTPHandler({
       router,
       basePath: '/trpc/',
       createContext: (opts) => authContext.node(opts),
+      ...(overrides.responseMeta ? { responseMeta: overrides.responseMeta } : {}),
     });
 
     server = createServer((req, res) => void handler(req, res));

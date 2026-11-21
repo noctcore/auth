@@ -31,6 +31,7 @@ acceptedOutput
 assertNoSecretQueries
 assertProceduresGuarded
 authErrorFormatter
+authResponseMeta
 changePasswordInput
 createAuthContext
 createAuthMiddlewares
@@ -94,6 +95,7 @@ AuthProcedureMeta [interface]
     readonly rateLimit?: 'exempt'
     readonly touch?: false
     readonly twoFactorEnrollment?: boolean
+authResponseMeta [function]: <TOpts extends { readonly ctx?: unknown; }, TMeta extends ResponseMeta = ResponseMeta>(responseMeta?: (opts: TOpts) => TMeta) => (opts: TOpts) => TMeta
 AuthRoot [interface]<TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>
     readonly middleware: (fn: never) => unknown
     readonly procedure: AuthProcedureBuilder<TContext, TMeta, object, TErrorShape>
@@ -131,7 +133,7 @@ describeProcedures [function]: (router: AnyRouter) => ProcedureAccess[]
 FetchContextInput [interface]
     readonly info?: RequestCalls | undefined
     readonly req: { readonly method: string; readonly headers: { get(name: string): string | null; }; }
-    readonly resHeaders: { append(name: string, value: string): void; }
+    readonly resHeaders: { append(name: string, value: string): void; /** Present on a real `Headers`; used so a header is set once, not appended. */ set?(name: string, value: string): void; }
 findSecretQueries [function]: (router: AnyRouter, options?: { allow?: readonly string[]; }) => SecretQueryFinding[]
 FreshAuthMiddleware [const]: (maxAge?: Duration) => NestTrpcMiddlewareClass
 loginInput [const]: z.ZodObject<{ email: z.ZodString; password: z.ZodString; rememberMe: z.ZodExactOptional<z.ZodBoolean>; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>

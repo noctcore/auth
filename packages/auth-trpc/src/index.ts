@@ -8,6 +8,9 @@
  *   `rateLimited` and `writesCookies`, plus `publicProcedure` (CSRF on mutations) and
  *   `protectedProcedure` (CSRF and a valid session).
  * - `assertProceduresGuarded(router)` fails on a procedure built with neither.
+ * - `authResponseMeta(responseMeta)` keeps `Cache-Control: no-store` on a
+ *   response that handed out a CSRF token, whatever the app's own
+ *   `responseMeta` sets.
  * - The nestjs-trpc classes run the same bodies; `AuthGuardMiddleware` is the
  *   closed-by-default global for nestjs-trpc.
  * - `toTRPCError` and `authErrorFormatter` map refusals to tRPC errors
@@ -71,6 +74,7 @@ export {
   type TrpcAuth,
 } from './options';
 export type { FetchContextInput, NodeContextInput } from './request';
+export { authResponseMeta } from './response-meta';
 export {
   acceptedOutput,
   changePasswordInput,
