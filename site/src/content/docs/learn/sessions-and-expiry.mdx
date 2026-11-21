@@ -56,6 +56,12 @@ Validating a session would otherwise write on every request. Instead, the stored
 - **Update only if it exists.** A plain "set" could recreate a record that was revoked a moment earlier, between the read and the write. Update-only-if-exists means a revoked session can never be resurrected by a late refresh.
 - **Keep the remaining TTL.** A refresh never extends the absolute expiry.
 
+### Background polls
+
+Only requests the user makes should count as activity. A page that polls on a timer (a notification badge, a status check) would otherwise refresh the last-active time every few minutes and keep an idle session alive for its whole absolute lifetime, which is exactly what the idle timeout exists to stop.
+
+So `validateRequest` takes `touch: false` for traffic the client makes on its own: the session is still validated and answered, but its last-active time is left alone, and an idle session expires while only such requests arrive. Both adapters take a `touch` option that decides this per request, before the one validation: a predicate over the request for NestJS, a predicate over the procedure paths (or `touch: false` in a procedure's meta) for tRPC, where a batch counts as activity when any of its procedures does. The default is unchanged: every request touches. See [Use with NestJS](/auth/build/nestjs/#background-polls) and [Use with tRPC](/auth/build/trpc/#background-polls).
+
 ### A cap per user, and word of what it ends
 
 A user holds at most `session.maxPerUser` sessions (10 by default). Issuing one more evicts the oldest, after the new session is written, so sign-ins racing at the cap still end up within it.
