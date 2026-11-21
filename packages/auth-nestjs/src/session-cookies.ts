@@ -15,8 +15,8 @@
  * from a safe request with `csrfToken`. That grants nothing a cross-site page
  * could use: the token stays bound to the session or pre-session and the
  * cookie is still required next to it, and an unsafe request from an origin
- * outside the allowlist is refused on its `Origin` and `Sec-Fetch-Site`
- * before the token is compared. This library configures no CORS, and a
+ * outside the allowlist is refused on its `Origin` and `Sec-Fetch-Site`,
+ * whatever the token. This library configures no CORS, and a
  * permissive `cors({ origin: true, credentials: true })` does not change that.
  */
 import { Inject, Injectable } from '@nestjs/common';

@@ -103,8 +103,8 @@ export interface AuthState<U extends AuthUser = AuthUser, A = unknown> {
    * The token stays bound to the session or pre-session and the cookie is
    * still required next to it. Whatever your CORS setup lets a page on
    * another origin read, its unsafe requests are refused on the `Origin`
-   * allowlist and `Sec-Fetch-Site` before the token is compared, so a read
-   * token is useless cross-site. Throws an `AuthConfigError` on a request
+   * allowlist and `Sec-Fetch-Site`, whatever the token, so a read token is
+   * useless cross-site. Throws an `AuthConfigError` on a request
    * sent with an unsafe method (where nothing is minted), on a streamed
    * batch (`httpBatchStreamLink`) and on a subscription, whose headers go
    * out before any procedure runs.
