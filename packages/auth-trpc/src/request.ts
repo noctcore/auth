@@ -23,10 +23,24 @@ export interface HttpRequest {
   header(name: string): string | undefined;
   readonly forwardedFor: string | readonly string[] | undefined;
   readonly remoteAddress: string | undefined;
+  /** The procedure calls tRPC parsed, or none when the adapter did not say. */
+  readonly calls: RequestCalls['calls'];
 }
 
 /** Where the adapter writes `Set-Cookie` headers. */
 export type CookieWriter = (spec: CookieSpec) => void;
+
+/**
+ * What tRPC parsed from the request before it built the context (its
+ * `info`), as far as the adapter reads it: the path of each procedure called
+ * and, when tRPC found it, the procedure with its meta.
+ */
+export interface RequestCalls {
+  readonly calls: readonly {
+    readonly path: string;
+    readonly procedure?: { readonly _def?: { readonly meta?: unknown } } | null | undefined;
+  }[];
+}
 
 /** The fetch adapter's context options, as far as the adapter reads them. */
 export interface FetchContextInput {
@@ -35,6 +49,7 @@ export interface FetchContextInput {
     readonly headers: { get(name: string): string | null };
   };
   readonly resHeaders: { append(name: string, value: string): void };
+  readonly info?: RequestCalls | undefined;
 }
 
 /** The Node adapters' context options, as far as the adapter reads them. */
@@ -48,6 +63,7 @@ export interface NodeContextInput {
     getHeader(name: string): number | string | string[] | undefined;
     setHeader(name: string, value: number | string | readonly string[]): unknown;
   };
+  readonly info?: RequestCalls | undefined;
 }
 
 export function fromFetch(
@@ -62,6 +78,7 @@ export function fromFetch(
       header,
       forwardedFor: header('x-forwarded-for'),
       remoteAddress,
+      calls: input.info?.calls ?? [],
     },
     write: (spec) => input.resHeaders.append('set-cookie', serializeCookie(spec)),
   };
@@ -80,6 +97,7 @@ export function fromNode(input: NodeContextInput): { request: HttpRequest; write
       },
       forwardedFor: req.headers['x-forwarded-for'],
       remoteAddress: req.socket?.remoteAddress,
+      calls: input.info?.calls ?? [],
     },
     // Adds a header, keeping the cookies already set on the response.
     write: (spec) => {

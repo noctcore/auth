@@ -5,7 +5,9 @@
  * - The session is validated through the core only (`readSessionToken` and
  *   `validateRequest`), so a middleware can never disagree with the core
  *   about who is signed in. The user id comes from the stored session, never
- *   from a header, the input or the client.
+ *   from a header, the input or the client. Whether the request counts as
+ *   activity (`touch`) is decided before that one validation, from the
+ *   procedure calls tRPC parsed: a batch touches when any call is active.
  * - The CSRF verdict is computed here, from the request's headers, and
  *   enforced by the `csrf` middleware on every mutation (the core's three
  *   checks: Origin allowlist, `Sec-Fetch-Site` (`cross-site` only from an
@@ -268,6 +270,26 @@ function csrfVerdict(
   return originOk && siteOk && tokenOk;
 }
 
+/** A procedure whose meta says `touch: false` never counts as activity. */
+const isPassiveMeta = (meta: unknown): boolean =>
+  (meta as { touch?: unknown } | null | undefined)?.touch === false;
+
+/**
+ * Whether the request refreshes the session's last-active time: when any of
+ * its calls is active, or when tRPC named no call (an adapter that passes no
+ * `info`), as before the option existed.
+ */
+function touches(options: ResolvedOptions, request: HttpRequest): boolean {
+  const { touch } = options;
+
+  if (touch === false) return false;
+  if (request.calls.length === 0) return true;
+
+  return request.calls.some(
+    (call) => !isPassiveMeta(call.procedure?._def?.meta) && touch(call.path),
+  );
+}
+
 async function resolveState(
   options: ResolvedOptions,
   request: HttpRequest,
@@ -277,7 +299,12 @@ async function resolveState(
   const meta = requestMeta(request, options);
   const cookieHeader = request.header('cookie');
   const token = auth.readSessionToken(cookieHeader);
-  const validated = token === null ? null : await auth.validateRequest({ token, meta });
+
+  const validated =
+    token === null
+      ? null
+      : await auth.validateRequest({ token, meta, touch: touches(options, request) });
+
   const session = validated?.ok ? validated.value : null;
   const cookies = parseCookieHeader(cookieHeader);
   const preSession = readPreSession(cookies.get(csrf.preSessionCookieName));

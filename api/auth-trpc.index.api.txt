@@ -71,6 +71,7 @@ AuthContextOptions [interface]<U extends AuthUser = AuthUser, A = unknown>
     readonly clientIpHeader?: string
     readonly csrf: CsrfOptions
     readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>
+    readonly touch?: boolean | ((path: string) => boolean)
     readonly trustedHops: TrustedHops
 AuthedMiddleware [const]: NestTrpcMiddlewareClass
 authErrorFormatter [function]: <TShape extends ShapeLike>(opts: { shape: TShape; error: TRPCError; }) => AuthErrorShape<TShape>
@@ -91,6 +92,7 @@ AuthProcedureBuilder [type]<TContext, TMeta, TOverrides, TErrorShape> = TRPCProc
 AuthProcedureMeta [interface]
     readonly auth?: 'public'
     readonly rateLimit?: 'exempt'
+    readonly touch?: false
     readonly twoFactorEnrollment?: boolean
 AuthRoot [interface]<TContext extends AuthContext<AuthUser, unknown>, TMeta extends object, TErrorShape>
     readonly middleware: (fn: never) => unknown
@@ -125,6 +127,7 @@ csrfTokenOutput [const]: z.ZodObject<{ csrfToken: z.ZodString; }, z.core.$strip>
 DEFAULT_RATE_LIMIT [const]: RateLimitRule
 describeProcedures [function]: (router: AnyRouter) => ProcedureAccess[]
 FetchContextInput [interface]
+    readonly info?: RequestCalls | undefined
     readonly req: { readonly method: string; readonly headers: { get(name: string): string | null; }; }
     readonly resHeaders: { append(name: string, value: string): void; }
 findSecretQueries [function]: (router: AnyRouter, options?: { allow?: readonly string[]; }) => SecretQueryFinding[]
@@ -136,6 +139,7 @@ NestTrpcMiddleware [interface]
     use<TResult>(opts: MiddlewareCall<TResult> & { readonly meta?: unknown; }): Promise<TResult>
 NestTrpcMiddlewareClass [type] = new () => NestTrpcMiddleware
 NodeContextInput [interface]
+    readonly info?: RequestCalls | undefined
     readonly req: { readonly method?: string | undefined; readonly headers: IncomingHttpHeaders; readonly socket?: { readonly remoteAddress?: string | undefined; } | undefined; }
     readonly res: { getHeader(name: string): number | string | string[] | undefined; setHeader(name: string, value: number | string | readonly string[]): unknown; }
 Principal [interface]<U extends AuthUser = AuthUser, A = unknown>
@@ -194,6 +198,8 @@ MiddlewareCall [interface]<TResult>
     readonly ctx: unknown
     readonly type: string
 PrincipalOf [type]<TContext> = TContext extends AuthContext<infer U, infer A> ? Principal<U, A> : Principal
+RequestCalls [interface]
+    readonly calls: readonly { readonly path: string; readonly procedure?: { readonly _def?: { readonly meta?: unknown; }; } | null | undefined; }[]
 ShapeLike [interface]
     readonly data: { readonly stack?: string | undefined; }
     readonly message: string

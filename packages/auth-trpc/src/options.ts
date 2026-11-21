@@ -115,6 +115,20 @@ export interface AuthContextOptions<U extends AuthUser = AuthUser, A = unknown> 
    * effect on the next request.
    */
   readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>;
+  /**
+   * Whether a request counts as activity for the session's idle timeout.
+   * `true` (the default) refreshes the session's last-active time, at most
+   * once per `touchInterval`, on every request. A predicate is asked about
+   * each procedure path of the request (`notifications.count`), before the
+   * session is validated: return false for procedures the page calls on its
+   * own (a poll on a timer, a status check), so an idle session still
+   * expires while only they are called. A procedure whose meta says
+   * `touch: false` is passive too. A batch touches when any of its
+   * procedures is active. `false` touches on no request. A passive request
+   * is still answered with its session, and the CSRF verdict and the
+   * guarded procedures' decisions do not change.
+   */
+  readonly touch?: boolean | ((path: string) => boolean);
 }
 
 /** The options after the boot checks, with secrets as bytes and cookie names fixed. */
@@ -126,6 +140,8 @@ export interface ResolvedOptions {
   readonly secure: boolean;
   /** The session cookie config the adapter's cookies take their `SameSite` from. */
   readonly cookie: SessionCookieConfig;
+  /** False when no procedure touches; otherwise whether the procedure at a path does. */
+  readonly touch: false | ((path: string) => boolean);
   readonly csrf: {
     readonly secrets: readonly Uint8Array[];
     /** `allowedOrigins` and `crossSiteOrigins` together: every origin the Origin check accepts. */
@@ -179,6 +195,8 @@ export function resolveOptions<U extends AuthUser, A>(
   if (!HEADER.test(headerName))
     throw new AuthConfigError(`Invalid CSRF header name: ${headerName}`);
 
+  const touch = resolveTouch(options.touch);
+
   // The session cookie is `__Host-` prefixed exactly when it is Secure, and
   // the CSRF cookies follow it, so one setting decides all three.
   const secure = auth.cookieName.startsWith('__Host-');
@@ -197,6 +215,7 @@ export function resolveOptions<U extends AuthUser, A>(
     roles: options.roles as ResolvedOptions['roles'],
     secure,
     cookie,
+    touch,
     csrf: {
       secrets,
       allowedOrigins: [...csrf.allowedOrigins, ...crossSiteOrigins],
@@ -207,4 +226,13 @@ export function resolveOptions<U extends AuthUser, A>(
       preSessionCookieName: secure ? '__Host-presession' : 'presession',
     },
   };
+}
+
+/** The `touch` option resolved; anything but a boolean or a function stops the boot. */
+function resolveTouch(touch: AuthContextOptions['touch']): ResolvedOptions['touch'] {
+  if (touch === undefined || touch === true) return () => true;
+  if (touch === false) return false;
+  if (typeof touch === 'function') return (path) => touch(path) !== false;
+
+  throw new AuthConfigError('touch must be a boolean or a function of the procedure path');
 }
