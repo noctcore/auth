@@ -9,67 +9,37 @@
 // value the auth guide gives (GUIDE, quoted as the guide's, not the
 // package's), an attack id, an algorithm name or an ordered list marker.
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import {
   DEFAULT_DOOR_LIMITS,
   DEFAULT_PASSWORD_POLICY,
   generateToken,
   TOKEN_BYTES,
-  toMilliseconds,
-  type Duration,
 } from '@noctcore/auth';
 import { describe, expect, it } from 'bun:test';
 import { emailVerification } from '../snippets/learn/email-verification';
 import { passwordReset } from '../snippets/learn/password-reset';
 import { hashing, policy } from '../snippets/learn/passwords';
-
-const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
-const REPO = join(SITE, '..');
-const LEARN = join(SITE, 'src/content/docs/learn');
-const DIAGRAMS = join(SITE, 'src/components/docs/diagrams');
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-
-function page(slug: string): string {
-  const md = join(LEARN, `${slug}.md`);
-
-  return readFileSync(existsSync(md) ? md : join(LEARN, `${slug}.mdx`), 'utf8');
-}
-
-function source(path: string): string {
-  return readFileSync(join(REPO, 'packages', path), 'utf8');
-}
-
-/** The first capture of `pattern`, which must match exactly once. */
-function read(path: string, pattern: RegExp): string {
-  const matches = [...source(path).matchAll(new RegExp(pattern.source, `${pattern.flags}g`))];
-
-  expect(matches.map((m) => m[0])).toHaveLength(1);
-
-  return matches[0]?.[1] ?? '';
-}
+import {
+  attackLinkTests,
+  DIAGRAMS,
+  diagram,
+  HOUR,
+  inUnit,
+  LEARN,
+  MINUTE,
+  ms,
+  only,
+  page,
+  read,
+  source,
+  strayLines,
+  missingFacts,
+} from './learn-checks';
 
 /** A named constant in a diagram component. */
-function diagramConst(file: string, name: string): number {
-  const text = readFileSync(join(DIAGRAMS, file), 'utf8');
-  const value = new RegExp(`const ${name} = (\\d+);`, 'u').exec(text)?.[1];
-
-  expect(value).toBeDefined();
-
-  return Number(value);
-}
-
-function inUnit(duration: string | Duration, unit: number): number {
-  const ms = toMilliseconds(duration as Duration);
-
-  expect(ms % unit).toBe(0);
-
-  return ms / unit;
-}
-
-const ms = (value: string | Duration) => toMilliseconds(value as Duration);
+const diagramConst = (name: string, constant: string) =>
+  Number(only(diagram(name), new RegExp(`const ${constant} = (\\d+);`, 'u')));
 
 // Values from the code ------------------------------------------------------
 
@@ -139,6 +109,15 @@ const PAGES: Record<string, readonly string[]> = {
   ],
 };
 
+/** Every page of this file, the two whose numbers learn-numbers.test.ts checks included. */
+const PAGE_SLUGS = [
+  'passwords',
+  'why-tokens-are-hashed',
+  'entropy-and-tokens',
+  'password-reset',
+  'email-verification',
+];
+
 /** What the auth guide recommends, quoted on the pages as the guide's own numbers. */
 const GUIDE: Record<string, readonly string[]> = {
   passwords: ['The guide suggests 8 or 10', 'The guide suggests 50 to 100'],
@@ -153,28 +132,7 @@ const WORDED: Record<string, readonly string[]> = {
   'email-verification': [],
 };
 
-const NOT_NUMBERS = [
-  /\]\([^)]*\)/gu, // link targets
-  /\bA\d{3}\b/gu, // attack ids
-  /\bHMAC-SHA-256\b|\bSHA-256\b|\bSHA-1\b/gu,
-  /\bargon2(?:id)?\b/giu, // the algorithm, its module and its factory
-  /^\d+\. /gmu, // ordered list markers
-];
-
-function missingFacts(text: string, facts: readonly string[]): string[] {
-  return facts.filter((fact) => !text.includes(fact));
-}
-
-function strayLines(text: string, facts: readonly string[]): string[] {
-  let rest = text;
-
-  for (const fact of [...facts].sort((a, b) => b.length - a.length)) rest = rest.replace(fact, ' ');
-  for (const pattern of NOT_NUMBERS) rest = rest.replace(pattern, ' ');
-
-  return rest.split('\n').filter((line) => /\d/u.test(line));
-}
-
-describe('Learn batch A page numbers', () => {
+describe('Learn credential page numbers', () => {
   for (const [slug, facts] of Object.entries(PAGES)) {
     const text = page(slug);
     const guide = GUIDE[slug] ?? [];
@@ -202,7 +160,7 @@ describe('Learn batch A page numbers', () => {
   });
 });
 
-describe('Learn batch A code samples and diagrams', () => {
+describe('Learn credential code samples and diagrams', () => {
   it('writes out the Argon2id defaults the hasher uses', () => {
     expect(argon2Default).not.toBeNull();
     expect([
@@ -218,11 +176,11 @@ describe('Learn batch A code samples and diagrams', () => {
   });
 
   it('draws the breach check prefix the code sends', () => {
-    expect(diagramConst('PasswordStorage.astro', 'PREFIX_CHARS')).toBe(prefixChars);
+    expect(diagramConst('PasswordStorage', 'PREFIX_CHARS')).toBe(prefixChars);
   });
 
   it('draws the token size the package mints', () => {
-    expect(diagramConst('TokenEntropy.astro', 'TOKEN_BYTES')).toBe(TOKEN_BYTES);
+    expect(diagramConst('TokenEntropy', 'TOKEN_BYTES')).toBe(TOKEN_BYTES);
     expect(generateToken()).toHaveLength(TOKEN_BYTES * 2);
   });
 
@@ -257,53 +215,13 @@ describe('Learn batch A code samples and diagrams', () => {
   });
 });
 
-describe('Learn batch A attack links', () => {
-  const index = readFileSync(join(REPO, 'packages/auth/tests/attacks/ATTACKS.md'), 'utf8');
-  const LINK =
-    /\[(A\d{3})[^\]]*\]\(https:\/\/github\.com\/noctcore\/auth\/blob\/main\/(packages\/[a-z-]+\/tests\/attacks\/(A\d{3})-[a-z0-9-]+\.test\.ts)\)/gu;
-  /** Names ATTACKS.md uses for a page besides its title. */
-  const ALIASES: Record<string, readonly string[]> = {
-    'email-verification': ['Email verification'],
-  };
-  const SLUGS = [
-    'passwords',
-    'why-tokens-are-hashed',
-    'entropy-and-tokens',
-    'password-reset',
-    'email-verification',
-  ];
-
-  for (const slug of SLUGS) {
-    const text = page(slug);
-    const title = /^title: (.+)$/mu.exec(text)?.[1] ?? '';
-    const names = new Set([title, ...(ALIASES[slug] ?? [])]);
-    const links = [...text.matchAll(LINK)];
-
-    it(`${slug} links attack tests that exist`, () => {
-      expect(links.length).toBeGreaterThan(0);
-
-      for (const [, label, path, id] of links) {
-        expect(label).toBe(id);
-        expect(existsSync(join(REPO, path ?? ''))).toBe(true);
-      }
-    });
-
-    it(`${slug} links every attack ATTACKS.md files under it, in its table`, () => {
-      const named = [...index.matchAll(/^\| (A\d{3}) \| [^|]+ \| ([^|]+) \|/gmu)]
-        .filter(([, , pages = '']) => pages.split(';').some((p) => names.has(p.trim())))
-        .map(([, id]) => id);
-      const table = text.slice(text.indexOf('<div class="nc-attacks">'));
-      const tabled = new Set([...table.matchAll(LINK)].map(([, id]) => id));
-
-      expect(named.length).toBeGreaterThan(0);
-      expect(named.filter((id) => !tabled.has(id))).toEqual([]);
-    });
-  }
+describe('Learn credential attack links', () => {
+  attackLinkTests(PAGE_SLUGS);
 });
 
-describe('Learn batch A files', () => {
+describe('Learn credential files', () => {
   const FILES = [
-    ...['passwords', 'why-tokens-are-hashed', 'entropy-and-tokens', 'password-reset', 'email-verification'].map(
+    ...PAGE_SLUGS.map(
       (slug) => (existsSync(join(LEARN, `${slug}.mdx`)) ? join(LEARN, `${slug}.mdx`) : join(LEARN, `${slug}.md`)),
     ),
     ...[

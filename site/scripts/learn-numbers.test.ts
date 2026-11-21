@@ -14,9 +14,6 @@
 // (snippets/learn/). Those samples are checked here against the source too,
 // so the page, the sample and the diagram cannot drift apart.
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   clientIp,
   createSessionCookie,
@@ -27,78 +24,32 @@ import {
   serializeCookie,
   sessionCookieName,
   TOKEN_BYTES,
-  toMilliseconds,
   turnstile,
   type Duration,
 } from '@noctcore/auth';
 import { describe, expect, it } from 'bun:test';
 import { lockout } from '../snippets/learn/lockout';
 import { session } from '../snippets/learn/session';
+import {
+  attackLinkTests,
+  DAY,
+  diagram,
+  HOUR,
+  inUnit,
+  MINUTE,
+  ms,
+  num,
+  numberTests,
+  only,
+  page,
+  read,
+  readAll,
+  source,
+  strayLines,
+} from './learn-checks';
 
-const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
-const REPO = join(SITE, '..');
-const LEARN = join(SITE, 'src/content/docs/learn');
-const AUTH_SRC = join(REPO, 'packages/auth/src');
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/** The page's Markdown or MDX, frontmatter included. */
-function page(slug: string): string {
-  const md = join(LEARN, `${slug}.md`);
-
-  return readFileSync(existsSync(md) ? md : join(LEARN, `${slug}.mdx`), 'utf8');
-}
-
-/** The source of a package file, relative to `packages/`. */
-function source(path: string): string {
-  return readFileSync(join(REPO, 'packages', path), 'utf8');
-}
-
-/**
- * The first capture of `pattern` in a package file. The pattern has to match
- * exactly once, so a renamed or duplicated constant fails loudly instead of
- * reading the wrong value.
- */
-function read(path: string, pattern: RegExp): string {
-  const matches = [...source(path).matchAll(new RegExp(pattern.source, `${pattern.flags}g`))];
-
-  expect(matches.map((m) => m[0])).toHaveLength(1);
-
-  return matches[0]?.[1] ?? '';
-}
-
-/** Every capture of `pattern` in a package file, which must agree on one value. */
-function readAll(path: string, pattern: RegExp, count: number): string {
-  const values = [...source(path).matchAll(new RegExp(pattern.source, `${pattern.flags}g`))].map(
-    (m) => m[1] ?? '',
-  );
-
-  expect(values).toHaveLength(count);
-  expect(new Set(values).size).toBe(1);
-
-  return values[0] ?? '';
-}
-
-const num = (path: string, pattern: RegExp) => Number(read(path, pattern));
-
-/** A duration in the unit the pages write it in. */
-function minutes(duration: string | Duration): number {
-  const ms = toMilliseconds(duration as Duration);
-
-  expect(ms % MINUTE).toBe(0);
-
-  return ms / MINUTE;
-}
-
-function inUnit(duration: string | Duration, unit: number): number {
-  const ms = toMilliseconds(duration as Duration);
-
-  expect(ms % unit).toBe(0);
-
-  return ms / unit;
-}
+/** A duration in whole minutes. */
+const minutes = (duration: string | Duration) => inUnit(duration, MINUTE);
 
 // Values from the code ------------------------------------------------------
 
@@ -197,6 +148,11 @@ const storeKeyLength = createHash('sha256').digest('hex').length;
 
 const loginDoor = DEFAULT_DOOR_LIMITS.login;
 
+/** The |t| threshold the timing comparison uses (dudect's). */
+const timingThreshold = Number(
+  read('auth/tests/timing/compare.ts', /const THRESHOLD = ([\d.]+);/u),
+);
+
 /** The Express presets as the trust proxy page lists them, from the ranges the code expands them to. */
 const presetRanges = (() => {
   const items = Object.entries(TRUST_PROXY_PRESETS).map(
@@ -242,6 +198,13 @@ const PAGES: Record<string, readonly string[]> = {
     `A ${TOKEN_BYTES}-byte random token`,
     `with ${defaultDigits} digits by default`,
   ],
+  enumeration: [
+    // A wall-clock measurement on one laptop, not a constant: listed so that
+    // no other number can slip onto the page unchecked.
+    'The taken path about 4.5 ms slower',
+    `(\\|t\\| under ${timingThreshold}, on a heavily loaded machine)`,
+  ],
+  'revocation-races': [],
   captcha: [`within ${captchaTimeoutMs} ms`, `longer than ${captchaMaxToken} characters`],
   'trust-proxy-and-client-ips': [
     'With 0 trusted hops the header is ignored',
@@ -284,51 +247,8 @@ const PAGES: Record<string, readonly string[]> = {
   ],
 };
 
-/** What may hold a digit on a checked page without being a fact. */
-const NOT_NUMBERS = [
-  /\]\([^)]*\)/gu, // link targets
-  /\bA\d{3}\b/gu, // attack ids
-  /\bHMAC-SHA-256\b|\bSHA-256\b/gu,
-  /\bIPv[46]\b/gu, // address family names
-  /\bbase64url\b/gu,
-  /`@noctcore\/auth` \d+\.\d+/gu, // a past release named in an upgrade note
-  /\b(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}\b/gu, // documentation ranges (RFC 5737)
-];
-
-/** The facts a page does not state. A fact listed twice must appear twice. */
-function missingFacts(text: string, facts: readonly string[]): string[] {
-  return facts.filter((fact, i) => {
-    const wanted = facts.slice(0, i + 1).filter((f) => f === fact).length;
-
-    return text.split(fact).length - 1 < wanted;
-  });
-}
-
-/**
- * The lines that still hold a digit once each listed fact is taken out once
- * (and only once, so a fact phrase repeated in another sentence leaves its
- * number behind) and the allowed non-numbers are removed.
- */
-function strayLines(text: string, facts: readonly string[]): string[] {
-  let rest = text;
-
-  // Longest first, so a fact inside a longer one does not leave pieces behind.
-  for (const fact of [...facts].sort((a, b) => b.length - a.length)) rest = rest.replace(fact, ' ');
-  for (const pattern of NOT_NUMBERS) rest = rest.replace(pattern, ' ');
-
-  return rest.split('\n').filter((line) => /\d/u.test(line));
-}
-
 describe('Learn page numbers', () => {
-  for (const [slug, facts] of Object.entries(PAGES)) {
-    it(`${slug} states the values the code uses`, () => {
-      expect(missingFacts(page(slug), facts)).toEqual([]);
-    });
-
-    it(`${slug} holds no number that is not checked here`, () => {
-      expect(strayLines(page(slug), facts)).toEqual([]);
-    });
-  }
+  numberTests(PAGES);
 
   it('catches a checked number reused in a sentence the facts do not cover', () => {
     const slug = 'entropy-and-tokens';
@@ -448,39 +368,10 @@ describe('Learn page cookie facts', () => {
 });
 
 describe('Learn page attack links', () => {
-  const index = readFileSync(join(AUTH_SRC, '../tests/attacks/ATTACKS.md'), 'utf8');
-  const LINK =
-    /\[(A\d{3})[^\]]*\]\(https:\/\/github\.com\/noctcore\/auth\/blob\/main\/(packages\/[a-z-]+\/tests\/attacks\/(A\d{3})-[a-z0-9-]+\.test\.ts)\)/gu;
-
-  for (const slug of Object.keys(PAGES)) {
-    const text = page(slug);
-    const title = /^title: (.+)$/mu.exec(text)?.[1] ?? '';
-    const links = [...text.matchAll(LINK)];
-
-    it(`${slug} links attack tests that exist`, () => {
-      expect(links.length).toBeGreaterThan(0);
-
-      for (const [, label, path, id] of links) {
-        expect(label).toBe(id);
-        expect(existsSync(join(REPO, path ?? ''))).toBe(true);
-      }
-    });
-
-    it(`${slug} links every attack ATTACKS.md files under it`, () => {
-      const named = [...index.matchAll(/^\| (A\d{3}) \| [^|]+ \| ([^|]+) \|/gmu)]
-        .filter(([, , pages = '']) => pages.split(';').some((p) => p.trim() === title))
-        .map(([, id]) => id);
-      const linked = new Set(links.map(([, id]) => id));
-
-      expect(named.length).toBeGreaterThan(0);
-      expect(named.filter((id) => !linked.has(id))).toEqual([]);
-    });
-  }
+  attackLinkTests(Object.keys(PAGES));
 });
 
 describe('Learn code samples and diagrams', () => {
-  const ms = (value: string | Duration) => toMilliseconds(value as Duration);
-
   it('writes out the lockout defaults throttle.ts uses', () => {
     for (const [name, pattern] of [
       ['perAccountIp', perAccountIp],
@@ -500,12 +391,7 @@ describe('Learn code samples and diagrams', () => {
   });
 
   it('draws each new lock with the factor throttle.ts uses', () => {
-    const diagram = readFileSync(
-      join(SITE, 'src/components/docs/diagrams/LockoutLocks.astro'),
-      'utf8',
-    );
-
-    expect(Number(/const LOCK_FACTOR = (\d+);/u.exec(diagram)?.[1])).toBe(lockFactor);
+    expect(Number(only(diagram('LockoutLocks'), /const LOCK_FACTOR = (\d+);/u))).toBe(lockFactor);
   });
 
   it('writes out the session defaults session-manager.ts uses', () => {
