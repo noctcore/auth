@@ -1,0 +1,208 @@
+---
+/**
+ * Second factors, the primary drawing: every session in the library is
+ * minted by one function, issueSession, and the two-factor plugin's hook runs
+ * on every call (plugins/two-factor/hooks.ts, beforeSessionCreate). The
+ * plugin's own challenge gets through; so does a core re-issue of a session
+ * the user already holds; any other flow is refused for a user with a
+ * factor. The challenge's lifetime and code count are named constants that
+ * scripts/learn-batch-c.test.ts reads against plugins/two-factor/options.ts.
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+import { shortDuration, toMs } from './duration';
+
+/** CHALLENGE_TTL_MS and CHALLENGE_MAX_ATTEMPTS in plugins/two-factor/options.ts. */
+const CHALLENGE_TTL = '5m';
+const CHALLENGE_CODES = 5;
+
+const challenge = `challenge: ${shortDuration(toMs(CHALLENGE_TTL))}, ${CHALLENGE_CODES} codes`;
+
+interface Lane {
+  readonly title: string;
+  readonly lines: readonly string[];
+  /** Passes the seam (a session) or is refused there. */
+  readonly passes: boolean;
+}
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  /** Where the routes start, the seam, and the session node. */
+  readonly x0: number;
+  readonly seam: number;
+  readonly x1: number;
+  /** The password and code checkpoints on the first lane. */
+  readonly checks: readonly [number, number];
+  readonly lanes: readonly { readonly title: number; readonly route: number }[];
+  readonly lanesText: readonly Lane[];
+  readonly seamTop: number;
+}
+
+const lanesWide: readonly Lane[] = [
+  { title: 'Password, then a code', lines: [challenge], passes: true },
+  {
+    title: 'A re-issue by the core',
+    lines: ['password change, re-auth,', 'email verified or changed'],
+    passes: true,
+  },
+  { title: 'Any other flow', lines: ['a plain password login,', 'sign-up with autoLogin'], passes: false },
+];
+
+const lanesNarrow: readonly Lane[] = [
+  { title: 'Password, then a code', lines: [challenge], passes: true },
+  {
+    title: 'A re-issue by the core',
+    lines: ['password change, re-auth,', 'email verified or changed,', "from the user's live session"],
+    passes: true,
+  },
+  { title: 'Any other flow', lines: ['a plain password login,', 'sign-up with autoLogin'], passes: false },
+];
+
+const layouts: readonly Layout[] = [
+  {
+    kind: 'wide',
+    w: 680,
+    h: 352,
+    x0: 236,
+    seam: 560,
+    x1: 640,
+    checks: [326, 446],
+    lanes: [
+      { title: 112, route: 118 },
+      { title: 204, route: 210 },
+      { title: 288, route: 294 },
+    ],
+    lanesText: lanesWide,
+    seamTop: 74,
+  },
+  {
+    kind: 'narrow',
+    w: 360,
+    h: 436,
+    x0: 28,
+    seam: 252,
+    x1: 326,
+    checks: [100, 180],
+    lanes: [
+      { title: 96, route: 148 },
+      { title: 206, route: 282 },
+      { title: 330, route: 396 },
+    ],
+    lanesText: lanesNarrow,
+    seamTop: 70,
+  },
+];
+
+const title = 'Every session passes one check';
+const description =
+  'Every session the library issues is minted by one function, issueSession, and the two-factor ' +
+  "plugin's hook runs on every call. A user with a factor who signs in with the right password gets a " +
+  `challenge instead of a session; the challenge lives ${shortDuration(toMs(CHALLENGE_TTL))} and takes ` +
+  `${CHALLENGE_CODES} codes, and a session comes out of it only after a correct code. A re-issue by the ` +
+  'core, after a password change, a re-authentication, an email verification or a confirmed email ' +
+  "change, gets through only with the user's own live session, read from the store just before. Any " +
+  'other flow, a plain password login or sign-up with autoLogin, is refused at the seam for a user ' +
+  'with a factor.';
+---
+
+<DiagramFrame id="second-factor-seam" title={title} description={description}>
+  {
+    layouts.map((L) => {
+      const wideLayout = L.kind === 'wide';
+      const [first, reissue, other] = L.lanes as [
+        { title: number; route: number },
+        { title: number; route: number },
+        { title: number; route: number },
+      ];
+      const bottom = other.route + 22;
+
+      return (
+        <svg
+          class={`nc-d nc-d--${L.kind}`}
+          viewBox={`0 0 ${L.w} ${L.h}`}
+          width={L.w}
+          height={L.h}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <text class="nc-d-kicker" x="24" y="30">
+            EVERY SESSION, ONE SEAM
+          </text>
+
+          {/* The seam: one post every lane crosses. */}
+          <text class="nc-d-code" x={L.seam} y={L.seamTop - 22} text-anchor="middle">
+            issueSession
+          </text>
+          <text class="nc-d-note" x={L.seam} y={L.seamTop - 6} text-anchor="middle">
+            the plugin's hook
+          </text>
+          <path class="nc-d-post" d={`M${L.seam} ${L.seamTop + 4}V${bottom}`} />
+
+          {L.lanesText.map((lane, i) => {
+            const y = L.lanes[i] ?? { title: 0, route: 0 };
+            const textX = 24;
+
+            return (
+              <g>
+                <text class="nc-d-label" x={textX} y={y.title}>
+                  {lane.title}
+                </text>
+                {lane.lines.map((line, j) => (
+                  <text class="nc-d-note" x={textX} y={y.title + 18 + j * 16}>
+                    {line}
+                  </text>
+                ))}
+              </g>
+            );
+          })}
+
+          {/* Password, then a code: two checks, then the seam lets the plugin's own session through. */}
+          <path class="nc-d-route" d={`M${L.x0} ${first.route}H${L.x1 - 7}`} />
+          <circle class="nc-d-node" cx={L.x0} cy={first.route} r="5" />
+          {L.checks.map((x, j) => (
+            <g>
+              <circle class="nc-d-node" cx={x} cy={first.route} r="4" />
+              <text class="nc-d-note" x={x} y={first.route - 14} text-anchor="middle">
+                {j === 0 ? 'password' : 'code'}
+              </text>
+            </g>
+          ))}
+          <circle class="nc-d-node" cx={L.seam} cy={first.route} r="4" />
+          <circle class="nc-d-node-open" cx={L.x1} cy={first.route} r="7" />
+          <text class="nc-d-label" x={L.x1} y={first.route + 28} text-anchor="middle">
+            session
+          </text>
+
+          {/* A re-issue: through, with the user's own live session. */}
+          <path class="nc-d-route" d={`M${L.x0} ${reissue.route}H${L.x1 - 7}`} />
+          <circle class="nc-d-node" cx={L.x0} cy={reissue.route} r="5" />
+          <circle class="nc-d-node" cx={L.seam} cy={reissue.route} r="4" />
+          <circle class="nc-d-node-open" cx={L.x1} cy={reissue.route} r="7" />
+          <text class="nc-d-label" x={L.x1} y={reissue.route + 28} text-anchor="middle">
+            session
+          </text>
+          {wideLayout && (
+            <text class="nc-d-note" x={L.x0} y={reissue.route + 26}>
+              only from the user's live session
+            </text>
+          )}
+
+          {/* Any other flow: refused at the seam for a user with a factor. */}
+          <circle class="nc-d-attack-node" cx={L.x0} cy={other.route} r="5" />
+          <path class="nc-d-attack" d={`M${L.x0 + 8} ${other.route}H${L.seam - 8}`} />
+          <Stop x={L.seam} y={other.route} across="horizontal" />
+          <text class="nc-d-stop-text" x={L.seam + 16} y={other.route + 4}>
+            refused
+          </text>
+        </svg>
+      );
+    })
+  }
+
+  <Fragment slot="caption">
+    <strong>No flow mints a session around the factor</strong>: the plugin's challenge and the core's
+    own re-issues get through the one seam, and everything else is refused there.
+  </Fragment>
+</DiagramFrame>

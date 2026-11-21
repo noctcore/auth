@@ -1,0 +1,239 @@
+---
+/**
+ * Second factors, part two: a TOTP code works once. The store keeps the last
+ * accepted time step, and a code is accepted only if its step moves that
+ * value forward, by a compare-and-set (plugins/two-factor/proofs.ts and the
+ * store's advanceStep). A fresh code passes the old mark and becomes the new
+ * one; the same code again, the slower of two at once, and an older code all
+ * meet the new mark and are refused. The step length and the drift are
+ * named constants that scripts/learn-batch-c.test.ts reads against
+ * plugins/two-factor/totp.ts.
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+
+/** TOTP_PERIOD_SECONDS and TOTP_DRIFT_STEPS in plugins/two-factor/totp.ts. */
+const STEP_SECONDS = 30;
+const DRIFT_STEPS = 1;
+
+/** The steps drawn, as offsets from now; the one at index NOW is the current step. */
+const STEPS = [-2, -1, 0, 1, 2] as const;
+const NOW = 2;
+const stepName = (offset: number) => (offset === 0 ? 'n' : offset < 0 ? `n${offset}` : `n+${offset}`);
+const driftWords = DRIFT_STEPS === 1 ? 'one step' : `${DRIFT_STEPS} steps`;
+
+interface Row {
+  readonly title: string;
+  readonly note: string;
+  readonly accepted: boolean;
+  readonly stop: string;
+}
+
+const rows: readonly Row[] = [
+  {
+    title: `A fresh code, step ${stepName(0)}`,
+    note: 'accepted; the mark moves',
+    accepted: true,
+    stop: '',
+  },
+  {
+    title: 'The same code again',
+    note: 'or the slower of two at once',
+    accepted: false,
+    stop: `refused: step ${stepName(0)} again`,
+  },
+  {
+    title: `An older code, step ${stepName(-1)}`,
+    note: 'after a newer one',
+    accepted: false,
+    stop: `refused: step ${stepName(-1)}`,
+  },
+];
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  readonly cellX: number;
+  readonly cellW: number;
+  readonly cellY: number;
+  readonly legend: { readonly x: number; readonly y: number; readonly anchor: 'start' | 'end' };
+  readonly x0: number;
+  /** Each row: where its title sits, and its route. */
+  readonly rows: readonly { readonly title: number; readonly route: number }[];
+  /** Titles beside the routes (wide) or above them (narrow). */
+  readonly titleBeside: boolean;
+  readonly stopLabels: readonly string[];
+  readonly postLabelY: number;
+}
+
+const layouts: readonly Layout[] = [
+  {
+    kind: 'wide',
+    w: 680,
+    h: 340,
+    cellX: 260,
+    cellW: 64,
+    cellY: 78,
+    legend: { x: 656, y: 30, anchor: 'end' },
+    x0: 248,
+    rows: [
+      { title: 150, route: 156 },
+      { title: 210, route: 216 },
+      { title: 270, route: 276 },
+    ],
+    titleBeside: true,
+    stopLabels: rows.map((r) => r.stop),
+    postLabelY: 322,
+  },
+  {
+    kind: 'narrow',
+    w: 360,
+    h: 432,
+    cellX: 40,
+    cellW: 56,
+    cellY: 96,
+    legend: { x: 24, y: 50, anchor: 'start' },
+    x0: 28,
+    rows: [
+      { title: 164, route: 206 },
+      { title: 248, route: 290 },
+      { title: 332, route: 374 },
+    ],
+    titleBeside: false,
+    stopLabels: rows.map((r) => (r.accepted ? '' : 'refused')),
+    postLabelY: 414,
+  },
+];
+
+const title = 'A code works once';
+const description =
+  `Time runs in steps of ${STEP_SECONDS} seconds, and a code matches its own step or ${driftWords} ` +
+  'either side. The store keeps the last accepted step as a mark. A fresh code for the current step ' +
+  'is past the mark, so it is accepted and the mark moves to just after it, in one compare-and-set. ' +
+  'The same code sent again, or the slower of two requests carrying it at once, is not after the new ' +
+  'mark and is refused. An older code, for the step before, sent after a newer one, is refused too.';
+---
+
+<DiagramFrame id="second-factor-steps" title={title} description={description}>
+  {
+    layouts.map((L) => {
+      const center = (i: number) => L.cellX + i * L.cellW + L.cellW / 2;
+      const right = (i: number) => L.cellX + (i + 1) * L.cellW;
+      const before = right(NOW - 1);
+      const after = right(NOW);
+      const [first] = L.rows as [{ title: number; route: number }];
+      const last = L.rows.at(-1) ?? first;
+      const postFrom = L.cellY + 32;
+      const postTo = last.route + 18;
+      const driftFrom = L.cellX + (NOW - DRIFT_STEPS) * L.cellW;
+      const driftTo = right(NOW + DRIFT_STEPS);
+
+      /** A post: full height beside the titles, or a tick per row where titles sit above. */
+      const post = (x: number) =>
+        L.titleBeside
+          ? [`M${x} ${postFrom}V${postTo}`]
+          : [`M${x} ${postFrom}V${postFrom + 10}`, ...L.rows.map((r) => `M${x} ${r.route - 14}V${r.route + 14}`)];
+
+      return (
+        <svg
+          class={`nc-d nc-d--${L.kind}`}
+          viewBox={`0 0 ${L.w} ${L.h}`}
+          width={L.w}
+          height={L.h}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <text class="nc-d-kicker" x="24" y="30">
+            ONE CODE, ONE TIME STEP
+          </text>
+          <text class="nc-d-note" x={L.legend.x} y={L.legend.y} text-anchor={L.legend.anchor}>
+            {`each cell: a ${STEP_SECONDS} s step`}
+          </text>
+
+          {/* The drift window over the steps a code may match. */}
+          <text class="nc-d-note" x={(driftFrom + driftTo) / 2} y={L.cellY - 22} text-anchor="middle">
+            {`a code matches ${driftWords} either side`}
+          </text>
+          <path class="nc-d-rule" d={`M${driftFrom + 2} ${L.cellY - 6}v-6H${driftTo - 2}v6`} />
+
+          {STEPS.map((offset, i) => (
+            <g>
+              <rect
+                class={offset === 0 ? 'nc-d-span' : 'nc-d-cell'}
+                x={L.cellX + i * L.cellW + 2}
+                y={L.cellY}
+                width={L.cellW - 4}
+                height="24"
+                rx="2"
+              />
+              <text
+                class={offset === 0 ? 'nc-d-value' : 'nc-d-note'}
+                x={center(i)}
+                y={L.cellY + 16}
+                text-anchor="middle"
+              >
+                {stepName(offset)}
+              </text>
+            </g>
+          ))}
+          <text class="nc-d-note" x={center(NOW)} y={L.cellY + 44} text-anchor="middle">
+            now
+          </text>
+
+          {/* The mark before the first use (faint) and after it. */}
+          {post(before).map((d) => (
+            <path class="nc-d-leader" d={d} />
+          ))}
+          {post(after).map((d) => (
+            <path class="nc-d-post" d={d} />
+          ))}
+          <text class="nc-d-note" x={before - 6} y={L.postLabelY} text-anchor="end">
+            mark before
+          </text>
+          <text class="nc-d-value" x={after + 6} y={L.postLabelY}>
+            mark after
+          </text>
+
+          {rows.map((row, i) => {
+            const y = L.rows[i] ?? first;
+            const textY = y.title;
+            const stopLabel = L.stopLabels[i] ?? '';
+
+            return (
+              <g>
+                <text class="nc-d-label" x="24" y={textY}>
+                  {row.title}
+                </text>
+                <text class="nc-d-note" x="24" y={textY + 18}>
+                  {row.note}
+                </text>
+                {row.accepted ? (
+                  <>
+                    <path class="nc-d-route" d={`M${L.x0} ${y.route}H${center(NOW) - 7}`} />
+                    <circle class="nc-d-node" cx={L.x0} cy={y.route} r="5" />
+                    <circle class="nc-d-node-open" cx={center(NOW)} cy={y.route} r="7" />
+                  </>
+                ) : (
+                  <>
+                    <circle class="nc-d-attack-node" cx={L.x0} cy={y.route} r="5" />
+                    <path class="nc-d-attack" d={`M${L.x0 + 8} ${y.route}H${after - 8}`} />
+                    <Stop x={after} y={y.route} across="horizontal" />
+                    <text class="nc-d-stop-text" x={after + 16} y={y.route + 4}>
+                      {stopLabel}
+                    </text>
+                  </>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      );
+    })
+  }
+
+  <Fragment slot="caption">
+    <strong>A code is good once</strong>: accepting it moves the stored mark past its step, and a
+    replay, a twin request or an older code all meet the mark and are refused.
+  </Fragment>
+</DiagramFrame>

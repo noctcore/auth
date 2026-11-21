@@ -1,0 +1,200 @@
+---
+/**
+ * Invitations: what an accept crosses, in the order accept.ts checks it.
+ * The token must name a live invitation (known, not expired); the account
+ * must hold the invited address, verified; the inviter must still be allowed
+ * (authorize, asked again); then the store's consume spends it in one atomic
+ * step. The invitee gets through and joins, with no session issued; a
+ * squatter's unverified account, an inviter who lost the right and a second
+ * accept are refused; an invitation past its lifetime has simply ended.
+ * Values from snippets/learn/invitations.ts.
+ */
+import { invitationLimits } from '../../../../snippets/learn/invitations';
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+import { shortDuration, toMs } from './duration';
+
+/** MAX_TTL_MS in plugins/invitations/options.ts. */
+const MAX_TTL = '30d';
+
+const ttl = shortDuration(toMs(invitationLimits.ttl));
+const maxTtl = shortDuration(toMs(MAX_TTL));
+
+interface Gate {
+  readonly name: string;
+  readonly note: string;
+}
+
+const gates: readonly Gate[] = [
+  { name: 'Live', note: 'unexpired' },
+  { name: 'Address', note: 'verified' },
+  { name: 'Inviter', note: 'authorize' },
+  { name: 'Spent', note: 'consume' },
+];
+
+type Outcome = 'joins' | 'refused' | 'ended';
+
+interface Lane {
+  readonly title: string;
+  readonly note: string;
+  /** The gate it stops at; past the last gate for the invitee. */
+  readonly at: number;
+  readonly outcome: Outcome;
+}
+
+const lanes: readonly Lane[] = [
+  { title: 'The invitee', note: 'joins, no session issued', at: gates.length, outcome: 'joins' },
+  { title: 'An unverified account', note: 'refused, nothing spent', at: 1, outcome: 'refused' },
+  { title: 'An inviter who lost the right', note: 'refused, invitation revoked', at: 2, outcome: 'refused' },
+  { title: 'The link again', note: 'refused: already spent', at: 3, outcome: 'refused' },
+  { title: `After ${ttl}`, note: `expired; ${maxTtl} at most`, at: 0, outcome: 'ended' },
+];
+
+interface Layout {
+  readonly kind: 'wide' | 'narrow';
+  readonly w: number;
+  readonly h: number;
+  readonly x0: number;
+  readonly x1: number;
+  readonly gateX: readonly number[];
+  readonly headY: number;
+  /** Each lane: its text lines and its route. */
+  readonly lanes: readonly { readonly title: number; readonly route: number }[];
+  /** Posts run the full height (titles in a column beside) or are ticks per lane. */
+  readonly fullPosts: boolean;
+}
+
+const layouts: readonly Layout[] = [
+  {
+    kind: 'wide',
+    w: 680,
+    h: 420,
+    x0: 268,
+    x1: 652,
+    gateX: [330, 420, 510, 600],
+    headY: 76,
+    lanes: [118, 182, 246, 310, 374].map((y) => ({ title: y - 4, route: y })),
+    fullPosts: true,
+  },
+  {
+    kind: 'narrow',
+    w: 360,
+    h: 520,
+    x0: 28,
+    x1: 344,
+    gateX: [100, 172, 244, 316],
+    headY: 72,
+    lanes: [112, 196, 280, 364, 448].map((y) => ({ title: y, route: y + 38 })),
+    fullPosts: false,
+  },
+];
+
+const title = 'What an accept has to get past';
+const description =
+  `An accept crosses four checks in order. The token must name a live invitation: one past its lifetime, ` +
+  `${ttl} by default and never more than ${maxTtl}, has ended and answers like one that never existed. ` +
+  'The account must hold the invited address, verified: an unverified account, like one an attacker ' +
+  'registered first, is refused and nothing is spent. The inviter must still be allowed, so authorize ' +
+  'is asked again: an inviter who lost the right leaves the invitation revoked. Then the store spends ' +
+  'it in one atomic step, so the same link a second time is refused. The invitee gets past all four and ' +
+  'joins, and no session is issued.';
+---
+
+<DiagramFrame id="invitation-accept" title={title} description={description}>
+  {
+    layouts.map((L) => {
+      const last = L.lanes.at(-1) ?? { title: 0, route: 0 };
+      const postTop = L.headY + 14;
+      const postBottom = last.route + 16;
+      const reach = (lane: Lane) => (lane.at >= gates.length ? L.x1 : (L.gateX[lane.at] ?? 0));
+
+      return (
+        <svg
+          class={`nc-d nc-d--${L.kind}`}
+          viewBox={`0 0 ${L.w} ${L.h}`}
+          width={L.w}
+          height={L.h}
+          aria-hidden="true"
+          focusable="false"
+        >
+          <text class="nc-d-kicker" x="24" y="30">
+            ACCEPTING AN INVITATION
+          </text>
+
+          {gates.map((gate, i) => {
+            const x = L.gateX[i] ?? 0;
+
+            return (
+              <g>
+                <text class="nc-d-label" x={x} y={L.headY - 18} text-anchor="middle">
+                  {gate.name}
+                </text>
+                <text
+                  class={gate.note === 'authorize' || gate.note === 'consume' ? 'nc-d-code' : 'nc-d-note'}
+                  x={x}
+                  y={L.headY}
+                  text-anchor="middle"
+                >
+                  {gate.note}
+                </text>
+                {L.fullPosts ? (
+                  <path class="nc-d-post" d={`M${x} ${postTop}V${postBottom}`} />
+                ) : (
+                  L.lanes.map((y) => <path class="nc-d-post" d={`M${x} ${y.route - 12}V${y.route + 12}`} />)
+                )}
+              </g>
+            );
+          })}
+
+          {lanes.map((lane, i) => {
+            const y = L.lanes[i] ?? last;
+            const end = reach(lane);
+            const textX = 24;
+
+            return (
+              <g>
+                <text class="nc-d-label" x={textX} y={y.title}>
+                  {lane.title}
+                </text>
+                <text
+                  class={lane.outcome === 'refused' ? 'nc-d-stop-text' : 'nc-d-note'}
+                  x={textX}
+                  y={y.title + 18}
+                >
+                  {lane.note}
+                </text>
+                {lane.outcome === 'refused' ? (
+                  <>
+                    <circle class="nc-d-attack-node" cx={L.x0} cy={y.route} r="5" />
+                    <path class="nc-d-attack" d={`M${L.x0 + 8} ${y.route}H${end - 8}`} />
+                    <Stop x={end} y={y.route} across="horizontal" />
+                  </>
+                ) : lane.outcome === 'ended' ? (
+                  <>
+                    <circle class="nc-d-node" cx={L.x0} cy={y.route} r="5" />
+                    <path class="nc-d-route" d={`M${L.x0} ${y.route}H${end - 8}`} />
+                    <Stop x={end} y={y.route} across="horizontal" kind="end" />
+                  </>
+                ) : (
+                  <>
+                    <circle class="nc-d-node" cx={L.x0} cy={y.route} r="5" />
+                    <path class="nc-d-route" d={`M${L.x0} ${y.route}H${end - 7}`} />
+                    {L.gateX.map((x) => (
+                      <circle class="nc-d-node" cx={x} cy={y.route} r="4" />
+                    ))}
+                    <circle class="nc-d-node-open" cx={end} cy={y.route} r="7" />
+                  </>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      );
+    })
+  }
+
+  <Fragment slot="caption">
+    <strong>Only a verified owner of the invited address collects it, once</strong>, and accepting
+    never signs anyone in.
+  </Fragment>
+</DiagramFrame>
