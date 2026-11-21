@@ -6,14 +6,18 @@
 // `ctx.auth.csrfToken()`. An attacker who can call that query too (any
 // client can) tries to make the token worth something elsewhere: their own
 // pre-session's token in the victim's browser, one session's token with
-// another session, a pre-session token after the sign-in it led to, or the
-// token alone without its cookie.
+// another session, a pre-session token after the sign-in it led to, the
+// token alone without its cookie, or a page on an origin the app never
+// allowed that reads the token with the victim's cookies (a permissive
+// credentialed CORS setup lets it) and replays it.
 //
 // Stopped by: auth-trpc src/context.ts: `csrfToken()` returns only the token
 //   the context set or kept as the cookie, bound to the request's own session
 //   or pre-session, and every mutation still needs that cookie next to the
 //   header and a binding that matches its own session (the core's
-//   `verifyCsrfToken`).
+//   `verifyCsrfToken`). An unsafe request from an origin outside the
+//   allowlist is refused on its Origin and `Sec-Fetch-Site` before the token
+//   is even compared, so CORS settings do not decide it.
 // Learn: CSRF (/auth/learn/csrf/); Cookies and desktop shells; core A008, A080
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -127,5 +131,25 @@ describe('A101: a handed-out CSRF token used for another session or pre-session 
     shell.cookies.delete('__Host-csrf');
 
     expect(await refusal(signIn(shell, token))).toBe('forbidden');
+  });
+
+  it('refuses a token read by a page on an origin the app does not allow', async () => {
+    env = await boot(withShell);
+    const victim = new Browser(env);
+    const evil = { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' };
+
+    // The page reads the token with the victim's cookies, as a permissive
+    // `cors({ origin: true, credentials: true })` would let it.
+    victim.override = { ...evil, 'x-csrf-token': null };
+
+    const { csrfToken } = await victim.client.csrfToken.query();
+
+    expect(csrfToken).toBe(victim.csrf);
+
+    victim.override = { ...evil, 'x-csrf-token': csrfToken };
+
+    expect(await refusal(victim.client.login.mutate({ email: EMAIL, password: PASSWORD }))).toBe(
+      'forbidden',
+    );
   });
 });

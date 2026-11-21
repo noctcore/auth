@@ -6,14 +6,19 @@
 // (`SessionCookies.csrfToken`). An attacker who can call that route too (any
 // client can) tries to make the token worth something elsewhere: their own
 // pre-session's token in the victim's browser, one session's token with
-// another session, a pre-session token after the sign-in it led to, or the
-// token alone without its cookie.
+// another session, a pre-session token after the sign-in it led to, the
+// token alone without its cookie, or a page on an origin the app never
+// allowed that reads the token with the victim's cookies (a permissive
+// credentialed CORS setup lets it) and replays it.
 //
 // Stopped by: auth-nestjs src/session-cookies.ts and src/csrf.middleware.ts:
 //   the route returns only the token the middleware set or kept as the
 //   cookie, bound to the request's own session or pre-session, and every
 //   unsafe request still needs that cookie next to the header and a binding
-//   that matches its own session (the core's `verifyCsrfToken`).
+//   that matches its own session (the core's `verifyCsrfToken`). An unsafe
+//   request from an origin outside the allowlist is refused on its Origin and
+//   `Sec-Fetch-Site` before the token is even compared, so CORS settings do
+//   not decide it.
 // Learn: CSRF (/auth/learn/csrf/); Cookies and desktop shells; core A008, A079
 import { afterEach, describe, expect, it } from 'vitest';
 import { boot, Browser, CSRF_SECRET, EMAIL, ORIGIN, PASSWORD, type Booted } from '../support';
@@ -130,6 +135,28 @@ describe('A100: a handed-out CSRF token used for another session or pre-session 
 
     expect(
       await post(shell, '/api/login', token, { email: EMAIL, password: PASSWORD }),
+    ).toMatchObject({ status: 403, body: FORBIDDEN });
+  });
+
+  it('refuses a token read by a page on an origin the app does not allow', async () => {
+    t = await boot(withShell);
+    const victim = new Browser(t.app);
+    const evil = { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' };
+
+    // The page reads the token with the victim's cookies, as a permissive
+    // `cors({ origin: true, credentials: true })` would let it.
+    const read = await victim.send('GET', '/api/csrf-token', undefined, evil);
+    const token = String(read.body['csrfToken']);
+
+    expect(token).toBe(victim.cookies.get('__Host-csrf'));
+
+    expect(
+      await victim.send(
+        'POST',
+        '/api/login',
+        { email: EMAIL, password: PASSWORD },
+        { ...evil, 'x-csrf-token': token },
+      ),
     ).toMatchObject({ status: 403, body: FORBIDDEN });
   });
 });
