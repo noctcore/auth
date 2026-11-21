@@ -1,0 +1,230 @@
+---
+title: Second factors
+description: What a second factor has to resist to be worth having, and how the two-factor plugin keeps the password, the mailbox and the recovery path from going around it.
+---
+
+import { Aside, Code, TabItem, Tabs } from '@astrojs/starlight/components';
+import InShort from '../../../components/docs/InShort.astro';
+import SecondFactorSeam from '../../../components/docs/diagrams/SecondFactorSeam.astro';
+import SecondFactorSteps from '../../../components/docs/diagrams/SecondFactorSteps.astro';
+import secondFactorTs from '../../../../snippets/learn/second-factor.ts?raw';
+import challengeTs from '../../../../snippets/learn/second-factor-challenge.ts?raw';
+
+<InShort>
+  <Fragment slot="threat">
+    A second factor stops someone with the password only if every way into the account asks for
+    it. Replayed and guessed codes, the mailbox, a flow that forgets and the recovery codes all go
+    around it.
+  </Fragment>
+  <Fragment slot="rule">
+    Codes that work once, guesses counted per account before any comparison, recovery codes kept
+    like passwords, and one seam that refuses every session the factor did not let through.
+  </Fragment>
+  <Fragment slot="where">
+    The two-factor plugin, `@noctcore/auth/two-factor`, with its hook on `issueSession`.
+  </Fragment>
+</InShort>
+
+## What goes wrong
+
+A second factor is meant to stop someone who has the password. It only does if every way into the account asks for it. The usual failures are not in the code math but around it:
+
+- **Replayed.** A six-digit code that stays valid for a minute can be used again by whoever watched it typed or read it from a log, and two requests carrying it at once can both pass a check-then-write guard.
+- **Guessed.** A million codes, three of them valid at any moment, are guessed in hours by a botnet when the only limit is per IP.
+- **The mailbox beats the phone.** A password reset that writes the new password on the link alone, or turns the factor off, hands the account to whoever controls the email.
+- **Another flow forgets it.** Sign-up with auto-login, a magic link, a re-issued session after a password change: any path that mints a session without asking.
+- **A stolen session turns it off**, or prints new recovery codes, because the settings page only asks for the password.
+- **The recovery codes are the weakest part.** They skip the phone, they live on paper or in a password manager, and they are what an attacker with the password goes after.
+
+<SecondFactorSeam />
+
+## The rule
+
+Every way in asks for the factor, every code counts once, and every guess is counted before it is checked.
+
+### TOTP, by the RFC, on the server clock
+
+Codes are RFC 6238 (HMAC-SHA-1, 30-second steps, six digits), so every authenticator app works; the test suite checks the RFC test vectors. One step of drift is accepted either side, never more.
+
+The secret is 160 random bits from the CSPRNG, and it is stored only as the ciphertext your `SecretCipher` returns. The plugin never holds a key, and the user id is passed to the cipher so it can bind each ciphertext to its row.
+
+### A code works once
+
+The store keeps the last accepted time step, and a code is accepted only if its step moves that value forward, by a compare-and-set in the store. Refused, every time ([A036](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A036-totp-code-replay.test.ts), [A037](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A037-concurrent-double-submission.test.ts)):
+
+- a replayed code;
+- an older code after a newer one;
+- the slower of two simultaneous requests with the same code.
+
+The spent step is shared by every door: a code used at login cannot then step up a session or reset a password.
+
+<SecondFactorSteps />
+
+### Guesses are counted per account, before the comparison
+
+Every code check, TOTP or recovery code, first reserves an attempt in one budget per user, from every IP together: at login, step-up, enrollment, reset, password change or email change.
+
+| Budget                        | Default         | What happens when it runs out                                                                                                |
+| ----------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Per user (`attempts`) | 5 per 15 minutes, from every IP | The factor locks with the password lockout's capped backoff (5 minutes, then 15, then 45, at most an hour).                 |
+| One login challenge           | 5 codes         | The challenge dies, so every new batch of guesses costs a correct password first ([A038](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A038-second-factor-brute-force.test.ts)).                                  |
+
+A locked factor refuses even the right code, and answers exactly like a wrong one.
+
+### Enrollment is confirmed by a code
+
+Starting it needs a fresh password proof. The new secret stays pending until a code from it is typed, within 10 minutes.
+
+Confirming it is a compare-and-set on that very secret, so a code for a secret that was replaced meanwhile never activates the new one ([A046](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A046-enrollment-wrong-or-stale-code.test.ts)). Turning the factor on mails the owner.
+
+### Recovery codes get the care of passwords
+
+They are the weak link, so:
+
+- **Ten codes of 50 bits each** from the CSPRNG, shown once, stored only as an HMAC keyed by the server secret and bound to the user.
+- **Spent by one atomic delete.** Of many simultaneous uses, exactly one gets it ([A041](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A041-recovery-code-reuse.test.ts)).
+- **Replaced in one write.** Generating a new set replaces the old one, and needs a step-up.
+- **Nothing to brute force.** Every guess spends the factor budget, so at about 2^47 guesses per hit there is nothing to search ([A042](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A042-recovery-code-brute-force.test.ts)).
+- **The owner hears about it.** Each use mails the owner how many codes are left.
+
+<Aside type="caution" title="Rotating the secret voids every recovery code">
+  The HMAC key is derived from the auth `secret`. After a rotation, ask every user with a factor
+  to generate a new set: their `status` still counts the old rows, which no longer match anything.
+</Aside>
+
+### Codes carried over are a bridge, not a second format
+
+An app moving onto the plugin can import its users' old recovery code hashes and tell the plugin how its old scheme hashed a code (`importedRecoveryCodes`). Those hashes are often weaker than the plugin's (an unsalted SHA-256 is not bound to the user), so the bridge is short:
+
+- an imported code is spent once by the same atomic delete and counted in the same budget;
+- the first one that passes a login challenge replaces the whole set once the session is issued, with new codes shown once, so the old hashes leave the store ([A095](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A095-reusing-an-imported-recovery-code.test.ts));
+- two logins racing with two imported codes cannot leave a dead set: only the one that claims the rotation replaces it and shows it ([A098](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A098-racing-two-imported-recovery-codes.test.ts)).
+
+A scheme with a per-code salt cannot be looked up at all; those users re-enroll.
+
+### The mailbox is not a second factor
+
+A password reset of an account with a factor demands a TOTP code or a recovery code before the new password is written, and counts it in the same budget. The new password is checked against the policy first, so a refused password spends no code.
+
+The reset never touches the factor: the next login is still challenged ([A044](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A044-reset-without-second-factor.test.ts)).
+
+### Every session goes through the check
+
+The core mints sessions in one place, `issueSession`, and runs the plugin's hook on every call. For any user with a confirmed factor (or one the app requires a factor of) the hook refuses the session unless it comes from:
+
+- the plugin's own challenge;
+- one of the core's re-issues: after a password change, a re-authentication, an email verification, a confirmed email change or "sign out other sessions".
+
+**A re-issue needs a live session.** It goes through only with a session the core itself read from the store just before the flow revoked anything: live (not revoked, not expired or idle, on the current epoch) and the same user's. A revoked, expired, hand-built or copied session object is refused.
+
+**Everything else is refused.** A plain password login and sign-up with auto-login are refused ([A048](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A048-enforcement-bypass.test.ts)), and so is any other `via` a plugin or app code names. A user the app requires a factor of who has none yet gets an enrollment challenge instead of a session.
+
+**Trusted code is trusted.** What the check cannot judge is code that claims the factor was checked: plugins and callers of `auth.context` are trusted code, and one that issues with the plugin's own label, `second-factor`, gets a session.
+
+### Sensitive actions need a recent proof in this session
+
+A step-up is a code proved in one session, stored under that session's id with an expiry on the server clock (10 minutes by default). These need one, together with fresh authentication:
+
+- turning the factor off;
+- new recovery codes;
+- a password change or an email change request without a code.
+
+Without the email change rule, a password alone could move the account to a new address and reset the factor's protection from there ([A052](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A052-email-change-without-second-factor.test.ts)). A session re-issued by a password re-entry starts without one, another session of the same user has none, and a password alone never makes one ([A045](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A045-disable-without-proof.test.ts), [A049](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A049-step-up-staleness.test.ts)).
+
+### A trusted device skips the code, never the password
+
+"Remember this device" sets an opaque random token in a cookie and stores only its SHA-256, with an expiry (30 days by default) and the user's revocation epoch. It counts only after a correct password, at the challenge.
+
+A password change, a reset, an email change or its revert, and "sign out everywhere" bump the epoch, which voids every device trusted before, and also delete the rows ([A043](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A043-trusted-device-after-password-change.test.ts)). A device never records a step-up.
+
+### A revert never removes a factor
+
+Reverting an email change cannot tell the owner's factor from one an intruder enrolled. If it removed factors by when they were enrolled, whoever reads the old mailbox could revert a change the owner made right after enrolling, and reset the password with no factor in the way ([A063](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A063-stripping-the-owners-factor-with-a-revert.test.ts)).
+
+So every factor stays. The cost falls on an owner whose account an intruder enrolled a factor on: the reset asks for a factor they cannot pass, and support has to verify them some other way and remove it.
+
+### Refusals look alike
+
+The factor is only looked at after a correct password, so a wrong password answers and works the same for accounts with and without one.
+
+Behind a challenge, these all answer `invalid_second_factor`, and the reason goes to the audit row only ([A050](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A050-second-factor-enumeration.test.ts)):
+
+- an unknown, spent or foreign challenge;
+- a wrong code or a replayed code;
+- a locked factor.
+
+An unknown challenge and a user without a factor still decrypt a stand-in secret and compute every code in the window, so they cost what a wrong code costs. The test suite checks this by counting store and cipher calls, not by timing ([A047](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A047-second-factor-timing.test.ts)).
+
+## In code
+
+The plugin's limits written out, and a sign-in that turns a correct password into a challenge.
+
+<Tabs>
+  <TabItem label="The defaults">
+    <Code code={secondFactorTs} lang="ts" title="second-factor.ts" />
+  </TabItem>
+  <TabItem label="The challenge">
+    <Code code={challengeTs} lang="ts" title="second-factor-challenge.ts" />
+  </TabItem>
+</Tabs>
+
+## What it does not do
+
+**Real-time phishing.** A page that relays the password and the code to the real site as the user types them gets a session. Only origin-bound factors (WebAuthn and passkeys) stop that, and they are not part of this plugin yet.
+
+**A session that was already stolen.** The cookie is the credential once issued; the step-up only guards the actions that need it.
+
+**A copied challenge.** A challenge is bound to the browser by its user agent, which an attacker who steals the challenge can copy. The binding stops a challenge from being used by accident elsewhere; the real limits are the 5-minute lifetime and the 5 codes.
+
+**A fully compromised server.** Whoever runs code with your cipher's key can decrypt the TOTP secret.
+
+**Someone with the password enrolling first.** For a user you require a factor of who has not enrolled yet, the password is the only credential, so the enrollment challenge accepts it. The owner is mailed when the factor goes on. Enroll required users early, or require a factor only of users who have one. With `enforcement` and a grace window the same holds after the window: an enrollment-only session can enroll, and the password is all it took to get one ([A091](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A091-outliving-a-two-factor-grace-window.test.ts)).
+
+**A stolen session locking the factor.** Step-up checks a code from inside a signed-in session, and wrong codes spend the same per-account budget as the login challenge. Whoever holds a session can lock the factor, and with it the owner's challenge, for up to an hour at a time (the password lockout's cap), again and again while the session lives. Revoking that session ends it.
+
+**Two proofs at once on one challenge.** A TOTP code and a recovery code, say, can both be checked before either spends the challenge. Only one gets the session; if the other was a recovery code, that code is spent anyway.
+
+## Where the package and the guide differ
+
+The guide's MFA page asks for RFC 6238 codes from a 160-bit random secret, a confirmation code before the secret is active, a new secret invalidating the old one, throttling after about 5 failures, and one or more single-use recovery codes. The plugin does all of that, and differs in a few places:
+
+- **Replay.** The guide validates a code by generating one and comparing; it does not ask that a code be refused the second time. The plugin stores the last accepted step and refuses anything at or before it, atomically.
+- **How recovery codes are stored.** The guide suggests a password hash such as Argon2id. The plugin uses an HMAC keyed by the server secret: the codes are 50 random bits, not something a person chose, so a slow hash adds little, and with the key outside the database a leaked table cannot be used to test guesses at all. The plugin issues ten codes, where the guide says one or more.
+- **Telling the owner.** The guide suggests telling the user to change their password after the throttle trips. The plugin does not mail on a factor lock (it writes an audit row); it mails when the factor is turned on or off and when a recovery code is used.
+- **Resets.** The guide leaves resets to the app. The plugin makes a reset of a two-factor account demand the factor, because otherwise the mailbox alone would beat it.
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test | Attack | Stopped by |
+| ---- | ------ | ---------- |
+| [A036](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A036-totp-code-replay.test.ts) | Replaying a TOTP code in the same time step | `plugins/two-factor/proofs.ts`, `ports/two-factor.ts` |
+| [A037](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A037-concurrent-double-submission.test.ts) | Submitting one TOTP code twice at the same moment | `plugins/two-factor/proofs.ts`, `plugins/two-factor/challenge.ts`, `ports/two-factor.ts` |
+| [A038](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A038-second-factor-brute-force.test.ts) | Brute forcing the second factor from many IPs | `throttle/throttle.ts`, `plugins/two-factor/proofs.ts`, `plugins/two-factor/challenge.ts` |
+| [A039](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A039-challenge-token-reuse.test.ts) | Reusing a login challenge | `plugins/two-factor/challenge.ts`, `tokens/one-time-tokens.ts` |
+| [A040](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A040-challenge-token-as-session.test.ts) | Using a login challenge as a session or a reset ticket | `plugins/two-factor/challenge.ts`, `tokens/one-time-tokens.ts` |
+| [A041](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A041-recovery-code-reuse.test.ts) | Reusing a recovery code | `plugins/two-factor/proofs.ts`, `plugins/two-factor/management.ts`, `ports/two-factor.ts` |
+| [A042](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A042-recovery-code-brute-force.test.ts) | Brute forcing a recovery code | `plugins/two-factor/recovery-codes.ts`, `plugins/two-factor/proofs.ts`, `throttle/throttle.ts` |
+| [A043](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A043-trusted-device-after-password-change.test.ts) | A stolen trusted-device token outliving a password change | `plugins/two-factor/trusted-devices.ts`, `plugins/two-factor/hooks.ts` |
+| [A044](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A044-reset-without-second-factor.test.ts) | Resetting the password of a two-factor account without the factor | `plugins/two-factor/hooks.ts`, `flows/password-reset.ts` |
+| [A045](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A045-disable-without-proof.test.ts) | Turning two-factor off without a second-factor proof | `plugins/two-factor/management.ts`, `plugins/two-factor/step-up.ts` |
+| [A046](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A046-enrollment-wrong-or-stale-code.test.ts) | Confirming an enrollment with a wrong or stale code | `plugins/two-factor/enrollment.ts`, `core/auth-core.ts` |
+| [A047](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A047-second-factor-timing.test.ts) | Telling a wrong code from an unknown challenge or a missing factor by timing | `plugins/two-factor/challenge.ts`, `plugins/two-factor/proofs.ts` |
+| [A048](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A048-enforcement-bypass.test.ts) | Getting a session past the second factor through another flow | `plugins/two-factor/hooks.ts`, `plugins/two-factor/challenge.ts`, `core/auth-core.ts` |
+| [A049](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A049-step-up-staleness.test.ts) | Acting on a stale or borrowed second-factor proof | `plugins/two-factor/step-up.ts`, `plugins/two-factor/challenge.ts`, `core/auth-core.ts` |
+| [A050](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A050-second-factor-enumeration.test.ts) | Learning account state from second-factor answers | `flows/login.ts`, `plugins/two-factor/challenge.ts`, `plugins/two-factor/proofs.ts` |
+| [A052](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A052-email-change-without-second-factor.test.ts) | Changing the email of a two-factor account without the factor | `plugins/two-factor/hooks.ts`, `plugins/two-factor/step-up.ts`, `flows/email-change.ts` |
+| [A063](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A063-stripping-the-owners-factor-with-a-revert.test.ts) | Stripping the owner's second factor with an email revert | `flows/email-change.ts`, `plugins/two-factor/hooks.ts` |
+| [A073](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A073-skipping-a-second-factor-through-an-invitation.test.ts) | Getting a session past a second factor through an invitation | `plugins/invitations/accept.ts`, `plugins/two-factor/hooks.ts` |
+| [A091](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A091-outliving-a-two-factor-grace-window.test.ts) | Outliving a two-factor grace window without ever setting a factor up | `plugins/two-factor/enforcement.ts`, `flows/session-validation.ts`, `core/hooks.ts` |
+| [A095](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A095-reusing-an-imported-recovery-code.test.ts) | Reusing an imported recovery code | `plugins/two-factor/proofs.ts`, `plugins/two-factor/recovery-codes.ts`, `ports/two-factor.ts` |
+| [A098](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A098-racing-two-imported-recovery-codes.test.ts) | Racing two logins with two imported recovery codes to leave a dead set | `plugins/two-factor/proofs.ts`, `plugins/two-factor/challenge.ts` |
+
+</div>
+
+## Further reading
+
+- [Multi-factor authentication](https://thecopenhagenbook.com/mfa) in The Copenhagen Book, also by Pilcrow (the auth guide has no page on it).
+- [RFC 6238: TOTP](https://www.rfc-editor.org/rfc/rfc6238) and [RFC 4226: HOTP](https://www.rfc-editor.org/rfc/rfc4226).
+- [OWASP Multifactor Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html).
