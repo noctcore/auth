@@ -1,0 +1,334 @@
+---
+/**
+ * Node server guide: how the six files connect. The top lane is one request
+ * through handle() in snippets/build/node-server/server.ts, in its real order:
+ * clientIp, validateRequest, csrfAllowed (the one refusal, a 403), then the
+ * route. The lower panel is what buildAuth in auth.ts holds: the Redis and
+ * Prisma stores, the mailer it is given and the logger. The steps and their
+ * order are read from server.ts by build-guides.test.ts.
+ */
+import DiagramFrame from '../DiagramFrame.astro';
+import Stop from './Stop.astro';
+
+interface Step {
+  /** The call in server.ts, as written there. */
+  code: string;
+  /** What the step hands on, or the file that does the work. */
+  note: string;
+  /** True where the request can be refused. */
+  refuses?: boolean;
+  /** True where the step calls the auth instance. */
+  callsAuth?: boolean;
+}
+
+const STEPS: readonly Step[] = [
+  { code: 'clientIp', note: 'trustedHops' },
+  { code: 'validateRequest', note: 'session or null', callsAuth: true },
+  { code: 'csrfAllowed', note: 'csrf.ts', refuses: true },
+  { code: 'switch (route)', note: 'auth flow', callsAuth: true },
+];
+
+const REFUSAL = '403 forbidden';
+
+interface Service {
+  label: string;
+  code: string;
+  note: string;
+}
+
+const services: readonly Service[] = [
+  { label: 'Redis', code: 'redisStores', note: 'sessions, counters' },
+  { label: 'Postgres', code: 'prismaStores', note: 'users, tokens' },
+  { label: 'Mailer', code: 'mailer', note: 'a parameter' },
+  { label: 'Logger', code: 'logger', note: 'warnings' },
+];
+
+const KICKER_REQUEST = 'ONE REQUEST, src/server.ts';
+const KICKER_AUTH = 'WHAT THE AUTH INSTANCE HOLDS';
+const AUTH_CODE = 'buildAuth(mailer)';
+const AUTH_NOTE = 'createAuth, in auth.ts';
+
+const wide = {
+  w: 680,
+  h: 420,
+  lane: 100,
+  start: 32,
+  end: 652,
+  stepX: [150, 285, 410, 535],
+  divider: 186,
+  box: { x: 220, y: 232, w: 240, h: 56 },
+  bus: 309,
+  svc: { y: 330, h: 74, x: [24, 192, 360, 528], w: [152, 152, 152, 128] },
+};
+
+const narrow = {
+  w: 360,
+  h: 670,
+  lane: 40,
+  start: 64,
+  end: 350,
+  stepY: [120, 180, 240, 300],
+  text: 110,
+  divider: 390,
+  box: { x: 44, y: 430, w: 272, h: 48 },
+  svc: { x: [16, 188], y: [510, 590], w: 156, h: 64 },
+};
+
+const authSteps = STEPS.map((s, i) => ({ s, i })).filter(({ s }) => s.callsAuth);
+
+const title = 'How the Node server guide connects its six files';
+const description =
+  'One request runs through handle() in server.ts in four steps. clientIp reads the client address, ' +
+  'trusting as many proxies as trustedHops from config.ts says. validateRequest asks the auth ' +
+  'instance for the session, or null. csrfAllowed, in csrf.ts, runs the three CSRF checks on every ' +
+  'unsafe method and refuses a failing request with a 403 forbidden. Then the route runs an auth ' +
+  'flow and http.ts sends the response. The auth instance, built by buildAuth(mailer) with ' +
+  'createAuth in auth.ts, holds four things: the Redis stores (redisStores) for sessions and ' +
+  'counters, the Prisma stores (prismaStores) on Postgres for users and tokens, the mailer it is ' +
+  'given as a parameter, and a logger for warnings.';
+---
+
+<DiagramFrame id="node-server-wiring" title={title} description={description}>
+  <svg
+    class="nc-d nc-d--wide"
+    viewBox={`0 0 ${wide.w} ${wide.h}`}
+    width={wide.w}
+    height={wide.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="24" y="30">{KICKER_REQUEST}</text>
+
+    <!-- The request lane. -->
+    <text class="nc-d-label" x="24" y={wide.lane - 22}>request</text>
+    <path class="nc-d-route" d={`M${wide.start} ${wide.lane}H${wide.end - 7}`}></path>
+    <circle class="nc-d-node" cx={wide.start} cy={wide.lane} r="5"></circle>
+    <circle class="nc-d-node-open" cx={wide.end} cy={wide.lane} r="7"></circle>
+    <text class="nc-d-label" x={wide.w - 12} y={wide.lane - 22} text-anchor="end">response</text>
+    {
+      STEPS.map((step, i) => {
+        const x = wide.stepX[i] ?? 0;
+
+        return (
+          <g>
+            <text class="nc-d-code" x={x} y={wide.lane - 22} text-anchor="middle">
+              {step.code}
+            </text>
+            <path class="nc-d-post" d={`M${x} ${wide.lane - 10}V${wide.lane + 10}`} />
+            <circle class="nc-d-node" cx={x} cy={wide.lane} r="4" />
+            <text class="nc-d-note" x={x + 8} y={wide.lane + 26}>
+              {step.note}
+            </text>
+            {step.refuses && [
+              <path class="nc-d-attack" d={`M${x} ${wide.lane + 12}V${wide.lane + 46}`} />,
+              <Stop x={x} y={wide.lane + 52} across="vertical" />,
+              <text class="nc-d-stop-text" x={x + 18} y={wide.lane + 56}>
+                {REFUSAL}
+              </text>,
+            ]}
+          </g>
+        );
+      })
+    }
+
+    <!-- The steps that call the auth instance, down to it. -->
+    {
+      authSteps.map(({ i }) => {
+        const x = wide.stepX[i] ?? 0;
+        const { box } = wide;
+        const inside = x >= box.x && x <= box.x + box.w;
+
+        return (
+          <path
+            class="nc-d-leader"
+            d={
+              inside
+                ? `M${x} ${wide.lane + 12}V${box.y}`
+                : `M${x} ${wide.lane + 12}V${box.y + box.h / 2}H${box.x + box.w}`
+            }
+          />
+        );
+      })
+    }
+
+    <path class="nc-d-rule" d={`M16 ${wide.divider}H${wide.w - 16}`}></path>
+    <text class="nc-d-kicker" x="24" y={wide.divider + 28}>{KICKER_AUTH}</text>
+
+    <rect
+      class="nc-d-box nc-d-box--key"
+      x={wide.box.x}
+      y={wide.box.y}
+      width={wide.box.w}
+      height={wide.box.h}
+      rx="4"
+    />
+    <text class="nc-d-code" x={wide.box.x + wide.box.w / 2} y={wide.box.y + 24} text-anchor="middle">
+      {AUTH_CODE}
+    </text>
+    <text class="nc-d-note" x={wide.box.x + wide.box.w / 2} y={wide.box.y + 42} text-anchor="middle">
+      {AUTH_NOTE}
+    </text>
+
+    <!-- One bus from the auth instance to what it holds. -->
+    <path
+      class="nc-d-wire"
+      d={`M${wide.box.x + wide.box.w / 2} ${wide.box.y + wide.box.h}V${wide.bus}`}
+    ></path>
+    <path
+      class="nc-d-wire"
+      d={`M${(wide.svc.x[0] ?? 0) + (wide.svc.w[0] ?? 0) / 2} ${wide.bus}H${(wide.svc.x[3] ?? 0) + (wide.svc.w[3] ?? 0) / 2}`}
+    ></path>
+    {
+      services.map((svc, i) => {
+        const x = wide.svc.x[i] ?? 0;
+        const w = wide.svc.w[i] ?? 0;
+        const cx = x + w / 2;
+        const { y, h } = wide.svc;
+
+        return (
+          <g>
+            <path class="nc-d-wire" d={`M${cx} ${wide.bus}V${y}`} />
+            <rect class="nc-d-box" x={x} y={y} width={w} height={h} rx="4" />
+            <text class="nc-d-label" x={cx} y={y + 24} text-anchor="middle">
+              {svc.label}
+            </text>
+            <text class="nc-d-code" x={cx} y={y + 44} text-anchor="middle">
+              {svc.code}
+            </text>
+            <text class="nc-d-note" x={cx} y={y + 61} text-anchor="middle">
+              {svc.note}
+            </text>
+          </g>
+        );
+      })
+    }
+  </svg>
+
+  <svg
+    class="nc-d nc-d--narrow"
+    viewBox={`0 0 ${narrow.w} ${narrow.h}`}
+    width={narrow.w}
+    height={narrow.h}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <text class="nc-d-kicker" x="16" y="28">{KICKER_REQUEST}</text>
+
+    <path class="nc-d-route" d={`M${narrow.lane} ${narrow.start}V${narrow.end - 7}`}></path>
+    <circle class="nc-d-node" cx={narrow.lane} cy={narrow.start} r="5"></circle>
+    <text class="nc-d-label" x={narrow.lane + 24} y={narrow.start + 5}>request</text>
+    <circle class="nc-d-node-open" cx={narrow.lane} cy={narrow.end} r="7"></circle>
+    <text class="nc-d-label" x={narrow.lane + 24} y={narrow.end + 5}>response</text>
+    {
+      STEPS.map((step, i) => {
+        const y = narrow.stepY[i] ?? 0;
+
+        return (
+          <g>
+            <path class="nc-d-post" d={`M${narrow.lane - 10} ${y}H${narrow.lane + 10}`} />
+            <circle class="nc-d-node" cx={narrow.lane} cy={y} r="4" />
+            <text class="nc-d-code" x={narrow.text} y={y - 2}>
+              {step.code}
+            </text>
+            <text class="nc-d-note" x={narrow.text} y={y + 15}>
+              {step.note}
+            </text>
+            {step.refuses && [
+              <path class="nc-d-attack" d={`M${narrow.lane + 12} ${y}H${narrow.text - 30}`} />,
+              <Stop x={narrow.text - 22} y={y} across="horizontal" />,
+              <text class="nc-d-stop-text" x={narrow.text} y={y + 31}>
+                {REFUSAL}
+              </text>,
+            ]}
+          </g>
+        );
+      })
+    }
+
+    <!-- The steps that call the auth instance, down the left edge to it. -->
+    {
+      authSteps.map(({ i }, j) => {
+        const y = narrow.stepY[i] ?? 0;
+        const mid = narrow.box.y + narrow.box.h / 2;
+
+        return (
+          <path
+            class="nc-d-leader"
+            d={
+              j === 0
+                ? `M${narrow.lane - 12} ${y}H20V${mid}H${narrow.box.x}`
+                : `M${narrow.lane - 12} ${y}H20`
+            }
+          />
+        );
+      })
+    }
+
+    <path class="nc-d-rule" d={`M16 ${narrow.divider}H${narrow.w - 16}`}></path>
+    <text class="nc-d-kicker" x={narrow.w - 16} y={narrow.divider + 24} text-anchor="end"
+      >{KICKER_AUTH}</text
+    >
+
+    <rect
+      class="nc-d-box nc-d-box--key"
+      x={narrow.box.x}
+      y={narrow.box.y}
+      width={narrow.box.w}
+      height={narrow.box.h}
+      rx="4"
+    />
+    <text
+      class="nc-d-code"
+      x={narrow.box.x + narrow.box.w / 2}
+      y={narrow.box.y + 21}
+      text-anchor="middle">{AUTH_CODE}</text
+    >
+    <text
+      class="nc-d-note"
+      x={narrow.box.x + narrow.box.w / 2}
+      y={narrow.box.y + 38}
+      text-anchor="middle">{AUTH_NOTE}</text
+    >
+
+    <path
+      class="nc-d-wire"
+      d={`M${narrow.w / 2} ${narrow.box.y + narrow.box.h}V${(narrow.svc.y[1] ?? 0) + narrow.svc.h / 2}`}
+    ></path>
+    {
+      services.map((svc, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = narrow.svc.x[col] ?? 0;
+        const y = narrow.svc.y[row] ?? 0;
+        const { w, h } = narrow.svc;
+        const cx = x + w / 2;
+        const mid = y + h / 2;
+
+        return (
+          <g>
+            <path
+              class="nc-d-wire"
+              d={col === 0 ? `M${x + w} ${mid}H${narrow.w / 2}` : `M${narrow.w / 2} ${mid}H${x}`}
+            />
+            <rect class="nc-d-box" x={x} y={y} width={w} height={h} rx="4" />
+            <text class="nc-d-label" x={cx} y={y + 21} text-anchor="middle">
+              {svc.label}
+            </text>
+            <text class="nc-d-code" x={cx} y={y + 39} text-anchor="middle">
+              {svc.code}
+            </text>
+            <text class="nc-d-note" x={cx} y={y + 55} text-anchor="middle">
+              {svc.note}
+            </text>
+          </g>
+        );
+      })
+    }
+  </svg>
+
+  <Fragment slot="caption">
+    <strong>Every request reads the client IP, validates the session and checks CSRF before any
+    route runs</strong>; of the three, only the CSRF check turns a request away. The routes and the session check
+    go through one auth instance, which holds the stores, the mailer and the logger.
+  </Fragment>
+</DiagramFrame>
