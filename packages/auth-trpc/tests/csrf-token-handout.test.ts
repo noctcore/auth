@@ -4,6 +4,7 @@
 // sees them, so it reads the token from `ctx.auth.csrfToken()` in a public
 // query and echoes it in the header.
 import { afterEach, describe, expect, it } from 'vitest';
+import { AuthConfigError } from '@noctcore/auth';
 import type { ResponseMeta } from '@trpc/server/http';
 import { authResponseMeta, createAuthContext } from '../src';
 import {
@@ -183,6 +184,19 @@ describe('ctx.auth.csrfToken outside a plain query', () => {
       trustedHops: 0,
       csrf: { secrets: [CSRF_SECRET], allowedOrigins: [ORIGIN] },
     });
+
+  it('refuses a subscription, whose stream sends its headers before any procedure runs', async () => {
+    const resHeaders = new Headers();
+
+    const ctx = await context().fetch({
+      req: new Request(ORIGIN),
+      resHeaders,
+      info: { calls: [{ path: 'events' }], type: 'subscription' },
+    });
+
+    expect(() => ctx.auth.csrfToken()).toThrow(AuthConfigError);
+    expect(resHeaders.get('cache-control')).toBeNull();
+  });
 
   it('sets no-store once on a Headers object, and appends on a writer with no set', async () => {
     const real = new Headers({ 'cache-control': 'public' });
