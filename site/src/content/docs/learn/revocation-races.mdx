@@ -1,0 +1,86 @@
+---
+title: Revocation races and the epoch fence
+description: How a per-user counter makes revoke-all safe against concurrent logins and crashes.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import InShort from '../../../components/docs/InShort.astro';
+import RevocationRace from '../../../components/docs/diagrams/RevocationRace.astro';
+import revocationTs from '../../../../snippets/learn/revocation.ts?raw';
+
+<InShort>
+  <Fragment slot="threat">
+    Revoking by deleting sessions misses the one a racing login is still minting, and every one a
+    crash leaves behind.
+  </Fragment>
+  <Fragment slot="rule">
+    Each user has a counter, the epoch: revoke-all bumps it first, every session carries the value
+    its login read, and a mismatch is refused.
+  </Fragment>
+  <Fragment slot="where">`session/session-manager.ts`, behind every revoke-all.</Fragment>
+</InShort>
+
+## What goes wrong
+
+Changing a password should end every other session. The obvious code lists the user's sessions and deletes them. That has two holes:
+
+- **A concurrent login.** A login reads the stored password hash, then verifies the credential, then mints a session. If a password change commits and revokes in the middle, the login can finish after the cleanup ran, and the attacker who knew the old password ends up with a live session.
+- **A crash.** If the process dies after the password changed but before every session was deleted, the leftovers stay valid.
+
+Deleting what you can find is not enough, because the session you cannot find yet (still being minted) or cannot reach (the cleanup never ran) survives.
+
+<RevocationRace />
+
+## The rule: an epoch fence
+
+Each user has a counter, the epoch.
+
+### Read before checking
+
+A login reads the user's epoch before it checks the credential and stamps that value into the session it creates.
+
+### Increment first
+
+Revoke-all increments the epoch first, and only then deletes the sessions it can find.
+
+### Validate against the counter
+
+Validation rejects any session whose stamped epoch differs from the user's current epoch.
+
+### Re-read at mint
+
+When the login mints its session it re-reads the epoch. On a mismatch it rolls the new session back.
+
+## Why it holds
+
+**No order of events yields a live session.** A login that read the old password hash while a password change was committing read the epoch before the increment. Either the mint sees the new epoch and rolls back, or the session is stamped with the old epoch and validation rejects it.
+
+**A crash leaves only invalid sessions.** A crash between the increment and the cleanup leaves old sessions in the store, but each carries a stale epoch, so they are invalid rather than valid. Cleanup becomes housekeeping, not a security step.
+
+The counter is the source of truth; deleting sessions only reclaims space.
+
+## In code
+
+"Sign out everywhere" through the public API; a password change and a password reset run the same revoke-all after they write the new hash.
+
+<Code code={revocationTs} lang="ts" title="revocation.ts" />
+
+## Attack tests
+
+<div class="nc-attacks">
+
+| Test | Attack | Stopped by |
+| ---- | ------ | ---------- |
+| [A006](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A006-revoked-session-replay-epoch.test.ts) | Replaying a revoked session | `session/session-manager.ts` |
+| [A067](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A067-stale-privileges-after-role-change.test.ts) | Keeping a role, or a scope, after it was taken away | `plugins/membership/guards.ts`, `session/session-manager.ts` |
+| [A097](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A097-reviving-a-revoked-session-through-the-legacy-store.test.ts) | Bringing back a revoked session through the legacy store an app adopts sessions from | `session/legacy-sessions.ts` |
+
+</div>
+
+## Further reading
+
+[Auth sessions](https://auth.pilcrowonpaper.com/auth-sessions) in Pilcrow's auth guide, on tying a session to one authentication event.
+
+## Related
+
+[Sessions and expiry](/auth/learn/sessions-and-expiry/) covers the token and its expiry.
