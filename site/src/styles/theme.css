@@ -138,6 +138,8 @@ h1#_top {
 .starlight-aside--caution {
   border-color: color-mix(in oklch, var(--nc-amber) 50%, var(--nc-line));
   background: var(--nc-amber-soft);
+  /* Inline code takes a warmer chip, not the grey one that sits badly on amber (AA either way). */
+  --sl-color-bg-inline-code: color-mix(in oklch, var(--nc-amber) 16%, var(--nc-amber-soft));
 }
 
 .starlight-aside__title {
