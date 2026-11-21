@@ -17,7 +17,10 @@
  * guard's job). On a safe request the middleware hands out what the page
  * needs to make unsafe ones: a pre-session id when the browser has no session
  * and no id yet, and a CSRF cookie bound to the current binding. Both happen
- * only after the exempt check, so an exempt route never mints anything.
+ * only after the exempt check, so an exempt route never mints anything. The
+ * token the response sets or keeps is recorded for the request, so
+ * `SessionCookies.csrfToken` can return it to a client that cannot read the
+ * cookie (a desktop shell on its own scheme, a web app on another origin).
  *
  * Guide: Learn, "CSRF".
  */
@@ -36,6 +39,7 @@ import type { ResolvedOptions } from './options';
 import {
   appendCookie,
   blankSessionCookie,
+  handCsrfToken,
   header,
   markCsrfPassed,
   pathOf,
@@ -154,7 +158,15 @@ export class CsrfMiddleware implements NestMiddleware {
       bound,
     });
 
-    if (!current) appendCookie(res, csrfCookie(this.options, bound, sameSite).cookie);
+    if (current) {
+      // A current token verified against the cookie, so the cookie is set.
+      handCsrfToken(req, cookieToken as string);
+    } else {
+      const fresh = csrfCookie(this.options, bound, sameSite);
+
+      appendCookie(res, fresh.cookie);
+      handCsrfToken(req, fresh.token);
+    }
 
     return true;
   }

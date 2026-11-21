@@ -65,6 +65,7 @@ export interface Principal extends SessionState {
 const states = new WeakMap<object, Promise<SessionState>>();
 const principals = new WeakMap<object, Principal>();
 const csrfChecked = new WeakSet<object>();
+const handedTokens = new WeakMap<object, string>();
 
 /** Recorded by CsrfMiddleware when a request passed its checks or is on an exempt path. */
 export function markCsrfPassed(req: RawRequest): void {
@@ -74,6 +75,20 @@ export function markCsrfPassed(req: RawRequest): void {
 /** False for a request the CSRF middleware never saw, whatever the reason. */
 export function csrfPassed(req: RawRequest): boolean {
   return csrfChecked.has(req);
+}
+
+/**
+ * Recorded by CsrfMiddleware on a safe request: the CSRF token the response
+ * sets or keeps as the `csrf` cookie, bound to the request's session or
+ * pre-session.
+ */
+export function handCsrfToken(req: RawRequest, token: string): void {
+  handedTokens.set(req, token);
+}
+
+/** The token CsrfMiddleware handed this request, or undefined (an exempt path, an unsafe method). */
+export function handedCsrfToken(req: RawRequest): string | undefined {
+  return handedTokens.get(req);
 }
 
 /** Fastify hands Nest a wrapper with the Node request under `raw`; Express hands the request itself. */

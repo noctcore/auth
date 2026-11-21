@@ -96,6 +96,7 @@ RouteAccess [interface]
     readonly twoFactorEnrollment: boolean
 SessionCookies [class]
     (new) (options: ResolvedOptions): SessionCookies
+    csrfToken(request: unknown, response: unknown): { csrfToken: string; }
     private readonly options
     set(response: unknown, issued: Pick<IssuedSession<unknown>, 'cookie' | 'deviceCookie' | 'session'>): { csrfToken: string; }
     signOut(request: unknown, response: unknown): Promise<{ csrfToken: string; }>
