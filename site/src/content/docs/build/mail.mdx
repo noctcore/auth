@@ -75,7 +75,7 @@ Codes and links are credentials. Keep them out of logs and analytics, and if you
 
 <Code code={mailerTs} lang="ts" title="src/mail/mailer.ts" />
 
-Your worker takes each `OutgoingMail` off the queue and hands it to your mail provider, retrying on failure as your queue allows.
+The queue holds the raw `AuthMailEvent`: `send` renders nothing. Your worker takes each event off the queue, runs `handleMailJob` (which renders the template and hands the `OutgoingMail` to your mail provider), and retries on failure as your queue allows. If your queue stores job data as JSON, the event's `Date` fields come back as strings, so revive them before rendering.
 
 ## Password reset jobs
 

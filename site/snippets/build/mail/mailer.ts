@@ -1,17 +1,25 @@
-import type { Mailer } from '@noctcore/auth';
+import type { AuthMailEvent, Mailer } from '@noctcore/auth';
 import type { OutgoingMail, Queue } from './queue';
 import { renderAuthMail } from './templates';
 
 /**
- * Renders the event and puts it on the queue; a worker sends it. `send`
- * returns as soon as the job is stored, so a known address costs the request
- * no more time than an unknown one.
+ * Puts the raw event on the queue and returns; a worker renders and sends it.
+ * Rendering here would be work done before `send` returns, and a door that
+ * mails on one branch only would answer slower on that branch.
  */
-export function queueMailer(queue: Queue<OutgoingMail>): Mailer {
+export function queueMailer(queue: Queue<AuthMailEvent>): Mailer {
   return {
     async send(event) {
       // dedupeKey is unique per event: if this add is retried, the queue keeps one job.
-      await queue.add(renderAuthMail(event), { jobId: event.dedupeKey });
+      await queue.add(event, { jobId: event.dedupeKey });
     },
   };
+}
+
+/** Your worker's handler for the mail queue: render off the response path, then deliver. */
+export function handleMailJob(
+  event: AuthMailEvent,
+  deliver: (mail: OutgoingMail) => Promise<void>,
+): Promise<void> {
+  return deliver(renderAuthMail(event));
 }
