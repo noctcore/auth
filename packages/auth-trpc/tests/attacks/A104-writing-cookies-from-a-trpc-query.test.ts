@@ -11,13 +11,20 @@
 // Stopped by: auth-trpc src/middlewares.ts: `writesCookies`, and
 //   `WritesCookiesMiddleware` on nestjs-trpc, refuse every call that is not a
 //   mutation with an `AuthConfigError`, before the procedure runs and before
-//   the writers are handed out.
+//   the writers are handed out; src/describe-procedures.ts:
+//   `assertProceduresGuarded` names such a procedure in a test or at boot.
 // Learn: CSRF (/auth/learn/csrf/); Build: Use with tRPC (/auth/build/trpc/)
 import { AuthConfigError } from '@noctcore/auth';
 import { initTRPC } from '@trpc/server';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createAuthContext, createAuthMiddlewares, WritesCookiesMiddleware } from '../../src';
+import {
+  assertProceduresGuarded,
+  createAuthContext,
+  createAuthMiddlewares,
+  describeProcedures,
+  WritesCookiesMiddleware,
+} from '../../src';
 import { boot, Browser, CSRF_SECRET, EMAIL, ORIGIN, type Booted, type Context } from '../support';
 
 /** The developer mistake: a sign-out as a query, marked to write cookies. */
@@ -114,5 +121,37 @@ describe('A104 writing cookies from a tRPC query', () => {
     );
 
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('names a marked query and a marked subscription in assertProceduresGuarded', () => {
+    const { router } = mistakenRouter();
+
+    expect(describeProcedures(router)).toEqual([
+      {
+        path: 'signOutLink',
+        type: 'query',
+        access: 'public',
+        conflicting: false,
+        writesCookies: true,
+      },
+    ]);
+
+    expect(() => assertProceduresGuarded(router)).toThrow(
+      /signOutLink: writesCookies on a query; write cookies from a mutation/u,
+    );
+
+    const t = initTRPC.context<Context>().create();
+    const { publicProcedure, writesCookies } = createAuthMiddlewares(t);
+
+    const mixed = t.router({
+      signIn: publicProcedure.use(writesCookies).mutation(() => 'ok'),
+      watch: publicProcedure.use(writesCookies).subscription(async function* () {
+        yield await Promise.resolve('never');
+      }),
+    });
+
+    expect(() => assertProceduresGuarded(mixed)).toThrow(
+      /^(?![\s\S]*signIn)[\s\S]*watch: writesCookies on a subscription/u,
+    );
   });
 });

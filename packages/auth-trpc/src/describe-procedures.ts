@@ -10,7 +10,9 @@
  *
  * It also refuses a procedure marked public that asks for a session, a role
  * or a fresh proof: the two say opposite things, and which one was meant is
- * not something to guess.
+ * not something to guess. And it refuses `writesCookies` on a procedure that
+ * is not a mutation, which the middleware would refuse on every call anyway:
+ * this way the test (or the boot) says so first.
  *
  * For nestjs-trpc, register `AuthGuardMiddleware` in `globalMiddlewares`
  * instead: it is closed unless a procedure's meta says `auth: 'public'`.
@@ -26,6 +28,8 @@ export interface ProcedureAccess {
   readonly access: 'session' | 'public' | 'open';
   /** True when the procedure is marked public and also asks for a session. */
   readonly conflicting: boolean;
+  /** True when the procedure carries `writesCookies`. */
+  readonly writesCookies: boolean;
 }
 
 interface ProcedureLike {
@@ -47,32 +51,38 @@ export function describeProcedures(router: AnyRouter): ProcedureAccess[] {
       type: procedure._def.type,
       access: session ? 'session' : open ? 'public' : 'open',
       conflicting: session && open,
+      writesCookies: found.has('cookies'),
     };
   });
 }
 
 /**
  * Throws an `AuthConfigError` naming every procedure with no access rule,
- * every one marked public that also asks for a session, and every lazy
- * router (which this cannot load to check).
+ * every one marked public that also asks for a session, every one that is
+ * not a mutation and carries `writesCookies`, and every lazy router (which
+ * this cannot load to check).
  */
 export function assertProceduresGuarded(router: AnyRouter): void {
   const lazy = Object.keys((router._def as unknown as { lazy: object }).lazy);
 
   const lines = [
-    ...describeProcedures(router).flatMap((p) => {
-      if (p.access === 'open') {
-        return [`${p.path}: no access rule; build it on publicProcedure or protectedProcedure`];
-      }
-
-      return p.conflicting
+    ...describeProcedures(router).flatMap((p) => [
+      ...(p.access === 'open'
+        ? [`${p.path}: no access rule; build it on publicProcedure or protectedProcedure`]
+        : []),
+      ...(p.conflicting
         ? [`${p.path}: marked public but asks for a session, a role or a fresh proof`]
-        : [];
-    }),
+        : []),
+      ...(p.writesCookies && p.type !== 'mutation'
+        ? [`${p.path}: writesCookies on a ${p.type}; write cookies from a mutation`]
+        : []),
+    ]),
     ...lazy.map((path) => `${path}: a lazy router this check cannot load; check it on its own`),
   ];
 
   if (lines.length > 0) {
-    throw new AuthConfigError(`Every procedure needs one access rule:\n${lines.join('\n')}`);
+    throw new AuthConfigError(
+      `Every procedure needs one access rule, and only a mutation can write cookies:\n${lines.join('\n')}`,
+    );
   }
 }

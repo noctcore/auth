@@ -159,6 +159,7 @@ ProcedureAccess [interface]
     readonly conflicting: boolean
     readonly path: string
     readonly type: string
+    readonly writesCookies: boolean
 PublicAuthError [interface]
     readonly code: AuthErrorCode | 'internal'
     readonly retryAfterSeconds?: number
