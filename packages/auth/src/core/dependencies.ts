@@ -20,7 +20,8 @@ import type { AuthUser, UserStore } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
 import type { AttributeSchema } from '../session/session-types';
 import type { NormalizedEmail, ResolvedEmailNormalizer } from '../shared/email';
-import type { RateLimitRule } from '../throttle/rules';
+import type { RequestMeta } from '../shared/meta';
+import type { NewLock, RateLimitRule } from '../throttle/rules';
 import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
@@ -64,4 +65,16 @@ export interface CoreDependencies<U extends AuthUser, A> {
    * (`flows/email-reservation.ts`), which the core may not import.
    */
   readonly addressHeld: (email: NormalizedEmail) => Promise<boolean>;
+  /**
+   * Carries out a new lock the way a password lock is carried out: the
+   * owner's `lockout` mail and audit row and, for the permanent tier, the end
+   * of the account's sessions and the `onPermanentLock` hooks, off the
+   * response path. Lives with the flows (`flows/lock-notice.ts`), which the
+   * core may not import.
+   */
+  readonly announceLock: (
+    owner: { readonly id: string; readonly email: string },
+    lock: NewLock,
+    meta: RequestMeta,
+  ) => Promise<void>;
 }

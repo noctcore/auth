@@ -15,7 +15,7 @@
  */
 import { CHALLENGE_PURPOSE, ENROLLMENT_TTL_MS } from './options';
 import { issueRecoveryCodes, totpStep } from './proofs';
-import { clientTag, factorAccount, limitIp, refused, type Runtime } from './runtime';
+import { clientTag, factorAccount, gateAttempt, limitIp, refused, type Runtime } from './runtime';
 import { recordStepUp } from './step-up';
 import { encodeTotpSecret, generateTotpSecret, totpUri } from './totp';
 import type { IssuedSession } from '../../core/plugin-context';
@@ -151,7 +151,7 @@ export async function confirmPending(
   },
 ): Promise<ConfirmResult> {
   const { core, store } = runtime;
-  const gate = await core.throttle.gateFactor(request.account, runtime.settings.attempts);
+  const gate = await gateAttempt(runtime, request);
   const factor = await store.findFactor(request.userId);
   const now = core.clock.now();
 

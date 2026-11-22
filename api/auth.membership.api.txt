@@ -156,6 +156,7 @@ LockState [interface]
     readonly locked: boolean
     readonly permanent: boolean
     readonly until: Date | null
+LockTarget [type] = { readonly email: string; } | { readonly userId: string; }
 Logger [interface]
     error(message: string, context?: Record<string, unknown>): void
     warn(message: string, context?: Record<string, unknown>): void
@@ -208,6 +209,7 @@ PermanentLockOptions [interface]
 PluginContext [interface]<U extends AuthUser, A>
     checkCaptcha(door: CaptchaDoor, token: string | undefined, meta: RequestMeta): Promise<AuthFailure | null>
     emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
+    escalateLock(input: { readonly userId: string; readonly meta: RequestMeta; }): Promise<{ newLock?: NewLock; }>
     findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
     hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>
     isAddressHeld(email: NormalizedEmail): Promise<boolean>
@@ -232,6 +234,7 @@ PluginContext [interface]<U extends AuthUser, A>
     readonly throttle: Throttle
     readonly tokens: OneTimeTokens
     readonly users: UserStore<U>
+    recordFailedProof(input: LockTarget & { readonly meta: RequestMeta; }): Promise<{ newLock?: NewLock; }>
     requireFreshAuth(session: StoredSession<A>): AuthResult<void>
     requireFreshLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>>
     revokeAllSessions(userId: string, reason: RevocationReason, options?: { scope?: string; }): Promise<void>
@@ -329,6 +332,7 @@ Throttle [class]
     clearAccount(account: string): Promise<void>
     clearPermanent(account: string, owner?: string | null): Promise<LockState>
     deviceFailed(account: string, owner?: string | null): Promise<{ newLock?: NewLock; }>
+    escalate(account: string, owner?: string | null): Promise<{ newLock?: NewLock; }>
     factorSucceeded(account: string): Promise<void>
     gateFactor(account: string, rule: RateLimitRule): Promise<FactorGate>
     gateLogin(account: string, ip: string, deviceId?: string | null, owner?: string | null): Promise<LoginGate>
@@ -337,6 +341,7 @@ Throttle [class]
     lockState(account: string, owner?: string | null): Promise<LockState>
     loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void>
     permanentTier: boolean
+    private countTowardPermanent
     private held
     private lock
     private permanentKey
@@ -355,6 +360,7 @@ Throttle [class]
     readonly permanentDevices: boolean
     readonly revealLocked: boolean
     recordFailure(account: string, owner?: string | null): Promise<{ newLock?: NewLock; }>
+    signInCompleted(account: string): Promise<void>
 TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; readonly data: Readonly<Record<string, string>>; } | { readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch'; readonly namedUserId: string; } | { readonly status: 'unknown'; }
 TokenStore [interface]
     consume(purpose: string, hash: string): Promise<StoredToken | null>

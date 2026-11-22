@@ -19,8 +19,9 @@
  *   backoff, capped (1 h by default). The tier resets only after a quiet
  *   period (24 h by default) with no new lock. A new lock mails the owner.
  * - Opt-in permanent tier (`lockout.permanent`): after `afterLocks` temporary
- *   locks in a row (a successful sign-in or a completed password reset
- *   resets the count), the next lock
+ *   locks in a row (a completed sign-in, every factor proved, or a
+ *   completed password reset resets the count; a correct password with a
+ *   second factor still owed does not), the next lock
  *   never lapses; only `clearPermanent` (an admin) lifts it, not a password
  *   reset. Its marker is keyed on the user id when the address has an
  *   account, so it follows the account through an email change, and on the
@@ -286,7 +287,9 @@ export class Throttle {
    * every IP. Spending the budget locks the factor with the same capped
    * backoff as the password lockout (`baseLock`, `maxLock`, `quietPeriod`).
    * Its keys live under their own prefix, so a factor lock never locks the
-   * password and back, whatever `account` is.
+   * password and back, whatever `account` is. A new lock (`newLock`) does not
+   * count toward the permanent tier by itself: pass it on to `escalate` (the
+   * two-factor plugin does, through `context.escalateLock`).
    */
   async gateFactor(account: string, rule: RateLimitRule): Promise<FactorGate> {
     const scope = keys.factor(account);
@@ -321,7 +324,13 @@ export class Throttle {
     await this.counters.reset(keys.account(keys.factor(account)));
   }
 
-  /** A failed proof with no attempt reserved by `gateLogin` still spends the account-wide budget. */
+  /**
+   * A failed proof with no attempt reserved by `gateLogin` still spends the
+   * account-wide budget. This only counts: a `newLock` it returns is not
+   * announced. Outside the package, call `context.recordFailedProof`, which
+   * also carries the lock out like a password lock (the owner's notice, the
+   * audit row and, in the permanent tier, the end of the sessions).
+   */
   async recordFailure(account: string, owner?: string | null): Promise<{ newLock?: NewLock }> {
     const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
 
@@ -351,12 +360,12 @@ export class Throttle {
    * through by a device token, leaves the tier, the lock's end and the owner's
    * mailbox alone: one tier step and one notice per lock.
    *
-   * With the permanent tier on and `escalates` (an account's password lock,
-   * never a second factor's), each new lock also counts toward the tier, in
-   * its own counter (renewed like the backoff tier, but reset by a
-   * successful sign-in), and the lock that brings it past `afterLocks` sets
-   * the permanent marker under `owner` (or the address), stored with the
-   * far-future expiry so it never lapses on its own.
+   * With the permanent tier on and `escalates` (an account's password lock;
+   * a second factor's lock counts only through `escalate`), each new lock
+   * also counts toward the tier (`countTowardPermanent`), and the lock that
+   * brings it past `afterLocks` sets the permanent marker under `owner` (or
+   * the address), stored with the far-future expiry so it never lapses on
+   * its own.
    */
   private async lock(
     account: string,
@@ -383,41 +392,85 @@ export class Throttle {
     // quiet period without one.
     await this.counters.set(keys.tier(account), tier, this.quietPeriodMs);
 
-    if (escalates && this.permanentAfter !== undefined) {
-      const inARow = ((await this.counters.get(keys.escalation(account)))?.count ?? 0) + 1;
+    if (escalates) {
+      const escalated = await this.countTowardPermanent(account, owner);
 
-      await this.counters.set(keys.escalation(account), inARow, this.quietPeriodMs);
-
-      if (inARow > this.permanentAfter) {
-        const marker = this.permanentKey(account, owner);
-
-        // Already permanent (wrong passwords let through by a device token
-        // crossed again): announced once, not on every crossing.
-        if ((await this.counters.get(marker)) !== null) return {};
-
-        await this.counters.set(marker, 1, LOCKOUT_EXPIRES_AT - this.clock.now());
-
-        return { newLock: { until: LOCKOUT_EXPIRES_AT, permanent: true } };
-      }
+      // Already permanent (wrong passwords let through by a device token
+      // crossed again): announced once, not on every crossing.
+      if (escalated.permanent) return escalated.newLock ? { newLock: escalated.newLock } : {};
     }
 
     return { newLock: { until: lock.resetAt } };
   }
 
   /**
+   * A new lock raised outside the password gate (a second factor's own gate,
+   * which never escalates by itself) counts toward the permanent tier of the
+   * address `account` (its account `owner`), in the same counter as the
+   * password locks. Call it once per NEW lock, never per refusal. Returns the
+   * permanent lock when this one brought the count past `afterLocks`, and
+   * nothing while the tier is off, below it, or already permanent.
+   *
+   * Prefer `context.escalateLock`, which also carries the permanent lock out
+   * (the owner's notice, the audit row, the end of the sessions).
+   */
+  async escalate(account: string, owner?: string | null): Promise<{ newLock?: NewLock }> {
+    const escalated = await this.countTowardPermanent(account, owner);
+
+    return escalated.newLock ? { newLock: escalated.newLock } : {};
+  }
+
+  /**
+   * One more lock in a row toward the permanent tier, renewed like the
+   * backoff tier but reset by a completed sign-in. `permanent` when the
+   * account is (now or already) past `afterLocks`; `newLock` only for the
+   * lock that set the marker, so a permanent lock is announced once.
+   */
+  private async countTowardPermanent(
+    account: string,
+    owner?: string | null,
+  ): Promise<{ permanent: boolean; newLock?: NewLock }> {
+    if (this.permanentAfter === undefined) return { permanent: false };
+
+    const inARow = ((await this.counters.get(keys.escalation(account)))?.count ?? 0) + 1;
+
+    await this.counters.set(keys.escalation(account), inARow, this.quietPeriodMs);
+
+    if (inARow <= this.permanentAfter) return { permanent: false };
+
+    const marker = this.permanentKey(account, owner);
+
+    if ((await this.counters.get(marker)) !== null) return { permanent: true };
+
+    await this.counters.set(marker, 1, LOCKOUT_EXPIRES_AT - this.clock.now());
+
+    return { permanent: true, newLock: { until: LOCKOUT_EXPIRES_AT, permanent: true } };
+  }
+
+  /**
    * The password was right: only the budget of the source that proved it is
    * returned. Pass `deviceId` only for a `viaDevice` attempt: both of its
    * reserved device slots (its own and the shared one) come back.
+   *
+   * It does NOT start the count toward the permanent tier over: a second
+   * factor may still be owed, and an attacker who holds the password would
+   * otherwise reset the climb before every round of guessed codes. Only a
+   * completed sign-in does (`signInCompleted`).
    */
   async loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void> {
-    // A correct password proves the owner: the locks in a row toward the
-    // permanent tier start over (the temporary backoff does not).
-    if (this.permanentAfter !== undefined) await this.counters.reset(keys.escalation(account));
-
     if (!deviceId) return this.counters.reset(keys.accountIp(account, ip));
 
     await this.counters.decrement(keys.device(account, deviceId));
     await this.counters.decrement(keys.devices(account));
+  }
+
+  /**
+   * A sign-in completed, every factor proved and the session about to be
+   * issued: the locks in a row toward the permanent tier start over (the
+   * temporary backoff does not). Reads and writes nothing while the tier is off.
+   */
+  async signInCompleted(account: string): Promise<void> {
+    if (this.permanentAfter !== undefined) await this.counters.reset(keys.escalation(account));
   }
 
   /**

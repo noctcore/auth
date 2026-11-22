@@ -27,7 +27,7 @@ export const counterKeys = {
    * so the lock follows the account through an email change.
    */
   permanentUser: (userId: string) => `permu:${sha256Hex(`user:${userId}`)}`,
-  /** Locks in a row toward the permanent tier; a successful sign-in resets it. */
+  /** Locks in a row toward the permanent tier (password and second-factor locks); a completed sign-in resets it. */
   escalation: (account: string) => `esc:${account}`,
   /** The backoff tier: how many locks in a row, renewed on each one. */
   tier: (account: string) => `tier:${account}`,

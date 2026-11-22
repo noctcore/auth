@@ -32,11 +32,19 @@ import { describeError } from '../shared/describe-error';
 import type { NormalizedEmail } from '../shared/email';
 import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
+import { accountKey } from '../throttle/counter-keys';
 import { createDeviceToken, verifyDeviceToken } from '../throttle/device-token';
+import type { LockTarget, NewLock } from '../throttle/rules';
 import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/**
+ * Vias that complete a sign-in: issued without `inherit`, they start the count
+ * toward the permanent lockout tier over (`Throttle.signInCompleted`).
+ */
+const SIGN_IN_VIAS: ReadonlySet<IssueVia> = new Set(['password', 'second-factor']);
 
 /** Vias that re-issue a session the user already holds: they must pass it as `inherit`. */
 const REISSUE_VIAS: ReadonlySet<IssueVia> = new Set([
@@ -364,6 +372,11 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       return fail(refusal.code, refusal.reason);
     }
 
+    // Every factor is proved and nothing refused: a completed sign-in. Before
+    // the mint, so a store that fails here leaves no session behind.
+    if (SIGN_IN_VIAS.has(options.via) && options.inherit === undefined)
+      await this.#signInCompleted(user);
+
     const rememberMe = options.rememberMe ?? options.inherit?.rememberMe ?? false;
 
     const persistentCookie =
@@ -415,6 +428,71 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       evicted: minted.evicted,
       evictedHandles: minted.evicted.map((id) => this.sessionHandle(id)),
     });
+  }
+
+  /** The count toward the permanent tier starts over; nothing is read while the tier is off. */
+  async #signInCompleted(user: U): Promise<void> {
+    if (!this.throttle.permanentTier) return;
+
+    const email = this.normalizeEmail(user.email);
+
+    if (email) await this.throttle.signInCompleted(accountKey(email));
+  }
+
+  /**
+   * The lockout key of a target and, when it names an account, that account.
+   * Null when a user id names no account or the address is refused by the
+   * email policy.
+   */
+  async resolveLockTarget(target: LockTarget): Promise<{ account: string; owner?: U } | null> {
+    if ('userId' in target) {
+      const user = await this.users.findById(target.userId);
+      const email = user ? this.normalizeEmail(user.email) : null;
+
+      return user && email ? { account: accountKey(email), owner: user } : null;
+    }
+
+    const email = this.normalizeEmail(target.email);
+
+    if (!email) return null;
+
+    const user = await this.findCredentialByEmail(email);
+
+    return user ? { account: accountKey(email), owner: user } : { account: accountKey(email) };
+  }
+
+  async recordFailedProof(
+    input: LockTarget & { readonly meta: RequestMeta },
+  ): Promise<{ newLock?: NewLock }> {
+    const target = await this.resolveLockTarget(input);
+
+    if (!target) return {};
+
+    const { newLock } = await this.throttle.recordFailure(target.account, target.owner?.id);
+
+    if (!newLock) return {};
+    if (target.owner) await this.#deps.announceLock(target.owner, newLock, input.meta);
+
+    return { newLock };
+  }
+
+  async escalateLock(input: {
+    readonly userId: string;
+    readonly meta: RequestMeta;
+  }): Promise<{ newLock?: NewLock }> {
+    if (!this.throttle.permanentTier) return {};
+
+    const target = await this.resolveLockTarget({ userId: input.userId });
+
+    if (!target?.owner) return {};
+
+    const { newLock } = await this.throttle.escalate(target.account, target.owner.id);
+
+    if (!newLock) return {};
+
+    await this.#deps.announceLock(target.owner, newLock, input.meta);
+
+    return { newLock };
   }
 
   /** The audit row for a sign-in that got this far and was still refused. */

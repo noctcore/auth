@@ -17,6 +17,7 @@ import * as emailChange from './flows/email-change';
 import { clearEmailRevertLockout, lockoutHooks } from './flows/email-lockout';
 import { heldAccount, isAddressHeld } from './flows/email-reservation';
 import * as verification from './flows/email-verification';
+import { sendLockNotice } from './flows/lock-notice';
 import { login, type LoginInput } from './flows/login';
 import { clearLock, inspectLock, type LockTarget } from './flows/lockout-admin';
 import { permanentLockHooks } from './flows/permanent-lock';
@@ -264,7 +265,7 @@ export function createAuth<
     ...(throttle.permanentTier && !throttle.permanentDevices ? [permanentLockHooks(throttle)] : []),
   ];
 
-  const core = new AuthCore<U, A>({
+  const core: AuthCore<U, A> = new AuthCore<U, A>({
     users: config.stores.users,
     sessions,
     tokens,
@@ -291,6 +292,9 @@ export function createAuth<
     background,
     addressHeld: async (email) =>
       (await heldAccount({ tokens, users: config.stores.users }, email)) !== null,
+    // Called only once `core` exists (a lock is reported by a flow).
+    announceLock: (owner, lock, meta): Promise<void> =>
+      sendLockNotice(core, owner, lock, meta, true),
   });
 
   const flows = {

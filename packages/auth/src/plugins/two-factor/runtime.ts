@@ -64,6 +64,28 @@ export function factorAccount(userId: string): string {
   return sha256Hex(`two-factor:${userId}`);
 }
 
+/**
+ * Checks the factor's lock and reserves one attempt (`throttle.gateFactor`).
+ * A new lock counts toward the permanent lockout tier of the user's account
+ * (`escalateLock`, which does nothing while the tier is off), so a guesser
+ * who holds the password cannot climb past it on codes alone. An attempt
+ * with no user to name (an unknown challenge) still makes the same lookup.
+ */
+export async function gateAttempt(
+  runtime: Runtime,
+  attempt: { readonly account: string; readonly userId: string | null; readonly meta: RequestMeta },
+): ReturnType<Context['throttle']['gateFactor']> {
+  const gate = await runtime.core.throttle.gateFactor(attempt.account, runtime.settings.attempts);
+
+  if (!gate.allowed && gate.newLock)
+    await runtime.core.escalateLock({
+      userId: attempt.userId ?? NO_SUCH_USER_ID,
+      meta: attempt.meta,
+    });
+
+  return gate;
+}
+
 /** The client a challenge is bound to: its user agent, hashed. */
 export function clientTag(meta: RequestMeta): string {
   return sha256Hex(`client:${String(meta.userAgent)}`);
