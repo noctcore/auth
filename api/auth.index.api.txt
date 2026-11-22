@@ -669,7 +669,9 @@ Throttle [class]
     lockState(account: string, owner?: string | null): Promise<LockState>
     loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void>
     permanentTier: boolean
+    private countAttempt
     private countTowardPermanent
+    private forgetOwed
     private held
     private lock
     private lockDuration

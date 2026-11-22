@@ -31,7 +31,7 @@ export const counterKeys = {
   escalation: (account: string) => `esc:${account}`,
   /**
    * Account-wide slots that correct passwords reserved and may have back
-   * (`countSuccesses: false`); lapses with the account-wide window.
+   * (`countSuccesses: false`); cleared when a new account-wide window opens.
    */
   owed: (account: string) => `owed:${account}`,
   /** Refunds claimed against `owed`, so parallel completions never take back more than it holds. */

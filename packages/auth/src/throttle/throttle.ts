@@ -32,8 +32,9 @@
  * - A correct password returns only the budget of the source that proved it
  *   (its per-(account, IP) or per-device budget), never the account-wide one,
  *   unless `countSuccesses` is false: then the account-wide slot comes back
- *   too, but only once the sign-in completes (`signInCompleted`), and never
- *   more slots than correct passwords reserved in the window.
+ *   too, but only once the sign-in completes (`signInCompleted`), matched by
+ *   count and never more slots than correct passwords reserved in the
+ *   current window.
  * - Trusted devices: every issued session carries a signed device token bound
  *   to the user, their revocation epoch and an issue time (see device-token.ts).
  *   The token matters only while the account is LOCKED: an unlocked account
@@ -68,7 +69,7 @@ import {
   type WindowRule,
 } from './rules';
 import type { Clock } from '../ports/clock';
-import type { CounterStore } from '../ports/stores';
+import type { CounterStore, CounterWindow } from '../ports/stores';
 import { assertBoolean, assertList, configMilliseconds } from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 import { LOCKOUT_EXPIRES_AT, toMilliseconds } from '../shared/duration';
@@ -200,7 +201,7 @@ export class Throttle {
     if (pair.count > this.perAccountIp.limit)
       return { allowed: false, reason: 'account_ip_budget' };
 
-    const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
+    const all = await this.countAttempt(account);
 
     if (all.count > this.perAccount.limit) {
       // Only the attempt that crossed the limit locks; a parallel one that also
@@ -347,7 +348,7 @@ export class Throttle {
    * audit row and, in the permanent tier, the end of the sessions).
    */
   async recordFailure(account: string, owner?: string | null): Promise<{ newLock?: NewLock }> {
-    const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
+    const all = await this.countAttempt(account);
 
     if (!locksAt(all.count, this.perAccount.limit)) return {};
 
@@ -483,7 +484,7 @@ export class Throttle {
    *
    * With `countSuccesses` false, an attempt that reserved an account-wide
    * slot (not a `viaDevice` one) is also recorded as owed one slot back, in
-   * a counter that lapses with the account-wide window. The slot itself
+   * a counter the next account-wide window clears (`countAttempt`). The slot itself
    * comes back only when the sign-in completes (`signInCompleted`), or at
    * once at a door that proves nothing more (`refundSuccess`).
    *
@@ -526,12 +527,18 @@ export class Throttle {
    * `reauthenticate` and `changePassword` call it right after the correct
    * password, since their caller holds a session from a completed sign-in.
    *
-   * Each refund claims a number from a second counter and goes ahead only
-   * while the claims stay within the slots owed, so parallel completions
-   * never hand back more than was reserved in the window, and the store
-   * never takes the budget below zero. Both counters lapse with the window
-   * the slots were reserved in, so a slot never comes back out of a newer
-   * window. Reads and writes nothing while successes count.
+   * Refunds are matched by count, not to the attempt that earned them, and
+   * capped per account-wide window: each refund claims a number from a second
+   * counter and goes ahead only while the claims stay within the slots owed
+   * in the current window, so parallel completions never hand back more than
+   * correct passwords reserved in it, and the store never takes the budget
+   * below zero. A completion that reserved nothing of its own (a challenge
+   * opened in an earlier window, a device sign-in) can take a slot another
+   * correct password in the window is owed, never one more. The window that
+   * starts once the account-wide counter lapses clears both counters
+   * (`countAttempt`), so a slot owed in an earlier window, or in one a lock
+   * re-armed, never comes back out of a newer one. Reads and writes nothing
+   * while successes count.
    */
   async refundSuccess(account: string): Promise<void> {
     if (this.countSuccesses) return;
@@ -553,9 +560,30 @@ export class Throttle {
   }
 
   /**
-   * One more account-wide slot owed back, in a counter that lapses when the
-   * account-wide window does. Nothing is owed when that window has already
-   * ended (its slot went with it).
+   * One attempt against the account-wide budget. With `countSuccesses` false,
+   * the attempt that opens a new window (the counter answers 1) also clears
+   * the slots owed back and the refunds claimed: they belong to the window
+   * that lapsed, whatever their own expiry says (a lock re-arms the
+   * account-wide counter to the lock's end, so the two drift apart).
+   */
+  private async countAttempt(account: string): Promise<CounterWindow> {
+    const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
+
+    if (!this.countSuccesses && all.count === 1) await this.forgetOwed(account);
+
+    return all;
+  }
+
+  /** Clears the slots owed back and the refunds claimed against them. */
+  private async forgetOwed(account: string): Promise<void> {
+    await this.counters.reset(keys.owed(account));
+    await this.counters.reset(keys.refunded(account));
+  }
+
+  /**
+   * One more account-wide slot owed back. Its expiry follows the account-wide
+   * counter as it stands; the next window clears it anyway (`countAttempt`).
+   * Nothing is owed when the window has already ended (its slot went with it).
    */
   private async owe(account: string): Promise<void> {
     const all = await this.counters.get(keys.account(account));
@@ -586,8 +614,7 @@ export class Throttle {
 
     // The slots owed back belong to the budget just reset: a new window must
     // not have its failures handed back.
-    await this.counters.reset(keys.owed(account));
-    await this.counters.reset(keys.refunded(account));
+    await this.forgetOwed(account);
   }
 
   /**
