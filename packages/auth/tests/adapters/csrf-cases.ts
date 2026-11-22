@@ -118,11 +118,12 @@ export const CSRF_CASES: readonly CsrfCase[] = [
   post('passes a same-origin request with its own token', true),
   post('passes a request whose browser sends no Sec-Fetch-Site', true, { secFetchSite: null }),
   post('passes a token signed by the previous secret', true, { cookie: 'own-previous' }),
-  post(
-    'passes a previous-secret token a page still holds after the cookie moved to the current secret',
-    true,
-    { header: 'own-previous' },
-  ),
+  // The header must equal the cookie: a previous-secret header over the
+  // current cookie is refused, whether a page kept it in memory (it reads the
+  // token again) or someone holding the previous secret minted it.
+  post('refuses a previous-secret header over the current-secret cookie', false, {
+    header: 'own-previous',
+  }),
   post('refuses a previous-secret header when the cookie is not the current secret', false, {
     cookie: 'own-previous',
     header: 'own-previous',
