@@ -2,7 +2,7 @@
 
 # @noctcore/auth-trpc
 
-tRPC middlewares for [`@noctcore/auth`](https://github.com/noctcore/auth): a context that validates the session cookie through the core, guarded base procedures, CSRF on every mutation, error mapping that never reveals account state, and Zod schemas for the auth procedures. Plain tRPC on the fetch or Node adapters, and nestjs-trpc. The WebSocket adapter is not supported yet and is refused when a connection opens.
+tRPC middlewares for [`@noctcore/auth`](https://github.com/noctcore/auth): a context that validates the session cookie through the core, guarded base procedures, CSRF on every mutation, error mapping that never reveals account state, and Zod schemas for the auth procedures. Plain tRPC on the fetch or Node adapters, and nestjs-trpc. The WebSocket and Fastify adapters are not supported yet, and are refused when the context is built.
 
 ```ts
 import { initTRPC } from '@trpc/server';
