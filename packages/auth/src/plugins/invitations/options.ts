@@ -1,7 +1,7 @@
 import type { StoredInvitation, InvitationStore } from '../../ports/invitations';
 import type { AuthUser } from '../../ports/stores';
-import { assertBoolean } from '../../shared/config-checks';
-import { toMilliseconds, type Duration } from '../../shared/duration';
+import { assertBoolean, configMilliseconds } from '../../shared/config-checks';
+import type { Duration } from '../../shared/duration';
 import type { NormalizedEmail } from '../../shared/email';
 import { AuthConfigError } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
@@ -111,7 +111,7 @@ export function resolveSettings(options: InvitationsOptions): InvitationsSetting
 
   checkUrl(options.url);
 
-  const ttlMs = toMilliseconds(options.ttl ?? '7d');
+  const ttlMs = configMilliseconds('invitations: ttl', options.ttl, '7d');
 
   if (ttlMs <= 0 || ttlMs > MAX_TTL_MS)
     throw new AuthConfigError('invitations: ttl must be positive and at most 30 days');
@@ -162,7 +162,7 @@ function resolveRule(name: string, rule: AttemptRule): AttemptRule {
   if (!Number.isInteger(rule.limit) || rule.limit < 1)
     throw new AuthConfigError(`invitations: ${name}.limit must be a positive integer`);
 
-  if (toMilliseconds(rule.window) <= 0)
+  if (configMilliseconds(`invitations: ${name}.window`, rule.window, 0) <= 0)
     throw new AuthConfigError(`invitations: ${name}.window must be positive`);
 
   return rule;

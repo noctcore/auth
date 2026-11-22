@@ -484,7 +484,7 @@ PluginContext [interface]<U extends AuthUser, A>
     sessionHandle(sessionId: string): string
     verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>
 PluginFlows [type]<P extends readonly AuthPlugin[]> = UnionToIntersection<P[number] extends infer Plugin ? Plugin extends AuthPlugin<infer Id, infer F> ? { readonly [K in Id]: F; } : never : never>
-pwnedPasswords [function]: (options?: PwnedPasswordsOptions) => PwnedPasswordsChecker
+pwnedPasswords [function]: (input?: PwnedPasswordsOptions | null) => PwnedPasswordsChecker
 PwnedPasswordsChecker [interface]
     check(password: string): Promise<BreachOutcome>
     (call) (password: string): Promise<BreachVerdict>
@@ -650,7 +650,7 @@ StoredTrustedDevice [interface]
     readonly userId: string
 systemClock [const]: Clock
 Throttle [class]
-    (new) (counters: CounterStore, clock: Clock, lockout?: LockoutOptions): Throttle
+    (new) (counters: CounterStore, clock: Clock, options?: LockoutOptions | null): Throttle
     addressSignedUp(account: string): Promise<void>
     claimRecoveryCodeRotation(userId: string, windowMs: number): Promise<boolean>
     clearAccount(account: string): Promise<void>

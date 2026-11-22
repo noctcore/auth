@@ -10,6 +10,7 @@
  */
 import { encodeHexLowerCase } from '@oslojs/encoding';
 import { hmacSha256Hex, secretsEqual } from './hash';
+import { assertList } from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 
 const MIN_SECRET_BYTES = 32;
@@ -22,8 +23,12 @@ function toBytes(secret: SecretInput): Uint8Array {
 }
 
 /** The configured secret as bytes, refused when it is missing or too short to resist guessing. */
-export function toSecret(secret: SecretInput | undefined): Uint8Array {
-  if (secret === undefined) throw new AuthConfigError('secret is required (32 bytes or more)');
+export function toSecret(secret: SecretInput | null | undefined): Uint8Array {
+  if (secret === undefined || secret === null)
+    throw new AuthConfigError('secret is required (32 bytes or more)');
+
+  if (typeof secret !== 'string' && !(secret instanceof Uint8Array))
+    throw new AuthConfigError('secret must be a string or bytes');
 
   const bytes = toBytes(secret);
 
@@ -39,10 +44,13 @@ export function toSecret(secret: SecretInput | undefined): Uint8Array {
  * previous one: a repeat would only add work to every verification.
  */
 export function toPreviousSecrets(
-  previous: SecretInput | readonly SecretInput[] | undefined,
+  previous: SecretInput | readonly SecretInput[] | null | undefined,
   current: Uint8Array,
 ): Uint8Array[] {
-  if (previous === undefined) return [];
+  if (previous === undefined || previous === null) return [];
+
+  // `.map` skips an empty slot and keeps it, which the key derivation would read as undefined.
+  assertList('previousSecret', Array.isArray(previous) ? previous : undefined);
 
   const list: readonly unknown[] = Array.isArray(previous) ? previous : [previous];
   const seen = [encodeHexLowerCase(current)];

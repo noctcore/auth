@@ -88,9 +88,11 @@ export function resolveClientIpHeader(
   name: string | undefined,
   trustedHops: TrustedHops,
 ): string | undefined {
-  if (name === undefined) return undefined;
+  if (name === undefined || name === null) return undefined;
 
-  const lower = String(name).trim().toLowerCase();
+  if (typeof name !== 'string') throw new AuthConfigError('clientIpHeader must be a string');
+
+  const lower = name.trim().toLowerCase();
 
   if (!HEADER_NAME.test(lower)) throw new AuthConfigError(`Invalid client IP header name: ${name}`);
 

@@ -27,6 +27,7 @@ import {
   type OutcomeHook,
   type UnavailableOutcome,
 } from '../ports/provider-outcome';
+import { assertFunction, assertPositive, assertString } from '../shared/config-checks';
 
 export type BreachVerdict = 'clean' | 'breached' | 'unavailable';
 
@@ -64,12 +65,25 @@ export interface PwnedPasswordsOptions {
 
 const RANGE_LINE = /^([0-9A-F]{35}):(\d+)$/u;
 
-export function pwnedPasswords(options: PwnedPasswordsOptions = {}): PwnedPasswordsChecker {
-  const timeoutMs = options.timeoutMs ?? 3000;
-  const doFetch = options.fetch ?? globalThis.fetch;
-  const userAgent = options.userAgent ?? 'noctcore-auth';
-  const baseUrl = options.baseUrl ?? 'https://api.pwnedpasswords.com/range/';
-  const logger = options.logger ?? silentLogger;
+/** The options as `pwnedPasswords()` reads them, checked when it is called at startup. */
+function assertPwnedPasswordsOptions(options: PwnedPasswordsOptions): void {
+  assertPositive('pwnedPasswords: timeoutMs', options.timeoutMs);
+  assertFunction('pwnedPasswords: fetch', options.fetch);
+  assertString('pwnedPasswords: userAgent', options.userAgent);
+  assertString('pwnedPasswords: baseUrl', options.baseUrl);
+  assertFunction('pwnedPasswords: onResult', options.onResult);
+}
+
+export function pwnedPasswords(options?: PwnedPasswordsOptions | null): PwnedPasswordsChecker {
+  const given = options ?? {};
+
+  assertPwnedPasswordsOptions(given);
+
+  const timeoutMs = given.timeoutMs ?? 3000;
+  const doFetch = given.fetch ?? globalThis.fetch;
+  const userAgent = given.userAgent ?? 'noctcore-auth';
+  const baseUrl = given.baseUrl ?? 'https://api.pwnedpasswords.com/range/';
+  const logger = given.logger ?? silentLogger;
 
   async function lookup(password: string): Promise<BreachOutcome> {
     const digest = encodeHexUpperCase(sha1(new TextEncoder().encode(password)));
@@ -117,7 +131,7 @@ export function pwnedPasswords(options: PwnedPasswordsOptions = {}): PwnedPasswo
     // Frozen, so a hook that writes to it cannot change what the caller reads.
     const outcome = Object.freeze(await lookup(password));
 
-    reportOutcome(options.onResult, outcome, logger, 'pwned-passwords');
+    reportOutcome(given.onResult, outcome, logger, 'pwned-passwords');
 
     return outcome;
   }

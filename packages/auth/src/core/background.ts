@@ -30,6 +30,7 @@
 import type { Logger, Metrics } from '../ports/logger';
 import { describeError } from '../shared/describe-error';
 import { AuthConfigError } from '../shared/errors';
+import { assertCount, assertFunction, configMilliseconds } from '../shared/config-checks';
 import { toMilliseconds, type Duration } from '../shared/duration';
 
 export interface BackgroundOptions {
@@ -64,20 +65,26 @@ export class BackgroundTasks {
   /** What `flush` waits on: each task until it settles or times out. */
   readonly #tracked = new Map<Promise<void>, string>();
 
-  constructor(logger: Logger, metrics: Metrics, options: BackgroundOptions = {}) {
+  constructor(logger: Logger, metrics: Metrics, background?: BackgroundOptions | null) {
+    // A key, or the whole object, left out as undefined or null gives its default.
+    const options = background ?? {};
+
+    assertFunction('background.waitUntil', options.waitUntil);
+    assertCount('background.maxPending', options.maxPending);
+
     this.#logger = logger;
     this.#metrics = metrics;
     this.#waitUntil = options.waitUntil;
-    this.#timeoutMs = options.timeout === undefined ? undefined : toMilliseconds(options.timeout);
+
+    this.#timeoutMs =
+      options.timeout === undefined || options.timeout === null
+        ? undefined
+        : configMilliseconds('background.timeout', options.timeout, 0);
+
     this.#maxPending = options.maxPending ?? Number.POSITIVE_INFINITY;
 
     if (this.#timeoutMs !== undefined && !(this.#timeoutMs > 0))
       throw new AuthConfigError('background.timeout must be longer than zero');
-
-    const cap = options.maxPending;
-
-    if (cap !== undefined && !(Number.isSafeInteger(cap) && cap >= 1))
-      throw new AuthConfigError('background.maxPending must be a whole number of at least 1');
   }
 
   /** How many tasks are still running, timed out or not. */

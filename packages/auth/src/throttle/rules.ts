@@ -1,6 +1,6 @@
 /** The throttle's configuration and the answers it gives. */
-import { assertCount } from '../shared/config-checks';
-import { toMilliseconds, type Duration } from '../shared/duration';
+import { assertCount, configMilliseconds } from '../shared/config-checks';
+import type { Duration } from '../shared/duration';
 import { AuthConfigError } from '../shared/errors';
 
 export interface RateLimitRule {
@@ -129,13 +129,25 @@ export interface WindowRule {
   readonly windowMs: number;
 }
 
-/** The configured rule, or the default for each part the app left out. */
+/**
+ * The configured rule, or the default for each part the app left out (a
+ * rule or a part that is undefined or null). `name` is the option's path,
+ * for the error a rule that is not an object or a window that is not a
+ * duration throws.
+ */
 export function windowRule(
-  rule: RateLimitRule | undefined,
+  name: string,
+  rule: RateLimitRule | null | undefined,
   limit: number,
   window: Duration,
 ): WindowRule {
-  return { limit: rule?.limit ?? limit, windowMs: toMilliseconds(rule?.window ?? window) };
+  if (rule !== undefined && rule !== null && typeof rule !== 'object')
+    throw new AuthConfigError(`${name} must be a { limit, window } rule`);
+
+  return {
+    limit: rule?.limit ?? limit,
+    windowMs: configMilliseconds(`${name}.window`, rule?.window, window),
+  };
 }
 
 /**

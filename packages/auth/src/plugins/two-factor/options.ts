@@ -5,7 +5,8 @@
  */
 import type { AuthUser } from '../../ports/stores';
 import type { SecretCipher, TwoFactorStore } from '../../ports/two-factor';
-import { toMilliseconds, type Duration } from '../../shared/duration';
+import { assertFunction, configMilliseconds } from '../../shared/config-checks';
+import type { Duration } from '../../shared/duration';
 import { AuthConfigError } from '../../shared/errors';
 
 /**
@@ -145,6 +146,9 @@ export const ENROLLMENT_TTL_MS = 10 * 60_000;
 
 const never = (): boolean => false;
 
+/** Neither undefined nor null: null is an option left out, as everywhere else. */
+const isSet = <T>(value: T): value is NonNullable<T> => value !== undefined && value !== null;
+
 export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
   if (!options.store) throw new AuthConfigError('twoFactor: store is required');
   if (!options.cipher) throw new AuthConfigError('twoFactor: cipher is required');
@@ -156,14 +160,14 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
   if (options.issuer.includes(':'))
     throw new AuthConfigError('twoFactor: issuer may not contain a colon');
 
-  if (options.enforcement !== undefined && typeof options.enforcement !== 'function')
-    throw new AuthConfigError('twoFactor: enforcement must be a function');
+  assertFunction('twoFactor: enforcement', options.enforcement);
+  assertFunction('twoFactor: required', options.required);
 
   // Two answers to "is a factor required" would disagree sooner or later.
-  if (options.enforcement !== undefined && options.required !== undefined)
+  if (isSet(options.enforcement) && isSet(options.required))
     throw new AuthConfigError('twoFactor: pass either required or enforcement, not both');
 
-  const stepUpWindowMs = toMilliseconds(options.stepUpWindow ?? '10m');
+  const stepUpWindowMs = configMilliseconds('twoFactor: stepUpWindow', options.stepUpWindow, '10m');
 
   if (stepUpWindowMs <= 0) throw new AuthConfigError('twoFactor: stepUpWindow must be positive');
 
@@ -182,9 +186,9 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
 function resolveImported(
   option: TwoFactorOptions['importedRecoveryCodes'],
 ): ImportedRecoveryCodes | null {
-  if (option === undefined) return null;
+  if (!isSet(option)) return null;
 
-  if (typeof option?.hash !== 'function')
+  if (typeof option.hash !== 'function')
     throw new AuthConfigError('twoFactor: importedRecoveryCodes.hash must be a function');
 
   return option;
@@ -195,7 +199,7 @@ function resolveRule(name: string, rule: AttemptRule): AttemptRule {
   if (!Number.isInteger(rule.limit) || rule.limit < 1)
     throw new AuthConfigError(`twoFactor: ${name}.limit must be a positive integer`);
 
-  if (toMilliseconds(rule.window) <= 0)
+  if (configMilliseconds(`twoFactor: ${name}.window`, rule.window, 0) <= 0)
     throw new AuthConfigError(`twoFactor: ${name}.window must be positive`);
 
   return rule;
@@ -210,7 +214,7 @@ function resolveTrustedDevices(
   if (option !== undefined && option !== null && typeof option !== 'object')
     throw new AuthConfigError('twoFactor: trustedDevices must be false or an object');
 
-  const ttlMs = toMilliseconds(option?.ttl ?? '30d');
+  const ttlMs = configMilliseconds('twoFactor: trustedDevices.ttl', option?.ttl, '30d');
   const maxPerUser = option?.maxPerUser ?? 5;
 
   if (ttlMs <= 0) throw new AuthConfigError('twoFactor: trustedDevices.ttl must be positive');

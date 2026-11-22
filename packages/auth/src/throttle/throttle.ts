@@ -64,7 +64,7 @@ import {
 } from './rules';
 import type { Clock } from '../ports/clock';
 import type { CounterStore } from '../ports/stores';
-import { assertBoolean } from '../shared/config-checks';
+import { assertBoolean, configMilliseconds } from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 import { LOCKOUT_EXPIRES_AT, toMilliseconds } from '../shared/duration';
 
@@ -87,20 +87,24 @@ export class Throttle {
   constructor(
     private readonly counters: CounterStore,
     private readonly clock: Clock,
-    lockout: LockoutOptions = {},
+    lockout?: LockoutOptions | null,
   ) {
-    this.perAccountIp = windowRule(lockout.perAccountIp, 5, '15m');
-    this.perAccount = windowRule(lockout.perAccount, 10, '15m');
-    this.perDevice = windowRule(lockout.perDevice, 5, '15m');
-    this.deviceMaxAgeMs = toMilliseconds(lockout.deviceMaxAge ?? '30d');
-    this.baseLockMs = toMilliseconds(lockout.baseLock ?? '5m');
-    this.maxLockMs = toMilliseconds(lockout.maxLock ?? '1h');
-    this.quietPeriodMs = toMilliseconds(lockout.quietPeriod ?? '24h');
-    this.permanentAfter = permanentAfter(lockout);
-    this.permanentDevices = lockout.permanent?.trustedDevices ?? true;
-    this.revealLocked = lockout.revealLocked ?? false;
+    // A default parameter replaces only undefined: null must give the defaults too.
+    const options = lockout ?? {};
+    const name = (key: string): string => `throttle.lockout.${key}`;
 
-    assertLockoutOptions(lockout, [
+    this.perAccountIp = windowRule(name('perAccountIp'), options.perAccountIp, 5, '15m');
+    this.perAccount = windowRule(name('perAccount'), options.perAccount, 10, '15m');
+    this.perDevice = windowRule(name('perDevice'), options.perDevice, 5, '15m');
+    this.deviceMaxAgeMs = configMilliseconds(name('deviceMaxAge'), options.deviceMaxAge, '30d');
+    this.baseLockMs = configMilliseconds(name('baseLock'), options.baseLock, '5m');
+    this.maxLockMs = configMilliseconds(name('maxLock'), options.maxLock, '1h');
+    this.quietPeriodMs = configMilliseconds(name('quietPeriod'), options.quietPeriod, '24h');
+    this.permanentAfter = permanentAfter(options);
+    this.permanentDevices = options.permanent?.trustedDevices ?? true;
+    this.revealLocked = options.revealLocked ?? false;
+
+    assertLockoutOptions(options, [
       ['perAccountIp', this.perAccountIp],
       ['perAccount', this.perAccount],
       ['perDevice', this.perDevice],
