@@ -20,6 +20,9 @@ const authContext = createAuthContext({
     secrets: [config.csrfSecret],
     allowedOrigins: [config.origin],
   },
+  // How long an open subscription may go on before its session is checked
+  // again (the default; a number means seconds, 0 checks every event).
+  revalidateSubscriptions: '30s',
 });
 
 createHTTPServer({
