@@ -13,6 +13,29 @@ export function assertBoolean(name: string, value: unknown): void {
   if (typeof value !== 'boolean') throw new AuthConfigError(`${name} must be true or false`);
 }
 
+/**
+ * Refuses anything but a list (or a value left out). A single string from
+ * the environment would otherwise be read character by character.
+ */
+export function assertList(name: string, value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) throw new AuthConfigError(`${name} must be a list`);
+}
+
+/** Refuses anything but a list of strings (or a value left out). */
+export function assertStringList(name: string, value: unknown): void {
+  assertList(name, value);
+
+  if (Array.isArray(value) && value.some((entry) => typeof entry !== 'string'))
+    throw new AuthConfigError(`${name} must be a list of strings`);
+}
+
+/** Refuses anything but a string (or a value left out). */
+export function assertString(name: string, value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (typeof value !== 'string') throw new AuthConfigError(`${name} must be a string`);
+}
+
 /** Refuses anything but a safe integer of at least 1 (or a value left out). */
 export function assertCount(name: string, value: unknown): void {
   if (value === undefined || value === null) return;
