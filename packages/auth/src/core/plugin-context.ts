@@ -217,6 +217,11 @@ export interface PluginContext<U extends AuthUser, A> {
    * the permanent tier like a password lock. A target with no account counts
    * the same and announces nothing. Returns the lock this failure set, if any.
    * Use it instead of `throttle.recordFailure`, which only counts.
+   *
+   * Pass only an account the request is already acting on (the user of its
+   * session or of its challenge), never one taken from the request itself: it
+   * counts and locks whatever account it is pointed at, so a caller that lets
+   * the request name the target lets anyone lock any account.
    */
   recordFailedProof(input: LockTarget & { readonly meta: RequestMeta }): Promise<{
     newLock?: NewLock;
