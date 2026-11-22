@@ -71,7 +71,9 @@ export interface TrpcAuth<U extends AuthUser = AuthUser, A = unknown> {
 export interface CsrfOptions {
   /**
    * Signs the double-submit token. At least 32 bytes each, and not the auth
-   * secret. Current secret first, previous ones after it during a rollover.
+   * secret. Current secret first, previous ones after it during a rollover: a
+   * safe request replaces a token signed by a previous secret with one under
+   * the current secret.
    */
   readonly secrets: readonly (string | Uint8Array)[];
   /** Origins allowed to send mutations, such as `https://app.example`. */
