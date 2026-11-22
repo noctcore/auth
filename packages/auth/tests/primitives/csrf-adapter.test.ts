@@ -11,6 +11,7 @@ import {
   resolveCsrfSettings,
   startCsrfPreSession,
   type CsrfContext,
+  type CsrfSettingsInput,
   type SetCookieTarget,
 } from '../../src/http/csrf-adapter';
 import { AuthConfigError } from '../../src/shared/errors';
@@ -85,9 +86,33 @@ describe('resolveCsrfSettings', () => {
     [{ ...base, crossSiteOrigins: ['https://*.example'] }, 'csrf.crossSiteOrigins needs exact'],
     [{ ...base, secrets: ['short'] }, 'CSRF secrets must be at least 32 bytes'],
     [{ ...base, headerName: 'x csrf' }, 'Invalid CSRF header name: x csrf'],
-  ])('refuses a bad option at boot (%#)', (input, message) => {
-    expect(() => resolveCsrfSettings(input, false)).toThrow(AuthConfigError);
-    expect(() => resolveCsrfSettings(input, false)).toThrow(message);
+    // Options read from the environment arrive as strings.
+    [{ ...base, allowSameSite: 'false' }, 'csrf.allowSameSite must be true or false'],
+    [{ ...base, allowSameSite: 'true' }, 'csrf.allowSameSite must be true or false'],
+    [{ ...base, allowSameSite: 0 }, 'csrf.allowSameSite must be true or false'],
+    [{ ...base, secrets: CURRENT_SECRET }, 'csrf.secrets must be a list'],
+    [{ ...base, secrets: [CURRENT_SECRET, undefined] }, 'csrf.secrets must hold strings or bytes'],
+    [{ ...base, allowedOrigins: PARITY_ORIGIN }, 'csrf.allowedOrigins must be a list'],
+    [
+      { ...base, allowedOrigins: [PARITY_ORIGIN, 1] },
+      'csrf.allowedOrigins must be a list of strings',
+    ],
+    [{ ...base, crossSiteOrigins: 'app://desktop' }, 'csrf.crossSiteOrigins must be a list'],
+    [{ ...base, crossSiteOrigins: [null] }, 'csrf.crossSiteOrigins must be a list of strings'],
+    [{ ...base, headerName: 42 }, 'csrf.headerName must be a string'],
+  ] as [unknown, string][])('refuses a bad option at boot (%#)', (input, message) => {
+    const resolve = () => resolveCsrfSettings(input as CsrfSettingsInput, false);
+
+    expect(resolve).toThrow(AuthConfigError);
+    expect(resolve).toThrow(message);
+  });
+
+  it('takes allowSameSite as true, false or left out, as before', () => {
+    for (const allowSameSite of [true, false, undefined, null]) {
+      const input = { ...base, allowSameSite } as CsrfSettingsInput;
+
+      expect(resolveCsrfSettings(input, false).allowSameSite).toBe(allowSameSite === true);
+    }
   });
 });
 
