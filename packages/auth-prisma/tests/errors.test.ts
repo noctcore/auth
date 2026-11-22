@@ -47,7 +47,7 @@ describe('PrismaTokenStore errors', () => {
     expect(calls).toBe(2);
   });
 
-  it('rethrows any other error from a put, a consume or an attempt increment', async () => {
+  it('rethrows any other error from a put, a consume, an attempt increment or an extend', async () => {
     const failing = async () => {
       throw outage;
     };
@@ -59,9 +59,10 @@ describe('PrismaTokenStore errors', () => {
     await expect(store.put(token)).rejects.toBe(outage);
     await expect(store.consume('reset', token.hash)).rejects.toBe(outage);
     await expect(store.incrementAttempts('reset', 'u1', 5)).rejects.toBe(outage);
+    await expect(store.extendExpiry('reset', token.hash, 1)).rejects.toBe(outage);
   });
 
-  it('reads a missing row on consume and on an exhausted increment as null', async () => {
+  it('reads a missing row on consume and on an exhausted increment as null, and on an extend as false', async () => {
     const missing = async () => {
       throw prismaError('P2025');
     };
@@ -70,6 +71,7 @@ describe('PrismaTokenStore errors', () => {
 
     expect(await store.consume('reset', token.hash)).toBeNull();
     expect(await store.incrementAttempts('reset', 'u1', 5)).toBeNull();
+    expect(await store.extendExpiry('reset', token.hash, 1)).toBe(false);
   });
 
   it('reads token data that is not an object as empty', async () => {
