@@ -59,7 +59,8 @@ describe('PrismaTokenStore errors', () => {
     await expect(store.put(token)).rejects.toBe(outage);
     await expect(store.consume('reset', token.hash)).rejects.toBe(outage);
     await expect(store.incrementAttempts('reset', 'u1', 5)).rejects.toBe(outage);
-    await expect(store.extendExpiry('reset', token.hash, 1)).rejects.toBe(outage);
+    await expect(store.incrementAttemptsByHash('reset', token.hash, 5)).rejects.toBe(outage);
+    await expect(store.extendExpiry('reset', token.hash, 1, 0)).rejects.toBe(outage);
   });
 
   it('reads a missing row on consume and on an exhausted increment as null, and on an extend as false', async () => {
@@ -71,7 +72,8 @@ describe('PrismaTokenStore errors', () => {
 
     expect(await store.consume('reset', token.hash)).toBeNull();
     expect(await store.incrementAttempts('reset', 'u1', 5)).toBeNull();
-    expect(await store.extendExpiry('reset', token.hash, 1)).toBe(false);
+    expect(await store.incrementAttemptsByHash('reset', token.hash, 5)).toBeNull();
+    expect(await store.extendExpiry('reset', token.hash, 1, 0)).toBe(false);
   });
 
   it('reads token data that is not an object as empty', async () => {

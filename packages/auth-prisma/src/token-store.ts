@@ -1,8 +1,9 @@
 /**
  * The `TokenStore` on the `AuthToken` model from `prisma/auth.prisma`. Consume
  * is a delete that returns the row, so only one caller ever gets a token, the
- * attempt cap is an update whose `where` carries the cap, and an extend is an
- * update that fails on a missing row instead of an upsert.
+ * attempt cap is an update whose `where` carries the cap (and the hash, for a
+ * code check), and an extend is an update that fails on a missing or expired
+ * row instead of an upsert.
  */
 import type { StoredToken, TokenStore } from '@noctcore/auth';
 import type { PrismaAuthTokenDelegate } from './delegates';
@@ -94,11 +95,17 @@ export class PrismaTokenStore implements TokenStore {
     }
   }
 
-  async extendExpiry(purpose: string, hash: string, expiresAt: number): Promise<boolean> {
+  async extendExpiry(
+    purpose: string,
+    hash: string,
+    expiresAt: number,
+    now: number,
+  ): Promise<boolean> {
     try {
-      // An update, not an upsert: a row consumed meanwhile is not created again.
+      // An update, not an upsert: a row consumed meanwhile is not created
+      // again, and one that expired meanwhile is not matched.
       await this.delegate.update({
-        where: { purpose_hash: { purpose, hash } },
+        where: { purpose_hash: { purpose, hash }, expiresAt: { gt: new Date(now) } },
         data: { expiresAt: new Date(expiresAt) },
         select: { hash: true },
       });
@@ -115,6 +122,28 @@ export class PrismaTokenStore implements TokenStore {
     try {
       const row = (await this.delegate.update({
         where: { userId_purpose: { userId, purpose }, attempts: { lt: max } },
+        data: { attempts: { increment: 1 } },
+        select: { attempts: true },
+      })) as { attempts: number };
+
+      return row.attempts;
+    } catch (error) {
+      if (prismaCode(error) === P2025) return null;
+
+      throw error;
+    }
+  }
+
+  async incrementAttemptsByHash(
+    purpose: string,
+    hash: string,
+    max: number,
+  ): Promise<number | null> {
+    try {
+      // Keyed on the hash that was read: a row replaced by a resend is another
+      // hash and is never charged.
+      const row = (await this.delegate.update({
+        where: { purpose_hash: { purpose, hash }, attempts: { lt: max } },
         data: { attempts: { increment: 1 } },
         select: { attempts: true },
       })) as { attempts: number };
