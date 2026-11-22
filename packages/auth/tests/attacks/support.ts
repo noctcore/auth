@@ -102,7 +102,15 @@ const PORT_METHODS = {
     'markEmailVerified',
   ],
   sessions: ['create', 'get', 'touch', 'delete', 'listByUser', 'getEpoch', 'bumpEpoch'],
-  tokens: ['put', 'find', 'findByUser', 'consume', 'incrementAttempts', 'deleteByUser'],
+  tokens: [
+    'put',
+    'find',
+    'findByUser',
+    'consume',
+    'incrementAttempts',
+    'incrementAttemptsByHash',
+    'deleteByUser',
+  ],
   counters: ['increment', 'get', 'set', 'decrement', 'reset'],
 } as const;
 

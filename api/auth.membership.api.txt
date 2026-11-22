@@ -186,6 +186,7 @@ OneTimeTokens [class]
     peekLink(purpose: string, token: unknown): Promise<TokenRedemption>
     private classify
     private codeHash
+    private countAttempt
     private readonly clock
     private readonly keys
     private readonly random
@@ -358,10 +359,11 @@ TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; re
 TokenStore [interface]
     consume(purpose: string, hash: string): Promise<StoredToken | null>
     deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
-    extendExpiry?(purpose: string, hash: string, expiresAt: number): Promise<boolean>
+    extendExpiry?(purpose: string, hash: string, expiresAt: number, now: number): Promise<boolean>
     find(purpose: string, hash: string): Promise<StoredToken | null>
     findByUser(purpose: string, userId: string): Promise<StoredToken | null>
     incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    incrementAttemptsByHash?(purpose: string, hash: string, max: number): Promise<number | null>
     put(token: StoredToken): Promise<void>
 TwoFactorStanding [type] = { readonly state: 'grace'; readonly graceEndsAt: number; } /** * A factor is required, none is set up and the grace window is over (or * the app's policy failed): the session may reach only the routes marked * for enrollment. Everything else answers `two_factor_enrollment_required`. */ | { readonly state: 'enrollment-only'; }
 UserStore [interface]<U extends AuthUser = AuthUser>

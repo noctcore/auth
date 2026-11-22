@@ -173,12 +173,17 @@ export class OneTimeTokens {
       return { status: 'expired', namedUserId: userId };
     }
 
-    const attempt = await this.store.incrementAttempts(purpose, userId, maxAttempts);
+    const attempt = await this.countAttempt(purpose, userId, found.hash, maxAttempts);
 
     if (attempt === null) {
-      await this.store.consume(purpose, found.hash);
+      // At the cap (when read, or still there now), the code is removed and
+      // exhausted. Gone before it reached the cap: spent by a concurrent
+      // winner or replaced by a resend, so the code submitted no longer exists
+      // and is never compared.
+      const removed = await this.store.consume(purpose, found.hash);
+      const exhausted = removed !== null || found.attempts >= maxAttempts;
 
-      return { status: 'exhausted', namedUserId: userId };
+      return { status: exhausted ? 'exhausted' : 'consumed', namedUserId: userId };
     }
 
     // Every candidate is compared, so the time does not say which key matched.
@@ -195,6 +200,22 @@ export class OneTimeTokens {
     if (!consumed) return { status: 'consumed', namedUserId: userId };
 
     return { status: 'valid', userId, data: consumed.data };
+  }
+
+  /**
+   * Counts an attempt on the code that was read, so a code resent meanwhile is
+   * never charged for a guess at this one. A store without the hash-guarded
+   * count falls back to user and purpose (see `TokenStore`).
+   */
+  private countAttempt(
+    purpose: string,
+    userId: string,
+    hash: string,
+    maxAttempts: number,
+  ): Promise<number | null> {
+    return this.store.incrementAttemptsByHash
+      ? this.store.incrementAttemptsByHash(purpose, hash, maxAttempts)
+      : this.store.incrementAttempts(purpose, userId, maxAttempts);
   }
 
   /**
@@ -257,8 +278,8 @@ export class OneTimeTokens {
 
   /**
    * Moves a live link's expiry out to `expiresAt`; never shortens it. Unknown
-   * or expired links stay as they are, and so does a link spent between the
-   * read and the write: the extend never writes a link back.
+   * or expired links stay as they are, and so does a link spent or expired
+   * between the read and the write: the extend never writes a link back.
    */
   async extendLink(purpose: string, token: unknown, expiresAt: number): Promise<void> {
     if (!isTokenShape(token)) return;
@@ -269,16 +290,20 @@ export class OneTimeTokens {
     if (!found || found.expiresAt <= this.clock.now() || found.expiresAt >= expiresAt) return;
 
     if (this.store.extendExpiry) {
-      await this.store.extendExpiry(purpose, hash, expiresAt);
+      await this.store.extendExpiry(purpose, hash, expiresAt, this.clock.now());
 
       return;
     }
 
     // A store without extendExpiry: only the caller that takes the link puts
-    // it back, so a link spent meanwhile is not taken and stays spent.
+    // it back, so a link spent meanwhile is not taken and stays spent, and one
+    // that expired meanwhile is not put back. Two gaps remain, both accepted
+    // for such stores (no shipped store takes this path): the put replaces a
+    // link of the same user and purpose issued between the consume and the
+    // put, and a put that fails after the consume loses the link.
     const taken = await this.store.consume(purpose, hash);
 
-    if (taken) await this.store.put({ ...taken, expiresAt });
+    if (taken && taken.expiresAt > this.clock.now()) await this.store.put({ ...taken, expiresAt });
   }
 
   revokeAll(userId: string, purposes: readonly string[]): Promise<void> {

@@ -156,19 +156,32 @@ export interface TokenStore {
   consume(purpose: string, hash: string): Promise<StoredToken | null>;
   /**
    * Moves the expiry of the token with that hash to `expiresAt`, only if it
-   * still exists, in one step; true when a token was changed. Never creates a
-   * token, so a token consumed meanwhile stays consumed. Optional for
-   * backward compatibility: without it `OneTimeTokens.extendLink` consumes the
-   * token and puts it back, which never revives a consumed token but hides it
-   * for one round trip. The conformance suite expects it.
+   * still exists and has not expired (its expiry is after `now`), in one step;
+   * true when a token was changed. Never creates a token, so a token consumed
+   * meanwhile stays consumed, and never extends one that expired meanwhile.
+   * Optional for backward compatibility: without it `OneTimeTokens.extendLink`
+   * consumes the token and puts it back. That never revives a consumed token,
+   * but it hides the token for one round trip, overwrites a token of the same
+   * user and purpose issued in between (the put replaces it), and loses the
+   * token if the put fails after the consume. The conformance suite expects it.
    */
-  extendExpiry?(purpose: string, hash: string, expiresAt: number): Promise<boolean>;
+  extendExpiry?(purpose: string, hash: string, expiresAt: number, now: number): Promise<boolean>;
   /**
    * Atomically increments the attempt count of the user's token of that purpose
    * if it is below `max`, returning the new count; null when it is missing or
    * already at `max`. Of N concurrent callers at most `max` get a number.
    */
   incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>;
+  /**
+   * `incrementAttempts` for the token with that hash only: null when it is
+   * missing (consumed, or replaced by a newer token of the same user and
+   * purpose) or already at `max`. A code check counts its attempt on the code
+   * it read, so a code resent meanwhile is never charged for a guess at the
+   * old one. Optional for backward compatibility: without it the attempt is
+   * counted by user and purpose, which charges a code resent between the read
+   * and the count. The conformance suite expects it.
+   */
+  incrementAttemptsByHash?(purpose: string, hash: string, max: number): Promise<number | null>;
   /** Deletes the user's tokens, of the given purposes or of every purpose. */
   deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>;
 }

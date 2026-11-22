@@ -346,13 +346,19 @@ describe('a refused code and a resend racing it', () => {
     method: keyof TokenStore,
     setup: (racing: OneTimeTokens) => Promise<string>,
     expected: 'expired' | 'exhausted' | 'mismatch',
+    without: readonly (keyof TokenStore)[] = [],
   ) {
     let resent = '';
 
     const racing = new OneTimeTokens(
-      interleaved(store, method, async () => {
-        resent = (await tokens.issueCode('verify', 'u1', 60_000, 6)).code;
-      }),
+      interleaved(
+        store,
+        method,
+        async () => {
+          resent = (await tokens.issueCode('verify', 'u1', 60_000, 6)).code;
+        },
+        without,
+      ),
       clock,
       cryptoRandom,
       secret,
@@ -379,32 +385,98 @@ describe('a refused code and a resend racing it', () => {
     );
   });
 
-  it('keeps the new code when the submitted one was exhausted', async () => {
-    await race(
-      'incrementAttempts',
-      async () => {
-        const { code } = await tokens.issueCode('verify', 'u1', 60_000, 6);
+  // Each count races twice: through the hash-guarded count, and through the
+  // count by user and purpose a store without it falls back to.
+  const counts = [
+    ['incrementAttemptsByHash', []],
+    ['incrementAttempts', ['incrementAttemptsByHash']],
+  ] as const;
 
-        for (let i = 0; i < 3; i++) await store.incrementAttempts('verify', 'u1', 3);
+  it.each(counts)(
+    'keeps the new code when the submitted one was exhausted (%s)',
+    async (method, without) => {
+      await race(
+        method,
+        async () => {
+          const { code } = await tokens.issueCode('verify', 'u1', 60_000, 6);
 
-        return code;
-      },
-      'exhausted',
+          for (let i = 0; i < 3; i++) await store.incrementAttempts('verify', 'u1', 3);
+
+          return code;
+        },
+        'exhausted',
+        without,
+      );
+    },
+  );
+
+  it.each(counts)(
+    'keeps the new code when the last allowed guess was wrong (%s)',
+    async (method, without) => {
+      await race(
+        method,
+        async () => {
+          const { code } = await tokens.issueCode('verify', 'u1', 60_000, 6);
+
+          for (let i = 0; i < 2; i++) await store.incrementAttempts('verify', 'u1', 3);
+
+          return code === '000000' ? '000001' : '000000';
+        },
+        'mismatch',
+        without,
+      );
+    },
+  );
+});
+
+describe('a resend between a code check and its count', () => {
+  // The resend lands after the submit read the old code and before it counts
+  // the attempt: the attempt must not land on the new code.
+  async function resentBeforeTheCount(guess: (old: string) => string) {
+    const { code: old } = await tokens.issueCode('verify', 'u1', 60_000, 6);
+    let resent = '';
+
+    const racing = new OneTimeTokens(
+      interleaved(store, 'findByUser', async () => {
+        resent = (await tokens.issueCode('verify', 'u1', 60_000, 6)).code;
+      }),
+      clock,
+      cryptoRandom,
+      secret,
+    );
+
+    const status = (await racing.redeemCode('verify', 'u1', guess(old), 3)).status;
+
+    expect(resent).not.toBe('');
+    expect((await store.findByUser('verify', 'u1'))?.attempts).toBe(0);
+    expect((await tokens.redeemCode('verify', 'u1', resent, 3)).status).toBe('valid');
+
+    return status;
+  }
+
+  it('never charges the new code for a guess at the old one', async () => {
+    expect(await resentBeforeTheCount((old) => (old === '000000' ? '000001' : '000000'))).toBe(
+      'consumed',
     );
   });
 
-  it('keeps the new code when the last allowed guess was wrong', async () => {
-    await race(
-      'incrementAttempts',
-      async () => {
-        const { code } = await tokens.issueCode('verify', 'u1', 60_000, 6);
+  it('answers the old code as consumed, its replacement untouched', async () => {
+    expect(await resentBeforeTheCount((old) => old)).toBe('consumed');
+  });
 
-        for (let i = 0; i < 2; i++) await store.incrementAttempts('verify', 'u1', 3);
+  it('answers a code spent by a concurrent winner as consumed, not exhausted', async () => {
+    const { code } = await tokens.issueCode('verify', 'u1', 60_000, 6);
 
-        return code === '000000' ? '000001' : '000000';
-      },
-      'mismatch',
+    const racing = new OneTimeTokens(
+      interleaved(store, 'findByUser', async () =>
+        expect((await tokens.redeemCode('verify', 'u1', code, 3)).status).toBe('valid'),
+      ),
+      clock,
+      cryptoRandom,
+      secret,
     );
+
+    expect((await racing.redeemCode('verify', 'u1', code, 3)).status).toBe('consumed');
   });
 });
 
@@ -437,6 +509,35 @@ describe('extendLink racing the click that spends the link', () => {
   it('leaves it spent with a store that has no extendExpiry', async () => {
     await spentWhileExtending(['extendExpiry']);
   });
+
+  it.each([[[]], [['extendExpiry']]] as const)(
+    'never extends a link that expires between its check and the write (without %j)',
+    async (without) => {
+      const { token, expiresAt } = await tokens.issueLink('email-revert', 'u1', 60_000);
+
+      // The link is live when extendLink checks it and has expired by the
+      // write: the first reading of the clock is the check, the second the
+      // write's.
+      const readings = [expiresAt - 1, expiresAt];
+      const ticking = { now: () => readings.shift() ?? expiresAt };
+
+      const racing = new OneTimeTokens(
+        interleaved(store, 'find', async () => undefined, without),
+        ticking,
+        cryptoRandom,
+        secret,
+      );
+
+      await racing.extendLink('email-revert', token, Date.UTC(9999, 11, 31));
+
+      expect(readings).toEqual([]);
+
+      // Kept as it was, or (through consume and put) taken and not put back.
+      expect((await store.findByUser('email-revert', 'u1'))?.expiresAt ?? expiresAt).toBe(
+        expiresAt,
+      );
+    },
+  );
 
   it('extends a live link through a store that has no extendExpiry, keeping its attempts and data', async () => {
     const { token, expiresAt } = await tokens.issueLink('email-revert', 'u1', 60_000, {
