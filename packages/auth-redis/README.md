@@ -18,6 +18,20 @@ const redis = new Redis(process.env.REDIS_URL, {
 
 redis.on('error', (error) => console.error('redis', error.name)); // log it, or ioredis prints every failure
 
+// With the offline queue off, a command sent before the connection is up is
+// rejected, so wait for it (bounded) before serving.
+await new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(
+    () => reject(new Error('Redis was not ready within 10 seconds')),
+    10_000,
+  );
+
+  redis.once('ready', () => {
+    clearTimeout(timer);
+    resolve();
+  });
+});
+
 const { sessions, counters } = redisStores(redis, { prefix: 'auth:' });
 ```
 
@@ -81,7 +95,7 @@ Create the ioredis client with the options above; ioredis's defaults are not saf
 
 - `maxRetriesPerRequest: 1` ends a command after one reconnect attempt (`MaxRetriesPerRequestError`) instead of 20.
 - `enableOfflineQueue: false` rejects a command at once while the client is not connected, instead of queueing it until the connection returns. Commands sent before the first connection is ready are rejected too, so wait for the client's `ready` event before you start serving.
-- `connectTimeout` and `commandTimeout` (milliseconds) bound a connection attempt and a command that gets no reply, for the case where the network drops packets instead of refusing them (`Command timed out`).
-- `retryStrategy` sets how long the client waits before it reconnects in the background; it does not delay a request. The default backs off to 5 seconds.
+- `connectTimeout` and `commandTimeout` (milliseconds) bound a connection attempt and a command that gets no reply, for the case where the network drops packets instead of refusing them (`Command timed out`). Size `commandTimeout` above your Redis p99, including a loaded instance and the longest script the stores run, or healthy calls fail. A command that timed out may still have run on the server; the library fails closed on the rejection, so that is safe.
+- `retryStrategy` sets how long the client waits before it reconnects in the background; it does not delay a request. The client reconnects on its own when Redis comes back, with no restart, because this strategy never returns `null`. Do not return `null` from it: that ends reconnection for good, and every later command fails until the process restarts. The default backs off to 5 seconds.
 
 What the app sees: the store call rejects with the ioredis error, and the core does not catch it. A flow such as `validateRequest`, sign-in or a rate-limit hit rejects instead of returning a refusal, so no request is let through on a failed check (it fails closed). `@noctcore/auth-nestjs` turns the rejection into a 500 and `@noctcore/auth-trpc` into an internal error, both logging only the error's name. In your own handler, catch the rejection, answer 503 and log `error.name` (a store error can carry a key name).
