@@ -43,7 +43,7 @@ The address is stored with the code, and verification only succeeds if the accou
 
 ### Short-lived, hashed, counted
 
-A code lives 15 minutes, is stored as an HMAC under a server secret, allows 5 wrong guesses (counted atomically before each comparison) and is deleted on success, expiry or exhaustion ([A013](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A013-code-guessing.test.ts)). Resending is limited to 3 mails an hour per account.
+A code lives 15 minutes, is stored as an HMAC under a server secret, allows 5 wrong guesses (counted atomically before each comparison) and is deleted on success, expiry or exhaustion ([A013](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A013-code-guessing.test.ts)). Only the code that was submitted is deleted: a new code sent while an old one was being refused stays valid. Resending is limited to 3 mails an hour per account.
 
 ### Verifying ends every other session
 
