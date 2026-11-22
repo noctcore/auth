@@ -165,8 +165,10 @@ export class OneTimeTokens {
       return { status: 'unknown' };
     if (!found) return { status: 'unknown' };
 
+    // A refused code is removed by the hash that was read, never by user and
+    // purpose: a code resent meanwhile is another row and must survive.
     if (found.expiresAt <= this.clock.now()) {
-      await this.store.deleteByUser(userId, [purpose]);
+      await this.store.consume(purpose, found.hash);
 
       return { status: 'expired', namedUserId: userId };
     }
@@ -174,7 +176,7 @@ export class OneTimeTokens {
     const attempt = await this.store.incrementAttempts(purpose, userId, maxAttempts);
 
     if (attempt === null) {
-      await this.store.deleteByUser(userId, [purpose]);
+      await this.store.consume(purpose, found.hash);
 
       return { status: 'exhausted', namedUserId: userId };
     }
@@ -183,7 +185,7 @@ export class OneTimeTokens {
     const matches = [expected, ...previous].map((hash) => hexDigestsEqual(found.hash, hash));
 
     if (!matches.includes(true)) {
-      if (attempt >= maxAttempts) await this.store.deleteByUser(userId, [purpose]);
+      if (attempt >= maxAttempts) await this.store.consume(purpose, found.hash);
 
       return { status: 'mismatch', namedUserId: userId };
     }

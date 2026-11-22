@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { cryptoRandom } from '../../src/crypto/random';
-import { NO_SUCH_USER_ID } from '../../src/ports/stores';
+import { NO_SUCH_USER_ID, type TokenStore } from '../../src/ports/stores';
 import { manualClock, MemoryTokenStore, type ManualClock } from '../../src/testing';
 import { OneTimeTokens } from '../../src/tokens/one-time-tokens';
 
@@ -298,5 +298,112 @@ describe('extendLink', () => {
 
     clock.set(expiresAt);
     expect((await tokens.redeemLink('email-revert', token)).status).toBe('valid');
+  });
+});
+
+/**
+ * The store with `hook` run once, right after the first call of `method`
+ * resolves: the other request lands between this one's read and its write.
+ */
+function interleaved(
+  base: TokenStore,
+  method: keyof TokenStore,
+  hook: () => Promise<unknown>,
+  without: readonly (keyof TokenStore)[] = [],
+): TokenStore {
+  let fired = false;
+
+  return new Proxy(base, {
+    get(target, name, receiver) {
+      if (without.includes(name as keyof TokenStore)) return undefined;
+
+      const value: unknown = Reflect.get(target, name, receiver);
+
+      if (typeof value !== 'function') return value;
+
+      const call = value as (...args: unknown[]) => unknown;
+
+      if (name !== method) return call.bind(target);
+
+      return async (...args: unknown[]) => {
+        const result: unknown = await call.apply(target, args);
+
+        if (!fired) {
+          fired = true;
+          await hook();
+        }
+
+        return result;
+      };
+    },
+  });
+}
+
+describe('a refused code and a resend racing it', () => {
+  // The resend stores a new code between the submit's read and its delete;
+  // the delete must remove the code it read, never the new one.
+  async function race(
+    method: keyof TokenStore,
+    setup: (racing: OneTimeTokens) => Promise<string>,
+    expected: 'expired' | 'exhausted' | 'mismatch',
+  ) {
+    let resent = '';
+
+    const racing = new OneTimeTokens(
+      interleaved(store, method, async () => {
+        resent = (await tokens.issueCode('verify', 'u1', 60_000, 6)).code;
+      }),
+      clock,
+      cryptoRandom,
+      secret,
+    );
+
+    const submitted = await setup(racing);
+
+    expect((await racing.redeemCode('verify', 'u1', submitted, 3)).status).toBe(expected);
+    expect(resent).not.toBe('');
+    expect((await tokens.redeemCode('verify', 'u1', resent, 3)).status).toBe('valid');
+  }
+
+  it('keeps the new code when the submitted one had expired', async () => {
+    await race(
+      'findByUser',
+      async () => {
+        const { code } = await tokens.issueCode('verify', 'u1', 60_000, 6);
+
+        clock.advance(60_000);
+
+        return code;
+      },
+      'expired',
+    );
+  });
+
+  it('keeps the new code when the submitted one was exhausted', async () => {
+    await race(
+      'incrementAttempts',
+      async () => {
+        const { code } = await tokens.issueCode('verify', 'u1', 60_000, 6);
+
+        for (let i = 0; i < 3; i++) await store.incrementAttempts('verify', 'u1', 3);
+
+        return code;
+      },
+      'exhausted',
+    );
+  });
+
+  it('keeps the new code when the last allowed guess was wrong', async () => {
+    await race(
+      'incrementAttempts',
+      async () => {
+        const { code } = await tokens.issueCode('verify', 'u1', 60_000, 6);
+
+        for (let i = 0; i < 2; i++) await store.incrementAttempts('verify', 'u1', 3);
+
+        return code === '000000' ? '000001' : '000000';
+      },
+      'mismatch',
+    );
   });
 });
