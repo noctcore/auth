@@ -6,8 +6,13 @@
 import type { FlowSettings } from './settings';
 import type { AuthConfig, AuthPlugin } from '../core/config';
 import type { AuthUser } from '../ports/stores';
-import { assertBoolean, assertCount } from '../shared/config-checks';
-import { toMilliseconds } from '../shared/duration';
+import {
+  assertBoolean,
+  assertCount,
+  assertFunction,
+  assertOneOf,
+  configMilliseconds,
+} from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 
 /** The shortest revert window allowed: the old address's owner may be away for a week. */
@@ -26,40 +31,54 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
   assertOptionTypes(config);
 
   const resetKind = config.passwordReset?.kind ?? 'link';
-
-  const verificationTtl =
-    config.emailVerification?.ttl ?? (verificationKind === 'code' ? '15m' : '24h');
-
-  const resetTtl = config.passwordReset?.ttl ?? (resetKind === 'code' ? '15m' : '1h');
   const changeKind = config.emailChange?.kind ?? 'code';
-  const changeTtl = config.emailChange?.ttl ?? (changeKind === 'code' ? '15m' : '1h');
 
   const settings: FlowSettings = {
     revealExisting: config.registration?.revealExisting ?? false,
     autoLogin: config.registration?.autoLogin ?? false,
     verification: {
       kind: verificationKind,
-      ttlMs: toMilliseconds(verificationTtl),
+      ttlMs: configMilliseconds(
+        'emailVerification.ttl',
+        config.emailVerification?.ttl,
+        verificationKind === 'code' ? '15m' : '24h',
+      ),
       digits: config.emailVerification?.digits ?? 8,
       maxAttempts: config.emailVerification?.maxAttempts ?? 5,
       linkWithoutSession,
     },
     reset: {
       kind: resetKind,
-      ttlMs: toMilliseconds(resetTtl),
+      ttlMs: configMilliseconds(
+        'passwordReset.ttl',
+        config.passwordReset?.ttl,
+        resetKind === 'code' ? '15m' : '1h',
+      ),
       digits: config.passwordReset?.digits ?? 8,
       maxAttempts: config.passwordReset?.maxAttempts ?? 5,
-      ticketTtlMs: toMilliseconds(config.passwordReset?.ticketTtl ?? '10m'),
+      ticketTtlMs: configMilliseconds(
+        'passwordReset.ticketTtl',
+        config.passwordReset?.ticketTtl,
+        '10m',
+      ),
       markEmailVerified: config.passwordReset?.markEmailVerified ?? true,
       enqueue: config.passwordReset?.enqueue,
     },
     emailChange: {
       kind: changeKind,
-      ttlMs: toMilliseconds(changeTtl),
+      ttlMs: configMilliseconds(
+        'emailChange.ttl',
+        config.emailChange?.ttl,
+        changeKind === 'code' ? '15m' : '1h',
+      ),
       digits: config.emailChange?.digits ?? 8,
       maxAttempts: config.emailChange?.maxAttempts ?? 5,
-      revertTtlMs: toMilliseconds(config.emailChange?.revertTtl ?? '7d'),
-      blockAfterRevertMs: toMilliseconds(config.emailChange?.blockAfterRevert ?? '30d'),
+      revertTtlMs: configMilliseconds('emailChange.revertTtl', config.emailChange?.revertTtl, '7d'),
+      blockAfterRevertMs: configMilliseconds(
+        'emailChange.blockAfterRevert',
+        config.emailChange?.blockAfterRevert,
+        '30d',
+      ),
     },
     urls: {
       verifyEmail: config.urls?.verifyEmail,
@@ -67,7 +86,7 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
       confirmEmailChange: config.urls?.confirmEmailChange,
       revertEmailChange: config.urls?.revertEmailChange,
     },
-    freshAuthAgeMs: toMilliseconds(config.session?.freshAuthAge ?? '10m'),
+    freshAuthAgeMs: configMilliseconds('session.freshAuthAge', config.session?.freshAuthAge, '10m'),
   };
 
   assertSafeSettings(settings);
@@ -78,6 +97,9 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
 /**
  * The same for the other booleans, read by truthiness, and the attempt
  * counts: `attempt >= NaN` is never true, so a `NaN` count never spends a code.
+ * A `kind` compared with `=== 'link'` would read a typo such as `'Link'` as
+ * the other kind, and a link or queue callback that is not a function would
+ * throw on the first request that needs it.
  */
 function assertOptionTypes<U extends AuthUser, A, P extends readonly AuthPlugin[]>(
   config: AuthConfig<U, A, P>,
@@ -88,6 +110,18 @@ function assertOptionTypes<U extends AuthUser, A, P extends readonly AuthPlugin[
   assertCount('emailVerification.maxAttempts', config.emailVerification?.maxAttempts);
   assertCount('passwordReset.maxAttempts', config.passwordReset?.maxAttempts);
   assertCount('emailChange.maxAttempts', config.emailChange?.maxAttempts);
+  assertOneOf('emailVerification.kind', config.emailVerification?.kind, ['code', 'link']);
+  assertOneOf('passwordReset.kind', config.passwordReset?.kind, ['link', 'code']);
+  assertOneOf('emailChange.kind', config.emailChange?.kind, ['code', 'link']);
+  assertFunction('passwordReset.enqueue', config.passwordReset?.enqueue);
+
+  for (const key of [
+    'verifyEmail',
+    'resetPassword',
+    'confirmEmailChange',
+    'revertEmailChange',
+  ] as const)
+    assertFunction(`urls.${key}`, config.urls?.[key]);
 }
 
 function assertSafeSettings(settings: FlowSettings): void {

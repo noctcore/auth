@@ -44,7 +44,7 @@ import { systemClock } from './ports/clock';
 import { noopMetrics, silentLogger } from './ports/logger';
 import type { AuthUser, SessionStore, StoredSession } from './ports/stores';
 import { SessionManager } from './session/session-manager';
-import { assertBoolean } from './shared/config-checks';
+import { assertBoolean, assertString } from './shared/config-checks';
 import { resolveEmailNormalizer } from './shared/email';
 import { AuthConfigError } from './shared/errors';
 import type { RequestMeta } from './shared/meta';
@@ -66,6 +66,38 @@ function assertRequiredConfig<U extends AuthUser, A, P extends readonly AuthPlug
 
   if (!config.password?.hasher) throw new AuthConfigError('password.hasher is required');
   if (!config.mailer) throw new AuthConfigError('mailer is required');
+
+  assertOptionalPorts(config);
+}
+
+/**
+ * Two optional collaborators read by truthiness: a string such as "false"
+ * from the environment would count as configured, and the first sign-up or
+ * login would throw calling it instead of the app refusing to start.
+ */
+function assertOptionalPorts<U extends AuthUser, A, P extends readonly AuthPlugin[]>(
+  config: AuthConfig<U, A, P>,
+): void {
+  const breachCheck: unknown = config.password.breachCheck;
+
+  if (
+    breachCheck !== undefined &&
+    breachCheck !== null &&
+    breachCheck !== false &&
+    typeof breachCheck !== 'function'
+  )
+    throw new AuthConfigError(
+      'password.breachCheck must be a breach checker, such as pwnedPasswords(), or false',
+    );
+
+  const captcha: unknown = config.captcha;
+
+  if (
+    captcha !== undefined &&
+    captcha !== null &&
+    typeof (captcha as { verify?: unknown }).verify !== 'function'
+  )
+    throw new AuthConfigError('captcha must be a captcha verifier, such as turnstile({ ... })');
 }
 
 /** A limit the session store declares, refused unless it is a positive number (fail closed). */
@@ -199,6 +231,7 @@ export function createAuth<
 
   // A string "false" would read as on here, and as a different cookie name.
   assertBoolean('session.cookie.secure', cookie.secure);
+  assertString('session.cookie.name', cookie.name);
 
   // Validates the cookie name now rather than on the first sign-in, and refuses
   // a fixed `SameSite=None` without Secure at boot. A function-valued SameSite

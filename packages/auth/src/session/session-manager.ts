@@ -33,6 +33,7 @@ import { generateToken, isTokenShape, type RandomSource } from '../crypto/random
 import type { Clock } from '../ports/clock';
 import type { Logger } from '../ports/logger';
 import type { SessionStore, StoredSession } from '../ports/stores';
+import { configMilliseconds } from '../shared/config-checks';
 import { toMilliseconds } from '../shared/duration';
 import { AuthConfigError } from '../shared/errors';
 
@@ -51,9 +52,20 @@ export class SessionManager<A> {
     private readonly random: RandomSource,
     private readonly logger: Logger,
   ) {
-    this.absoluteTtlMs = toMilliseconds(options.absoluteTtl ?? '24h');
-    this.rememberMeTtlMs = toMilliseconds(options.rememberMeTtl ?? '30d');
-    this.touchIntervalMs = toMilliseconds(options.touchInterval ?? '60s');
+    this.absoluteTtlMs = configMilliseconds('session.absoluteTtl', options.absoluteTtl, '24h');
+
+    this.rememberMeTtlMs = configMilliseconds(
+      'session.rememberMeTtl',
+      options.rememberMeTtl,
+      '30d',
+    );
+
+    this.touchIntervalMs = configMilliseconds(
+      'session.touchInterval',
+      options.touchInterval,
+      '60s',
+    );
+
     this.maxPerUser = options.maxPerUser === undefined ? 10 : options.maxPerUser;
     this.epochTtlMs = store.epochTtlMs;
 
@@ -65,8 +77,19 @@ export class SessionManager<A> {
     // (a function) is checked against the same rule each time a session is
     // minted (see `idleTimeoutMs`).
     if (typeof options.idleTimeout !== 'function') {
-      assertIdleOutlastsTouch(toMilliseconds(options.idleTimeout ?? '30m'), this.touchIntervalMs);
+      assertIdleOutlastsTouch(
+        configMilliseconds('session.idleTimeout', options.idleTimeout, '30m'),
+        this.touchIntervalMs,
+      );
     }
+
+    // Read on every session read: a schema without `parse` would throw there.
+    if (
+      options.attributes !== undefined &&
+      options.attributes !== null &&
+      typeof options.attributes.parse !== 'function'
+    )
+      throw new AuthConfigError('session.attributes must be a schema with a parse function');
   }
 
   private idleTimeoutMs(rememberMe: boolean, attributes: A): number {
@@ -83,7 +106,8 @@ export class SessionManager<A> {
       return idleMs;
     }
 
-    if (configured !== undefined) return toMilliseconds(configured);
+    // Null is left out, as at startup: the default, not a parse error on every sign-in.
+    if (configured !== undefined && configured !== null) return toMilliseconds(configured);
 
     return toMilliseconds(rememberMe ? '7d' : '30m');
   }

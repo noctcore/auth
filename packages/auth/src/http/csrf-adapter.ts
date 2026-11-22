@@ -20,7 +20,13 @@
  */
 import { encodeHexLowerCase } from '@oslojs/encoding';
 import { randomBytes } from '../crypto/random';
-import { assertBoolean, assertList, assertString, assertStringList } from '../shared/config-checks';
+import {
+  assertBoolean,
+  assertList,
+  assertRequired,
+  assertString,
+  assertStringList,
+} from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 import { parseCookieHeader, serializeCookie, type CookieSpec, type SameSite } from './cookie';
 import {
@@ -112,6 +118,9 @@ const PRE_SESSION = /^[0-9a-f]{32}$/u;
  * is Secure.
  */
 export function resolveCsrfSettings(input: CsrfSettingsInput, secure: boolean): CsrfSettings {
+  assertRequired('csrf', input);
+  assertRequired('csrf.secrets', input.secrets);
+  assertRequired('csrf.allowedOrigins', input.allowedOrigins);
   assertList('csrf.secrets', input.secrets);
   assertStringList('csrf.allowedOrigins', input.allowedOrigins);
   assertStringList('csrf.crossSiteOrigins', input.crossSiteOrigins);

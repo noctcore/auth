@@ -6,6 +6,7 @@
 import type { AuthPlugin } from './config';
 import type { PluginContext } from './plugin-context';
 import type { AuthUser } from '../ports/stores';
+import { assertFunction, assertList, assertStringList } from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 
 type UnionToIntersection<T> = (T extends unknown ? (value: T) => void : never) extends (
@@ -30,14 +31,30 @@ export function definePlugin<const Id extends string, F extends object>(
   return plugin;
 }
 
-/** Refuses duplicate ids and plugins whose required config is missing. */
+/**
+ * Refuses a `plugins` that is not a list, an entry that is not a plugin,
+ * duplicate ids and plugins whose required config is missing.
+ */
 export function checkPlugins(
   plugins: readonly AuthPlugin[],
   available: { readonly captcha: boolean },
 ): void {
+  assertList('plugins', plugins);
+
   const seen = new Set<string>();
 
-  for (const plugin of plugins) {
+  for (const entry of plugins as readonly unknown[]) {
+    if (typeof entry !== 'object' || entry === null)
+      throw new AuthConfigError('plugins must hold plugins, such as twoFactor({ ... })');
+
+    const plugin = entry as AuthPlugin;
+
+    if (typeof plugin.id !== 'string' || plugin.id.length === 0)
+      throw new AuthConfigError('Every plugin needs an id');
+
+    assertFunction(`Plugin ${plugin.id} flows`, plugin.flows);
+    assertStringList(`Plugin ${plugin.id} requires`, plugin.requires);
+
     if (seen.has(plugin.id)) throw new AuthConfigError(`Duplicate plugin id: ${plugin.id}`);
 
     seen.add(plugin.id);

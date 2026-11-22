@@ -20,6 +20,13 @@ import {
   type OutcomeHook,
   type UnavailableOutcome,
 } from '../ports/provider-outcome';
+import {
+  assertBoolean,
+  assertFunction,
+  assertPositive,
+  assertStringList,
+} from '../shared/config-checks';
+import { AuthConfigError } from '../shared/errors';
 
 /**
  * Why a token was refused:
@@ -95,7 +102,27 @@ function boundedCodes(codes: readonly string[]): string[] {
   return codes.slice(0, MAX_ERROR_CODES).map((code) => code.slice(0, MAX_ERROR_CODE_LENGTH));
 }
 
+/**
+ * The options as `turnstile()` reads them, checked when it is called at
+ * startup. `expectedHostnames` given as one string would be matched with
+ * `String.includes`, so any part of the name (`example`, `e`) would pass;
+ * `checkAction` is read by truthiness; a `NaN` timeout throws on every
+ * check, which reads as the provider being down.
+ */
+function assertTurnstileOptions(options: TurnstileOptions): void {
+  if (typeof options?.secret !== 'string' || options.secret.length === 0)
+    throw new AuthConfigError('turnstile: secret is required');
+
+  assertStringList('turnstile: expectedHostnames', options.expectedHostnames);
+  assertBoolean('turnstile: checkAction', options.checkAction);
+  assertPositive('turnstile: timeoutMs', options.timeoutMs);
+  assertFunction('turnstile: fetch', options.fetch);
+  assertFunction('turnstile: onResult', options.onResult);
+}
+
 export function turnstile(options: TurnstileOptions): TurnstileVerifier {
+  assertTurnstileOptions(options);
+
   const doFetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 5000;
   const logger = options.logger ?? silentLogger;

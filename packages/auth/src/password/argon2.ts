@@ -17,6 +17,7 @@
  */
 import { hash, verify } from '@node-rs/argon2';
 import type { PasswordHasher } from './hasher';
+import { assertBoolean, assertCount } from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 
 export interface Argon2idOptions {
@@ -52,16 +53,38 @@ const OWASP_TABLE: ReadonlyArray<readonly [memory: number, passes: number]> = [
   [7_168, 5],
 ];
 
+/**
+ * The cost parameters must be whole numbers: with `unsafeAllowWeakParameters`
+ * a `NaN` passes the floor and fails every hash instead of the boot. The
+ * switch itself must be a real boolean, like every other switch, and the
+ * pepper bytes: a string pepper would reach the native binding unchecked.
+ */
+function assertArgon2idOptions(options: Argon2idOptions): void {
+  assertCount('argon2id: memoryCost', options.memoryCost);
+  assertCount('argon2id: timeCost', options.timeCost);
+  assertCount('argon2id: parallelism', options.parallelism);
+  assertBoolean('argon2id: unsafeAllowWeakParameters', options.unsafeAllowWeakParameters);
+
+  const secret: unknown = options.secret;
+
+  if (secret !== undefined && secret !== null && !(secret instanceof Uint8Array))
+    throw new AuthConfigError('argon2id: secret must be bytes, such as a Buffer');
+}
+
 const ARGON2ID = 2; // Algorithm.Argon2id; a const enum, so the number is used directly.
 const PHC = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$/u;
 
-export function argon2id(options: Argon2idOptions = {}): PasswordHasher {
-  const memoryCost = options.memoryCost ?? DEFAULT_ARGON2ID.memoryCost;
-  const timeCost = options.timeCost ?? DEFAULT_ARGON2ID.timeCost;
-  const parallelism = options.parallelism ?? DEFAULT_ARGON2ID.parallelism;
+export function argon2id(options?: Argon2idOptions | null): PasswordHasher {
+  const given = options ?? {};
+
+  assertArgon2idOptions(given);
+
+  const memoryCost = given.memoryCost ?? DEFAULT_ARGON2ID.memoryCost;
+  const timeCost = given.timeCost ?? DEFAULT_ARGON2ID.timeCost;
+  const parallelism = given.parallelism ?? DEFAULT_ARGON2ID.parallelism;
   const acceptable = OWASP_TABLE.some(([m, t]) => memoryCost >= m && timeCost >= t);
 
-  if (!acceptable && options.unsafeAllowWeakParameters !== true) {
+  if (!acceptable && given.unsafeAllowWeakParameters !== true) {
     throw new AuthConfigError(
       `Argon2id m=${memoryCost} t=${timeCost} is below the OWASP minimum (for example m=19456 t=2)`,
     );
@@ -72,18 +95,14 @@ export function argon2id(options: Argon2idOptions = {}): PasswordHasher {
     memoryCost,
     timeCost,
     parallelism,
-    ...(options.secret ? { secret: options.secret } : {}),
+    ...(given.secret ? { secret: given.secret } : {}),
   };
 
   return {
     hash: (password) => hash(password, params),
     async verify(stored, password) {
       try {
-        return await verify(
-          stored,
-          password,
-          options.secret ? { secret: options.secret } : undefined,
-        );
+        return await verify(stored, password, given.secret ? { secret: given.secret } : undefined);
       } catch {
         // A malformed stored hash (bad import or migration) is not a correct
         // password. The flow logs it through needsRehash's caller; no secret

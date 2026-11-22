@@ -42,6 +42,7 @@ export interface SessionCookieConfig {
 }
 
 const NAME = /^[A-Za-z0-9_-]+$/u;
+const SAME_SITE: readonly unknown[] = ['lax', 'strict', 'none'];
 
 export function sessionCookieName(config: SessionCookieConfig = {}): string {
   const base = config.name ?? 'session';
@@ -61,6 +62,10 @@ export function sessionCookieName(config: SessionCookieConfig = {}): string {
 export function resolveSameSite(config: SessionCookieConfig, origin: string | undefined): SameSite {
   const sameSite =
     typeof config.sameSite === 'function' ? config.sameSite(origin) : (config.sameSite ?? 'lax');
+
+  // `'None'` would skip the Secure check below and still be written as `None`.
+  if (!SAME_SITE.includes(sameSite))
+    throw new AuthConfigError(`session.cookie.sameSite must be 'lax', 'strict' or 'none'`);
 
   if (sameSite === 'none' && !(config.secure ?? true)) {
     throw new AuthConfigError('SameSite=None requires a Secure cookie');
