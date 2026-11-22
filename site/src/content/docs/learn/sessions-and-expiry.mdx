@@ -123,6 +123,7 @@ The defaults written out, and the two routes behind a "where you're signed in" p
 | [A028](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A028-fresh-auth-stale-proof.test.ts)                       | Passing a fresh-auth check with a stale proof                                                        | `auth-nestjs/session.guard.ts`                           |
 | [A087](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A087-session-store-key-through-the-session-list.test.ts)          | Reading a session's store key through the session list, or revoking another user's session by handle | `flows/session-management.ts`                            |
 | [A097](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A097-reviving-a-revoked-session-through-the-legacy-store.test.ts) | Bringing back a revoked session through the legacy store an app adopts sessions from                 | `session/legacy-sessions.ts`                             |
+| [A103](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A103-keeping-a-revoked-session-on-a-trpc-websocket.test.ts) | Keeping a revoked session alive on a tRPC WebSocket connection | `auth-trpc/context.ts` |
 
 </div>
 
