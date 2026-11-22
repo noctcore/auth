@@ -1,7 +1,8 @@
 /**
  * The `TokenStore` on the `AuthToken` model from `prisma/auth.prisma`. Consume
- * is a delete that returns the row, so only one caller ever gets a token, and
- * the attempt cap is an update whose `where` carries the cap.
+ * is a delete that returns the row, so only one caller ever gets a token, the
+ * attempt cap is an update whose `where` carries the cap, and an extend is an
+ * update that fails on a missing row instead of an upsert.
  */
 import type { StoredToken, TokenStore } from '@noctcore/auth';
 import type { PrismaAuthTokenDelegate } from './delegates';
@@ -88,6 +89,23 @@ export class PrismaTokenStore implements TokenStore {
       return toToken(row);
     } catch (error) {
       if (prismaCode(error) === P2025) return null;
+
+      throw error;
+    }
+  }
+
+  async extendExpiry(purpose: string, hash: string, expiresAt: number): Promise<boolean> {
+    try {
+      // An update, not an upsert: a row consumed meanwhile is not created again.
+      await this.delegate.update({
+        where: { purpose_hash: { purpose, hash } },
+        data: { expiresAt: new Date(expiresAt) },
+        select: { hash: true },
+      });
+
+      return true;
+    } catch (error) {
+      if (prismaCode(error) === P2025) return false;
 
       throw error;
     }
