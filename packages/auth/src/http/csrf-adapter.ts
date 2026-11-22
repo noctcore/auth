@@ -209,29 +209,6 @@ const signedFor = (
 ): boolean => tokenValid({ cookieToken: token, headerToken: token, bound, secrets });
 
 /**
- * The double-submit check of an unsafe request. The header and the cookie
- * match and are signed by any listed secret for this binding; or, during a
- * rollover, the header still carries a token of a previous secret that the
- * page read before a safe request moved the cookie to the current secret
- * (`handOutCsrfToken`), and the cookie is that current token for the same
- * binding. The second case ends when the previous secret is removed.
- */
-function doubleSubmitValid(
-  csrf: CsrfSettings,
-  input: { cookieToken: string | undefined; headerToken: string | undefined; bound: string | null },
-): boolean {
-  if (tokenValid({ ...input, secrets: csrf.secrets })) return true;
-
-  const [current, ...previous] = csrf.secrets;
-
-  // With one secret `previous` is empty and verifies nothing.
-  return (
-    signedFor(input.headerToken, input.bound, previous) &&
-    signedFor(input.cookieToken, input.bound, [current as Uint8Array])
-  );
-}
-
-/**
  * The cookies below take `sameSite` from the caller: the session cookie's
  * resolution for the request (`resolveSameSite`), or the attribute of the
  * session cookie written next to them, so they always travel together.
@@ -278,9 +255,8 @@ function csrfCookie(
  * (`verifyRequestOrigin`); `Sec-Fetch-Site` says `same-origin`, or
  * `cross-site` from an origin on `crossSiteOrigins` (`verifyFetchSite`),
  * whenever the browser sends it; and the double-submit token matches its
- * cookie and is bound to this session or pre-session (`verifyCsrfToken`),
- * with the rollover allowance `doubleSubmitValid` describes. The adapter
- * decides which requests it judges.
+ * cookie and is bound to this session or pre-session (`verifyCsrfToken`).
+ * The adapter decides which requests it judges.
  */
 export function csrfRequestAllowed(
   csrf: CsrfSettings,
@@ -311,7 +287,8 @@ export function csrfRequestAllowed(
 
   const siteOk = fetchSiteOk || secFetchSite === undefined;
 
-  const tokenOk = doubleSubmitValid(csrf, {
+  const tokenOk = tokenValid({
+    secrets: csrf.secrets,
     cookieToken: request.cookies.token,
     headerToken: request.headerToken,
     bound: bindingOf(request.session, request.cookies.preSession),
@@ -328,7 +305,10 @@ export function csrfRequestAllowed(
  * is returned). One signed by a previous secret is replaced by one under the
  * current secret, so every client moves off a previous secret on its next
  * safe request and the previous secret can be removed once its tokens are
- * gone, instead of waiting for clients that never fetch a new token.
+ * gone, instead of waiting for clients that never fetch a new token. A page
+ * that kept the old token in memory gets one refusal after another request
+ * replaced the cookie (the header no longer equals it), and reads the token
+ * again.
  */
 export function handOutCsrfToken(
   options: CsrfContext,
