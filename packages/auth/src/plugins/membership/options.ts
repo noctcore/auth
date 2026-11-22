@@ -2,6 +2,7 @@
  * The membership plugin's options, checked once when the plugin is created.
  */
 import type { MembershipStore, StoredMember } from '../../ports/membership';
+import { assertBoolean } from '../../shared/config-checks';
 import { AuthConfigError } from '../../shared/errors';
 
 /** What an admin action does. */
@@ -64,6 +65,9 @@ export function resolveSettings(options: MembershipOptions): MembershipSettings 
     !adminRoles.every((role) => typeof role === 'string' && role.length > 0)
   )
     throw new AuthConfigError('membership: adminRoles must list at least one role');
+
+  // Read with `=== true`: a string "true" from an env file would quietly read as off.
+  assertBoolean('membership: revokeSessionsOnChange', options.revokeSessionsOnChange);
 
   const admins = new Set(adminRoles);
 
