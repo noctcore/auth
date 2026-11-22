@@ -9,16 +9,25 @@
  * table holds) and found by a key derived from the address: the row stores
  * the SHA-256 of `email-reserved:<address>`, never the address, and no secret
  * anyone is shown. It expires with the revert link, and a revert releases it.
- * Sign-up, other accounts' change requests and confirms treat a held address
- * as one that has an account. Paths of the app that create users (invites,
- * admin create, a first SSO login, imports) must ask `auth.isAddressHeld`.
+ * Sign-up, sign-up through an invitation, other accounts' change requests and
+ * confirms treat a held address as one that has an account. Plugins ask the
+ * plugin context's `isAddressHeld` (wired to `heldAccount` by `createAuth`);
+ * paths of the app that create users (admin create, a first SSO login,
+ * imports) must ask `auth.isAddressHeld`.
  *
  * Guide: Learn, "Email change"; Build, "Email change".
  */
 import { PURPOSE } from './settings';
 import type { AuthCore } from '../core/auth-core';
-import type { AuthUser } from '../ports/stores';
+import type { AuthUser, UserStore } from '../ports/stores';
 import type { NormalizedEmail } from '../shared/email';
+import type { OneTimeTokens } from '../tokens/one-time-tokens';
+
+/** What reading a hold needs: the flows' core and a plugin's context both have it. */
+interface HoldReader {
+  readonly tokens: OneTimeTokens;
+  readonly users: Pick<UserStore<AuthUser>, 'findById' | 'changeEmail'>;
+}
 
 function holdKey(email: NormalizedEmail): string {
   return `email-reserved:${email}`;
@@ -35,13 +44,36 @@ export async function reserveAddress<U extends AuthUser, A>(
 }
 
 /** The id of the account holding `email`, or null when nobody holds it. */
-export async function addressHolder<U extends AuthUser, A>(
-  core: AuthCore<U, A>,
+export async function addressHolder(
+  core: Pick<HoldReader, 'tokens'>,
   email: NormalizedEmail,
 ): Promise<string | null> {
   const hold = await core.tokens.findKeyed(PURPOSE.emailReserved, holdKey(email));
 
   return hold?.userId ?? null;
+}
+
+/**
+ * The account `email` is held for, when the hold still counts: the rule every
+ * path that creates a user applies (sign-up, sign-up through an invitation,
+ * `auth.isAddressHeld`). A holder that is gone can never revert, so its
+ * address is free. Only a store that can change emails can have held
+ * addresses, so other apps skip the lookup. Two reads at most: the hold, then
+ * the holder.
+ */
+export async function heldAccount(
+  core: HoldReader,
+  email: NormalizedEmail,
+): Promise<{ id: string; email: NormalizedEmail } | null> {
+  if (typeof core.users.changeEmail !== 'function') return null;
+
+  const holderId = await addressHolder(core, email);
+
+  if (holderId === null) return null;
+
+  const holder = await core.users.findById(holderId);
+
+  return holder ? { id: holder.id, email } : null;
 }
 
 /** Drops the account's hold, whichever address it is on. */
@@ -64,5 +96,5 @@ export async function isAddressHeld<U extends AuthUser, A>(
 ): Promise<boolean> {
   const normalized = core.normalizeEmail(email);
 
-  return normalized !== null && (await addressHolder(core, normalized)) !== null;
+  return normalized !== null && (await heldAccount(core, normalized)) !== null;
 }

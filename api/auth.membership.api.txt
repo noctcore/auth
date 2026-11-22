@@ -209,6 +209,7 @@ PluginContext [interface]<U extends AuthUser, A>
     emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
     findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>
     hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>
+    isAddressHeld(email: NormalizedEmail): Promise<boolean>
     issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>
     keyedHash(purpose: string, message: string): string
     keyedHashes(purpose: string, message: string): readonly [string, ...string[]]

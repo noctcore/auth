@@ -126,6 +126,10 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return verdict.ok ? ok(verdict.email) : fail(verdict.reason, verdict.reason);
   }
 
+  isAddressHeld(email: NormalizedEmail): Promise<boolean> {
+    return this.#deps.addressHeld(email);
+  }
+
   async findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null> {
     const found = await this.users.findCredentialByEmail(email);
 
