@@ -79,7 +79,7 @@ describe('session store conformance for a delete that reports nothing', () => {
       c.name.endsWith('(skipped: deleteReportsRemoved is false)'),
     );
 
-    expect(skipped).toHaveLength(3);
+    expect(skipped).toHaveLength(4);
 
     for (const c of skipped) await c.run();
   });
