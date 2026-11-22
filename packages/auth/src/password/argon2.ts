@@ -18,6 +18,7 @@
 import { hash, verify } from '@node-rs/argon2';
 import type { PasswordHasher } from './hasher';
 import { assertBoolean, assertCount } from '../shared/config-checks';
+import { isBytes } from '../shared/bytes';
 import { AuthConfigError } from '../shared/errors';
 
 export interface Argon2idOptions {
@@ -67,7 +68,7 @@ function assertArgon2idOptions(options: Argon2idOptions): void {
 
   const secret: unknown = options.secret;
 
-  if (secret !== undefined && secret !== null && !(secret instanceof Uint8Array))
+  if (secret !== undefined && secret !== null && !isBytes(secret))
     throw new AuthConfigError('argon2id: secret must be bytes, such as a Buffer');
 }
 

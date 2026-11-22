@@ -11,6 +11,7 @@
 import { encodeHexLowerCase } from '@oslojs/encoding';
 import { hmacSha256Hex, secretsEqual } from './hash';
 import { assertList } from '../shared/config-checks';
+import { isBytes } from '../shared/bytes';
 import { AuthConfigError } from '../shared/errors';
 
 const MIN_SECRET_BYTES = 32;
@@ -27,7 +28,7 @@ export function toSecret(secret: SecretInput | null | undefined): Uint8Array {
   if (secret === undefined || secret === null)
     throw new AuthConfigError('secret is required (32 bytes or more)');
 
-  if (typeof secret !== 'string' && !(secret instanceof Uint8Array))
+  if (typeof secret !== 'string' && !isBytes(secret))
     throw new AuthConfigError('secret must be a string or bytes');
 
   const bytes = toBytes(secret);
@@ -56,7 +57,7 @@ export function toPreviousSecrets(
   const seen = [encodeHexLowerCase(current)];
 
   return list.map((entry) => {
-    if (typeof entry !== 'string' && !(entry instanceof Uint8Array))
+    if (typeof entry !== 'string' && !isBytes(entry))
       throw new AuthConfigError('previousSecret must be a string, bytes or a list of them');
 
     const bytes = toBytes(entry);
