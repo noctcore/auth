@@ -200,3 +200,27 @@ describe('clientIp reads the picked X-Forwarded-For entry as an address', () => 
     ).toBe('10.0.0.2');
   });
 });
+
+describe('clientIp treats an empty socket address as missing', () => {
+  const list = ['10.0.0.0/8'];
+
+  it.each([
+    ['0 hops', { trustedHops: 0 }],
+    ['a hop count with no header', { trustedHops: 1 }],
+    ['a hop count with a junk entry', { trustedHops: 1, forwardedFor: 'junk' }],
+    ['a proxy list', { trustedHops: list, forwardedFor: '203.0.113.9' }],
+    ['an empty proxy list', { trustedHops: [] }],
+    [
+      'a proxy list with a trusted header',
+      { trustedHops: list, trustedHeader: '203.0.113.9', forwardedFor: '203.0.113.9' },
+    ],
+  ] as const)('with %s', (_name, input) => {
+    expect(clientIp({ remoteAddress: '', ...input })).toBeUndefined();
+  });
+
+  it('still reads the header through a hop count', () => {
+    expect(clientIp({ remoteAddress: '', forwardedFor: '203.0.113.9', trustedHops: 1 })).toBe(
+      '203.0.113.9',
+    );
+  });
+});
