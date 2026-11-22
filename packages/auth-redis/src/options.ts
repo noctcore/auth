@@ -17,7 +17,8 @@ export interface RedisSessionStoreOptions extends RedisStoreOptions {
    * The core's device tokens and the two-factor plugin's trusted devices are
    * fenced by the epoch alone, so `createAuth` also refuses a
    * `throttle.lockout.deviceMaxAge` (30 d by default) or a
-   * `trustedDevices.ttl` longer than this value.
+   * `trustedDevices.ttl` that is not at least a minute (the allowed clock
+   * skew) shorter than this value.
    */
   readonly epochTtl?: Duration;
   /**

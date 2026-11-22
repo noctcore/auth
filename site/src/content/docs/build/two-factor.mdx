@@ -35,7 +35,7 @@ Generate each key with `openssl rand -base64 32` and keep it with your other sec
 | `required` | never | `({ user }) => boolean`: users who must have a factor. Without one they get an enrollment challenge at login, never a session. |
 | `enforcement` | off | `({ user }) => { required, graceEndsAt? }`: a requirement with a grace window, checked on every request; see [Enforcement with a grace period](#enforcement-with-a-grace-period). Pass it or `required`, not both. |
 | `stepUpWindow` | `'10m'` | How long a code proved in a session counts for sensitive actions. |
-| `trustedDevices` | `{ ttl: '30d', maxPerUser: 5 }` | `false` turns "remember this device" off (and stops honouring devices trusted before). `ttl` may not exceed the session store's `epochTtlMs` (the Redis store's `epochTtl`). |
+| `trustedDevices` | `{ ttl: '30d', maxPerUser: 5 }` | `false` turns "remember this device" off (and stops honouring devices trusted before). `ttl` must be at least a minute (the allowed clock skew) shorter than the session store's `epochTtlMs` (the Redis store's `epochTtl`). |
 | `attempts` | 5 per `'15m'` | Code checks per user, from every IP together, before the factor locks. |
 | `perIp` | 10 per `'1m'` | Code checks per IP. |
 | `importedRecoveryCodes` | none | `{ hash }`: accept recovery codes carried over from your earlier scheme. See [Moving existing TOTP users over](#moving-existing-totp-users-over). |
