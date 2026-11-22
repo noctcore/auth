@@ -10,9 +10,11 @@
  * `findSecretQueries(router)` walks every procedure and lists each query or
  * subscription whose input has a key that names a secret (any word of the
  * key is `password`, `passphrase`, `passcode`, `secret`, `token`, `otp`,
- * `totp`, `code` or `pin`, or its plural, or a run-together name ending in
- * one such as `resettoken` or `otpcode`, or `apiKey`, at any depth, see
- * `secretKeys` and `isSecretKey`). It fails closed:
+ * `totp`, `hotp`, `code`, `pin` or `pwd`, or its plural, or a run-together
+ * name ending in one such as `resettoken`, `otpcode` or `newpin`; the last
+ * word is `credential`, `jwt`, `bearer` or `authorization`; or the key holds
+ * `apiKey`, `privateKey`, `accessKey`, `signingKey` or `encryptionKey`, at
+ * any depth, see `secretKeys` and `isSecretKey`). It fails closed:
  * an input it cannot read (a validator that is not Zod 4, or a Zod schema that
  * can hold any key, such as `z.unknown()` or `z.custom()`) and a lazy router
  * it cannot load synchronously are listed too, unless their path is in
@@ -31,11 +33,19 @@ const SECRET_WORDS = ['password', 'passwd', 'passphrase', 'passcode', 'secret', 
  * `postcode`, `barcode` and `unicode`, `pin` in `spin`, `otp` in `hotpot`.
  * They match alone, or after one of `SHORT_SECRET_LEADS` (`otpcode`).
  */
-const SHORT_SECRET_WORDS = ['code', 'pin', 'otp'];
+const SHORT_SECRET_WORDS = ['code', 'pin', 'otp', 'hotp', 'pwd'];
 
+/**
+ * Leads that turn a short word into a secret when run together with it. A
+ * lead such as `new` or `current` adds nothing a camelCase key does not
+ * already flag (`newPin` is two words, and `pin` matches alone); it only
+ * catches the same name written as one word (`newpin`).
+ */
 const SHORT_SECRET_LEADS = new Set([
   'otp',
   'totp',
+  'hotp',
+  'pin',
   'sms',
   'email',
   'verification',
@@ -53,20 +63,69 @@ const SHORT_SECRET_LEADS = new Set([
   'reset',
   'invite',
   'mfa',
+  '2fa',
+  'twofactor',
+  'new',
+  'old',
+  'current',
 ]);
 
-/** Two words that name a secret only together: `apiKey` (a bare `key` is too common). */
-const SECRET_PAIRS = new Set(['apikey']);
+/**
+ * Words that name a secret only as the last word of a key: a bare `jwt`,
+ * `credentials` or `authorization` carries the secret itself, while
+ * `jwtIssuer`, `credentialId` and `authorizationUrl` name something about it.
+ */
+const TAIL_SECRET_WORDS = ['credential', 'jwt', 'bearer', 'authorization'];
 
-/** `currentPassword`, `reset_token`, `OTP-code` → its lower-case words. */
-function words(key: string): string[] {
-  return key
-    .replace(/([a-z0-9])([A-Z])/gu, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/gu, '$1 $2')
+/**
+ * Two words that name a secret only together, written as two words or as
+ * one: `apiKey`, `privatekey` (a bare `key` is too common, and `publicKey`
+ * is no secret).
+ */
+const SECRET_PAIRS = ['apikey', 'privatekey', 'accesskey', 'signingkey', 'encryptionkey'];
+
+const isUpper = (c: number): boolean => c >= 65 && c <= 90;
+const isLower = (c: number): boolean => c >= 97 && c <= 122;
+const isDigit = (c: number): boolean => c >= 48 && c <= 57;
+
+/**
+ * `currentPassword`, `reset_token`, `OTP-code` → its lower-case words.
+ *
+ * One pass over the key: a word starts at an upper-case letter that follows
+ * a lower-case letter or a digit (`currentPassword`), or that ends a run of
+ * capitals before a lower-case letter (`OTPCode`). Each character is looked
+ * at once with its two neighbours, so a long key costs linear time; the
+ * regular expression this replaces backtracked over every run of capitals.
+ */
+export function words(key: string): string[] {
+  let spaced = '';
+  let from = 0;
+
+  for (let i = 1; i < key.length; i++) {
+    const current = key.charCodeAt(i);
+
+    if (!isUpper(current)) continue;
+
+    const previous = key.charCodeAt(i - 1);
+
+    const startsWord =
+      isLower(previous) ||
+      isDigit(previous) ||
+      (isUpper(previous) && i + 1 < key.length && isLower(key.charCodeAt(i + 1)));
+
+    if (startsWord) {
+      spaced += `${key.slice(from, i)} `;
+      from = i;
+    }
+  }
+
+  return (spaced + key.slice(from))
     .toLowerCase()
     .split(/[^a-z0-9]+/u)
     .filter((word) => word !== '');
 }
+
+const singular = (word: string): string => (word.endsWith('s') ? word.slice(0, -1) : word);
 
 /**
  * One lower-case word names a secret when, minus a plural `s`, it is a secret
@@ -74,23 +133,28 @@ function words(key: string): string[] {
  * in a short one behind a known lead (`otpcode`, `verificationcode`).
  */
 function isSecretWord(word: string): boolean {
-  const singular = word.endsWith('s') ? word.slice(0, -1) : word;
+  const one = singular(word);
 
-  if (SECRET_WORDS.some((stem) => singular.endsWith(stem))) return true;
+  if (SECRET_WORDS.some((stem) => one.endsWith(stem))) return true;
 
   return SHORT_SECRET_WORDS.some(
     (stem) =>
-      singular === stem ||
-      (singular.endsWith(stem) && SHORT_SECRET_LEADS.has(singular.slice(0, -stem.length))),
+      one === stem || (one.endsWith(stem) && SHORT_SECRET_LEADS.has(one.slice(0, -stem.length))),
   );
 }
 
+/** A word, or a word run together with the next, that ends in a secret pair. */
+const endsInPair = (joined: string): boolean =>
+  SECRET_PAIRS.some((pair) => singular(joined).endsWith(pair));
+
 export function isSecretKey(key: string): boolean {
   const parts = words(key);
+  const last = singular(parts.at(-1) ?? '');
 
   return (
     parts.some(isSecretWord) ||
-    parts.some((part, i) => SECRET_PAIRS.has(part + (parts[i + 1] ?? '').replace(/s$/u, '')))
+    (last !== '' && TAIL_SECRET_WORDS.some((stem) => last.endsWith(stem))) ||
+    parts.some((part, i) => endsInPair(part) || endsInPair(part + (parts[i + 1] ?? '')))
   );
 }
 
