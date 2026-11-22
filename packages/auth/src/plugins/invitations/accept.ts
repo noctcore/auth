@@ -10,10 +10,12 @@
  *   registered the address first (pre-hijacking) from collecting the
  *   invitation. It issues no session, so a second factor is never skipped
  *   and a link alone never signs anyone in.
- * - `register` is for an address with no account. It creates the account with
- *   the address verified (the token proves the mailbox), then issues a session
- *   through `issueSession` with `via: 'invitation'`, where the hooks (two-factor
- *   included) decide as for any other session.
+ * - `register` is for an address with no account that is not held for the
+ *   owner of an email change that can still be reverted (either answers
+ *   `email_in_use` and spends nothing). It creates the account with the
+ *   address verified (the token proves the mailbox), then issues a session
+ *   through `issueSession` with `via: 'invitation'`, where the hooks
+ *   (two-factor included) decide as for any other session.
  *
  * Both spend the invitation with the store's atomic `consume`, so two clicks
  * or two browsers cannot both accept, and both check the inviter again first
@@ -119,8 +121,13 @@ export async function registerByInvitation<A>(
 
   if (!hashed.ok) return refused(r, hashed.code, hashed.reason, null, meta);
 
-  // Not spent: the owner of the address signs in and calls `accept`.
-  if (await r.core.findCredentialByEmail(email))
+  // Not spent: the owner of the address signs in and calls `accept`. An
+  // address held for its old owner while an email change away from it can
+  // still be reverted answers the same, or the revert would have nowhere to
+  // go back to. The account first, then the hold: a confirm writes the hold
+  // before it moves the address, so a confirm that lands between the two
+  // reads is seen by one of them.
+  if ((await r.core.findCredentialByEmail(email)) || (await r.core.isAddressHeld(email)))
     return refused(r, 'email_in_use', 'email_in_use', null, meta);
 
   const spent = await spend(r, invitation, null, meta);

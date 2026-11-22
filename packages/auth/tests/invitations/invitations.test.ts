@@ -6,6 +6,7 @@ import {
   type InvitationsOptions,
 } from '../../src/plugins/invitations';
 import { MemoryInvitationStore, plainHasher } from '../../src/testing';
+import { changed, requestCode } from '../flows/email-change-support';
 import { SECRET, setup } from '../flows/setup';
 import { invitationApp, meta, PASSWORD, SCOPE } from './setup';
 
@@ -1061,6 +1062,93 @@ describe('invitations register', () => {
     });
 
     expect(await t.store.listByScope(SCOPE, t.clock.now())).toHaveLength(1);
+  });
+
+  it('refuses an address held for the owner of an email change, as it refuses a taken one', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+    const owner = await t.user({ email: 'ada@example.com' });
+    const taken = await changed(t, owner.session, 'mallory@example.com');
+    const { token } = await t.invite(inviter, 'Ada@Example.com');
+    const before = t.mailer.sent.length;
+
+    expect(await t.auth.invitations.register({ token, password: PASSWORD, meta: meta() })).toEqual({
+      ok: false,
+      code: 'email_in_use',
+      reason: 'email_in_use',
+    });
+
+    // The same audit row as a taken address: no account id, nothing about the hold.
+    expect(t.audit.events.at(-1)).toEqual(
+      expect.objectContaining({ type: 'invitation.refused', reason: 'email_in_use' }),
+    );
+
+    expect(t.audit.events.at(-1)).not.toHaveProperty('userId');
+    expect(t.mailer.sent.length).toBe(before);
+    expect(await t.stores.users.findCredentialByEmail('ada@example.com' as never)).toBeNull();
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toHaveLength(1);
+    expect(t.onAccept).not.toHaveBeenCalled();
+
+    expect((await t.auth.revertEmailChange({ token: taken.revert, meta: meta() })).ok).toBe(true);
+    expect((await t.stores.users.findById(owner.userId))?.email).toBe('ada@example.com');
+  });
+
+  it('refuses the held address when the email change is confirmed between the two lookups', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+    const owner = await t.user({ email: 'ada@example.com' });
+    const { token } = await t.invite(inviter, 'ada@example.com');
+    const code = await requestCode(t, owner.session, 'mallory@example.com');
+    const lookup = t.stores.users.findCredentialByEmail.bind(t.stores.users);
+
+    // The confirm lands while the account lookup runs: it sees the address
+    // already moved, so only the hold (written before the move) can stop it.
+    vi.spyOn(t.stores.users, 'findCredentialByEmail').mockImplementationOnce(async (email) => {
+      const confirmed = await t.auth.confirmEmailChangeCode({
+        session: owner.session,
+        code,
+        meta: meta(),
+      });
+
+      expect(confirmed.ok).toBe(true);
+
+      return lookup(email);
+    });
+
+    expect(
+      await t.auth.invitations.register({ token, password: PASSWORD, meta: meta() }),
+    ).toMatchObject({ ok: false, code: 'email_in_use' });
+
+    expect(await t.stores.users.findCredentialByEmail('ada@example.com' as never)).toBeNull();
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toHaveLength(1);
+  });
+
+  it('registers on a formerly held address once the hold lapses or its holder is gone', async () => {
+    const t = invitationApp();
+    const inviter = await t.user({ canInvite: true });
+    const first = await t.user({ email: 'ada@example.com' });
+    const second = await t.user({ email: 'bob@example.com' });
+
+    await changed(t, first.session, 'ada.new@example.com');
+    await changed(t, second.session, 'bob.new@example.com');
+
+    // A deleted holder can never revert, so its address is free.
+    await t.stores.users.softDelete(second.userId);
+
+    const bob = await t.invite(inviter, 'bob@example.com');
+
+    expect(
+      await t.auth.invitations.register({ token: bob.token, password: PASSWORD, meta: meta() }),
+    ).toMatchObject({ ok: true });
+
+    // The hold lives as long as the revert link (7 days by default).
+    t.clock.advance(7 * DAY + 1);
+
+    const ada = await t.invite(inviter, 'ada@example.com');
+
+    expect(
+      await t.auth.invitations.register({ token: ada.token, password: PASSWORD, meta: meta() }),
+    ).toMatchObject({ ok: true });
   });
 
   it('refuses a password the policy refuses, before looking the address up', async () => {
