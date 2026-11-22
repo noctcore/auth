@@ -87,4 +87,27 @@ describe.skipIf(!url)('parallel bursts against the redis counter store', () => {
       expect((await counters.get(`tier:${account}`))?.count).toBe(1);
     }
   });
+
+  it('A102: lets at most the trusted-device budget through a lock, over login devices and session doors together', async () => {
+    for (let round = 0; round < 5; round++) {
+      const account = uniqueId('locked');
+
+      // Lock the account: the eleventh attempt crosses the account-wide budget.
+      for (let i = 0; i < 11; i++)
+        await (throttles[0] as Throttle).gateLogin(account, `192.0.2.${i}`);
+
+      let n = 0;
+
+      // Half the burst carries login device ids, half the ids live sessions stand in for.
+      const allowed = await burst(async (t) => {
+        const i = n++;
+        const deviceId = i % 2 === 0 ? `device-${i % 7}` : `session-device-${i % 5}`;
+
+        return (await t.gateLogin(account, `198.51.100.${i % 250}`, deviceId)).allowed;
+      });
+
+      // perDevice defaults to 5 per 15 minutes, shared by every device of the account.
+      expect(allowed).toBeLessThanOrEqual(5);
+    }
+  });
 });
