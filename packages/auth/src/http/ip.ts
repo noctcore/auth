@@ -118,6 +118,56 @@ function headerList(raw: string | readonly string[] | null | undefined): string[
     .filter((part) => part !== '');
 }
 
+const PORT = /^\d{1,5}$/u;
+
+const isPort = (text: string): boolean => PORT.test(text) && Number(text) <= 65_535;
+
+/**
+ * One `X-Forwarded-For` entry as the address it names, or undefined when it
+ * is not one. Some proxies write a port (`203.0.113.9:51234`,
+ * `[2001:db8::1]:443`), brackets or an IPv6 zone id (`fe80::1%eth0`); those
+ * are stripped, so a port that changes per connection never becomes part of
+ * a rate-limit key. An unbracketed IPv6 address is taken whole: its last
+ * group cannot be told apart from a port. Whatever is left must be exactly
+ * one IPv4 or IPv6 address (an IPv4-mapped one included), as `isIp` reads it.
+ */
+function forwardedAddress(entry: string): string | undefined {
+  let value = entry.trim();
+
+  if (value.startsWith('[')) {
+    const close = value.indexOf(']');
+    const rest = close === -1 ? '' : value.slice(close + 1);
+
+    if (close === -1 || (rest !== '' && !(rest.startsWith(':') && isPort(rest.slice(1))))) {
+      return undefined;
+    }
+
+    value = value.slice(1, close);
+
+    // Brackets hold an IPv6 address only.
+    if (!value.includes(':')) return undefined;
+  } else {
+    const colon = value.indexOf(':');
+
+    // One colon: an IPv4 address with a port. Two or more: IPv6, taken whole.
+    if (colon !== -1 && colon === value.lastIndexOf(':')) {
+      if (!isPort(value.slice(colon + 1))) return undefined;
+
+      value = value.slice(0, colon);
+    }
+  }
+
+  const zone = value.indexOf('%');
+
+  if (zone !== -1) {
+    if (!value.includes(':')) return undefined;
+
+    value = value.slice(0, zone);
+  }
+
+  return isIp(value) ? value : undefined;
+}
+
 /** The one address in a trusted header, or undefined when it is missing or not exactly one IP. */
 function singleAddress(raw: string | readonly string[] | null | undefined): string | undefined {
   const [first, ...rest] = typeof raw === 'string' ? [raw] : (raw ?? []);
@@ -140,6 +190,12 @@ function singleAddress(raw: string | readonly string[] | null | undefined): stri
  * `X-Forwarded-For` rule decides, so a client that reaches the server
  * directly cannot pick its IP with it. The list must name the edge itself,
  * or hops that accept traffic only from the edge.
+ *
+ * The `X-Forwarded-For` entry picked is read through `forwardedAddress`: a
+ * port, brackets and an IPv6 zone id are stripped, and an entry that is still
+ * not one IP is never returned. The socket address stands in for it, or
+ * undefined when there is none, so a junk or per-connection entry never
+ * becomes a rate-limit key or an audit value.
  */
 export function clientIp(input: {
   remoteAddress: string | undefined;
@@ -164,26 +220,32 @@ export function clientIp(input: {
 
     // From the socket address leftwards, the first address outside the
     // trusted list is the client; when every one is trusted, the leftmost.
+    // An entry that is not an address is never trusted, so the walk stops
+    // there and the socket address stands in for it.
     const chain = headerList(input.forwardedFor).reverse();
-    let client = remote;
+    let client: string | undefined = remote;
 
-    for (const address of chain) {
-      client = address;
+    for (const entry of chain) {
+      client = forwardedAddress(entry);
 
-      if (!isTrustedAddress(address, hops)) break;
+      if (client === undefined || !isTrustedAddress(client, hops)) break;
     }
 
-    return client;
+    return client ?? remote;
   }
 
   if (hops <= 0) return remote;
 
+  // The socket address is the last link of the chain. An entry picked from
+  // the header must be an address, or the socket address stands in for it.
   const chain = headerList(input.forwardedFor);
+  const length = chain.length + (remote ? 1 : 0);
 
-  if (remote) chain.push(remote);
-  if (chain.length === 0) return undefined;
+  if (length === 0) return undefined;
 
-  return chain[Math.max(0, chain.length - 1 - hops)];
+  const picked = chain[Math.max(0, length - 1 - hops)];
+
+  return picked === undefined ? remote : (forwardedAddress(picked) ?? remote);
 }
 
 /** An IP coarsened for display in a session list: IPv4 to /24, IPv6 to /48. */

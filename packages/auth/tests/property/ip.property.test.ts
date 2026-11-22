@@ -6,6 +6,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { clientIp, parseTrustProxy } from '../../src/http/ip';
+import { isIp, isTrustedAddress } from '../../src/http/ip-ranges';
 import { AuthConfigError } from '../../src/shared/errors';
 import { runs } from './runs';
 
@@ -18,6 +19,22 @@ const address = fc.oneof(
     .map((s) => s.replaceAll(',', '').trim())
     .filter((s) => s !== ''),
 );
+
+/** An X-Forwarded-For entry a proxy writes: one IP address. */
+const entry = fc.oneof(fc.ipV4(), fc.ipV6());
+
+/** Text with no comma that `clientIp` cannot read as an IP, even after a port, brackets or a zone id. */
+const junk = fc
+  .string({ minLength: 1, maxLength: 20 })
+  .map((s) => s.replaceAll(',', '').trim())
+  .filter((s) => {
+    const bare = s
+      .replace(/^\[(.*)\](:\d*)?$/u, '$1')
+      .replace(/:\d{1,5}$/u, '')
+      .split('%')[0];
+
+    return s !== '' && !isIp(s) && !isIp(bare ?? '');
+  });
 
 const whitespace = fc.string({ unit: fc.constantFrom(' ', '\t'), maxLength: 3 });
 
@@ -44,8 +61,8 @@ describe('clientIp', () => {
     // socket address is proxy N. Everything left of that is the client's.
     fc.assert(
       fc.property(
-        fc.array(address, { maxLength: 6 }),
-        fc.array(address, { minLength: 1, maxLength: 5 }),
+        fc.array(entry, { maxLength: 6 }),
+        fc.array(entry, { minLength: 1, maxLength: 5 }),
         address,
         (spoofed, genuine, remote) => {
           const hops = genuine.length;
@@ -63,7 +80,7 @@ describe('clientIp', () => {
   it('falls back to the leftmost entry only when the chain is shorter than the hops', () => {
     fc.assert(
       fc.property(
-        fc.array(address, { maxLength: 5 }),
+        fc.array(entry, { maxLength: 5 }),
         address,
         fc.integer({ min: 1, max: 5 }),
         (entries, remote, extra) => {
@@ -84,10 +101,61 @@ describe('clientIp', () => {
     );
   });
 
+  it('returns the socket address when the picked entry is not an IP, with a count or a list', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.oneof(entry, junk), { maxLength: 4 }),
+        junk,
+        fc.array(
+          fc.ipV4().map((ip) => `10.${ip.split('.').slice(1).join('.')}`),
+          {
+            maxLength: 3,
+          },
+        ),
+        (spoofed, bad, proxies) => {
+          const header = [...spoofed, bad, ...proxies].join(', ');
+          const remote = '10.0.0.1';
+
+          expect(
+            clientIp({
+              remoteAddress: remote,
+              forwardedFor: header,
+              trustedHops: proxies.length + 1,
+            }),
+          ).toBe(remote);
+
+          expect(
+            clientIp({ remoteAddress: remote, forwardedFor: header, trustedHops: ['10.0.0.0/8'] }),
+          ).toBe(remote);
+        },
+      ),
+      runs(),
+    );
+  });
+
+  it('strips a port from the picked entry, with a count or a list', () => {
+    fc.assert(
+      fc.property(fc.ipV4(), fc.ipV6(), fc.integer({ min: 0, max: 65535 }), (v4, v6, port) => {
+        fc.pre(!isTrustedAddress(v4, ['10.0.0.0/8']) && !isTrustedAddress(v6, ['10.0.0.0/8']));
+
+        for (const [written, address] of [
+          [`${v4}:${port}`, v4],
+          [`[${v6}]:${port}`, v6],
+        ] as const) {
+          const input = { remoteAddress: '10.0.0.1', forwardedFor: `192.0.2.1, ${written}` };
+
+          expect(clientIp({ ...input, trustedHops: 1 })).toBe(address);
+          expect(clientIp({ ...input, trustedHops: ['10.0.0.0/8'] })).toBe(address);
+        }
+      }),
+      runs(),
+    );
+  });
+
   it('gives the same answer for a string header and the same entries split into an array', () => {
     fc.assert(
       fc.property(
-        fc.array(address, { maxLength: 8 }),
+        fc.array(fc.oneof(entry, junk), { maxLength: 8 }),
         fc.array(fc.nat(), { maxLength: 4 }),
         fc.option(address, { nil: undefined }),
         fc.integer({ min: 1, max: 6 }),
@@ -114,7 +182,7 @@ describe('clientIp', () => {
   it('ignores whitespace around entries and empty entries', () => {
     fc.assert(
       fc.property(
-        fc.array(address, { maxLength: 8 }),
+        fc.array(fc.oneof(entry, junk), { maxLength: 8 }),
         fc.array(fc.tuple(whitespace, whitespace, fc.nat(2)), { minLength: 8, maxLength: 8 }),
         address,
         fc.integer({ min: 1, max: 6 }),
