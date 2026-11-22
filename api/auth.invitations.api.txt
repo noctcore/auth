@@ -392,6 +392,7 @@ TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; re
 TokenStore [interface]
     consume(purpose: string, hash: string): Promise<StoredToken | null>
     deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
+    extendExpiry?(purpose: string, hash: string, expiresAt: number): Promise<boolean>
     find(purpose: string, hash: string): Promise<StoredToken | null>
     findByUser(purpose: string, userId: string): Promise<StoredToken | null>
     incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>

@@ -1,6 +1,7 @@
 /**
- * TokenStore conformance: single-use consumption under concurrency and an
- * attempt cap that cannot be overrun.
+ * TokenStore conformance: single-use consumption under concurrency, an
+ * attempt cap that cannot be overrun, and an extend that never revives a
+ * consumed token.
  *
  * Guide: Build, "Writing a store adapter".
  */
@@ -18,6 +19,17 @@ function sampleToken(overrides: Partial<StoredToken> = {}): StoredToken {
     attempts: 0,
     data: { email: 'person@example.com' },
     ...overrides,
+  };
+}
+
+function requireExtendExpiry(store: TokenStore): NonNullable<TokenStore['extendExpiry']> {
+  return (purpose, hash, expiresAt) => {
+    assert.ok(
+      typeof store.extendExpiry === 'function',
+      'TokenStore.extendExpiry is missing: without it a one-time link is extended by a consume and a put',
+    );
+
+    return store.extendExpiry(purpose, hash, expiresAt);
   };
 }
 
@@ -71,6 +83,68 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
 
         assert.equal(results.filter(Boolean).length, 1);
         assert.equal(await store.find(token.purpose, token.hash), null);
+      },
+    },
+    {
+      name: 'consume by the hash of a replaced token leaves the token that replaced it',
+      async run() {
+        // A refused code is removed by the hash that was read, so a code
+        // issued meanwhile (a resend) must survive that delete.
+        const read = sampleToken();
+        const resent = sampleToken({ userId: read.userId });
+
+        await store.put(read);
+        await store.put(resent);
+        assert.equal(await store.consume(read.purpose, read.hash), null);
+        assert.deepEqual(await store.findByUser(read.purpose, read.userId), resent);
+      },
+    },
+    {
+      name: 'extendExpiry moves the expiry of a live token, keeps the rest, and creates nothing',
+      async run() {
+        const extendExpiry = requireExtendExpiry(store);
+        const token = sampleToken({ attempts: 2 });
+        const later = token.expiresAt + 60_000;
+
+        await store.put(token);
+        assert.equal(await extendExpiry(token.purpose, token.hash, later), true);
+
+        assert.deepEqual(await store.find(token.purpose, token.hash), {
+          ...token,
+          expiresAt: later,
+        });
+
+        assert.equal(await extendExpiry('other-purpose', token.hash, later), false);
+        assert.equal(await extendExpiry(token.purpose, uniqueId('hash'), later), false);
+        assert.equal(await store.find('other-purpose', token.hash), null);
+      },
+    },
+    {
+      name: 'extendExpiry never brings back a consumed token, also when racing the consume',
+      async run() {
+        const extendExpiry = requireExtendExpiry(store);
+        const spent = sampleToken();
+
+        await store.put(spent);
+        await store.consume(spent.purpose, spent.hash);
+        assert.equal(await extendExpiry(spent.purpose, spent.hash, Date.UTC(9999, 11, 31)), false);
+        assert.equal(await store.find(spent.purpose, spent.hash), null);
+
+        // Whichever lands first, the consume wins and the token is gone.
+        for (let round = 0; round < 20; round++) {
+          const token = sampleToken();
+
+          await store.put(token);
+
+          const [consumed] = await Promise.all([
+            store.consume(token.purpose, token.hash),
+            extendExpiry(token.purpose, token.hash, Date.UTC(9999, 11, 31)),
+          ]);
+
+          assert.notEqual(consumed, null);
+          assert.equal(await store.find(token.purpose, token.hash), null);
+          assert.equal(await store.findByUser(token.purpose, token.userId), null);
+        }
       },
     },
     {
