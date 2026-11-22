@@ -42,7 +42,8 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 
 /**
  * Vias that complete a sign-in: issued without `inherit`, they start the count
- * toward the permanent lockout tier over (`Throttle.signInCompleted`).
+ * toward the permanent lockout tier over and, with `countSuccesses` false,
+ * hand the password's account-wide slot back (`Throttle.signInCompleted`).
  */
 const SIGN_IN_VIAS: ReadonlySet<IssueVia> = new Set(['password', 'second-factor']);
 
@@ -430,9 +431,13 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     });
   }
 
-  /** The count toward the permanent tier starts over; nothing is read while the tier is off. */
+  /**
+   * The count toward the permanent tier starts over and, with
+   * `countSuccesses` false, the password's account-wide slot comes back.
+   * Nothing is read while the tier is off and successes count.
+   */
   async #signInCompleted(user: U): Promise<void> {
-    if (!this.throttle.permanentTier) return;
+    if (!this.throttle.permanentTier && this.throttle.countSuccesses) return;
 
     const email = this.normalizeEmail(user.email);
 

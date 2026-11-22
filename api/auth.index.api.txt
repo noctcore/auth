@@ -359,7 +359,9 @@ LegacySessionOptions [interface]
     take(id: string): Promise<LegacySession | null>
 LockoutOptions [interface]
     readonly baseLock?: Duration
+    readonly countSuccesses?: boolean
     readonly deviceMaxAge?: Duration
+    readonly durations?: readonly Duration[]
     readonly maxLock?: Duration
     readonly perAccount?: RateLimitRule
     readonly perAccountIp?: RateLimitRule
@@ -670,11 +672,15 @@ Throttle [class]
     private countTowardPermanent
     private held
     private lock
+    private lockDuration
+    private msUntil
+    private owe
     private permanentKey
     private racingRefusal
     private readonly baseLockMs
     private readonly clock
     private readonly counters
+    private readonly lockLadderMs
     private readonly maxLockMs
     private readonly perAccount
     private readonly perAccountIp
@@ -682,10 +688,12 @@ Throttle [class]
     private readonly permanentAfter
     private readonly quietPeriodMs
     private runningLock
+    readonly countSuccesses: boolean
     readonly deviceMaxAgeMs: number
     readonly permanentDevices: boolean
     readonly revealLocked: boolean
     recordFailure(account: string, owner?: string | null): Promise<{ newLock?: NewLock; }>
+    refundSuccess(account: string): Promise<void>
     signInCompleted(account: string): Promise<void>
 TOKEN_BYTES [const]: 32
 TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; readonly data: Readonly<Record<string, string>>; } | { readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch'; readonly namedUserId: string; } | { readonly status: 'unknown'; }

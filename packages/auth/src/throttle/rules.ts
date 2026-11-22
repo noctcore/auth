@@ -17,6 +17,16 @@ export interface LockoutOptions {
   readonly baseLock?: Duration;
   /** Cap on a single lock. Default 1 h. */
   readonly maxLock?: Duration;
+  /**
+   * Your own ladder of lock durations, in place of `baseLock` and `maxLock`:
+   * lock N in a row lasts entry N, and the last entry repeats, so
+   * `['15m', '1h']` locks for 15 min, then 1 h every time after. The same
+   * ladder applies to the two-factor plugin's factor locks, which share the
+   * password lockout's backoff. Startup refuses an empty list, an entry that
+   * is not a duration or is zero, and `durations` together with `baseLock`
+   * or `maxLock`. Left out by default.
+   */
+  readonly durations?: readonly Duration[];
   /** The backoff tier resets after this long without a new lock. Default 24 h. */
   readonly quietPeriod?: Duration;
   /**
@@ -50,6 +60,23 @@ export interface LockoutOptions {
    * answer does not. Pair it with a captcha and per-IP rate limits.
    */
   readonly revealLocked?: boolean;
+  /**
+   * Default true: every password attempt spends the account-wide budget
+   * (`perAccount`), a correct one included, so a user who signs in many
+   * times within its window (several devices, a script) can be locked.
+   *
+   * False: a completed sign-in (a session issued `via: 'password'` or
+   * `via: 'second-factor'` without `inherit`) hands back the slot its
+   * password reserved, so only failures count. A correct password with a
+   * second factor still owed hands nothing back until the factor is proved.
+   * A correct password at `reauthenticate` or `changePassword` hands its
+   * slot back at once (the caller already holds a session).
+   *
+   * Trade-off: an attacker who also holds the password can sign in between
+   * guesses to win budget back, which only matters together with a second
+   * factor, and there the slot comes back only once the factor is proved.
+   */
+  readonly countSuccesses?: boolean;
 }
 
 export interface PermanentLockOptions {

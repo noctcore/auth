@@ -29,6 +29,13 @@ export const counterKeys = {
   permanentUser: (userId: string) => `permu:${sha256Hex(`user:${userId}`)}`,
   /** Locks in a row toward the permanent tier (password and second-factor locks); a completed sign-in resets it. */
   escalation: (account: string) => `esc:${account}`,
+  /**
+   * Account-wide slots that correct passwords reserved and may have back
+   * (`countSuccesses: false`); lapses with the account-wide window.
+   */
+  owed: (account: string) => `owed:${account}`,
+  /** Refunds claimed against `owed`, so parallel completions never take back more than it holds. */
+  refunded: (account: string) => `refd:${account}`,
   /** The backoff tier: how many locks in a row, renewed on each one. */
   tier: (account: string) => `tier:${account}`,
   /** One trusted device's attempts under a lock. */
