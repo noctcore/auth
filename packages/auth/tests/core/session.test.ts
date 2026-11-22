@@ -341,6 +341,140 @@ describe('SessionManager cap and revocation edges', () => {
     expect(third.evicted).toEqual([first.session.id]);
   });
 
+  it('keeps the session it just minted when its creation time ties an older one', async () => {
+    const m = manager({ maxPerUser: 1 });
+    const first = await mintFor(m);
+
+    if (!first.ok) throw new Error('mint failed');
+
+    // The store lists the newer session first; the clock has not moved.
+    const listByUser = store.listByUser.bind(store);
+
+    store.listByUser = async (userId) =>
+      (await listByUser(userId)).sort(
+        (a, b) => (a.id === first.session.id ? 1 : 0) - (b.id === first.session.id ? 1 : 0),
+      );
+
+    const second = await mintFor(m);
+
+    if (!second.ok) throw new Error('mint failed');
+
+    expect(second.session.createdAt).toBe(first.session.createdAt);
+    expect(second.evicted).toEqual([first.session.id]);
+    expect((await m.validate(second.token, { touch: false })).ok).toBe(true);
+    expect((await m.validate(first.token, { touch: false })).ok).toBe(false);
+  });
+
+  it('keeps the session it just minted when another instance stamped an older one later', async () => {
+    const m = manager({ maxPerUser: 1 });
+    const ahead = await mintFor(m);
+
+    if (!ahead.ok) throw new Error('mint failed');
+
+    // An instance whose clock lags behind the one that minted `ahead`.
+    clock.advance(-5000);
+    const behind = await mintFor(m);
+
+    if (!behind.ok) throw new Error('mint failed');
+
+    expect(behind.session.createdAt).toBeLessThan(ahead.session.createdAt);
+    expect(behind.evicted).toEqual([ahead.session.id]);
+    expect((await m.validate(behind.token, { touch: false })).ok).toBe(true);
+  });
+
+  it('breaks ties among older sessions by id, so racing mints agree on the order', async () => {
+    const roomy = manager({ maxPerUser: 4 });
+    const ids: string[] = [];
+
+    for (let i = 0; i < 3; i++) {
+      const minted = await mintFor(roomy);
+
+      if (!minted.ok) throw new Error('mint failed');
+
+      ids.push(minted.session.id);
+    }
+
+    const listByUser = store.listByUser.bind(store);
+
+    store.listByUser = async (userId) => (await listByUser(userId)).reverse();
+
+    const latest = await mintFor(manager({ maxPerUser: 2 }));
+
+    if (!latest.ok) throw new Error('mint failed');
+
+    expect(latest.evicted).toEqual([...ids].sort().slice(0, 2));
+    expect((await roomy.validate(latest.token, { touch: false })).ok).toBe(true);
+  });
+
+  // Holds every create until both racing mints have read the sessions before
+  // them, so both are written before either evicts: the overlap a probe with
+  // random delays found to leave no session when each mint skipped only itself.
+  async function raceAtCapOfOne(stamp: (mint: number) => number) {
+    const m = manager({ maxPerUser: 1 });
+    const older = await mintFor(m);
+
+    if (!older.ok) throw new Error('mint failed');
+
+    const listByUser = store.listByUser.bind(store);
+    const create = store.create.bind(store);
+    let listed = 0;
+
+    let release = () => {};
+
+    const bothListed = new Promise<void>((resolve) => (release = resolve));
+
+    store.listByUser = async (userId) => {
+      const sessions = await listByUser(userId);
+
+      if (++listed === 2) release();
+
+      return sessions;
+    };
+
+    store.create = async (session, ttlMs) => {
+      await bothListed;
+
+      return create(session, ttlMs);
+    };
+
+    const now = clock.now();
+    let calls = 0;
+
+    // Each mint reads the clock once, right after its first listing.
+    const stamped = new SessionManager<Attrs>(
+      store,
+      { attributes, maxPerUser: 1 },
+      { now: () => (calls < 2 ? now + stamp(calls++) : now) },
+      cryptoRandom,
+      silentLogger,
+    );
+
+    const raced = await Promise.all([mintFor(stamped), mintFor(stamped)]);
+    const live = (await listByUser('u1')).map((s) => s.id);
+
+    return { older, raced, live };
+  }
+
+  it('leaves exactly one of two logins racing at a cap of one, the one that sorts last', async () => {
+    for (const stamp of [() => 0, (mint: number) => mint, (mint: number) => -mint]) {
+      store = new MemorySessionStore(clock);
+      const { older, raced, live } = await raceAtCapOfOne(stamp);
+      const [a, b] = raced;
+
+      if (!a?.ok || !b?.ok) throw new Error('mint failed');
+
+      const order = [a.session, b.session].sort(
+        (x, y) => x.createdAt - y.createdAt || (x.id < y.id ? -1 : 1),
+      );
+
+      expect(live).toEqual([order[1]?.id]);
+
+      expect([...a.evicted, ...b.evicted].sort()).toEqual(
+        [older.session.id, order[0]?.id ?? ''].sort(),
+      );
+    }
+  });
+
   it('evicts several at once, oldest first, when a tighter cap meets more sessions', async () => {
     const roomy = manager({ maxPerUser: 4 });
     const ids: string[] = [];
