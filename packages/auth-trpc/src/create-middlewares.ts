@@ -112,7 +112,9 @@ export interface AuthMiddlewares<TContext, TMeta, TErrorShape, TTier extends str
    * `AuthWriter` with `setSession`, `signOut` and `clearSession`; without
    * it they are not on the type and refuse at run time. Only a mutation may
    * carry it: on a query (no CSRF check, and reachable by a cross-site GET)
-   * or a subscription it refuses every call as a configuration error. On a
+   * or a subscription it refuses every call as a configuration error. It runs
+   * the CSRF check itself (403 `forbidden`), so a forged mutation never
+   * reaches the writers, even on a bare `t.procedure`. On a
    * streamed batch (`httpBatchStreamLink`), whose headers are already sent,
    * it refuses before the procedure runs, so a sign-in or a rotation never
    * happens without its cookie.
