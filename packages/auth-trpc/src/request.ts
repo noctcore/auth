@@ -14,7 +14,13 @@
  * no socket, so on that adapter the server passes the peer address itself.
  */
 import type { IncomingHttpHeaders } from 'node:http';
-import { clientIp, serializeCookie, type CookieSpec, type RequestMeta } from '@noctcore/auth';
+import {
+  appendSetCookie,
+  clientIp,
+  serializeCookie,
+  type CookieSpec,
+  type RequestMeta,
+} from '@noctcore/auth';
 import type { ResolvedOptions } from './options';
 
 /** What the adapter reads from a request. */
@@ -123,14 +129,7 @@ export function fromNode(input: NodeContextInput): {
       subscription: input.info?.type === 'subscription',
     },
     // Adds a header, keeping the cookies already set on the response.
-    write: (spec) => {
-      const previous = res.getHeader('set-cookie');
-
-      const list =
-        previous === undefined ? [] : Array.isArray(previous) ? previous : [String(previous)];
-
-      res.setHeader('set-cookie', [...list, serializeCookie(spec)]);
-    },
+    write: (spec) => appendSetCookie(res, spec),
     setHeader: (name, value) => res.setHeader(name, value),
   };
 }

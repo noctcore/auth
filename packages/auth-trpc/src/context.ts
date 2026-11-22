@@ -12,7 +12,9 @@
  *   enforced by the `csrf` middleware on every mutation (the core's three
  *   checks: Origin allowlist, `Sec-Fetch-Site` (`cross-site` only from an
  *   origin on `crossSiteOrigins`), and the signed double-submit token bound
- *   to this session or pre-session).
+ *   to this session or pre-session). The verdict and the safe request
+ *   handout are the core's (`csrfRequestAllowed`, `handOutCsrfToken`), the
+ *   same functions the Nest adapter calls.
  * - Every cookie the adapter sets takes the session cookie's `SameSite` for
  *   the request's `Origin` (the core's `resolveSameSite`), so a shell that
  *   gets `None` for its session gets it for the CSRF cookies too.
@@ -40,26 +42,20 @@
  */
 import {
   AuthConfigError,
+  bindCsrfToSession,
   clearsSessionCookie,
-  parseCookieHeader,
+  csrfRequestAllowed,
+  handOutCsrfToken,
+  isSafeMethod,
+  readCsrfCookies,
   resolveSameSite,
-  verifyFetchSite,
-  verifyRequestOrigin,
+  startCsrfPreSession,
   type AuthUser,
   type CookieSpec,
   type IssuedSession,
   type RequestMeta,
   type ValidatedSession,
 } from '@noctcore/auth';
-import {
-  binding,
-  csrfCookie,
-  csrfTokenValid,
-  newPreSession,
-  preSessionBinding,
-  readPreSession,
-  sessionBinding,
-} from './csrf-tokens';
 import { internalError } from './errors';
 import { resolveOptions, type AuthContextOptions, type ResolvedOptions } from './options';
 import {
@@ -262,50 +258,6 @@ export function writerView(state: AuthState, found: Internals): AuthWriter {
   return view;
 }
 
-/**
- * The core's own notion of a safe method (GET, HEAD, OPTIONS, with ASCII-only
- * case folding): `verifyRequestOrigin` passes a safe method whatever the
- * Origin, and refuses an unsafe one with none.
- */
-function isSafeMethod(method: string): boolean {
-  return verifyRequestOrigin({ method, origin: undefined, allowedOrigins: [] });
-}
-
-function csrfVerdict(
-  options: ResolvedOptions,
-  request: HttpRequest,
-  bound: string | null,
-  cookieToken: string | undefined,
-): boolean {
-  const { csrf } = options;
-  // Judged as the unsafe request a mutation always is, whatever method carried it.
-  const method = 'POST';
-  const secFetchSite = request.header('sec-fetch-site');
-  const origin = request.header('origin');
-
-  const originOk = verifyRequestOrigin({ method, origin, allowedOrigins: csrf.allowedOrigins });
-
-  // Fetch metadata, when the browser sends it. A client that sends none (an
-  // old browser, a native client) still needs the allowed Origin and the token.
-  const fetchSiteOk = verifyFetchSite({
-    method,
-    secFetchSite,
-    allowSameSite: csrf.allowSameSite,
-    origin,
-    crossSiteOrigins: csrf.crossSiteOrigins,
-  });
-
-  const siteOk = fetchSiteOk || secFetchSite === undefined;
-
-  const tokenOk = csrfTokenValid(options, {
-    cookieToken,
-    headerToken: request.header(csrf.headerName),
-    bound,
-  });
-
-  return originOk && siteOk && tokenOk;
-}
-
 /** A procedure whose meta says `touch: false` never counts as activity. */
 const isPassiveMeta = (meta: unknown): boolean =>
   (meta as { touch?: unknown } | null | undefined)?.touch === false;
@@ -343,10 +295,7 @@ async function resolveState(
       : await auth.validateRequest({ token, meta, touch: touches(options, request) });
 
   const session = validated?.ok ? validated.value : null;
-  const cookies = parseCookieHeader(cookieHeader);
-  const preSession = readPreSession(cookies.get(csrf.preSessionCookieName));
-  const cookieToken = cookies.get(csrf.cookieName);
-  let bound = binding(session, preSession);
+  const cookies = readCsrfCookies(csrf, cookieHeader);
   // Every cookie set here travels with the session cookie, so takes its SameSite.
   const sameSite = resolveSameSite(options.cookie, request.header('origin'));
 
@@ -360,30 +309,25 @@ async function resolveState(
     });
   }
 
-  const csrfOk = csrfVerdict(options, request, bound, cookieToken);
+  // Judged as the unsafe request a mutation always is, whatever method carried it.
+  const csrfOk = csrfRequestAllowed(csrf, {
+    session,
+    cookies,
+    origin: request.header('origin'),
+    secFetchSite: request.header('sec-fetch-site'),
+    headerToken: request.header(csrf.headerName),
+  });
+
   const streamed = isStreamedRequest((name) => request.header(name));
   // The token this response sets or keeps as the cookie, on a safe request.
   let handed: string | undefined;
 
   if (isSafeMethod(request.method)) {
-    if (bound === null) {
-      const fresh = newPreSession(options, sameSite);
+    const handout = handOutCsrfToken(options, { session, cookies, sameSite });
 
-      write(fresh.cookie);
-      bound = preSessionBinding(fresh.id);
-    }
+    for (const cookie of handout.cookies) write(cookie);
 
-    const current = csrfTokenValid(options, { cookieToken, headerToken: cookieToken, bound });
-
-    if (current) {
-      // A current token verified against the cookie, so the cookie is set.
-      handed = cookieToken;
-    } else {
-      const fresh = csrfCookie(options, bound, sameSite);
-
-      write(fresh.cookie);
-      handed = fresh.token;
-    }
+    handed = handout.token;
   }
 
   const tokenHandedOut = { value: false };
@@ -406,13 +350,11 @@ async function resolveState(
   let user: Promise<AuthUser | null> | undefined;
 
   const startPreSession = (): { csrfToken: string } => {
-    const fresh = newPreSession(options, sameSite);
-    const next = csrfCookie(options, preSessionBinding(fresh.id), sameSite);
+    const fresh = startCsrfPreSession(options, sameSite);
 
-    write(fresh.cookie);
-    write(next.cookie);
+    for (const cookie of fresh.cookies) write(cookie);
 
-    return { csrfToken: next.token };
+    return { csrfToken: fresh.token };
   };
 
   // The backstop behind the slot: one write per request, whoever calls it.
@@ -434,11 +376,7 @@ async function resolveState(
       once();
 
       // The CSRF cookie goes wherever the session cookie goes.
-      const next = csrfCookie(
-        options,
-        sessionBinding(issued.session),
-        issued.cookie.attributes.sameSite,
-      );
+      const next = bindCsrfToSession(options, issued.session, issued.cookie.attributes.sameSite);
 
       write(issued.cookie);
       write(issued.deviceCookie);

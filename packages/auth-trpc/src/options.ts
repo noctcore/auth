@@ -5,10 +5,10 @@
  * that quietly passes everything.
  */
 import {
-  assertExactOrigins,
   AuthConfigError,
-  createCsrfToken,
+  resolveCsrfSettings,
   resolveSameSite,
+  type CsrfSettings,
   type AuthEvent,
   type AuthResult,
   type AuthUser,
@@ -142,19 +142,8 @@ export interface ResolvedOptions {
   readonly cookie: SessionCookieConfig;
   /** False when no procedure touches; otherwise whether the procedure at a path does. */
   readonly touch: false | ((path: string) => boolean);
-  readonly csrf: {
-    readonly secrets: readonly Uint8Array[];
-    /** `allowedOrigins` and `crossSiteOrigins` together: every origin the Origin check accepts. */
-    readonly allowedOrigins: readonly string[];
-    readonly crossSiteOrigins: readonly string[];
-    readonly allowSameSite: boolean;
-    readonly headerName: string;
-    readonly cookieName: string;
-    readonly preSessionCookieName: string;
-  };
+  readonly csrf: CsrfSettings;
 }
-
-const HEADER = /^[a-z0-9-]+$/u;
 
 /**
  * More proxies than any real deployment chains. A count above it is a typo
@@ -173,33 +162,12 @@ export function resolveOptions<U extends AuthUser, A>(
 
   const hops = resolveTrustedHops(trustedHops, MAX_TRUSTED_HOPS);
   const clientIpHeader = resolveClientIpHeader(options.clientIpHeader, hops);
-
-  if (csrf.secrets.length === 0)
-    throw new AuthConfigError('csrf.secrets needs at least one secret');
-
-  const crossSiteOrigins = assertExactOrigins(csrf.crossSiteOrigins ?? [], 'csrf.crossSiteOrigins');
-
-  if (csrf.allowedOrigins.length === 0 && crossSiteOrigins.length === 0)
-    throw new AuthConfigError('csrf.allowedOrigins is empty');
-
-  const secrets = csrf.secrets.map((secret) =>
-    typeof secret === 'string' ? new TextEncoder().encode(secret) : secret,
-  );
-
-  // The core refuses a short secret when it signs; signing once here moves
-  // that refusal to boot.
-  for (const secret of secrets) createCsrfToken(secret, 'boot-check');
-
-  const headerName = (csrf.headerName ?? 'x-csrf-token').toLowerCase();
-
-  if (!HEADER.test(headerName))
-    throw new AuthConfigError(`Invalid CSRF header name: ${headerName}`);
-
-  const touch = resolveTouch(options.touch);
-
   // The session cookie is `__Host-` prefixed exactly when it is Secure, and
   // the CSRF cookies follow it, so one setting decides all three.
   const secure = auth.cookieName.startsWith('__Host-');
+  const resolvedCsrf = resolveCsrfSettings(csrf, secure);
+
+  const touch = resolveTouch(options.touch);
   // The adapter's cookies are Secure exactly when the session cookie is, so
   // SameSite resolves against that, never against a config that disagrees:
   // `None` without Secure is refused here for a fixed value, and by
@@ -216,15 +184,7 @@ export function resolveOptions<U extends AuthUser, A>(
     secure,
     cookie,
     touch,
-    csrf: {
-      secrets,
-      allowedOrigins: [...csrf.allowedOrigins, ...crossSiteOrigins],
-      crossSiteOrigins,
-      allowSameSite: csrf.allowSameSite ?? false,
-      headerName,
-      cookieName: secure ? '__Host-csrf' : 'csrf',
-      preSessionCookieName: secure ? '__Host-presession' : 'presession',
-    },
+    csrf: resolvedCsrf,
   };
 }
 
