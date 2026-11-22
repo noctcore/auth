@@ -125,6 +125,15 @@ export const required: readonly ConfigRow[] = [
   },
 ];
 
+export const rotation: readonly ConfigRow[] = [
+  {
+    key: 'previousSecret',
+    type: 'string | Uint8Array | a list of them',
+    default: 'none',
+    does: 'The secret, or secrets newest first, that a rotation replaced, kept for a grace window. Each at least 32 bytes, and different from `secret` and from each other. An empty string is refused, not read as unset.',
+  },
+];
+
 export const password: readonly ConfigRow[] = [
   {
     key: 'password.policy.minLength',
@@ -198,7 +207,7 @@ export const session: readonly ConfigRow[] = [
     key: 'session.touchInterval',
     type: 'Duration',
     default: "`'60s'`",
-    does: 'Last-active is written at most this often. Must be shorter than a fixed idle timeout.',
+    does: 'Last-active is written at most this often, and only for a request that counts as activity (see the adapters\' `touch` option). Must be shorter than a fixed idle timeout.',
   },
   {
     key: 'session.maxPerUser',
@@ -698,5 +707,50 @@ export const prismaStoresOptions: readonly ConfigRow[] = [
     type: '(input) => object',
     default: 'none',
     does: 'Values for your other required columns on sign-up, such as a tenant or a display name.',
+  },
+];
+
+export const nestjsAdapterOptions: readonly ConfigRow[] = [
+  {
+    key: 'touch',
+    type: 'boolean | (request: TouchRequest) => boolean',
+    default: '`true`',
+    does: 'Whether a request counts as activity for the idle timeout. A predicate sees `{ method, path, headers }` and returns false for a poll. `false` touches on no request.',
+  },
+];
+
+export const trpcAdapterOptions: readonly ConfigRow[] = [
+  {
+    key: 'touch',
+    type: 'boolean | (path: string) => boolean',
+    default: '`true`',
+    does: 'Whether a call counts as activity for the idle timeout. A predicate gets each procedure path of the request. `false` touches on no request.',
+  },
+  {
+    key: 'meta.touch',
+    type: 'false',
+    default: 'none',
+    does: 'On a procedure, `.meta({ touch: false })` marks it passive. A batch touches when any of its procedures is active.',
+  },
+];
+
+export const csrfHandout: readonly ConfigRow[] = [
+  {
+    key: 'SessionCookies.csrfToken(request, response)',
+    type: '{ csrfToken: string }',
+    default: 'none',
+    does: 'On NestJS, returns the CSRF token of the request for a client that cannot read the cookie, from a `@Public()` GET route, and marks the response `no-store`.',
+  },
+  {
+    key: 'ctx.auth.csrfToken()',
+    type: '{ csrfToken: string }',
+    default: 'none',
+    does: 'On tRPC, the same from a public query sent with GET. It throws on an unsafe method, a streamed batch and a subscription.',
+  },
+  {
+    key: 'authResponseMeta(responseMeta?)',
+    type: '(opts) => ResponseMeta',
+    default: 'none',
+    does: 'Wraps your tRPC `responseMeta` so its cache headers cannot replace the `no-store` on a response that handed out a token. Pass it to the tRPC handler.',
   },
 ];
