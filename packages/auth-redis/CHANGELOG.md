@@ -1,5 +1,12 @@
 # @noctcore/auth-redis
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies [[`ad9f1eb`](https://github.com/noctcore/auth/commit/ad9f1ebbb190fe3908a8280f7808e9685e9601e3), [`d83c560`](https://github.com/noctcore/auth/commit/d83c5608d7368596f602c1b86bf61a7ef6376181)]:
+  - @noctcore/auth@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes
