@@ -8,7 +8,17 @@ Redis session, counter, two-factor and membership stores for [`@noctcore/auth`](
 import { Redis } from 'ioredis';
 import { redisStores } from '@noctcore/auth-redis';
 
-const { sessions, counters } = redisStores(new Redis(process.env.REDIS_URL), { prefix: 'auth:' });
+const redis = new Redis(process.env.REDIS_URL, {
+  maxRetriesPerRequest: 1,
+  enableOfflineQueue: false,
+  connectTimeout: 2_000,
+  commandTimeout: 1_000,
+  retryStrategy: (attempt) => Math.min(attempt * 200, 2_000),
+});
+
+redis.on('error', (error) => console.error('redis', error.name)); // log it, or ioredis prints every failure
+
+const { sessions, counters } = redisStores(redis, { prefix: 'auth:' });
 ```
 
 - Needs Redis 6.2 or newer. Redis Cluster is not supported (a session and its user's index are written by one script); a single primary with replicas or Sentinel is.
@@ -64,3 +74,14 @@ maxmemory-policy noeviction
 ```
 
 All three stores pass the conformance suite from `@noctcore/auth/testing` on a real Redis in CI.
+
+## Bound the client so an outage fails fast
+
+Create the ioredis client with the options above; ioredis's defaults are not safe for a request path. With them, a Redis that stops answering holds every request (session check, sign-in, rate limit) for about 73 seconds (20 retries per command with backoff) before the call rejects, and under load the waiting requests pile up until the app is down too. In ioredis 6, measured against a port with nothing listening: the defaults reject after about 73 s, the options above after a few milliseconds.
+
+- `maxRetriesPerRequest: 1` ends a command after one reconnect attempt (`MaxRetriesPerRequestError`) instead of 20.
+- `enableOfflineQueue: false` rejects a command at once while the client is not connected, instead of queueing it until the connection returns. Commands sent before the first connection is ready are rejected too, so wait for the client's `ready` event before you start serving.
+- `connectTimeout` and `commandTimeout` (milliseconds) bound a connection attempt and a command that gets no reply, for the case where the network drops packets instead of refusing them (`Command timed out`).
+- `retryStrategy` sets how long the client waits before it reconnects in the background; it does not delay a request. The default backs off to 5 seconds.
+
+What the app sees: the store call rejects with the ioredis error, and the core does not catch it. A flow such as `validateRequest`, sign-in or a rate-limit hit rejects instead of returning a refusal, so no request is let through on a failed check (it fails closed). `@noctcore/auth-nestjs` turns the rejection into a 500 and `@noctcore/auth-trpc` into an internal error, both logging only the error's name. In your own handler, catch the rejection, answer 503 and log `error.name` (a store error can carry a key name).

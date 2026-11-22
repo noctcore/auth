@@ -14,7 +14,16 @@ const prisma = createPrisma(
   process.env['DATABASE_URL'] ?? 'postgresql://auth:auth@localhost:5440/auth',
 );
 
-const redis = new Redis(process.env['REDIS_URL'] ?? 'redis://localhost:6390');
+// Bounded, so a Redis outage fails requests in milliseconds instead of holding them for about 73 s.
+const redis = new Redis(process.env['REDIS_URL'] ?? 'redis://localhost:6390', {
+  maxRetriesPerRequest: 1,
+  enableOfflineQueue: false,
+  connectTimeout: 2_000,
+  commandTimeout: 1_000,
+  retryStrategy: (attempt) => Math.min(attempt * 200, 2_000),
+});
+
+redis.on('error', (error) => process.stderr.write(`redis: ${error.name}\n`));
 const port = Number(process.env['PORT'] ?? 3000);
 
 const { server } = createApp({

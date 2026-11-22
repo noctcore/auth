@@ -10,7 +10,16 @@ import { prisma } from './db';
 // long, so the same value goes to both.
 const REMEMBER_ME_TTL = '30d';
 
-export const redis = new Redis(config.redisUrl);
+// Bounded, so an outage fails requests in milliseconds, not after about 73 s.
+export const redis = new Redis(config.redisUrl, {
+  maxRetriesPerRequest: 1,
+  enableOfflineQueue: false,
+  connectTimeout: 2_000,
+  commandTimeout: 1_000,
+  retryStrategy: (attempt) => Math.min(attempt * 200, 2_000),
+});
+
+redis.on('error', (error) => process.stderr.write(`redis: ${error.name}\n`));
 
 const { sessions, counters } = redisStores(redis, {
   prefix: 'auth:',
