@@ -181,6 +181,10 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     throw new AuthConfigError('AuthModule needs the createAuth(...) result as `auth`');
   }
 
+  // Called on every request that needs a role: anything else would throw there instead of here.
+  if (options.roles !== undefined && options.roles !== null && typeof options.roles !== 'function')
+    throw new AuthConfigError('roles must be a function of the user');
+
   const hops = resolveTrustedHops(trustedHops, MAX_TRUSTED_HOPS);
   const clientIpHeader = resolveClientIpHeader(options.clientIpHeader, hops);
   // The session cookie is `__Host-` prefixed exactly when it is Secure, and
@@ -189,10 +193,11 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
   const resolvedCsrf = resolveCsrfSettings(csrf, secure);
   const exempt: unknown = csrf.exempt ?? [];
 
-  // A rule that is neither would throw on every unsafe request instead of at boot.
+  // A rule that is neither would throw on every unsafe request instead of at
+  // boot. `Array.from` reads an empty slot as undefined, which `.some` skips.
   if (
     !Array.isArray(exempt) ||
-    exempt.some((rule) => typeof rule !== 'string' && !(rule instanceof RegExp))
+    !Array.from(exempt).every((rule) => typeof rule === 'string' || rule instanceof RegExp)
   ) {
     throw new AuthConfigError('csrf.exempt must be a list of paths and RegExps');
   }

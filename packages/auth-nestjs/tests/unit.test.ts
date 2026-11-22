@@ -145,6 +145,37 @@ describe('resolveOptions', () => {
     ).toHaveLength(2);
   });
 
+  it('refuses a missing csrf, a missing required list and lists with an empty slot', () => {
+    const csrf = { secrets: [CSRF_SECRET], allowedOrigins: [ORIGIN] };
+
+    for (const [given, message] of [
+      [undefined, 'csrf is required'],
+      [{ allowedOrigins: [ORIGIN] }, 'csrf.secrets is required'],
+      [{ secrets: null, allowedOrigins: [ORIGIN] }, 'csrf.secrets is required'],
+      [{ secrets: [CSRF_SECRET] }, 'csrf.allowedOrigins is required'],
+      // eslint-disable-next-line no-sparse-arrays
+      [{ ...csrf, secrets: [, CSRF_SECRET] }, 'csrf.secrets must not have empty slots'],
+      // `.some` skipped the hole, so a rule list with one passed and the guard read undefined.
+      // eslint-disable-next-line no-sparse-arrays
+      [{ ...csrf, exempt: [, '/webhook'] }, 'csrf.exempt must be a list of paths and RegExps'],
+    ] as const) {
+      const resolve = () => resolveOptions(options({ csrf: given as never }));
+
+      expect(resolve).toThrow(AuthConfigError);
+      expect(resolve).toThrow(message);
+    }
+  });
+
+  it('refuses a roles option that is not a function, and takes null as left out', () => {
+    for (const roles of ['admin', ['admin'], true])
+      expect(() => resolveOptions(options({ roles: roles as never }))).toThrow(
+        'roles must be a function of the user',
+      );
+
+    expect(resolveOptions(options({ roles: null as never })).roles).toBeNull();
+    expect(resolveOptions(options({ roles: () => ['admin'] })).roles).toBeTypeOf('function');
+  });
+
   it('refuses a header name that is not a plain token', () => {
     expect(() =>
       resolveOptions(
