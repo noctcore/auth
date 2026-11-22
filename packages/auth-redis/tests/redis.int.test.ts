@@ -287,6 +287,38 @@ describe.skipIf(!url)('redis stores', () => {
     expect(await redis.zcard(`${prefix}tf-gone:tf:du:${userId}`)).toBe(2);
   });
 
+  it('drops a session whose key is gone from the user index on the next listing', async () => {
+    const store = new RedisSessionStore(redis, { prefix: `${prefix}s-gone:` });
+    const now = Date.now();
+    const userId = uniqueId('user');
+
+    const session = {
+      id: uniqueId('s'),
+      userId,
+      createdAt: now,
+      authenticatedAt: now,
+      lastActiveAt: now,
+      expiresAt: now + 60_000,
+      idleTimeoutMs: 30_000,
+      epoch: 0,
+      rememberMe: false,
+      persistentCookie: false,
+      ip: '203.0.113.1',
+      userAgent: 'test',
+      attributes: {},
+    };
+
+    const kept = { ...session, id: uniqueId('s') };
+
+    await store.create(session, 60_000);
+    await store.create(kept, 60_000);
+    // A delete that lands between the index read and the value read leaves this.
+    await redis.del(`${prefix}s-gone:s:${session.id}`);
+
+    expect(await store.listByUser(userId)).toEqual([kept]);
+    expect(await redis.zrange(`${prefix}s-gone:u:${userId}`, '0', '-1')).toEqual([kept.id]);
+  });
+
   it('keeps every key it writes under a TTL', async () => {
     const { sessions, counters } = redisStores(redis, { prefix: `${prefix}ttl:` });
     const now = Date.now();
