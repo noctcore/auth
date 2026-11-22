@@ -97,7 +97,7 @@ Every key is derived from each secret too, so these keep verifying during the gr
 
 Sessions and invitations created since 0.6 never depend on the secret: an invitation token is stored as a SHA-256, under no key.
 
-Remove `previousSecret` once the longest-lived value has expired: the trusted-device cookie (`throttle.lockout.deviceMaxAge`), and the recovery codes that users made before the rotation, which never expire. Ask every user with a factor to make a new set first, or accept that their old codes stop working. Leave the key out, or pass `undefined`, when no rotation is under way: an empty string is not "unset", and startup refuses it as shorter than the minimum.
+Remove `previousSecret` once the longest-lived value has expired: the trusted-device cookie (`throttle.lockout.deviceMaxAge`), and the recovery codes that users made before the rotation, which never expire. Ask every user with a factor to make a new set first, counting from the point where every instance runs the new `secret` (after the second deploy of a rolling deploy; a set made earlier is made under the old secret and stops working when `previousSecret` goes), or accept that their old codes stop working. Leave the key out, or pass `undefined`, when no rotation is under way: an empty string is not "unset", and startup refuses it as shorter than the minimum.
 
 **Rotating without it** invalidates all of the following at once:
 
@@ -396,13 +396,13 @@ The adapters take their own options beside the `createAuth` result; the guides c
 
 <ConfigTable rows={nestjsAdapterOptions} prefix="nestjs-authmodule" label="Option" />
 
-The predicate runs before the session is validated and cannot read route decorators. Its `path` is the raw request path with the global prefix and without the query string: it is not normalised, so a trailing slash or a different case is a different path, and a predicate that compares it should normalise first. See [Use with NestJS](/auth/build/nestjs/#background-polls).
+The predicate runs before the middleware validates the session and cannot read route decorators. Under nestjs-trpc the tRPC context validates it a second time, with its own switch (see [Use with tRPC](/auth/build/trpc/#background-polls)). Its `path` is the raw request path with the global prefix and without the query string: it is not normalised, so a trailing slash or a different case is a different path, and a predicate that compares it should normalise first. See [Use with NestJS](/auth/build/nestjs/#background-polls).
 
 #### `createAuthContext(options)`
 
 <ConfigTable rows={trpcAdapterOptions} prefix="trpc-createauthcontext" label="Option" />
 
-The predicate and the meta are read from the calls tRPC parsed before it built the context. When tRPC names no call, the request touches. See [Use with tRPC](/auth/build/trpc/#background-polls) for the cases where this has no effect.
+The predicate and the meta are read from the calls tRPC parsed before it built the context. When tRPC names no call, the request touches. With nestjs-trpc and `AuthModule` mounted, the session is validated by both, and a poll is passive only when marked in both; see [Use with tRPC](/auth/build/trpc/#background-polls) for that and the other cases where this has no effect.
 
 ### Handing out the CSRF token
 

@@ -65,7 +65,7 @@ AuthModule.forRoot({
 });
 ```
 
-The predicate sees the method, the path (a global prefix included, no query string, and not normalised: a trailing slash or another case is a different path, so lower-case it and strip a trailing slash before comparing, or the poll touches) and the headers, and runs before the one validation of the request. It cannot read route decorators: the middleware validates the session before Nest picks a handler. A passive request is still answered with its session, and the CSRF checks and the guard's decisions do not change. `touch: false` touches on no request; the default, `true`, on every one.
+The predicate sees the method, the path (a global prefix included, no query string, and not normalised: a trailing slash or another case is a different path, so lower-case it and strip a trailing slash before comparing, or the poll touches) and the headers, and runs before the middleware validates the session. Under nestjs-trpc the tRPC context validates the same request again with its own `touch`, and a poll stays passive only when both say so (see [Use with tRPC](/auth/build/trpc/#background-polls)). It cannot read route decorators: the middleware validates the session before Nest picks a handler. A passive request is still answered with its session, and the CSRF checks and the guard's decisions do not change. `touch: false` touches on no request; the default, `true`, on every one.
 
 ## Signing in and out
 
