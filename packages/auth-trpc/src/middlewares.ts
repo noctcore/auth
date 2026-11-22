@@ -18,6 +18,9 @@
  *   procedure's meta says `twoFactorEnrollment: true`.
  * - `freshAuth` and `role` run the `authed` check themselves, so either one
  *   alone still refuses a caller without a session or a forged mutation.
+ * - `writesCookies` refuses every call that is not a mutation, and runs the
+ *   CSRF check itself, so the cookie writers are reachable only from a
+ *   mutation that passed it, whatever else the chain holds.
  * - `guard` is the nestjs-trpc default: CSRF on mutations, and a session for
  *   every procedure whose meta does not say `auth: 'public'`. A public
  *   procedure that also asks for a role or a fresh proof is a configuration
@@ -203,16 +206,17 @@ function refuseNonMutation(type: string): void {
   const why = NOT_A_MUTATION.get(type) ?? 'only a mutation passes the CSRF check';
 
   throw new AuthConfigError(
-    `writesCookies cannot mark a ${type}: ${why}. Write cookies from a mutation.`,
+    `writesCookies cannot mark a procedure of type ${type}: ${why}. Write cookies from a mutation.`,
   );
 }
 
 /**
  * The only way to the cookie writers: hands the procedure `ctx.auth` with
- * `setSession`, `signOut` and `clearSession`. On a query, a subscription and
- * a streamed batch it refuses first, so the core flow (a sign-in, a rotation,
- * a sign-out) never runs without the CSRF check or when its cookie cannot be
- * set. It also claims the request's one cookie-writer slot: a second marked
+ * `setSession`, `signOut` and `clearSession`. It refuses first on a query and
+ * a subscription, on a mutation that failed the CSRF check (it runs the check
+ * itself, so a bare `t.procedure` is covered), and on a streamed batch, so the
+ * core flow (a sign-in, a rotation, a sign-out) never runs forged or when its
+ * cookie cannot be set. It also claims the request's one cookie-writer slot: a second marked
  * procedure in the same batch is refused before it runs, so a batch cannot
  * mint a session no browser holds.
  */
@@ -220,6 +224,11 @@ export const writesCookiesBody = tagged(
   'cookies',
   async <TResult>(call: MiddlewareCall<TResult>): Promise<TResult> => {
     refuseNonMutation(call.type);
+    // The type is always mutation here, so this always enforces: a marked
+    // procedure built on a bare `t.procedure` is checked too. The verdict was
+    // computed once with the context, so a chain that already checked it pays
+    // only a lookup and fails the same way.
+    checkCsrf(call);
 
     const { state, internals } = stateOf(call.ctx);
 

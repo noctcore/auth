@@ -93,7 +93,7 @@ describe('A104 writing cookies from a tRPC query', () => {
     expect(handler).not.toHaveBeenCalled();
     expect(errors).toHaveLength(1);
     expect(errors[0]).toBeInstanceOf(AuthConfigError);
-    expect((errors[0] as Error).message).toMatch(/cannot mark a query/u);
+    expect((errors[0] as Error).message).toMatch(/cannot mark a procedure of type query/u);
 
     // No session cookie was cleared, and the session is still valid.
     expect(response.headers.getSetCookie().some((line) => line.startsWith('session='))).toBe(false);
@@ -117,7 +117,7 @@ describe('A104 writing cookies from a tRPC query', () => {
     const next = vi.fn(async () => Promise.resolve('ran'));
 
     await expect(new WritesCookiesMiddleware().use({ ctx, type: 'query', next })).rejects.toThrow(
-      /cannot mark a query: a query skips the CSRF check/u,
+      /cannot mark a procedure of type query: a query skips the CSRF check/u,
     );
 
     expect(next).not.toHaveBeenCalled();

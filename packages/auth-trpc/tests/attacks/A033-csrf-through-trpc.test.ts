@@ -9,11 +9,19 @@
 // Stopped by: auth-trpc src/context.ts (the three core checks, computed when
 //   the context is built) and src/middlewares.ts: `csrf`, `publicProcedure`
 //   and every session check refuse a mutation that failed them, so leaving
-//   the `csrf` step out of a chain does not skip it.
+//   the `csrf` step out of a chain does not skip it; `writesCookies` (and
+//   `WritesCookiesMiddleware` on nestjs-trpc) runs the check itself too, so
+//   a cookie writer built on a bare `t.procedure` is never reachable forged.
 // Learn: CSRF (/auth/learn/csrf/); core attacks A008, A021
 import { initTRPC } from '@trpc/server';
-import { afterEach, describe, expect, it } from 'vitest';
-import { createAuthContext, createAuthMiddlewares, type AuthState } from '../../src';
+import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createAuthContext,
+  createAuthMiddlewares,
+  WritesCookiesMiddleware,
+  type AuthState,
+} from '../../src';
 import {
   boot,
   Browser,
@@ -23,6 +31,7 @@ import {
   ORIGIN,
   PASSWORD,
   type Booted,
+  type Context,
 } from '../support';
 
 describe('A033 CSRF through tRPC', () => {
@@ -92,5 +101,90 @@ describe('A033 CSRF through tRPC', () => {
     await expect(caller.a()).rejects.toThrow('forbidden');
     await expect(caller.b()).rejects.toThrow('forbidden');
     await expect(caller.c()).rejects.toThrow('forbidden');
+  });
+
+  it('refuses a forged mutation marked writesCookies on a bare t.procedure', async () => {
+    booted = await boot();
+
+    const browser = new Browser(booted);
+
+    await browser.signIn();
+
+    const t = initTRPC.context<Context>().create();
+    const { writesCookies } = createAuthMiddlewares(t);
+
+    const handler = vi.fn(async ({ ctx }: { ctx: { auth: { signOut(): Promise<unknown> } } }) => {
+      await ctx.auth.signOut();
+
+      return 'signed out';
+    });
+
+    const router = t.router({ signOut: t.procedure.use(writesCookies).mutation(handler) });
+
+    const authContext = createAuthContext({
+      auth: booted.auth,
+      trustedHops: 1,
+      csrf: { secrets: [CSRF_SECRET], allowedOrigins: [ORIGIN] },
+    });
+
+    const call = async (headers: Record<string, string>) =>
+      fetchRequestHandler({
+        endpoint: '/trpc',
+        req: new Request(`${ORIGIN}/trpc/signOut`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': '198.51.100.7',
+            ...headers,
+          },
+        }),
+        router,
+        createContext: (opts) => authContext.fetch(opts, { remoteAddress: '127.0.0.1' }),
+      });
+
+    const cookie = [...browser.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
+
+    // Another site's form: its own Origin, cross-site, no token, the victim's cookies.
+    const forged = await call({
+      origin: 'https://evil.example',
+      'sec-fetch-site': 'cross-site',
+      cookie,
+    });
+
+    expect(forged.status).toBe(403);
+    expect(handler).not.toHaveBeenCalled();
+    await expect(browser.client.me.query()).resolves.toMatchObject({ email: EMAIL });
+
+    // The nestjs-trpc class alone refuses the same forged request.
+    const forgedCtx = await authContext.fetch({
+      req: new Request(ORIGIN, {
+        method: 'POST',
+        headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site', cookie },
+      }),
+      resHeaders: new Headers(),
+    });
+
+    const next = vi.fn(async () => Promise.resolve('ran'));
+
+    await expect(
+      new WritesCookiesMiddleware().use({ ctx: forgedCtx, type: 'mutation', next }),
+    ).rejects.toThrow('forbidden');
+
+    expect(next).not.toHaveBeenCalled();
+
+    // The page itself still signs out, and the cookie is cleared.
+    const legit = await call({
+      origin: ORIGIN,
+      'sec-fetch-site': 'same-origin',
+      'x-csrf-token': browser.csrf,
+      cookie,
+    });
+
+    expect(legit.status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    expect(legit.headers.getSetCookie().some((line) => /^session=;.*Max-Age=0/iu.test(line))).toBe(
+      true,
+    );
   });
 });

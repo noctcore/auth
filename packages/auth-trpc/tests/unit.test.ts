@@ -46,6 +46,36 @@ const csrf = (overrides: Partial<AuthContextOptions['csrf']>) => ({
   csrf: { secrets: [CSRF_SECRET], allowedOrigins: [ORIGIN], ...overrides },
 });
 
+/**
+ * A mutation context whose request passed the CSRF checks, as a page sends
+ * it: a first visit hands out the pre-session and CSRF cookies, then a
+ * same-origin POST carries them and echoes the token. `writesCookies` runs
+ * the CSRF check itself, so a cookie writer needs one.
+ */
+async function trustedContext(headers: Record<string, string> = {}, resHeaders = new Headers()) {
+  const authContext = createAuthContext(options());
+  const visit = new Headers();
+
+  await authContext.fetch({ req: new Request(ORIGIN), resHeaders: visit });
+
+  const cookies = visit.getSetCookie().map((line) => line.split(';')[0] ?? '');
+  const token = cookies.find((pair) => pair.startsWith('csrf='))?.slice('csrf='.length) ?? '';
+
+  return authContext.fetch({
+    req: new Request(ORIGIN, {
+      method: 'POST',
+      headers: {
+        origin: ORIGIN,
+        'sec-fetch-site': 'same-origin',
+        'x-csrf-token': decodeURIComponent(token),
+        cookie: cookies.join('; '),
+        ...headers,
+      },
+    }),
+    resHeaders,
+  });
+}
+
 describe('createAuthContext boot checks', () => {
   it('refuses a missing auth, a bad hop count, and weak CSRF settings', () => {
     expect(() => createAuthContext(options({ auth: undefined as never }))).toThrow(AuthConfigError);
@@ -237,15 +267,9 @@ describe('the cookie writers', () => {
   });
 
   it('come only through writesCookies, as a view that leaves ctx.auth unchanged', async () => {
-    const make = (headers: Record<string, string>, resHeaders = new Headers()) =>
-      createAuthContext(options()).fetch({
-        req: new Request(ORIGIN, { method: 'POST', headers }),
-        resHeaders,
-      });
-
     const middleware = new WritesCookiesMiddleware();
     const resHeaders = new Headers();
-    const ctx = await make({}, resHeaders);
+    const ctx = await trustedContext({}, resHeaders);
     let handed: { auth: AuthWriter } | undefined;
 
     await middleware.use({
@@ -278,7 +302,7 @@ describe('the cookie writers', () => {
 
     await expect(
       middleware.use({
-        ctx: await make({ 'trpc-accept': 'application/jsonl' }),
+        ctx: await trustedContext({ 'trpc-accept': 'application/jsonl' }),
         type: 'mutation',
         next,
       }),
@@ -286,17 +310,17 @@ describe('the cookie writers', () => {
 
     // Nor on a subscription, whose response is a stream as well.
     await expect(middleware.use({ ctx, type: 'subscription', next })).rejects.toThrow(
-      /cannot mark a subscription: its response is a stream/u,
+      /cannot mark a procedure of type subscription: its response is a stream/u,
     );
 
     // Nor on a query, which skips the CSRF check (A104), nor on any type tRPC
     // might add that is not a mutation.
     await expect(middleware.use({ ctx, type: 'query', next })).rejects.toThrow(
-      /cannot mark a query: a query skips the CSRF check/u,
+      /cannot mark a procedure of type query: a query skips the CSRF check/u,
     );
 
     await expect(middleware.use({ ctx, type: 'unknown', next })).rejects.toThrow(
-      /cannot mark a unknown: only a mutation passes the CSRF check/u,
+      /cannot mark a procedure of type unknown: only a mutation passes the CSRF check/u,
     );
 
     expect(next).not.toHaveBeenCalled();
@@ -304,11 +328,7 @@ describe('the cookie writers', () => {
 
   it('let one procedure per request write, and only once', async () => {
     const resHeaders = new Headers();
-
-    const ctx = await createAuthContext(options()).fetch({
-      req: new Request(ORIGIN, { method: 'POST' }),
-      resHeaders,
-    });
+    const ctx = await trustedContext({}, resHeaders);
 
     const middleware = new WritesCookiesMiddleware();
     let writer: AuthWriter | undefined;

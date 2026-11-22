@@ -101,7 +101,7 @@ export const RateLimitMiddleware = (
 
 /**
  * For every procedure that writes cookies, which must be a `@Mutation`:
- * refuses a query, a subscription and a streamed batch
- * (`httpBatchStreamLink`) before the flow runs.
+ * refuses a query, a subscription, a mutation that fails the CSRF checks and
+ * a streamed batch (`httpBatchStreamLink`) before the flow runs.
  */
 export const WritesCookiesMiddleware: NestTrpcMiddlewareClass = middlewareClass(writesCookiesBody);
