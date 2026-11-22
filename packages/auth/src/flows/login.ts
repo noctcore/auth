@@ -93,7 +93,7 @@ export async function login<U extends AuthUser, A>(
 
     await emitFailure(core, credential, gate.reason, meta);
 
-    return refusal(core, gate);
+    return gateRefusal(core, gate);
   }
 
   if (!credential || !verified) {
@@ -164,7 +164,7 @@ async function emitFailure<U extends AuthUser, A>(
  * and a refusal that is the account's lock, `account_locked` (with
  * `retryAfterSeconds` unless the lock is permanent).
  */
-function refusal<U extends AuthUser, A>(
+export function gateRefusal<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   gate: Extract<LoginGate, { allowed: false }>,
 ): AuthFailure {

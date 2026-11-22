@@ -1,22 +1,25 @@
 /**
  * Flows that prove the current password of a signed-in user: re-authenticating
- * (a step-up before a sensitive action) and changing the password. A wrong
- * password spends the account-wide lockout budget, like a failed login.
+ * (a step-up before a sensitive action) and changing the password. Each
+ * attempt spends login's lockout budget, so guesses through login and both
+ * doors add up (see `proveCurrentPassword`).
  */
 import { sendLockNotice } from './lock-notice';
+import { gateRefusal } from './login';
 import { permanentLockRefusal } from './permanent-lock';
 import { PASSWORD_PURPOSES, publicUser } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
 import type { IssuedSession } from '../core/plugin-context';
 import type { AuthUser, StoredSession } from '../ports/stores';
+import { sha256Hex } from '../crypto/hash';
 import { fail, ok, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
 
 /**
  * Proves the password again and re-issues the session with a fresh
- * `authenticatedAt`. A wrong password spends the account-wide lockout budget.
+ * `authenticatedAt`. The attempt spends login's lockout budget.
  */
 export async function reauthenticate<U extends AuthUser, A>(
   core: AuthCore<U, A>,
@@ -124,6 +127,20 @@ export async function changePassword<U extends AuthUser, A>(
   return core.issueSession(user, { via: 'password-change', meta, inherit: session });
 }
 
+/**
+ * Each attempt reserves a slot in login's lockout budget BEFORE the verify,
+ * through the same gate and keys as login (`Throttle.gateLogin`): the
+ * per (account, IP) and account-wide budgets while the account is unlocked,
+ * so guesses through login and both doors add up. Under a lock the live
+ * session stands in for a trusted device: the attempt reserves a slot in
+ * the session's own budget and in the budget shared by every trusted device
+ * of the account (5 per 15 min by default), so the owner can still step up
+ * under a lock an outsider set, while a stolen session gets no more checks
+ * than a stolen device cookie would at login. Refusals answer like login's
+ * (`invalid_credentials`, or `account_locked` with `revealLocked`) after the
+ * same password verify, so a spent budget and a wrong password take the same
+ * work. The per-door rate limit still applies first.
+ */
 async function proveCurrentPassword<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   session: StoredSession<A>,
@@ -144,23 +161,51 @@ async function proveCurrentPassword<U extends AuthUser, A>(
   if (!credential) return fail('session_expired', 'user_missing');
   if (!credential.passwordHash) return fail('password_not_set', 'password_not_set');
 
+  const account = accountKey(credential.email);
+  const deviceId = sessionDeviceId(session.id);
+  const gate = await core.throttle.gateLogin(account, meta.ip, deviceId, credential.id);
   const correct = await core.verifyPassword(credential.passwordHash, password);
 
+  if (!gate.allowed) {
+    if (gate.newLock) await sendLockNotice(core, credential, gate.newLock, meta);
+
+    await emitChangeFailed(core, credential.id, `${gate.reason}:${door}`, meta);
+
+    return gateRefusal(core, gate);
+  }
+
   if (!correct) {
-    const { newLock } = await core.throttle.recordFailure(
-      accountKey(credential.email),
-      credential.id,
-    );
+    // Under a lock a wrong password keeps its device slots and also counts
+    // against the account-wide budget; otherwise the gate already counted it.
+    if (gate.viaDevice) {
+      const { newLock } = await core.throttle.deviceFailed(account, credential.id);
 
-    if (newLock) await sendLockNotice(core, credential, newLock, meta);
+      if (newLock) await sendLockNotice(core, credential, newLock, meta);
+    }
 
-    await core.emit(
-      { type: 'password.change_failed', userId: credential.id, reason: `wrong_password:${door}` },
-      meta,
-    );
+    await emitChangeFailed(core, credential.id, `wrong_password:${door}`, meta);
 
     return fail('invalid_credentials', 'wrong_password');
   }
 
+  await core.throttle.loginSucceeded(account, meta.ip, gate.viaDevice ? deviceId : null);
+
   return ok(publicUser(credential));
+}
+
+/**
+ * The trusted-device id a live session stands in for under a lock. Hashed,
+ * so the counter store never holds a session's store key.
+ */
+function sessionDeviceId(sessionId: string): string {
+  return sha256Hex(`session-device:${sessionId}`);
+}
+
+async function emitChangeFailed<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  userId: string,
+  reason: string,
+  meta: RequestMeta,
+): Promise<void> {
+  await core.emit({ type: 'password.change_failed', userId, reason }, meta);
 }
