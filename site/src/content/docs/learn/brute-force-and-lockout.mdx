@@ -92,6 +92,10 @@ A stolen session cookie that is alive but not fresh is one more way to guess the
 
 Under a lock the doors are not simply refused, because that would let anyone who locks the account also block the owner's step-up. The live session stands in for a device cookie instead: the attempt reserves a slot in the session's own budget and in the budget shared by all of the account's devices, with the same rules as above. The owner still steps up under a lock someone else set, and a stolen session gets no more checks than a stolen device cookie would at login, from a budget shared with every device ([A102](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A102-guessing-the-password-through-a-stolen-session.test.ts)). A refusal answers like a wrong password, after the same password check. Each door's own rate limit (`throttle.doors`) still applies first.
 
+Two limits of this are worth knowing. First, the shared device budget can be spent by someone who both locks the account through login and holds a stolen session: the doors then draw on the budget every device of the account shares, so the owner's own device cookie can be refused at sign-in and at step-up until the lock ends. A stolen device cookie carries the same risk. A password reset clears the lock and ends every session, which closes it. Second, a correct proof at either door while the account is unlocked still counts toward the account-wide budget: success returns only the per (account, IP) slot, as it does at login. An app that asks its users to re-authenticate very often can lock its own user and send a lock notice.
+
+Only the password proofs share login's budgets. A second-factor code has its own separate budget (see the two-factor plugin), and the other doors (password reset, email change, email verification) use only their own rate limits.
+
 ### The owner hears about it
 
 Each new lock mails the account owner once, who can reset the password if the attempts were not theirs.
