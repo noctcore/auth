@@ -19,7 +19,7 @@ import type { Mailer } from '../ports/mail';
 import type { AuthUser, UserStore } from '../ports/stores';
 import type { SessionManager } from '../session/session-manager';
 import type { AttributeSchema } from '../session/session-types';
-import type { ResolvedEmailNormalizer } from '../shared/email';
+import type { NormalizedEmail, ResolvedEmailNormalizer } from '../shared/email';
 import type { RateLimitRule } from '../throttle/rules';
 import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
@@ -58,4 +58,10 @@ export interface CoreDependencies<U extends AuthUser, A> {
   readonly metrics: Metrics;
   /** Where `background` tasks run: the app's `waitUntil`, timeout and pending cap. */
   readonly background: BackgroundTasks;
+  /**
+   * Whether an address is held for the owner of an email change away from it
+   * that can still be reverted. The rule lives with the email change flows
+   * (`flows/email-reservation.ts`), which the core may not import.
+   */
+  readonly addressHeld: (email: NormalizedEmail) => Promise<boolean>;
 }

@@ -15,7 +15,7 @@ import { deriveKeys, toPreviousSecrets, toSecret } from './crypto/keys';
 import { cryptoRandom } from './crypto/random';
 import * as emailChange from './flows/email-change';
 import { clearEmailRevertLockout, lockoutHooks } from './flows/email-lockout';
-import { isAddressHeld } from './flows/email-reservation';
+import { heldAccount, isAddressHeld } from './flows/email-reservation';
 import * as verification from './flows/email-verification';
 import { login, type LoginInput } from './flows/login';
 import { clearLock, inspectLock, type LockTarget } from './flows/lockout-admin';
@@ -256,6 +256,8 @@ export function createAuth<
     logger,
     metrics,
     background,
+    addressHeld: async (email) =>
+      (await heldAccount({ tokens, users: config.stores.users }, email)) !== null,
   });
 
   const flows = {

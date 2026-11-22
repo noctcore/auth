@@ -28,16 +28,16 @@
  * whoever made the change could register the old address and leave the
  * revert nowhere to go back to. Every path looks for a hold first, before the
  * insert, so a race between that check and the insert can still slip
- * through. Paths of the app that create users must ask `auth.isAddressHeld`
- * themselves.
+ * through. Sign-up through an invitation applies the same rule
+ * (`heldAccount`); paths of the app that create users must ask
+ * `auth.isAddressHeld` themselves.
  */
-import { addressHolder } from './email-reservation';
+import { heldAccount } from './email-reservation';
 import { sendVerification } from './email-verification';
 import type { FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { IssuedSession } from '../core/plugin-context';
 import type { AuthUser } from '../ports/stores';
-import type { NormalizedEmail } from '../shared/email';
 import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
@@ -78,7 +78,8 @@ export async function register<U extends AuthUser, A>(
 
   if (!hashed.ok) return refused(core, hashed, meta);
 
-  const held = await heldAddress(core, email);
+  // Read where a free or taken address does its insert (one round trip each).
+  const held = await heldAccount(core, email);
   const user = held ? null : await core.users.create({ email, passwordHash: hashed.value });
 
   // A permanent lock the address took while it had no account does not pass
@@ -141,28 +142,6 @@ export async function register<U extends AuthUser, A>(
   const issued = await core.issueSession(user, { via: 'register', meta });
 
   return issued.ok ? ok({ session: issued.value }) : issued;
-}
-
-/**
- * The account an address is held for while an email change away from it can
- * still be reverted, read where a free or taken address does its insert (one
- * round trip each). A holder that is gone can never revert, so its address is
- * free. Only a store that can change emails can have held addresses, so other
- * apps skip the lookup.
- */
-async function heldAddress<U extends AuthUser, A>(
-  core: AuthCore<U, A>,
-  email: NormalizedEmail,
-): Promise<{ id: string; email: string } | undefined> {
-  if (typeof core.users.changeEmail !== 'function') return undefined;
-
-  const holderId = await addressHolder(core, email);
-
-  if (holderId === null) return undefined;
-
-  const holder = await core.users.findById(holderId);
-
-  return holder ? { id: holder.id, email } : undefined;
 }
 
 async function refused<U extends AuthUser, A>(

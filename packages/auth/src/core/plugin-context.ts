@@ -144,6 +144,16 @@ export interface PluginContext<U extends AuthUser, A> {
    * lookup by address goes through this.
    */
   findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>;
+  /**
+   * Whether `email` is held for the owner of an email change away from it
+   * that can still be reverted: the rule sign-up applies, the same as
+   * `auth.isAddressHeld`. A plugin that creates a user, or gives an account
+   * an address, refuses a held address the way it refuses a taken one, or
+   * the owner's revert has nowhere to go back to. Look the account up first,
+   * then the hold: a confirm writes the hold before it moves the address, so
+   * a confirm between the two reads is seen by one of them.
+   */
+  isAddressHeld(email: NormalizedEmail): Promise<boolean>;
   /** Refuses (`fresh_auth_required`) when the session's last credential proof is older than `session.freshAuthAge`. */
   requireFreshAuth(session: StoredSession<A>): AuthResult<void>;
   /**
