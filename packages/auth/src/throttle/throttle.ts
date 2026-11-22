@@ -484,7 +484,7 @@ export class Throttle {
    *
    * With `countSuccesses` false, an attempt that reserved an account-wide
    * slot (not a `viaDevice` one) is also recorded as owed one slot back, in
-   * a counter the next account-wide window clears (`countAttempt`). The slot itself
+   * a counter `countAttempt` clears when the account-wide counter answers 1. The slot itself
    * comes back only when the sign-in completes (`signInCompleted`), or at
    * once at a door that proves nothing more (`refundSuccess`).
    *
@@ -537,8 +537,12 @@ export class Throttle {
    * correct password in the window is owed, never one more. The window that
    * starts once the account-wide counter lapses clears both counters
    * (`countAttempt`), so a slot owed in an earlier window, or in one a lock
-   * re-armed, never comes back out of a newer one. Reads and writes nothing
-   * while successes count.
+   * re-armed, never comes back out of a newer one.
+   *
+   * Not atomic: a completion racing the first attempt of a new window (the
+   * clear lands between the read of what is owed and the claim), or racing a
+   * password reset (`clearAccount`), can hand back one slot of the new
+   * budget. Reads and writes nothing while successes count.
    */
   async refundSuccess(account: string): Promise<void> {
     if (this.countSuccesses) return;
@@ -561,10 +565,13 @@ export class Throttle {
 
   /**
    * One attempt against the account-wide budget. With `countSuccesses` false,
-   * the attempt that opens a new window (the counter answers 1) also clears
-   * the slots owed back and the refunds claimed: they belong to the window
-   * that lapsed, whatever their own expiry says (a lock re-arms the
-   * account-wide counter to the lock's end, so the two drift apart).
+   * an attempt the counter answers 1 also clears the slots owed back and the
+   * refunds claimed. That is the first attempt of a new window, whose owed
+   * slots belong to the window that lapsed whatever their own expiry says (a
+   * lock re-arms the account-wide counter to the lock's end, so the two drift
+   * apart). It is also an attempt mid-window after refunds brought the
+   * counter back to 0 (a decrement keeps the key): then a pending challenge's
+   * slot may not come back, which errs toward counting.
    */
   private async countAttempt(account: string): Promise<CounterWindow> {
     const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
@@ -582,7 +589,7 @@ export class Throttle {
 
   /**
    * One more account-wide slot owed back. Its expiry follows the account-wide
-   * counter as it stands; the next window clears it anyway (`countAttempt`).
+   * counter as it stands; `countAttempt` clears it when a new window opens.
    * Nothing is owed when the window has already ended (its slot went with it).
    */
   private async owe(account: string): Promise<void> {
