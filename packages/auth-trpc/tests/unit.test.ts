@@ -90,6 +90,27 @@ describe('createAuthContext boot checks', () => {
     expect(() => createAuthContext(options(csrf({ headerName: 'x csrf' })))).toThrow(/header/u);
   });
 
+  it('refuses CSRF options of the wrong type, as the environment gives them', () => {
+    for (const [bad, message] of [
+      [{ allowSameSite: 'false' }, 'csrf.allowSameSite must be true or false'],
+      [{ allowSameSite: 1 }, 'csrf.allowSameSite must be true or false'],
+      [{ secrets: CSRF_SECRET }, 'csrf.secrets must be a list'],
+      [{ secrets: [undefined] }, 'csrf.secrets must hold strings or bytes'],
+      [{ allowedOrigins: 'https://app.test' }, 'csrf.allowedOrigins must be a list'],
+      [{ crossSiteOrigins: 'app://desktop' }, 'csrf.crossSiteOrigins must be a list'],
+      [{ headerName: 42 }, 'csrf.headerName must be a string'],
+    ] as const) {
+      const create = () => createAuthContext(options(csrf(bad as never)));
+
+      expect(create).toThrow(AuthConfigError);
+      expect(create).toThrow(message);
+    }
+
+    for (const given of [{ allowSameSite: true }, { allowSameSite: false }, {}]) {
+      expect(() => createAuthContext(options(csrf(given)))).not.toThrow();
+    }
+  });
+
   it('accepts byte secrets, a custom header, and the hop cap', () => {
     expect(() =>
       createAuthContext(
