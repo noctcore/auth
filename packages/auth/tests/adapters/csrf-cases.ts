@@ -9,7 +9,7 @@
  */
 import { encodeHexLowerCase } from '@oslojs/encoding';
 import { randomBytes } from '../../src/crypto/random';
-import { createCsrfToken } from '../../src/http/csrf';
+import { createCsrfToken, verifyCsrfToken } from '../../src/http/csrf';
 import { resolveCsrfSettings } from '../../src/http/csrf-adapter';
 
 export const PARITY_ORIGIN = 'http://app.test';
@@ -41,6 +41,8 @@ export const PARITY_CONFIGS = {
   },
   /** Sibling subdomains trusted through `Sec-Fetch-Site: same-site`. */
   sameSite: { secrets: PARITY_SECRETS, allowedOrigins: [PARITY_ORIGIN], allowSameSite: true },
+  /** After the rollover: the previous secret removed. */
+  currentOnly: { secrets: [CURRENT_SECRET], allowedOrigins: [PARITY_ORIGIN] },
 } as const;
 
 export type ParityConfig = keyof typeof PARITY_CONFIGS;
@@ -64,8 +66,13 @@ export interface CsrfCase {
   /** Signed out: whether the browser holds a pre-session id, or a value we could not have minted. */
   readonly preSession: 'valid' | 'malformed' | 'none';
   readonly cookie: TokenKind;
-  /** What the CSRF header carries on a POST: the cookie's value, another valid token, or nothing. */
-  readonly header?: 'same' | 'other' | 'none';
+  /**
+   * What the CSRF header carries on a POST: the cookie's value, a valid token
+   * bound to another browser, a different token for this binding under the
+   * current or the previous secret (what a page still holds after a safe
+   * request replaced the cookie), or nothing.
+   */
+  readonly header?: 'same' | 'other' | 'own' | 'own-previous' | 'none';
   /** The `Origin` header; null sends none. Default the allowed origin. */
   readonly origin?: string | null;
   /** The `Sec-Fetch-Site` header; null sends none. Default `same-origin`. */
@@ -111,6 +118,34 @@ export const CSRF_CASES: readonly CsrfCase[] = [
   post('passes a same-origin request with its own token', true),
   post('passes a request whose browser sends no Sec-Fetch-Site', true, { secFetchSite: null }),
   post('passes a token signed by the previous secret', true, { cookie: 'own-previous' }),
+  post(
+    'passes a previous-secret token a page still holds after the cookie moved to the current secret',
+    true,
+    { header: 'own-previous' },
+  ),
+  post('refuses a previous-secret header when the cookie is not the current secret', false, {
+    cookie: 'own-previous',
+    header: 'own-previous',
+  }),
+  post('refuses a different current-secret header over a previous-secret cookie', false, {
+    cookie: 'own-previous',
+    header: 'own',
+  }),
+  post('refuses a different current-secret header over a current-secret cookie', false, {
+    header: 'own',
+  }),
+  post('refuses a previous-secret header over a current cookie bound to another browser', false, {
+    cookie: 'other',
+    header: 'own-previous',
+  }),
+  post('refuses a previous-secret header after the previous secret is removed', false, {
+    config: 'currentOnly',
+    header: 'own-previous',
+  }),
+  post('refuses a previous-secret pair after the previous secret is removed', false, {
+    config: 'currentOnly',
+    cookie: 'own-previous',
+  }),
   post('passes a signed-out request bound to its pre-session', true, {
     signedIn: false,
     preSession: 'valid',
@@ -183,7 +218,15 @@ export const CSRF_CASES: readonly CsrfCase[] = [
     }),
   ]),
   get('keeps a current token bound to the session', []),
-  get('keeps a token signed by the previous secret', [], { cookie: 'own-previous' }),
+  get('mints a CSRF cookie under the current secret over a previous-secret one', ['csrf'], {
+    cookie: 'own-previous',
+  }),
+  get('mints a current-secret cookie over a previous-secret one on the pre-session', ['csrf'], {
+    signedIn: false,
+    preSession: 'valid',
+    cookie: 'own-previous',
+  }),
+  get('keeps a current token once the previous secret is removed', [], { config: 'currentOnly' }),
   get('keeps a current token bound to the pre-session', [], {
     signedIn: false,
     preSession: 'valid',
@@ -220,6 +263,8 @@ export interface ParityRequest {
   readonly headers: Readonly<Record<string, string>>;
   /** The CSRF cookie value the request carries, if any. */
   readonly cookieToken: string | undefined;
+  /** The binding a token for this request is signed over. */
+  readonly binding: string;
 }
 
 /** Plain HTTP, so the cookies carry no `__Host-` prefix, as in every runner. */
@@ -266,11 +311,17 @@ export function buildRequest(row: CsrfCase, session: ParitySession): ParityReque
   if (origin !== null) headers['origin'] = origin;
   if (site !== null) headers['sec-fetch-site'] = site;
 
-  const echoed = { same: cookieToken, other, none: undefined }[row.header ?? 'none'];
+  const echoed = {
+    same: cookieToken,
+    other,
+    own: sign(CURRENT_SECRET, binding),
+    'own-previous': sign(PREVIOUS_SECRET, binding),
+    none: undefined,
+  }[row.header ?? 'none'];
 
   if (!SAFE.has(row.method) && echoed !== undefined) headers[settings.headerName] = echoed;
 
-  return { method: row.method, config: row.config ?? 'default', headers, cookieToken };
+  return { method: row.method, config: row.config ?? 'default', headers, cookieToken, binding };
 }
 
 /** What a runner saw its adapter do with one request. */
@@ -297,6 +348,18 @@ export function outcome(request: ParityRequest, seen: Observed): unknown {
     setCookies: seen.setCookies,
     kept: seen.token === request.cookieToken,
     signed: TOKEN.test(seen.token),
+    // Every handed-out token, kept or minted, verifies for the request's
+    // binding under the current secret alone, so it still passes once the
+    // previous secret is removed. A response that mints a pre-session binds
+    // to an id the request did not carry, which the setCookies check covers.
+    current: seen.setCookies.includes(settings.preSessionCookieName)
+      ? 'new pre-session'
+      : verifyCsrfToken({
+          cookieToken: seen.token,
+          headerToken: seen.token,
+          binding: request.binding,
+          secrets: [encoder.encode(CURRENT_SECRET)],
+        }),
   };
 }
 
@@ -309,5 +372,6 @@ export function expectedOutcome(row: CsrfCase): unknown {
     setCookies: row.expected.sets.map((kind) => names[kind]),
     kept: row.expected.keeps,
     signed: true,
+    current: row.expected.sets.includes('presession') ? 'new pre-session' : true,
   };
 }
