@@ -105,8 +105,8 @@ const unsetHopsInDevelopment = num(
 );
 
 const THROTTLE = 'auth/src/throttle/throttle.ts';
-const perAccountIp = /windowRule\(lockout\.perAccountIp, (\d+), '(\w+)'\)/u;
-const perAccount = /windowRule\(lockout\.perAccount, (\d+), '(\w+)'\)/u;
+const perAccountIp = /windowRule\(name\('perAccountIp'\), options\.perAccountIp, (\d+), '(\w+)'\)/u;
+const perAccount = /windowRule\(name\('perAccount'\), options\.perAccount, (\d+), '(\w+)'\)/u;
 
 function rule(pattern: RegExp): { limit: number; minutes: number } {
   const match = pattern.exec(source(THROTTLE));
@@ -117,26 +117,26 @@ function rule(pattern: RegExp): { limit: number; minutes: number } {
 }
 
 const SESSION = 'auth/src/session/session-manager.ts';
-const absoluteTtl = read(SESSION, /options\.absoluteTtl \?\? '(\w+)'/u);
-const rememberMeTtl = read(SESSION, /options\.rememberMeTtl \?\? '(\w+)'/u);
+const absoluteTtl = read(SESSION, /options\.absoluteTtl,\s*'(\w+)'/u);
+const rememberMeTtl = read(SESSION, /options\.rememberMeTtl,\s*'(\w+)'/u);
 const absoluteTtlHours = inUnit(absoluteTtl, HOUR);
 const rememberMeTtlDays = inUnit(rememberMeTtl, DAY);
-const touchInterval = read(SESSION, /options\.touchInterval \?\? '(\w+)'/u);
+const touchInterval = read(SESSION, /options\.touchInterval,\s*'(\w+)'/u);
 const idleDefaults = /rememberMe \? '(\w+)' : '(\w+)'/u.exec(source(SESSION));
 const idleRemembered = idleDefaults?.[1] ?? '';
 const idleTimeout = idleDefaults?.[2] ?? '';
 const maxPerUser = num(SESSION, /options\.maxPerUser === undefined \? (\d+)/u);
-const freshAuthAge = read(SETTINGS, /freshAuthAge \?\? '(\w+)'/u);
+const freshAuthAge = read(SETTINGS, /freshAuthAge,\s*'(\w+)'/u);
 
 /** The lockout defaults, as throttle.ts reads them. */
-const lockoutDefault = (name: string) => read(THROTTLE, new RegExp(`lockout\\.${name} \\?\\? '(\\w+)'`, 'u'));
+const lockoutDefault = (name: string) => read(THROTTLE, new RegExp(`options\\.${name},\\s*'(\\w+)'`, 'u'));
 const baseLock = lockoutDefault('baseLock');
 const maxLock = lockoutDefault('maxLock');
 const quietPeriod = lockoutDefault('quietPeriod');
 const deviceMaxAge = lockoutDefault('deviceMaxAge');
 const lockFactor = num(THROTTLE, /this\.baseLockMs \* (\d+) \*\* Math\.min/u);
-const perDevice = /windowRule\(lockout\.perDevice, (\d+), '(\w+)'\)/u;
-const revealLocked = read(THROTTLE, /lockout\.revealLocked \?\? (\w+);/u);
+const perDevice = /windowRule\(name\('perDevice'\), options\.perDevice, (\d+), '(\w+)'\)/u;
+const revealLocked = read(THROTTLE, /options\.revealLocked \?\? (\w+);/u);
 
 const CSRF = 'auth/src/http/csrf.ts';
 const csrfNonceHex = num(CSRF, /const NONCE = \/\^\[0-9a-f\]\{(\d+)\}\$\/u;/u);

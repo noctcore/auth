@@ -61,13 +61,13 @@ const minLengthFloor = Number(
 const prefixChars = Number(read('auth/src/password/breach.ts', /const prefix = digest\.slice\(0, (\d+)\);/u));
 
 const SETTINGS = 'auth/src/flows/resolve-settings.ts';
-const resetTtl = /config\.passwordReset\?\.ttl \?\? \(resetKind === 'code' \? '(\w+)' : '(\w+)'\)/u.exec(
+const resetTtl = /config\.passwordReset\?\.ttl,\s*resetKind === 'code' \? '(\w+)' : '(\w+)'/u.exec(
   source(SETTINGS),
 );
-const verificationTtl = /config\.emailVerification\?\.ttl \?\? \(verificationKind === 'code' \? '(\w+)' : '(\w+)'\)/u.exec(
+const verificationTtl = /config\.emailVerification\?\.ttl,\s*verificationKind === 'code' \? '(\w+)' : '(\w+)'/u.exec(
   source(SETTINGS),
 );
-const ticketTtl = read(SETTINGS, /ticketTtl \?\? '(\w+)'/u);
+const ticketTtl = read(SETTINGS, /ticketTtl,\s*'(\w+)'/u);
 
 const resetMail = DEFAULT_DOOR_LIMITS['password-reset-mail'];
 const resetAddress = DEFAULT_DOOR_LIMITS['password-reset-code-address'];
