@@ -30,11 +30,13 @@ import { AuthConfigError } from '../shared/errors';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
- * Upper-cases ASCII letters only. `toUpperCase()` also folds some non-ASCII
- * letters into ASCII ones (a long s becomes "S", a dotless i becomes "I"), which
- * would let a method like `OPTION` plus a long s pass as safe.
+ * GET, HEAD and OPTIONS: the methods every check here passes, whatever the
+ * headers. Upper-cases ASCII letters only. `toUpperCase()` also folds some
+ * non-ASCII letters into ASCII ones (a long s becomes "S", a dotless i
+ * becomes "I"), which would let a method like `OPTION` plus a long s pass as
+ * safe.
  */
-function isSafeMethod(method: string): boolean {
+export function isSafeMethod(method: string): boolean {
   return SAFE_METHODS.has(method.replace(/[a-z]+/gu, (letters) => letters.toUpperCase()));
 }
 

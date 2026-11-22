@@ -68,10 +68,27 @@ export {
 export {
   assertExactOrigins,
   createCsrfToken,
+  isSafeMethod,
   verifyCsrfToken,
   verifyFetchSite,
   verifyRequestOrigin,
 } from './http/csrf';
+export {
+  appendSetCookie,
+  bindCsrfToSession,
+  csrfRequestAllowed,
+  handOutCsrfToken,
+  readCsrfCookies,
+  resolveCsrfSettings,
+  startCsrfPreSession,
+  type CsrfContext,
+  type CsrfCookies,
+  type CsrfHandout,
+  type CsrfSessionRef,
+  type CsrfSettings,
+  type CsrfSettingsInput,
+  type SetCookieTarget,
+} from './http/csrf-adapter';
 export type { CaptchaDoor, CaptchaVerdict, CaptchaVerifier } from './ports/captcha';
 export type { OutcomeHook, UnavailableOutcome, UnavailableReason } from './ports/provider-outcome';
 export {
