@@ -17,7 +17,7 @@
 import { EventEmitter } from 'node:events';
 import { AuthConfigError } from '@noctcore/auth';
 import { getWSConnectionHandler } from '@trpc/server/adapters/ws';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createAuthContext } from '../../src';
 import { buildRouter, CSRF_SECRET, EMAIL, makeAuth, ORIGIN, PASSWORD } from '../support';
 
@@ -96,7 +96,7 @@ describe('A103 a tRPC WebSocket connection', () => {
     expect(socket.sent[0]).toMatchObject({ id: null, error: { message: 'internal' } });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toBeInstanceOf(AuthConfigError);
-    expect((errors[0] as Error).message).toMatch(/WebSocket is not supported yet/);
+    expect((errors[0] as Error).message).toMatch(/WebSocket and Fastify are not supported yet/);
   });
 
   it('is refused for a signed-in browser too, so a revoked session cannot live on in it', async () => {
@@ -158,16 +158,32 @@ describe('A103 a tRPC WebSocket connection', () => {
   });
 
   it('refuses any res that cannot both read and set headers, before reading the request', async () => {
-    const { authContext } = await setup();
-    const req = { method: 'GET', headers: {} };
+    const { env, authContext } = await setup();
+    const validate = vi.spyOn(env.auth, 'validateRequest');
+
+    // A request whose every read throws: the refusal must come first.
+    const req = new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('the request was read');
+        },
+      },
+    );
 
     for (const res of [
       undefined,
       {},
       { setHeader: () => undefined },
-      { getHeader: () => undefined },
+      // A Fastify reply: getHeader and header(), with setHeader only on reply.raw.
+      { getHeader: () => undefined, header: () => undefined, raw: { setHeader: () => undefined } },
     ]) {
-      await expect(authContext.node({ req, res } as never)).rejects.toBeInstanceOf(AuthConfigError);
+      const refusal = authContext.node({ req, res } as never);
+
+      await expect(refusal).rejects.toBeInstanceOf(AuthConfigError);
+      await expect(refusal).rejects.toThrow(/cannot set headers/);
     }
+
+    expect(validate).not.toHaveBeenCalled();
   });
 });
