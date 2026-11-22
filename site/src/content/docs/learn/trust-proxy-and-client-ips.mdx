@@ -52,6 +52,12 @@ The client wrote `192.0.2.66` itself. The proxy, at `203.0.113.9`, appended `198
 | With 0 trusted hops it is `203.0.113.9`             | The proxy, shared by every client.         |
 | With 2 trusted hops it is `192.0.2.66`              | The address the client chose.              |
 
+### The entry picked must be one address
+
+Some gateways write the client's source port into the header (`203.0.113.9:51234`), and a misconfigured proxy can write anything. The source port changes per connection, so taken as written it would give every connection its own per-IP bucket. Whichever way the entry is picked, by count or by list, `clientIp` strips a port (`203.0.113.9:51234` is `203.0.113.9`), brackets (`[2001:db8::1]:443` is `2001:db8::1`) and an IPv6 zone id (`fe80::1%eth0` is `fe80::1`), and what is left must be exactly one IPv4 or IPv6 address, an IPv4-mapped one included. An entry that is not (`not-an-ip`, a port above 65535, a bracketed IPv4 address) is never returned: the socket address stands in for it, or `unknown` when there is none. An IPv6 address without brackets is taken whole, because its last group cannot be told apart from a port.
+
+With a list, an entry that is not an address is never trusted, so the walk stops there and the socket address is used; entries further left are never read.
+
 ### Too many hops is as bad as none
 
 A count higher than the proxies you run reaches into the entries the client wrote, as the last case shows. When the chain is shorter than the count, the leftmost entry is used, and that is the client's too.
@@ -143,6 +149,7 @@ The guide has no page on proxies or `X-Forwarded-For`.
 | [A025](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A025-forged-forwarded-for-through-nest.test.ts) | Choosing your own client IP through the Nest adapter | `auth-nestjs/request.ts`, `auth-nestjs/trust-proxy.ts` |
 | [A081](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A081-spoofed-client-ip-header.test.ts) | Choosing your own IP with a spoofed edge header | `http/ip.ts` |
 | [A082](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A082-posing-as-a-trusted-proxy.test.ts) | Posing as a trusted proxy | `http/ip.ts`, `http/ip-ranges.ts` |
+| [A105](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A105-a-forwarded-entry-that-is-not-one-address.test.ts) | A forwarded entry with a port, or that is not an address | `http/ip.ts` |
 
 </div>
 
