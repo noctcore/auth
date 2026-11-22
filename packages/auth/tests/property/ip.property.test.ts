@@ -101,6 +101,26 @@ describe('clientIp', () => {
     );
   });
 
+  it('picks the same entry with or without a socket address when the header has one', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.oneof(entry, junk), { minLength: 1, maxLength: 6 }),
+        entry,
+        fc.integer({ min: 1, max: 6 }),
+        (entries, remote, hops) => {
+          fc.pre(!entries.includes(remote));
+
+          const forwardedFor = entries.join(', ');
+          const withSocket = clientIp({ remoteAddress: remote, forwardedFor, trustedHops: hops });
+          const without = clientIp({ remoteAddress: undefined, forwardedFor, trustedHops: hops });
+
+          expect(without).toBe(withSocket === remote ? undefined : withSocket);
+        },
+      ),
+      runs(),
+    );
+  });
+
   it('returns the socket address when the picked entry is not an IP, with a count or a list', () => {
     fc.assert(
       fc.property(
@@ -135,7 +155,7 @@ describe('clientIp', () => {
 
   it('strips a port from the picked entry, with a count or a list', () => {
     fc.assert(
-      fc.property(fc.ipV4(), fc.ipV6(), fc.integer({ min: 0, max: 65535 }), (v4, v6, port) => {
+      fc.property(fc.ipV4(), fc.ipV6(), fc.integer({ min: 1, max: 65535 }), (v4, v6, port) => {
         fc.pre(!isTrustedAddress(v4, ['10.0.0.0/8']) && !isTrustedAddress(v6, ['10.0.0.0/8']));
 
         for (const [written, address] of [

@@ -49,6 +49,18 @@ describe('A105: a forwarded entry that is not one address', () => {
     }
   });
 
+  it('never picks an entry the client wrote when there is no socket address', () => {
+    // A fetch adapter with no peer address: the client wrote 6.6.6.6, the one
+    // proxy appended 203.0.113.9:51234.
+    expect(
+      clientIp({
+        remoteAddress: undefined,
+        forwardedFor: '6.6.6.6, 203.0.113.9:51234',
+        trustedHops: 1,
+      }),
+    ).toBe('203.0.113.9');
+  });
+
   it('keeps a client whose source port changes per connection in one per-IP budget', async () => {
     const { auth } = await registered();
     const reasons: (string | false)[] = [];
