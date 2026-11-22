@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCKOUT_EXPIRES_AT } from '../../src/shared/duration';
 import { manualClock, MemoryCounterStore, type ManualClock } from '../../src/testing';
 import { createDeviceToken, verifyDeviceToken } from '../../src/throttle/device-token';
-import { accountKey } from '../../src/throttle/counter-keys';
+import { accountKey, counterKeys } from '../../src/throttle/counter-keys';
 import { Throttle } from '../../src/throttle/throttle';
 
 const MIN = 60_000;
@@ -773,5 +773,247 @@ describe('permanent tier', () => {
       reason: 'locked',
       newLock: { until: clock.now() + 5 * MIN },
     });
+  });
+});
+
+describe('countSuccesses', () => {
+  const five = { perAccount: { limit: 5, window: '15m' } } as const;
+  const refunding = { ...five, countSuccesses: false } as const;
+
+  /** One correct password from its own source, completed or left at a pending factor. */
+  async function correct(t: Throttle, ip: string, complete = true) {
+    const gate = await t.gateLogin(victim, ip);
+
+    if (!gate.allowed) return gate;
+
+    await t.loginSucceeded(victim, ip);
+
+    if (complete) await t.signInCompleted(victim);
+
+    return gate;
+  }
+
+  it('by default counts every correct password: the sixth in a window locks', async () => {
+    const t = new Throttle(counters, clock, five);
+    const gates = [];
+
+    for (let i = 0; i < 6; i++) gates.push(await correct(t, `198.51.100.${i}`));
+
+    expect(gates.map((g) => g.allowed)).toEqual([true, true, true, true, true, false]);
+  });
+
+  it('when false, locks nothing for completed sign-ins, however many in a window', async () => {
+    const t = new Throttle(counters, clock, refunding);
+
+    for (let i = 0; i < 12; i++) expect((await correct(t, `198.51.100.${i}`)).allowed).toBe(true);
+
+    expect((await t.lockState(victim)).locked).toBe(false);
+  });
+
+  it('still counts failures in full, and hands back only what correct passwords reserved', async () => {
+    const t = new Throttle(counters, clock, refunding);
+
+    await correct(t, 'owner');
+
+    for (let i = 0; i < 4; i++) await t.gateLogin(victim, `guess-${i}`);
+
+    // Extra completions (a sign-in that reserved nothing, a repeat) take back nothing more.
+    for (let i = 0; i < 5; i++) await t.signInCompleted(victim);
+
+    expect((await t.gateLogin(victim, 'guess-4')).allowed).toBe(true);
+
+    expect(await t.gateLogin(victim, 'guess-5')).toMatchObject({
+      allowed: false,
+      reason: 'locked',
+    });
+  });
+
+  it('hands nothing back for a correct password whose sign-in never completes', async () => {
+    const t = new Throttle(counters, clock, refunding);
+    const gates = [];
+
+    for (let i = 0; i < 6; i++) gates.push(await correct(t, `198.51.100.${i}`, false));
+
+    expect(gates.map((g) => g.allowed)).toEqual([true, true, true, true, true, false]);
+  });
+
+  it('hands the slot back only when the pending sign-in completes', async () => {
+    const t = new Throttle(counters, clock, refunding);
+
+    await correct(t, 'pending', false);
+
+    for (let i = 0; i < 4; i++) await t.gateLogin(victim, `guess-${i}`);
+
+    await t.signInCompleted(victim);
+
+    expect((await t.gateLogin(victim, 'guess-4')).allowed).toBe(true);
+    expect((await t.gateLogin(victim, 'guess-5')).allowed).toBe(false);
+  });
+
+  it('never hands back more than was reserved under parallel completions', async () => {
+    const t = new Throttle(counters, clock, refunding);
+
+    await correct(t, 'a', false);
+    await correct(t, 'b', false);
+    await t.gateLogin(victim, 'guess-0');
+    await Promise.all(Array.from({ length: 10 }, () => t.signInCompleted(victim)));
+
+    // Two slots were owed: the guess still counts.
+    expect((await counters.get(counterKeys.account(victim)))?.count).toBe(1);
+    expect(await counters.get(counterKeys.refunded(victim))).toMatchObject({ count: 2 });
+  });
+
+  it('never hands a slot back out of a newer window', async () => {
+    const t = new Throttle(counters, clock, refunding);
+
+    await correct(t, 'pending', false);
+    clock.advance(15 * MIN);
+
+    for (let i = 0; i < 5; i++) await t.gateLogin(victim, `guess-${i}`);
+
+    await t.signInCompleted(victim);
+
+    expect((await t.gateLogin(victim, 'guess-5')).allowed).toBe(false);
+  });
+
+  it('owes nothing when the window ended between the reservation and the correct password', async () => {
+    const t = new Throttle(counters, clock, refunding);
+
+    await t.gateLogin(victim, 'slow');
+    clock.advance(15 * MIN);
+    await t.loginSucceeded(victim, 'slow');
+
+    expect(await counters.get(counterKeys.owed(victim))).toBeNull();
+  });
+
+  it('owes nothing for a correct password let through a lock by a device token', async () => {
+    const t = new Throttle(counters, clock, {
+      ...refunding,
+      perAccount: { limit: 1, window: '1h' },
+    });
+
+    await t.gateLogin(victim, 'a');
+    await t.gateLogin(victim, 'b');
+    expect((await t.gateLogin(victim, 'owner', 'device-1')).allowed).toBe(true);
+    await t.loginSucceeded(victim, 'owner', 'device-1');
+
+    expect(await counters.get(counterKeys.owed(victim))).toBeNull();
+  });
+
+  it('forgets the slots owed when a password reset clears the budget', async () => {
+    const t = new Throttle(counters, clock, refunding);
+
+    await correct(t, 'pending', false);
+    await t.clearAccount(victim);
+
+    for (let i = 0; i < 5; i++) await t.gateLogin(victim, `guess-${i}`);
+
+    await t.signInCompleted(victim);
+
+    expect((await t.gateLogin(victim, 'guess-5')).allowed).toBe(false);
+  });
+
+  it('makes no extra store call while successes count', async () => {
+    const calls = (['get', 'set', 'reset', 'increment', 'decrement'] as const).map((method) =>
+      vi.spyOn(counters, method),
+    );
+
+    await throttle.gateLogin(victim, 'a');
+    calls.forEach((spy) => spy.mockClear());
+    await throttle.loginSucceeded(victim, 'a');
+    await throttle.signInCompleted(victim);
+    await throttle.refundSuccess(victim);
+
+    expect(calls.map((spy) => spy.mock.calls.map(([key]) => key.split(':')[0]))).toEqual([
+      [],
+      [],
+      ['aip'],
+      [],
+      [],
+    ]);
+  });
+
+  it('refuses a countSuccesses that is not true or false', () => {
+    expect(() => new Throttle(counters, clock, { countSuccesses: 'false' as never })).toThrow(
+      'throttle.lockout.countSuccesses must be true or false',
+    );
+  });
+});
+
+describe('durations', () => {
+  const one = { perAccount: { limit: 1, window: '15m' } } as const;
+
+  /** Spends the budget of 1 from fresh sources: the new lock's end, or null. */
+  async function lockOnce(t: Throttle) {
+    await t.gateLogin(victim, `a-${clock.now()}`);
+
+    const gate = await t.gateLogin(victim, `b-${clock.now()}`);
+
+    return !gate.allowed && gate.newLock ? gate.newLock.until - clock.now() : null;
+  }
+
+  it('locks for each entry in turn, then repeats the last', async () => {
+    const t = new Throttle(counters, clock, { ...one, durations: ['15m', '1h'] });
+    const locks = [];
+
+    for (let i = 0; i < 4; i++) {
+      locks.push(await lockOnce(t));
+      clock.advance(60 * MIN);
+    }
+
+    expect(locks).toEqual([15 * MIN, 60 * MIN, 60 * MIN, 60 * MIN]);
+  });
+
+  it('uses the ladder for the second-factor locks too', async () => {
+    const t = new Throttle(counters, clock, { durations: ['2m', '7m'] });
+    const rule = { limit: 1, window: '15m' } as const;
+    const locks = [];
+
+    for (let i = 0; i < 3; i++) {
+      await t.gateFactor('factor-account', rule);
+
+      const gate = await t.gateFactor('factor-account', rule);
+
+      locks.push(!gate.allowed && gate.newLock ? gate.newLock.until - clock.now() : null);
+      clock.advance(7 * MIN);
+    }
+
+    expect(locks).toEqual([2 * MIN, 7 * MIN, 7 * MIN]);
+  });
+
+  it('answers a lock it cannot read with the first entry under revealLocked', async () => {
+    const t = new Throttle(counters, clock, { ...one, durations: ['2m'], revealLocked: true });
+
+    await t.gateLogin(victim, 'a');
+    await t.gateLogin(victim, 'b');
+    await counters.reset(counterKeys.lock(victim));
+
+    // A racing request: the counter is over the limit but not at a crossing.
+    expect(await t.gateLogin(victim, 'c')).toEqual({
+      allowed: false,
+      reason: 'locked',
+      lock: { until: clock.now() + 2 * MIN },
+    });
+  });
+
+  it('refuses an empty list, an entry that is not a duration or is zero, and a non-list', () => {
+    const boot = (durations: unknown) => () =>
+      new Throttle(counters, clock, { durations: durations as never });
+
+    expect(boot([])).toThrow('throttle.lockout.durations must list at least one duration');
+
+    for (const entry of ['15 min', Number.NaN, -1, null, true])
+      expect(boot(['5m', entry])).toThrow('throttle.lockout.durations[1] must be a duration');
+
+    expect(boot(['5m', 0])).toThrow('throttle.lockout.durations[1] must be longer than zero');
+    expect(boot('15m')).toThrow('throttle.lockout.durations must be a list');
+    expect(boot(null)).not.toThrow();
+  });
+
+  it('refuses durations together with baseLock or maxLock', () => {
+    for (const extra of [{ baseLock: '5m' }, { maxLock: '1h' }] as const)
+      expect(() => new Throttle(counters, clock, { durations: ['5m'], ...extra })).toThrow(
+        'throttle.lockout.durations replaces throttle.lockout.baseLock and maxLock',
+      );
   });
 });
