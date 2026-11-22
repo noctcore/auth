@@ -20,6 +20,7 @@
  */
 import { encodeHexLowerCase } from '@oslojs/encoding';
 import { randomBytes } from '../crypto/random';
+import { assertBoolean, assertList, assertString, assertStringList } from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 import { parseCookieHeader, serializeCookie, type CookieSpec, type SameSite } from './cookie';
 import {
@@ -101,10 +102,20 @@ const PRE_SESSION = /^[0-9a-f]{32}$/u;
 /**
  * Checks the CSRF options once at boot, so a weak secret or an empty origin
  * allowlist stops the app before it listens instead of letting it run with a
- * check that quietly passes everything. `secure` names the cookies with the
- * `__Host-` prefix, as the session cookie is named exactly when it is Secure.
+ * check that quietly passes everything. Each option must have its type, as
+ * options read from the environment arrive as strings: `allowSameSite:
+ * "false"` would otherwise turn the weaker mode on, and a single origin
+ * string would be read as a list of characters. `secure` names the cookies
+ * with the `__Host-` prefix, as the session cookie is named exactly when it
+ * is Secure.
  */
 export function resolveCsrfSettings(input: CsrfSettingsInput, secure: boolean): CsrfSettings {
+  assertList('csrf.secrets', input.secrets);
+  assertStringList('csrf.allowedOrigins', input.allowedOrigins);
+  assertStringList('csrf.crossSiteOrigins', input.crossSiteOrigins);
+  assertBoolean('csrf.allowSameSite', input.allowSameSite);
+  assertString('csrf.headerName', input.headerName);
+
   if (input.secrets.length === 0) {
     throw new AuthConfigError('csrf.secrets needs at least one secret');
   }
@@ -118,9 +129,12 @@ export function resolveCsrfSettings(input: CsrfSettingsInput, secure: boolean): 
     throw new AuthConfigError('csrf.allowedOrigins is empty');
   }
 
-  const secrets = input.secrets.map((secret) =>
-    typeof secret === 'string' ? new TextEncoder().encode(secret) : secret,
-  );
+  const secrets = input.secrets.map((secret: unknown) => {
+    if (typeof secret === 'string') return new TextEncoder().encode(secret);
+    if (secret instanceof Uint8Array) return secret;
+
+    throw new AuthConfigError('csrf.secrets must hold strings or bytes');
+  });
 
   // The core refuses a short secret when it signs; signing once here moves
   // that refusal to boot.
