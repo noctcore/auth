@@ -340,11 +340,14 @@ describe('Learn page cookie facts', () => {
 
     expect(text).toContain(`\`__Host-${trusted}\``);
 
-    for (const adapter of ['auth-nestjs', 'auth-trpc']) {
-      const options = source(`${adapter}/src/options.ts`);
+    // Both adapters name their CSRF cookies through the core's resolveCsrfSettings.
+    const csrfSettings = source('auth/src/http/csrf-adapter.ts');
 
-      expect(options).toContain("secure ? '__Host-csrf' : 'csrf'");
-      expect(options).toContain("secure ? '__Host-presession' : 'presession'");
+    expect(csrfSettings).toContain("secure ? '__Host-csrf' : 'csrf'");
+    expect(csrfSettings).toContain("secure ? '__Host-presession' : 'presession'");
+
+    for (const adapter of ['auth-nestjs', 'auth-trpc']) {
+      expect(source(`${adapter}/src/options.ts`)).toContain('resolveCsrfSettings(csrf, secure)');
     }
 
     expect(text).toContain('`__Host-csrf` and `__Host-presession`');
@@ -365,12 +368,11 @@ describe('Learn page cookie facts', () => {
   });
 
   it('gives the adapter CSRF cookies the session cookie SameSite, never a fixed one', () => {
-    for (const adapter of ['auth-nestjs', 'auth-trpc']) {
-      const csrf = source(`${adapter}/src/csrf-tokens.ts`);
+    // One implementation in the core, used by both adapters.
+    const csrf = source('auth/src/http/csrf-adapter.ts');
 
-      expect(csrf.match(/sameSite: '(\w+)'/gu)).toBeNull();
-      expect(csrf.match(/secure: options\.secure, sameSite, path/gu)).toHaveLength(2);
-    }
+    expect(csrf.match(/sameSite: '(\w+)'/gu)).toBeNull();
+    expect(csrf.match(/secure: options\.secure, sameSite, path/gu)).toHaveLength(2);
 
     expect(text).toContain("CSRF and pre-session cookies and the blank cookie");
     expect(text).toContain('`resolveSameSite`');
