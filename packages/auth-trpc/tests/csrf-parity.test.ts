@@ -1,19 +1,23 @@
 // The shared CSRF table (packages/auth/tests/adapters/csrf-cases.ts), run
 // through createAuthContext on the Node adapter. auth-nestjs runs the same
 // rows through CsrfMiddleware, so the two adapters cannot give different
-// answers for the same cookies.
+// answers for the same cookies. An unsafe row is answered end to end: a
+// mutation behind the `csrf` middleware runs or is refused.
+import { isSafeMethod } from '@noctcore/auth';
+import { initTRPC, TRPCError } from '@trpc/server';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   buildRequest,
-  CSRF_CASES,
+  casesFor,
   expectedOutcome,
   outcome,
-  PARITY_ORIGIN,
-  PARITY_SECRETS,
+  PARITY_CONFIGS,
   type Observed,
+  type ParityConfig,
   type ParitySession,
 } from '../../auth/tests/adapters/csrf-cases';
-import { createAuthContext, internalsOf } from '../src/context';
+import { createAuthMiddlewares, type AuthState } from '../src';
+import { createAuthContext } from '../src/context';
 import { makeAuth } from './support';
 
 class Response {
@@ -28,14 +32,27 @@ class Response {
   }
 }
 
+const t = initTRPC.context<{ auth: AuthState }>().create();
+const { csrf } = createAuthMiddlewares(t);
+const router = t.router({ change: t.procedure.use(csrf).mutation(() => 'ran') });
+const callerFor = t.createCallerFactory(router);
+
+/** True when the mutation ran, false when `csrf` refused it with FORBIDDEN. */
+async function mutationRuns(state: AuthState): Promise<boolean> {
+  try {
+    return (await callerFor({ auth: state }).change()) === 'ran';
+  } catch (error) {
+    if (error instanceof TRPCError && error.code === 'FORBIDDEN') return false;
+
+    throw error;
+  }
+}
+
 describe('the CSRF table, through createAuthContext', () => {
   const { auth } = makeAuth();
 
-  const context = createAuthContext({
-    auth,
-    trustedHops: 0,
-    csrf: { secrets: PARITY_SECRETS, allowedOrigins: [PARITY_ORIGIN] },
-  });
+  const contextFor = (config: ParityConfig) =>
+    createAuthContext({ auth, trustedHops: 0, csrf: PARITY_CONFIGS[config] });
 
   let session: ParitySession;
 
@@ -53,11 +70,11 @@ describe('the CSRF table, through createAuthContext', () => {
     session = { id: issued.session.id, cookie: `${auth.cookieName}=${issued.token}` };
   });
 
-  it.each(CSRF_CASES.map((row) => [row.name, row] as const))('%s', async (_name, row) => {
+  it.each(casesFor('trpc').map((row) => [row.name, row] as const))('%s', async (_name, row) => {
     const request = buildRequest(row, session);
     const res = new Response();
 
-    const { auth: state } = await context.node({
+    const { auth: state } = await contextFor(request.config).node({
       req: { method: request.method, headers: { ...request.headers } },
       res,
     });
@@ -66,10 +83,9 @@ describe('the CSRF table, through createAuthContext', () => {
       (line) => line.split('=')[0] as string,
     );
 
-    const seen: Observed =
-      row.method === 'POST'
-        ? { allowed: internalsOf(state)?.csrfOk === true }
-        : { setCookies, token: state.csrfToken().csrfToken };
+    const seen: Observed = isSafeMethod(row.method)
+      ? { setCookies, token: state.csrfToken().csrfToken }
+      : { allowed: await mutationRuns(state) };
 
     expect(outcome(request, seen)).toEqual(expectedOutcome(row));
   });
