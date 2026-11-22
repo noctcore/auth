@@ -176,25 +176,52 @@ export const authedBody = tagged(
 );
 
 /**
+ * Why `writesCookies` refuses each procedure type that is not a mutation. A
+ * query skips the CSRF check (it must not change state) and runs on a GET a
+ * top-level navigation from another site can send with the `SameSite=Lax`
+ * session cookie; a subscription's response is a stream, sent before any
+ * cookie could be written.
+ */
+const NOT_A_MUTATION: ReadonlyMap<string, string> = new Map([
+  [
+    'query',
+    'a query skips the CSRF check and runs on a GET, so a link on another site could make ' +
+      'the browser run it with its session cookie',
+  ],
+  ['subscription', 'its response is a stream, sent before any cookie could be written'],
+]);
+
+/**
+ * Refuses `writesCookies` on any call that is not a mutation: only a mutation
+ * passes the CSRF check, and only its response is sent after the procedure
+ * ran. The type comes from tRPC on each call (a middleware is attached before
+ * the procedure has a type), so this runs before the procedure, every call.
+ */
+function refuseNonMutation(type: string): void {
+  if (type === 'mutation') return;
+
+  const why = NOT_A_MUTATION.get(type) ?? 'only a mutation passes the CSRF check';
+
+  throw new AuthConfigError(
+    `writesCookies cannot mark a ${type}: ${why}. Write cookies from a mutation.`,
+  );
+}
+
+/**
  * The only way to the cookie writers: hands the procedure `ctx.auth` with
- * `setSession`, `signOut` and `clearSession`. On a streamed batch, and on a
- * subscription, it refuses first, so the core flow (a sign-in, a rotation)
- * never runs when its cookie cannot be set. It also claims the request's one
- * cookie-writer slot: a second marked procedure in the same batch is refused
- * before it runs, so a batch cannot mint a session no browser holds.
+ * `setSession`, `signOut` and `clearSession`. On a query, a subscription and
+ * a streamed batch it refuses first, so the core flow (a sign-in, a rotation,
+ * a sign-out) never runs without the CSRF check or when its cookie cannot be
+ * set. It also claims the request's one cookie-writer slot: a second marked
+ * procedure in the same batch is refused before it runs, so a batch cannot
+ * mint a session no browser holds.
  */
 export const writesCookiesBody = tagged(
   'cookies',
   async <TResult>(call: MiddlewareCall<TResult>): Promise<TResult> => {
-    const { state, internals } = stateOf(call.ctx);
+    refuseNonMutation(call.type);
 
-    // A subscription's response is a stream too (server-sent events).
-    if (call.type === 'subscription') {
-      throw new AuthConfigError(
-        'writesCookies cannot mark a subscription: its response is a stream, sent before any ' +
-          'cookie could be written. Write cookies from a mutation.',
-      );
-    }
+    const { state, internals } = stateOf(call.ctx);
 
     refuseStreamedWrite(internals.streamed);
     claimCookieWriter(internals);

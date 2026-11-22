@@ -110,10 +110,12 @@ export interface AuthMiddlewares<TContext, TMeta, TErrorShape, TTier extends str
   /**
    * The only way to the cookie writers: after it, `ctx.auth` is an
    * `AuthWriter` with `setSession`, `signOut` and `clearSession`; without
-   * it they are not on the type and refuse at run time. On a streamed batch
-   * (`httpBatchStreamLink`), whose headers are already sent, it refuses
-   * before the procedure runs, so a sign-in or a rotation never happens
-   * without its cookie.
+   * it they are not on the type and refuse at run time. Only a mutation may
+   * carry it: on a query (no CSRF check, and reachable by a cross-site GET)
+   * or a subscription it refuses every call as a configuration error. On a
+   * streamed batch (`httpBatchStreamLink`), whose headers are already sent,
+   * it refuses before the procedure runs, so a sign-in or a rotation never
+   * happens without its cookie.
    */
   readonly writesCookies: TRPCMiddlewareBuilder<TContext, TMeta, WriterOf<TContext>, unknown>;
   /** Marked public: CSRF on mutations, no session needed (sign-in, sign-up, reset). */
