@@ -6,7 +6,7 @@ OWASP_ARGON2ID
 argon2id
 
 ## declarations
-argon2id [function]: (input?: Argon2idOptions | null) => PasswordHasher
+argon2id [function]: (options?: Argon2idOptions | null) => PasswordHasher
 Argon2idOptions [interface]
     readonly memoryCost?: number
     readonly parallelism?: number

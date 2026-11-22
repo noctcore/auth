@@ -387,7 +387,7 @@ StoredToken [interface]
     readonly purpose: string
     readonly userId: string
 Throttle [class]
-    (new) (counters: CounterStore, clock: Clock, options?: LockoutOptions | null): Throttle
+    (new) (counters: CounterStore, clock: Clock, lockout?: LockoutOptions | null): Throttle
     addressSignedUp(account: string): Promise<void>
     claimRecoveryCodeRotation(userId: string, windowMs: number): Promise<boolean>
     clearAccount(account: string): Promise<void>
