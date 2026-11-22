@@ -179,6 +179,10 @@ export function resolveOptions<U extends AuthUser, A>(
     throw new AuthConfigError('createAuthContext needs the createAuth(...) result as `auth`');
   }
 
+  // Called on every request that needs a role: anything else would throw there instead of here.
+  if (options.roles !== undefined && options.roles !== null && typeof options.roles !== 'function')
+    throw new AuthConfigError('roles must be a function of the user');
+
   const hops = resolveTrustedHops(trustedHops, MAX_TRUSTED_HOPS);
   const clientIpHeader = resolveClientIpHeader(options.clientIpHeader, hops);
   // The session cookie is `__Host-` prefixed exactly when it is Secure, and

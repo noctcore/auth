@@ -399,9 +399,30 @@ export interface RateLimitMeta {
 
 const KEY_BY: ReadonlySet<unknown> = new Set<RateLimitKeyBy>(['ip', 'user']);
 
-/** Checks a rule's window and `keyBy` when the middleware is made, rather than on the first call. */
+/** A window in milliseconds, or `NaN` when it is not a duration. */
+function windowMilliseconds(window: unknown): number {
+  try {
+    return toMilliseconds(window as Duration);
+  } catch {
+    return Number.NaN;
+  }
+}
+
+/**
+ * Checks a rule's limit, window and `keyBy` when the middleware is made,
+ * rather than on the first call. A `NaN` or zero limit (`Number(undefined)`
+ * from the environment) would refuse every call, and a string limit would
+ * be compared as a number by coercion.
+ */
 function checkRule<R extends TrpcRateLimitRule>(rule: R, what: string): R {
-  toMilliseconds(rule.window);
+  if (typeof rule !== 'object' || rule === null)
+    throw new AuthConfigError(`${what} must be a { limit, window } rule`);
+
+  if (typeof rule.limit !== 'number' || !Number.isSafeInteger(rule.limit) || rule.limit < 1)
+    throw new AuthConfigError(`${what}: limit must be a whole number of at least 1`);
+
+  if (!(windowMilliseconds(rule.window) > 0))
+    throw new AuthConfigError(`${what}: window must be a duration longer than zero`);
 
   if (rule.keyBy !== undefined && !KEY_BY.has(rule.keyBy)) {
     throw new AuthConfigError(`${what}: keyBy must be 'ip' or 'user'`);
@@ -415,11 +436,15 @@ function checkRule<R extends TrpcRateLimitRule>(rule: R, what: string): R {
  * boot. A Map, so a name such as `constructor` never reads the prototype.
  */
 export function resolveRateLimitTiers(
-  tiers: Readonly<Record<string, TrpcRateLimitRule>> = {},
+  tiers: Readonly<Record<string, TrpcRateLimitRule>> | null | undefined,
 ): ReadonlyMap<string, TrpcRateLimitRule> {
   const resolved = new Map<string, TrpcRateLimitRule>();
 
-  for (const [tier, rule] of Object.entries(tiers)) {
+  if (tiers !== undefined && tiers !== null && typeof tiers !== 'object')
+    throw new AuthConfigError('rateLimits must be an object of named rules');
+
+  // Left out or null: no tiers.
+  for (const [tier, rule] of Object.entries(tiers ?? {})) {
     if (!NAME.test(tier)) throw new AuthConfigError(`Invalid rate limit tier name: ${tier}`);
 
     resolved.set(tier, checkRule(rule, `Rate limit tier ${tier}`));

@@ -112,6 +112,36 @@ describe('createAuthContext boot checks', () => {
     }
   });
 
+  it('refuses a missing csrf, a missing required list and lists with an empty slot', () => {
+    for (const [given, message] of [
+      [{ csrf: undefined }, 'csrf is required'],
+      [csrf({ secrets: undefined }), 'csrf.secrets is required'],
+      [csrf({ allowedOrigins: null as never }), 'csrf.allowedOrigins is required'],
+      // eslint-disable-next-line no-sparse-arrays
+      [csrf({ secrets: [, CSRF_SECRET] as never }), 'csrf.secrets must not have empty slots'],
+      [
+        // eslint-disable-next-line no-sparse-arrays
+        csrf({ allowedOrigins: [, ORIGIN] as never }),
+        'csrf.allowedOrigins must not have empty slots',
+      ],
+    ] as const) {
+      const create = () => createAuthContext(options(given as never));
+
+      expect(create).toThrow(AuthConfigError);
+      expect(create).toThrow(message);
+    }
+  });
+
+  it('refuses a roles option that is not a function, and takes null as left out', () => {
+    for (const roles of ['admin', ['admin'], true])
+      expect(() => createAuthContext(options({ roles: roles as never }))).toThrow(
+        'roles must be a function of the user',
+      );
+
+    expect(resolveOptions(options({ roles: null as never })).roles).toBeNull();
+    expect(resolveOptions(options({ roles: () => ['admin'] })).roles).toBeTypeOf('function');
+  });
+
   it('accepts byte secrets, a custom header, and the hop cap', () => {
     expect(() =>
       createAuthContext(
@@ -529,6 +559,34 @@ describe('the middleware bodies', () => {
     );
 
     expect(() => RateLimitMiddleware('bad name')).toThrow(/Invalid rate limit name/u);
+  });
+
+  it('refuses a tier or rule whose limit or window would refuse every call or never count', () => {
+    const tiers = (rateLimits: unknown) => () =>
+      createAuthMiddlewares(t, { rateLimits: rateLimits as never });
+
+    // `Number(undefined)` from the environment, zero, a fraction, a string.
+    for (const limit of [Number.NaN, 0, -1, 1.5, '5', undefined]) {
+      expect(tiers({ ok: { limit, window: '1m' } })).toThrow(
+        'Rate limit tier ok: limit must be a whole number of at least 1',
+      );
+
+      expect(() => rateLimited('x', { limit, window: '1m' } as never)).toThrow(
+        'Rate limit x: limit must be a whole number of at least 1',
+      );
+    }
+
+    for (const window of [0, 'soon', Number.NaN, undefined])
+      expect(tiers({ ok: { limit: 1, window } })).toThrow(
+        'Rate limit tier ok: window must be a duration longer than zero',
+      );
+
+    for (const rule of [5, 'strict', null])
+      expect(tiers({ ok: rule })).toThrow('Rate limit tier ok must be a { limit, window } rule');
+
+    expect(tiers('strict')).toThrow('rateLimits must be an object of named rules');
+    expect(tiers(null)).not.toThrow();
+    expect(() => createAuthMiddlewares(t, null as never)).not.toThrow();
   });
 
   it('picks the named tier, then the tier named like the limit, then default, then 10 a minute', async () => {
