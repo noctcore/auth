@@ -42,6 +42,17 @@ export class MemoryTokenStore implements TokenStore {
     return token;
   }
 
+  async extendExpiry(purpose: string, hash: string, expiresAt: number): Promise<boolean> {
+    const key = this.key(purpose, hash);
+    const token = this.tokens.get(key);
+
+    if (!token) return false;
+
+    this.tokens.set(key, { ...token, expiresAt });
+
+    return true;
+  }
+
   async incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null> {
     for (const [key, token] of this.tokens) {
       if (token.purpose === purpose && token.userId === userId) {

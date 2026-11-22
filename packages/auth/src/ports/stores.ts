@@ -155,6 +155,15 @@ export interface TokenStore {
   /** Atomically removes and returns the token: of many concurrent callers exactly one gets it. */
   consume(purpose: string, hash: string): Promise<StoredToken | null>;
   /**
+   * Moves the expiry of the token with that hash to `expiresAt`, only if it
+   * still exists, in one step; true when a token was changed. Never creates a
+   * token, so a token consumed meanwhile stays consumed. Optional for
+   * backward compatibility: without it `OneTimeTokens.extendLink` consumes the
+   * token and puts it back, which never revives a consumed token but hides it
+   * for one round trip. The conformance suite expects it.
+   */
+  extendExpiry?(purpose: string, hash: string, expiresAt: number): Promise<boolean>;
+  /**
    * Atomically increments the attempt count of the user's token of that purpose
    * if it is below `max`, returning the new count; null when it is missing or
    * already at `max`. Of N concurrent callers at most `max` get a number.
