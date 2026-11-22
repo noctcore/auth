@@ -79,7 +79,9 @@ TRUST_PROXY_PRESETS
 Throttle
 accountKey
 adoptLegacySessions
+appendSetCookie
 assertExactOrigins
+bindCsrfToSession
 checkPasswordPolicy
 clearsSessionCookie
 clientIp
@@ -89,13 +91,16 @@ createCsrfToken
 createDeviceToken
 createSessionCookie
 cryptoRandom
+csrfRequestAllowed
 definePlugin
 dummyHashFor
 fail
 generateNumericCode
 generateToken
+handOutCsrfToken
 hexDigestsEqual
 hmacSha256Hex
+isSafeMethod
 isTokenShape
 isTrustedAddress
 maskIp
@@ -107,8 +112,10 @@ parseCookieHeader
 parseTrustProxy
 pwnedPasswords
 randomBytes
+readCsrfCookies
 refuse
 resolveClientIpHeader
+resolveCsrfSettings
 resolveSameSite
 resolveTrustedHops
 resolveTrustedProxies
@@ -117,6 +124,7 @@ serializeCookie
 sessionCookieName
 sha256Hex
 silentLogger
+startCsrfPreSession
 systemClock
 toMilliseconds
 toPublicError
@@ -130,6 +138,7 @@ verifyRequestOrigin
 ## declarations
 accountKey [function]: (normalizedEmail: string) => string
 adoptLegacySessions [function]: (store: SessionStore, options: LegacySessionOptions) => SessionStore
+appendSetCookie [function]: (res: SetCookieTarget, spec: CookieSpec) => void
 assertExactOrigins [function]: (origins: readonly string[], option: string) => readonly string[]
 AttributeSchema [interface]<A>
     parse(value: unknown): A
@@ -213,6 +222,7 @@ BackgroundOptions [interface]
     readonly maxPending?: number
     readonly timeout?: Duration
     readonly waitUntil?: (promise: Promise<void>) => void
+bindCsrfToSession [function]: (options: CsrfContext, session: CsrfSessionRef, sameSite: SameSite) => { token: string; cookie: CookieSpec; }
 BreachChecker [type] = (password: string) => Promise<BreachVerdict>
 BreachOutcome [type] = { readonly verdict: 'clean' | 'breached'; } | UnavailableOutcome
 BreachVerdict [type] = 'clean' | 'breached' | 'unavailable'
@@ -252,6 +262,32 @@ createCsrfToken [function]: (secret: Uint8Array, binding: string, random?: Rando
 createDeviceToken [function]: (key: Uint8Array, claims: DeviceClaims, random?: RandomSource) => string
 createSessionCookie [function]: (config: SessionCookieConfig, token: string, options: { expiresAt: number; persistent: boolean; now: number; origin?: string | undefined; }) => CookieSpec
 cryptoRandom [const]: RandomSource
+CsrfContext [interface]
+    readonly csrf: CsrfSettings
+    readonly secure: boolean
+CsrfCookies [interface]
+    readonly preSession: string | null
+    readonly token: string | undefined
+CsrfHandout [interface]
+    readonly cookies: readonly CookieSpec[]
+    readonly token: string
+csrfRequestAllowed [function]: (csrf: CsrfSettings, request: { readonly session: CsrfSessionRef | null; readonly cookies: CsrfCookies; readonly origin: string | undefined; readonly secFetchSite: string | undefined; readonly headerToken: string | undefined; }) => boolean
+CsrfSessionRef [interface]
+    readonly id: string
+CsrfSettings [interface]
+    readonly allowSameSite: boolean
+    readonly allowedOrigins: readonly string[]
+    readonly cookieName: string
+    readonly crossSiteOrigins: readonly string[]
+    readonly headerName: string
+    readonly preSessionCookieName: string
+    readonly secrets: readonly Uint8Array[]
+CsrfSettingsInput [interface]
+    readonly allowSameSite?: boolean | undefined
+    readonly allowedOrigins: readonly string[]
+    readonly crossSiteOrigins?: readonly string[] | undefined
+    readonly headerName?: string | undefined
+    readonly secrets: readonly (string | Uint8Array)[]
 DEFAULT_DOOR_LIMITS [const]: Readonly<Record<Door, RateLimitRule>>
 DEFAULT_PASSWORD_POLICY [const]: PasswordPolicy
 definePlugin [function]: <const Id extends string, F extends object>(plugin: AuthPlugin<Id, F>) => AuthPlugin<Id, F>
@@ -268,6 +304,7 @@ FactorGate [type] = { readonly allowed: true; } | { readonly allowed: false; rea
 fail [function]: (code: AuthErrorCode, reason: string, extra?: { retryAfterSeconds?: number; }) => AuthFailure
 generateNumericCode [function]: (digits: number, random?: RandomSource) => string
 generateToken [function]: (random?: RandomSource) => string
+handOutCsrfToken [function]: (options: CsrfContext, request: { readonly session: CsrfSessionRef | null; readonly cookies: CsrfCookies; readonly sameSite: SameSite; }) => CsrfHandout
 hexDigestsEqual [function]: (a: string, b: string) => boolean
 Hit [interface]
     readonly allowed: boolean
@@ -284,6 +321,7 @@ InvitationStore [interface]
     findByHash(hash: string): Promise<StoredInvitation | null>
     listByScope(scope: string, now: number): Promise<StoredInvitation[]>
     revoke(scope: string, id: string): Promise<boolean>
+isSafeMethod [function]: (method: string) => boolean
 IssuedSession [interface]<A>
     readonly cookie: CookieSpec
     readonly deviceCookie: CookieSpec
@@ -461,6 +499,7 @@ RandomSource [type] = (bytes: Uint8Array) => void
 RateLimitRule [interface]
     readonly limit: number
     readonly window: Duration
+readCsrfCookies [function]: (csrf: CsrfSettings, cookieHeader: string | null | undefined) => CsrfCookies
 Refusal [interface]
     readonly code: AuthErrorCode
     readonly reason: string
@@ -483,6 +522,7 @@ RequestMeta [interface]
     readonly origin?: string | undefined
     readonly userAgent?: string | undefined
 resolveClientIpHeader [function]: (name: string | undefined, trustedHops: TrustedHops) => string | undefined
+resolveCsrfSettings [function]: (input: CsrfSettingsInput, secure: boolean) => CsrfSettings
 resolveSameSite [function]: (config: SessionCookieConfig, origin: string | undefined) => SameSite
 resolveTrustedHops [function]: (value: TrustedHops, maxHops: number) => TrustedHops
 resolveTrustedProxies [function]: (entries: string | readonly string[]) => readonly string[]
@@ -551,8 +591,12 @@ SessionSummary [interface]
     readonly ip: string
     readonly lastActiveAt: number
     readonly userAgent: string
+SetCookieTarget [interface]
+    getHeader(name: string): number | string | string[] | undefined
+    setHeader(name: string, value: string[]): unknown
 sha256Hex [function]: (value: string) => string
 silentLogger [const]: Logger
+startCsrfPreSession [function]: (options: CsrfContext, sameSite: SameSite) => CsrfHandout
 StoredInvitation [interface]
     readonly createdAt: number
     readonly email: string
