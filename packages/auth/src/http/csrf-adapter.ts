@@ -34,7 +34,9 @@ import {
 export interface CsrfSettingsInput {
   /**
    * Signs the double-submit token. At least 32 bytes each, and not the auth
-   * secret. Current secret first, previous ones after it during a rollover.
+   * secret. Current secret first, previous ones after it during a rollover: a
+   * safe request replaces a token signed by a previous secret with one under
+   * the current secret.
    */
   readonly secrets: readonly (string | Uint8Array)[];
   /** Origins allowed to send unsafe requests, such as `https://app.example`. */
@@ -168,18 +170,50 @@ function bindingOf(session: CsrfSessionRef | null, preSession: string | null): s
   return preSession === null ? null : preSessionBinding(preSession);
 }
 
-function tokenValid(
-  csrf: CsrfSettings,
-  input: { cookieToken: string | undefined; headerToken: string | undefined; bound: string | null },
-): boolean {
+function tokenValid(input: {
+  cookieToken: string | undefined;
+  headerToken: string | undefined;
+  bound: string | null;
+  secrets: readonly Uint8Array[];
+}): boolean {
   return (
     input.bound !== null &&
     verifyCsrfToken({
       cookieToken: input.cookieToken,
       headerToken: input.headerToken,
       binding: input.bound,
-      secrets: csrf.secrets,
+      secrets: input.secrets,
     })
+  );
+}
+
+/** True when `token` alone is a token for `bound`, signed by one of `secrets`. */
+const signedFor = (
+  token: string | undefined,
+  bound: string | null,
+  secrets: readonly Uint8Array[],
+): boolean => tokenValid({ cookieToken: token, headerToken: token, bound, secrets });
+
+/**
+ * The double-submit check of an unsafe request. The header and the cookie
+ * match and are signed by any listed secret for this binding; or, during a
+ * rollover, the header still carries a token of a previous secret that the
+ * page read before a safe request moved the cookie to the current secret
+ * (`handOutCsrfToken`), and the cookie is that current token for the same
+ * binding. The second case ends when the previous secret is removed.
+ */
+function doubleSubmitValid(
+  csrf: CsrfSettings,
+  input: { cookieToken: string | undefined; headerToken: string | undefined; bound: string | null },
+): boolean {
+  if (tokenValid({ ...input, secrets: csrf.secrets })) return true;
+
+  const [current, ...previous] = csrf.secrets;
+
+  // With one secret `previous` is empty and verifies nothing.
+  return (
+    signedFor(input.headerToken, input.bound, previous) &&
+    signedFor(input.cookieToken, input.bound, [current as Uint8Array])
   );
 }
 
@@ -230,8 +264,9 @@ function csrfCookie(
  * (`verifyRequestOrigin`); `Sec-Fetch-Site` says `same-origin`, or
  * `cross-site` from an origin on `crossSiteOrigins` (`verifyFetchSite`),
  * whenever the browser sends it; and the double-submit token matches its
- * cookie and is bound to this session or pre-session (`verifyCsrfToken`).
- * The adapter decides which requests it judges.
+ * cookie and is bound to this session or pre-session (`verifyCsrfToken`),
+ * with the rollover allowance `doubleSubmitValid` describes. The adapter
+ * decides which requests it judges.
  */
 export function csrfRequestAllowed(
   csrf: CsrfSettings,
@@ -262,7 +297,7 @@ export function csrfRequestAllowed(
 
   const siteOk = fetchSiteOk || secFetchSite === undefined;
 
-  const tokenOk = tokenValid(csrf, {
+  const tokenOk = doubleSubmitValid(csrf, {
     cookieToken: request.cookies.token,
     headerToken: request.headerToken,
     bound: bindingOf(request.session, request.cookies.preSession),
@@ -275,7 +310,11 @@ export function csrfRequestAllowed(
  * What a safe request hands out so the page can make unsafe ones: a
  * pre-session id when the browser has no session and no id yet, and a CSRF
  * cookie bound to the current binding. A cookie that already verifies for
- * that binding is kept (no cookie is set, its token is returned).
+ * that binding under the current secret is kept (no cookie is set, its token
+ * is returned). One signed by a previous secret is replaced by one under the
+ * current secret, so every client moves off a previous secret on its next
+ * safe request and the previous secret can be removed once its tokens are
+ * gone, instead of waiting for clients that never fetch a new token.
  */
 export function handOutCsrfToken(
   options: CsrfContext,
@@ -296,8 +335,8 @@ export function handOutCsrfToken(
     bound = preSessionBinding(fresh.id);
   }
 
-  // A current token verified against the cookie, so the cookie is set.
-  if (tokenValid(options.csrf, { cookieToken, headerToken: cookieToken, bound })) {
+  // A token for this binding under the current secret: the cookie already holds it.
+  if (signedFor(cookieToken, bound, options.csrf.secrets.slice(0, 1))) {
     return { token: cookieToken as string, cookies };
   }
 
