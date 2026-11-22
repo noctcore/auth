@@ -54,13 +54,13 @@ The client wrote `192.0.2.66` itself. The proxy, at `203.0.113.9`, appended `198
 
 ### The entry picked must be one address
 
-Some gateways write the client's source port into the header after its address, and a misconfigured proxy can write anything. The source port changes per connection, so taken as written it would give every connection its own per-IP bucket. Whichever way the entry is picked, by count or by list, `clientIp` strips a port (`203.0.113.9:51234` is `203.0.113.9`), brackets (`[2001:db8::1]:443` is `2001:db8::1`) and an IPv6 zone id (`fe80::1%eth0` is `fe80::1`), and what is left must be exactly one IPv4 or IPv6 address, an IPv4-mapped one included. An entry that is not (`not-an-ip`, a port out of range, a bracketed IPv4 address) is never returned: the socket address stands in for it, or `unknown` when there is none. An IPv6 address without brackets is taken whole, because its last group cannot be told apart from a port.
+Some gateways write the client's source port into the header after its address, and a misconfigured proxy can write anything. The source port changes per connection, so taken as written it would give every connection its own per-IP bucket. Whichever way the entry is picked, by count or by list, `clientIp` strips a port (`203.0.113.9:51234` is `203.0.113.9`), brackets (`[2001:db8::1]:443` is `2001:db8::1`) and an IPv6 zone id (`fe80::1%eth0` is `fe80::1`), and what is left must be exactly one IPv4 or IPv6 address, an IPv4-mapped one included. An entry that is not (`not-an-ip`, a port out of range, a bracketed IPv4 address) is never returned: the socket address stands in for it, or `unknown` when there is none. An IPv6 address without brackets is taken whole, because its last group cannot be told apart from a port: with a port glued on, it is either read as a different address or refused. If your gateway writes IPv6 entries with a port and no brackets, fix the gateway to bracket them or to leave the port out.
 
 With a list, an entry that is not an address is never trusted, so the walk stops there and the socket address is used; entries further left are never read.
 
 ### Too many hops is as bad as none
 
-A count higher than the proxies you run reaches into the entries the client wrote, as the last case shows. When the chain is shorter than the count, the leftmost entry is used, and that is the client's too.
+A count higher than the proxies you run reaches into the entries the client wrote, as the last case shows. When the chain is shorter than the count, the leftmost entry is used, and that is the client's too. Without a socket address (a fetch adapter given no peer address) the count picks the same entry as with one: the socket address only fills in when the header is empty.
 
 ### `true` is refused
 
