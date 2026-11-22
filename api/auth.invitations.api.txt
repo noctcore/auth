@@ -284,7 +284,7 @@ RequestMeta [interface]
     readonly userAgent?: string | undefined
 RevocationReason [type] = 'logout' | 'revoke-one' | 'revoke-others' | 'revoke-all' | 'password-reset' | 'password-change' | 'email-verified' | 'email-changed' | 'email-reverted' | 'evicted' /** The opt-in permanent lockout tier locked the account. */ | 'locked-permanently' /** The two-factor plugin's sweep: a factor is required, the grace window is over and none is set up. */ | 'two-factor-required' | (string & {})
 SameSite [type] = 'lax' | 'strict' | 'none'
-SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
+SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'epochTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
 SessionCookieConfig [interface]
     readonly name?: string
     readonly sameSite?: SameSite | ((origin: string | undefined) => SameSite)
@@ -306,6 +306,7 @@ SessionManager [class]<A>
     private refusalFor
     readEpoch(userId: string): Promise<number>
     readonly absoluteTtlMs: number
+    readonly epochTtlMs: number | undefined
     readonly maxPerUser: number | null
     readonly rememberMeTtlMs: number
     readonly touchIntervalMs: number
@@ -330,6 +331,7 @@ SessionStore [interface]
     get(id: string): Promise<StoredSession | null>
     getEpoch(userId: string): Promise<number>
     listByUser(userId: string): Promise<StoredSession[]>
+    readonly epochTtlMs?: number
     readonly maxSessionTtlMs?: number
     touch(session: StoredSession): Promise<boolean>
 StoredSession [interface]<A = unknown>

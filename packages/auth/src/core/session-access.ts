@@ -11,6 +11,7 @@ export function narrowSessions<A>(manager: SessionManager<A>): SessionAccess<A> 
   return {
     absoluteTtlMs: manager.absoluteTtlMs,
     rememberMeTtlMs: manager.rememberMeTtlMs,
+    epochTtlMs: manager.epochTtlMs,
     readEpoch: (userId) => manager.readEpoch(userId),
     validate: (token, options) => manager.validate(token, options),
     findActive: (id) => manager.findActive(id),

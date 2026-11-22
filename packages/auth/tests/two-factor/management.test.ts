@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AuthConfigError, createAuth } from '../../src';
+import { AuthConfigError, createAuth, type Duration } from '../../src';
 import { twoFactor } from '../../src/plugins/two-factor';
 import {
   manualClock,
@@ -496,6 +496,26 @@ describe('configuration', () => {
 
     createAuth(config);
     expect(() => createAuth(config)).toThrow(AuthConfigError);
+  });
+
+  it('refuses trusted devices that outlive the session store epoch', () => {
+    const stores = memoryStores();
+    const sessions = Object.assign(stores.sessions, { epochTtlMs: 90 * 24 * 3600_000 });
+
+    const config = (trustedDevices: { ttl: Duration } | false) => ({
+      stores: { ...stores, sessions },
+      password: { hasher: plainHasher() },
+      secret: SECRET,
+      urls: { resetPassword: (token: string) => token },
+      mailer: recordingMailer(),
+      clock: manualClock(),
+      plugins: [twoFactor({ store, cipher, issuer: 'Acme', trustedDevices })],
+    });
+
+    expect(() => createAuth(config({ ttl: '365d' }))).toThrow(AuthConfigError);
+    expect(() => createAuth(config({ ttl: '365d' }))).toThrow(/trustedDevices\.ttl/u);
+    expect(() => createAuth(config({ ttl: '90d' }))).not.toThrow();
+    expect(() => createAuth(config(false))).not.toThrow();
   });
 
   it('refuses to run a hook before createAuth bound it', async () => {

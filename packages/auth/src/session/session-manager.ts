@@ -40,6 +40,8 @@ export class SessionManager<A> {
   readonly rememberMeTtlMs: number;
   readonly touchIntervalMs: number;
   readonly maxPerUser: number | null;
+  /** How long the store keeps a user's epoch after its last write; undefined when it never lapses. */
+  readonly epochTtlMs: number | undefined;
 
   constructor(
     private readonly store: SessionStore,
@@ -52,6 +54,7 @@ export class SessionManager<A> {
     this.rememberMeTtlMs = toMilliseconds(options.rememberMeTtl ?? '30d');
     this.touchIntervalMs = toMilliseconds(options.touchInterval ?? '60s');
     this.maxPerUser = options.maxPerUser === undefined ? 10 : options.maxPerUser;
+    this.epochTtlMs = store.epochTtlMs;
 
     if (this.maxPerUser !== null && (!Number.isInteger(this.maxPerUser) || this.maxPerUser < 1)) {
       throw new AuthConfigError('session.maxPerUser must be a positive integer or null');

@@ -220,6 +220,7 @@ SessionStore [interface]
     get(id: string): Promise<StoredSession | null>
     getEpoch(userId: string): Promise<number>
     listByUser(userId: string): Promise<StoredSession[]>
+    readonly epochTtlMs?: number
     readonly maxSessionTtlMs?: number
     touch(session: StoredSession): Promise<boolean>
 StoredInvitation [interface]

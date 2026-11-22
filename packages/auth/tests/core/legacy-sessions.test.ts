@@ -136,11 +136,13 @@ describe('adoptLegacySessions', () => {
 
     const limited: SessionStore = Object.assign(new MemorySessionStore(clock), {
       maxSessionTtlMs: 2 * DAY,
+      epochTtlMs: 3 * DAY,
     });
 
     const capped = adoptLegacySessions(limited, { take: legacy.take, maxTtl: '7d', clock });
 
     expect(capped.maxSessionTtlMs).toBe(2 * DAY);
+    expect(capped.epochTtlMs).toBe(3 * DAY);
 
     legacy.rows.set(
       id,

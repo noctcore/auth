@@ -29,7 +29,7 @@ import {
 import { sweepUnenrolled, type SweepInput } from './enforcement';
 import { twoFactorHooks } from './hooks';
 import { disable, regenerateRecoveryCodes, revokeTrustedDevices, status } from './management';
-import { resolveSettings, type TwoFactorOptions } from './options';
+import { resolveSettings, type TwoFactorOptions, type TwoFactorSettings } from './options';
 import type { SecondFactorProof } from './proofs';
 import { createRuntime, type Context, type Runtime } from './runtime';
 import { requireStepUp, stepUp } from './step-up';
@@ -76,6 +76,24 @@ export type {
 } from '../../ports/two-factor';
 
 /**
+ * Refuses a trusted device that outlives the session store's epoch. The stored
+ * record is deleted on revocation, but the epoch is the fence when that fails,
+ * and a lapsed epoch reads as 0 again.
+ */
+function assertEpochOutlivesTrustedDevices(
+  settings: TwoFactorSettings,
+  epochTtlMs: number | undefined,
+): void {
+  const ttlMs = settings.trustedDevices?.ttlMs;
+
+  if (ttlMs !== undefined && epochTtlMs !== undefined && ttlMs > epochTtlMs) {
+    throw new AuthConfigError(
+      `twoFactor: the session store keeps a revocation epoch for ${epochTtlMs} ms, but trusted devices may last ${ttlMs} ms: lower trustedDevices.ttl or raise the store's epochTtl`,
+    );
+  }
+}
+
+/**
  * The two-factor plugin. `A` is the app's session attribute type, so the
  * sessions the flows return are typed like the core's.
  */
@@ -96,6 +114,8 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
     hooks: twoFactorHooks(runtime, { enforced: settings.enforcement !== null }),
     flows: (context) => {
       if (bound) throw new AuthConfigError('twoFactor: one plugin instance per createAuth');
+
+      assertEpochOutlivesTrustedDevices(settings, context.sessions.epochTtlMs);
 
       const r = createRuntime(context as Context, options.store, options.cipher, settings);
       const cookieName = prefixedCookieName(context.cookie, TRUSTED_DEVICE_COOKIE);
