@@ -207,7 +207,7 @@ export const session: readonly ConfigRow[] = [
     key: 'session.touchInterval',
     type: 'Duration',
     default: "`'60s'`",
-    does: 'Last-active is written at most this often, and only for a request that counts as activity (see the adapters\' `touch` option). Must be shorter than a fixed idle timeout.',
+    does: 'Last-active is written at most this often, and only for a request that counts as activity (see the adapters\' `touch` option). Must be shorter than the idle timeout: a fixed one is checked at startup, the value of an `idleTimeout` function at each sign-in.',
   },
   {
     key: 'session.maxPerUser',

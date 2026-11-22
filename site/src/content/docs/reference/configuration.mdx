@@ -142,7 +142,7 @@ The `session` key takes the session options and two more keys, `cookie` and `fre
 
 **`rememberMeTtl`** must not exceed the session store's `maxSessionTtlMs` (the Redis store's `maxSessionTtl`, also 30 days by default).
 
-**`idleTimeout`** also accepts a function of `{ rememberMe, attributes }`, decided per session at sign-in.
+**`idleTimeout`** also accepts a function of `{ rememberMe, attributes }`, decided per session at sign-in. Its value must be longer than `touchInterval`, like a fixed one: otherwise a session in steady use is never touched and expires as idle while its user is active. The startup check cannot see a function's values, so the sign-in that gets a value no longer than `touchInterval` throws an `AuthConfigError` before any session is written.
 
 **`touchInterval`**: last-active is written at most once a minute instead of on every request.
 
@@ -426,7 +426,7 @@ For a client that cannot read the `csrf` cookie. The token is the one the adapte
 - `session.cookie.secure` is not `true` or `false`;
 - `session.cookie.sameSite` is a fixed `'none'` while `session.cookie.secure` is `false`;
 - `session.maxPerUser` is not a positive integer or `null`;
-- `session.touchInterval` is not shorter than a fixed `idleTimeout`;
+- `session.touchInterval` is not shorter than a fixed `idleTimeout` (an `idleTimeout` function is checked at each sign-in instead, see [Session](#session));
 - `session.absoluteTtl` or `rememberMeTtl` is longer than the session store's `maxSessionTtlMs`;
 - `throttle.lockout.deviceMaxAge`, or the two-factor plugin's `trustedDevices.ttl`, plus a minute of clock skew is longer than the session store's `epochTtlMs`, or the store declares `epochTtlMs` or `maxSessionTtlMs` as anything but a positive number;
 - `email.normalize` is an unknown name, or a custom normaliser fails its startup test;
