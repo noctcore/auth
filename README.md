@@ -78,14 +78,15 @@ the stricter value wins.
 ## Rotating the server secret
 
 `secret` keys the one-time codes, the trusted-device cookies, the session handles and the
-plugins' keyed hashes (the two-factor recovery codes). Sessions never depend on it. To rotate it
-without voiding those values at once, keep the old one as `previousSecret` for a grace window:
+plugins' keyed hashes (the two-factor recovery codes, and the invitations created before 0.6).
+Sessions never depend on it. To rotate it without voiding those values at once, keep the old one
+as `previousSecret` for a grace window:
 
 ```ts
 createAuth({
   // ...
   secret: process.env.AUTH_SECRET!, // the new secret
-  previousSecret: process.env.AUTH_SECRET_PREVIOUS, // the one it replaced
+  previousSecret: process.env.AUTH_SECRET_PREVIOUS || undefined, // the one it replaced
 });
 ```
 
@@ -94,18 +95,27 @@ createAuth({
    secret. New codes, device cookies, handles and keyed hashes are made under `secret` only;
    values from before the rotation still verify under the old one, each key tried in constant
    time. Startup fails when a previous secret equals `secret` or another previous one, or is
-   shorter than 32 bytes.
+   shorter than 32 bytes. A rolling deploy needs care: an instance still on the old secret alone
+   cannot verify what an instance on the new one issued, so deploy twice, first with the current
+   secret in `secret` and the new one in `previousSecret` (every instance verifies under both),
+   then swap them.
 2. **Let the old values age out.** Codes expire within minutes, a session list shows the new
    handles at once, and each sign-in writes a new device cookie. The longest-lived value is the
    device cookie: wait out `throttle.lockout.deviceMaxAge` (30 days by default).
 3. **Two-factor recovery codes never expire**, so a set made before the rotation works only while
    the old secret stays configured. Before you remove it, ask users with a factor to make a new
-   set (`regenerateRecoveryCodes`), or accept that their old codes stop working.
+   set (`regenerateRecoveryCodes`), or accept that their old codes stop working. Invitations
+   created before 0.6 are the same: they stay readable through `previousSecret` until they
+   expire, and a rotation without it voids them.
 4. **Remove `previousSecret`.** From then on a value made under the old secret is refused, exactly
-   as after a rotation without a grace window.
+   as after a rotation without a grace window. Delete the variable or leave it unset: an empty
+   `AUTH_SECRET_PREVIOUS=` reaches `createAuth` as an empty string, which is not "unset" and
+   stops startup with "previousSecret must be at least 32 bytes" (the `|| undefined` above turns
+   it into unset).
 
-After a suspected leak, shorten the window: every value the old secret made stays usable until
-you remove it.
+After a suspected leak, rotate without `previousSecret`, or keep the window to minutes. While the
+old secret is accepted, whoever holds it can still forge device cookies and code HMACs that
+verify.
 
 ## Packages
 
