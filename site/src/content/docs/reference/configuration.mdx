@@ -420,7 +420,7 @@ For a client that cannot read the `csrf` cookie. The token is the one the adapte
 
 Both adapters run one CSRF implementation from `@noctcore/auth`, so an adapter of your own (another framework, another tRPC transport) can give the same answers for the same cookies. These exports are public API, checked by the API snapshot and versioned like the rest of the core:
 
-- `resolveCsrfSettings(input, secure)`: the boot checks (at least one secret of 32 bytes, exact `crossSiteOrigins`, a non-empty allowlist, a valid header name) and the cookie names, `__Host-` prefixed when `secure`.
+- `resolveCsrfSettings(input, secure)`: the boot checks (the options present and of their type, lists without empty slots, at least one secret of 32 bytes, exact `crossSiteOrigins`, a non-empty allowlist, a valid header name) and the cookie names, `__Host-` prefixed when `secure`.
 - `readCsrfCookies(csrf, cookieHeader)`: the pre-session id and the CSRF cookie from the `Cookie` header.
 - `csrfRequestAllowed(csrf, request)`: the verdict on a request judged as unsafe (Origin allowlist, `Sec-Fetch-Site`, the signed double-submit token). Your adapter decides which requests it judges.
 - `handOutCsrfToken(options, request)`: what a safe request sets, and the token to hand to a client that cannot read the cookie.
@@ -434,11 +434,13 @@ Source: `auth/src/http/csrf-adapter.ts`. Background: [CSRF](/auth/learn/csrf/).
 
 `createAuth` throws an `AuthConfigError` when:
 
-- a store, `password.hasher` or `mailer` is missing;
+- a store, `password.hasher` or `mailer` is missing, or `secret` is missing or neither a string nor bytes;
+- `password.breachCheck` is neither a breach checker (a function, such as `pwnedPasswords()`) nor `false`, or `captcha` is not a verifier with a `verify` function (a string such as `"false"` from the environment used to count as configured and throw on the first sign-up or login);
 - `password.policy.minLength` is below 8 or not a whole number, or `password.policy.maxLength` is not a whole number of at least `minLength`;
-- `session.cookie.name` has characters other than letters, digits, `_` and `-`;
+- `session.cookie.name` is not a string, or has characters other than letters, digits, `_` and `-`;
 - `session.cookie.secure` is not `true` or `false`;
-- `session.cookie.sameSite` is a fixed `'none'` while `session.cookie.secure` is `false`;
+- `session.cookie.sameSite` is a fixed value other than `'lax'`, `'strict'` or `'none'` (`'None'` used to skip the next check), or a fixed `'none'` while `session.cookie.secure` is `false` (a function's value is checked the same way when a cookie is built);
+- `session.attributes` has no `parse` function;
 - `session.maxPerUser` is not a positive integer or `null`;
 - `session.touchInterval` is not shorter than a fixed `idleTimeout` (an `idleTimeout` function is checked at each sign-in instead, see [Session](#session));
 - `session.absoluteTtl` or `rememberMeTtl` is longer than the session store's `maxSessionTtlMs`;
@@ -446,24 +448,29 @@ Source: `auth/src/http/csrf-adapter.ts`. Background: [CSRF](/auth/learn/csrf/).
 - `email.normalize` is an unknown name, or a custom normaliser fails its startup test;
 - `registration.revealExisting`, `registration.autoLogin` or `passwordReset.markEmailVerified` is not `true` or `false`;
 - `registration.autoLogin` is set without `revealExisting`;
-- link verification, link reset or link email change is chosen without its `urls` function;
+- `emailVerification.kind`, `passwordReset.kind` or `emailChange.kind` is not `'code'` or `'link'` (a typo such as `'Link'` used to read as the other kind);
+- a `urls` entry or `passwordReset.enqueue` is not a function, or link verification, link reset or link email change is chosen without its `urls` function;
+- a duration option does not parse (`'15 min'`, `NaN`, a negative number): every `ttl`, `passwordReset.ticketTtl`, `emailChange.revertTtl` and `blockAfterRevert`, `session.freshAuthAge`, `absoluteTtl`, `rememberMeTtl`, `touchInterval` and a fixed `idleTimeout`, the `throttle.lockout` durations and rule windows, and `background.timeout`. The error names the key;
 - `emailVerification.linkWithoutSession` is set without `kind: 'link'`, or is not `true` or `false`;
 - `emailVerification.digits`, `passwordReset.digits` or `emailChange.digits` is outside 6 to 9;
 - `emailVerification.maxAttempts`, `passwordReset.maxAttempts` or `emailChange.maxAttempts` is not a whole number of at least 1;
 - `emailChange.revertTtl` is shorter than 7 days;
-- a `limit` under `throttle.lockout` (`perAccountIp`, `perAccount`, `perDevice`) or `throttle.doors` is not a whole number of at least 1, or its `window` is zero (a door rule also needs a `limit` and a valid `window`; a `null` door rule keeps the default);
+- a rule under `throttle.lockout` (`perAccountIp`, `perAccount`, `perDevice`) is not an object, or a `limit` under it or `throttle.doors` is not a whole number of at least 1, or its `window` is zero (a door rule also needs a `limit` and a valid `window`; a `null` door rule, and a `null` `throttle.lockout`, keep the defaults);
 - `throttle.lockout.baseLock` or `throttle.lockout.maxLock` is zero;
 - `throttle.lockout.revealLocked` or `throttle.lockout.permanent.trustedDevices` is not `true` or `false`;
 - `throttle.lockout.permanent.afterLocks` is not a whole number of at least 1;
-- `previousSecret` holds a value that is not a string or bytes, is shorter than the minimum for `secret`, or repeats `secret` or another previous secret (an empty string counts as shorter);
+- `previousSecret` holds a value that is not a string or bytes, is shorter than the minimum for `secret`, or repeats `secret` or another previous secret (an empty string counts as shorter), or is a list with an empty slot;
+- `plugins` is not a list, holds an empty slot or an entry that is not a plugin with an `id`, a plugin's `flows` is not a function or its `requires` is not a list;
 - a plugin requires `captcha` and none is configured;
-- `background.timeout` is zero, or `background.maxPending` is not a whole number of at least 1.
+- `background.timeout` is zero, `background.maxPending` is not a whole number of at least 1, or `background.waitUntil` is not a function.
 
-Sources: `create-auth.ts`, `plugins/two-factor/index.ts`, `core/background.ts`, `flows/resolve-settings.ts`, `session/session-manager.ts`, `http/cookie.ts`, `shared/email.ts`, `shared/config-checks.ts`, `throttle/throttle.ts`, `throttle/rules.ts`, `core/plugins.ts`; for the plugins, their `options.ts`.
+Sources: `create-auth.ts`, `plugins/two-factor/index.ts`, `core/background.ts`, `flows/resolve-settings.ts`, `session/session-manager.ts`, `http/cookie.ts`, `shared/email.ts`, `shared/config-checks.ts`, `throttle/throttle.ts`, `throttle/rules.ts`, `core/plugins.ts`, `crypto/keys.ts`; for the plugins, their `options.ts`; for the factories, `password/argon2.ts`, `password/breach.ts` and `http/turnstile.ts`.
 
-A boolean option has to be a real `true` or `false`, and a count a real number: a value read from the environment as the string `"false"`, or as `Number(undefined)` (`NaN`), is refused rather than read as on or as no limit. Convert it first, for example `process.env.REVEAL_EXISTING === 'true'`. Leaving a key out, or passing `undefined` or `null`, still gives its default, also for `password.policy.minLength` and `maxLength`.
+A list option has to be a real list with no empty slot: a single string would be read character by character, and an empty slot (`[, '/x']`) is skipped by the checks that walk a list but read as `undefined` later. A boolean option has to be a real `true` or `false`, and a count a real number: a value read from the environment as the string `"false"`, or as `Number(undefined)` (`NaN`), is refused rather than read as on or as no limit. Convert it first, for example `process.env.REVEAL_EXISTING === 'true'`. Leaving a key out, or passing `undefined` or `null`, still gives its default, also for `password.policy.minLength` and `maxLength`.
 
-The plugins check their own options the same way when they are created: `invitations` refuses an `acceptWithoutSession` or `recheckInviter` that is not `true` or `false`, `membership` a `revokeSessionsOnChange` that is not `true` or `false`, and `twoFactor` a `trustedDevices` that is neither `false` nor an object.
+The plugins check their own options the same way when they are created: `invitations` refuses an `acceptWithoutSession` or `recheckInviter` that is not `true` or `false` and a `ttl` or rule `window` that does not parse; `membership` a `revokeSessionsOnChange` that is not `true` or `false`, a `canManage` that is not a function and an `adminRoles` with an empty slot; and `twoFactor` a `trustedDevices` that is neither `false` nor an object, a `required` or `enforcement` that is not a function, and a `stepUpWindow`, `trustedDevices.ttl` or rule `window` that does not parse (a `null` `required`, `enforcement` or `importedRecoveryCodes` counts as left out).
+
+The collaborators you build with a factory check theirs when called: `argon2id()` refuses an `unsafeAllowWeakParameters` that is not `true` or `false`, a `memoryCost`, `timeCost` or `parallelism` that is not a whole number of at least 1, and a `secret` that is not bytes; `turnstile()` a missing or empty `secret`, an `expectedHostnames` that is not a list of strings (one string was matched as a substring, so any part of the host name passed), a `checkAction` that is not `true` or `false`, a `timeoutMs` that is not a number above zero, and a `fetch` or `onResult` that is not a function; `pwnedPasswords()` the same for `timeoutMs`, `fetch` and `onResult`, and a `userAgent` or `baseUrl` that is not a string.
 
 ## The full shape
 
