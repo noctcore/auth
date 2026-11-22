@@ -384,4 +384,68 @@ describe('adoptLegacySessions', () => {
     expect(legacy.take).toHaveBeenCalledTimes(1);
     expect((await app.auth.sessions.list(user.session)).length).toBe(2);
   });
+
+  it('drops a legacy session whose idle timeout does not outlast the touch interval', async () => {
+    const legacy = legacyStore();
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const t = setup();
+
+    const sessions = adoptLegacySessions(t.stores.sessions, {
+      take: legacy.take,
+      maxTtl: '30d',
+      clock: t.clock,
+      logger,
+    });
+
+    const app = setup({
+      stores: { ...t.stores, sessions },
+      clock: t.clock,
+      session: { touchInterval: '15m', idleTimeout: '30m' },
+    } as never);
+
+    const user = await app.signedInUser('legacy@example.com');
+    const userId = user.session.userId;
+    const MINUTE = 60_000;
+
+    const adopt = async (idleTimeoutMs: number) => {
+      const token = generateToken();
+
+      legacy.rows.set(sha256Hex(token), legacyRow(userId, t.clock.now(), { idleTimeoutMs }));
+
+      return { token, result: await app.auth.validateRequest({ token, meta: meta() }) };
+    };
+
+    for (const idleTimeoutMs of [5 * MINUTE, 15 * MINUTE]) {
+      const { token, result } = await adopt(idleTimeoutMs);
+
+      expect(result).toMatchObject({ ok: false, reason: 'session_unknown' });
+      expect(await t.stores.sessions.get(sha256Hex(token))).toBeNull();
+    }
+
+    expect(legacy.rows.size).toBe(0);
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(logger.warn.mock.calls[0]?.[1]).toEqual({ userId });
+
+    const kept = await adopt(15 * MINUTE + 1);
+
+    expect(kept.result.ok).toBe(true);
+    expect((await app.auth.sessions.list(user.session)).length).toBe(2);
+  });
+
+  it('adopts a short idle timeout through a plain get, which has no touch interval to check', async () => {
+    const clock = manualClock(Date.UTC(2026, 0, 1));
+    const legacy = legacyStore();
+
+    const store = adoptLegacySessions(new MemorySessionStore(clock), {
+      take: legacy.take,
+      maxTtl: '30d',
+      clock,
+    });
+
+    const id = sha256Hex(generateToken());
+
+    legacy.rows.set(id, legacyRow('user-1', clock.now(), { idleTimeoutMs: 60_000 }));
+
+    expect(await store.get(id)).toMatchObject({ idleTimeoutMs: 60_000 });
+  });
 });

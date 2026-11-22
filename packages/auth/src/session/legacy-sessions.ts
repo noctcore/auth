@@ -23,7 +23,11 @@
  *   epoch TTL and the wrapper has nothing left to adopt `maxTtl` after the
  *   switch.
  * - A record that is expired, created in the future or not well formed is
- *   dropped, never adopted.
+ *   dropped, never adopted. So is one whose idle timeout is no longer than
+ *   `session.touchInterval` (the rule `mint` applies): it would never be
+ *   touched and would be refused as idle while in use, so its user signs in
+ *   once more instead. Raising it to fit would let a legacy session live
+ *   longer than its own record allows, which no other field is allowed to do.
  *
  * Guide: Build, "Writing a store adapter", section "Switching from your own
  * sessions".
@@ -33,6 +37,7 @@ import type { Logger } from '../ports/logger';
 import type { SessionStore, StoredSession } from '../ports/stores';
 import { toMilliseconds, type Duration } from '../shared/duration';
 import { AuthConfigError } from '../shared/errors';
+import { idleOutlastsTouch } from './idle-rule';
 
 /** A legacy session converted by the app. The id and the epoch are the wrapper's to set. */
 export interface LegacySession {
@@ -99,13 +104,23 @@ interface Lookup {
   readonly adopting: boolean;
 }
 
-type AdoptingStore = SessionStore & { readonly [LEGACY_LOOKUP]?: (id: string) => Promise<Lookup> };
+type AdoptingStore = SessionStore & {
+  readonly [LEGACY_LOOKUP]?: (id: string, touchIntervalMs?: number) => Promise<Lookup>;
+};
 
-/** The session under `id`, and whether a refusal may be a pending adoption; plain stores never report one. */
-export async function lookUpSession(store: SessionStore, id: string): Promise<Lookup> {
+/**
+ * The session under `id`, and whether a refusal may be a pending adoption;
+ * plain stores never report one. `touchIntervalMs` is the session manager's:
+ * a legacy record whose idle timeout does not outlast it is dropped.
+ */
+export async function lookUpSession(
+  store: SessionStore,
+  id: string,
+  touchIntervalMs: number,
+): Promise<Lookup> {
   const lookup = (store as AdoptingStore)[LEGACY_LOOKUP];
 
-  return lookup ? lookup(id) : { session: await store.get(id), adopting: false };
+  return lookup ? lookup(id, touchIntervalMs) : { session: await store.get(id), adopting: false };
 }
 
 const isTime = (value: unknown): value is number =>
@@ -154,7 +169,7 @@ export function adoptLegacySessions(
     };
   }
 
-  async function adopt(id: string): Promise<Lookup> {
+  async function adopt(id: string, touchIntervalMs: number | undefined): Promise<Lookup> {
     const legacy = await options.take(id);
 
     // Nothing to adopt: either no legacy session, or a request racing this one
@@ -187,15 +202,29 @@ export function adoptLegacySessions(
 
     if (session.expiresAt <= now) return { session: null, adopting: false };
 
+    // Only the session manager knows the touch interval; a plain `get` on the
+    // wrapper (app code reading the store itself) adopts without this check.
+    if (
+      touchIntervalMs !== undefined &&
+      !idleOutlastsTouch(session.idleTimeoutMs, touchIntervalMs)
+    ) {
+      options.logger?.warn(
+        'Dropped a legacy session whose idle timeout is not longer than session.touchInterval',
+        { userId: session.userId },
+      );
+
+      return { session: null, adopting: false };
+    }
+
     await store.create(session, session.expiresAt - now);
 
     return { session, adopting: false };
   }
 
-  async function lookup(id: string): Promise<Lookup> {
+  async function lookup(id: string, touchIntervalMs?: number): Promise<Lookup> {
     const stored = await store.get(id);
 
-    return stored ? { session: stored, adopting: false } : adopt(id);
+    return stored ? { session: stored, adopting: false } : adopt(id, touchIntervalMs);
   }
 
   const wrapped: AdoptingStore = {
