@@ -118,7 +118,8 @@ function headerList(raw: string | readonly string[] | null | undefined): string[
     .filter((part) => part !== '');
 }
 
-const PORT = /^\d{1,5}$/u;
+/** A port as a proxy writes it: 1 to 65535, no leading zero. */
+const PORT = /^[1-9]\d{0,4}$/u;
 
 const isPort = (text: string): boolean => PORT.test(text) && Number(text) <= 65_535;
 
@@ -236,14 +237,12 @@ export function clientIp(input: {
 
   if (hops <= 0) return remote;
 
-  // The socket address is the last link of the chain. An entry picked from
-  // the header must be an address, or the socket address stands in for it.
-  const chain = headerList(input.forwardedFor);
-  const length = chain.length + (remote ? 1 : 0);
-
-  if (length === 0) return undefined;
-
-  const picked = chain[Math.max(0, length - 1 - hops)];
+  // The socket address is the last proxy, so the client is `hops` entries
+  // from the right of the header itself, with a socket address or without
+  // one (a fetch adapter with no peer address). An entry picked from the
+  // header must be an address, or the socket address stands in for it.
+  const header = headerList(input.forwardedFor);
+  const picked = header[Math.max(0, header.length - hops)];
 
   return picked === undefined ? remote : (forwardedAddress(picked) ?? remote);
 }

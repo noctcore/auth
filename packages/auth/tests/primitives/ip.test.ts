@@ -94,11 +94,25 @@ describe('clientIp edges', () => {
 });
 
 describe('clientIp and maskIp boundaries', () => {
-  it('counts hops over the header alone when the socket address is missing', () => {
-    for (const remoteAddress of [undefined, ''])
+  it('picks the same entry with or without a socket address', () => {
+    for (const remoteAddress of [undefined, '', '10.0.0.9'])
       expect(
         clientIp({ remoteAddress, forwardedFor: '198.51.100.1, 10.0.0.1', trustedHops: 1 }),
-      ).toBe('198.51.100.1');
+      ).toBe('10.0.0.1');
+
+    // The client wrote 6.6.6.6; the one proxy appended 203.0.113.9.
+    for (const remoteAddress of [undefined, '10.0.0.9'])
+      expect(
+        clientIp({ remoteAddress, forwardedFor: '6.6.6.6, 203.0.113.9', trustedHops: 1 }),
+      ).toBe('203.0.113.9');
+
+    expect(
+      clientIp({
+        remoteAddress: undefined,
+        forwardedFor: '6.6.6.6, 203.0.113.9, 10.0.0.1',
+        trustedHops: 2,
+      }),
+    ).toBe('203.0.113.9');
   });
 
   it('says why it refuses trust proxy "true"', () =>
@@ -148,6 +162,9 @@ describe('clientIp reads the picked X-Forwarded-For entry as an address', () => 
     '[2001:db8::1]:443:1',
     '[2001:db8::1]:65536',
     '203.0.113.9:65536',
+    '203.0.113.9:0',
+    '203.0.113.9:080',
+    '[2001:db8::1]:0',
     '::ffff:203.0.113.9:443',
     '203.0.113.9%eth0',
     '203.0.113.256',
@@ -159,7 +176,7 @@ describe('clientIp reads the picked X-Forwarded-For entry as an address', () => 
 
   it('has no answer for a junk entry when there is no socket address either', () => {
     expect(
-      clientIp({ remoteAddress: undefined, forwardedFor: 'junk, 10.0.0.1', trustedHops: 1 }),
+      clientIp({ remoteAddress: undefined, forwardedFor: '10.0.0.1, junk', trustedHops: 1 }),
     ).toBeUndefined();
   });
 
