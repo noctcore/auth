@@ -115,7 +115,7 @@ describe('createAuthContext boot checks', () => {
   it('refuses a missing csrf, a missing required list and lists with an empty slot', () => {
     for (const [given, message] of [
       [{ csrf: undefined }, 'csrf is required'],
-      [csrf({ secrets: undefined }), 'csrf.secrets is required'],
+      [csrf({ secrets: undefined as never }), 'csrf.secrets is required'],
       [csrf({ allowedOrigins: null as never }), 'csrf.allowedOrigins is required'],
       // eslint-disable-next-line no-sparse-arrays
       [csrf({ secrets: [, CSRF_SECRET] as never }), 'csrf.secrets must not have empty slots'],
