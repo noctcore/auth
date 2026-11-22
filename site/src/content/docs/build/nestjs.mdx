@@ -111,6 +111,6 @@ Boot the whole `AppModule` in a test. A provider Nest cannot resolve fails there
 
 - Serve over HTTPS and leave `session.cookie.secure` on. The CSRF cookies follow the session cookie: `__Host-csrf` and `__Host-presession` when it is `__Host-session`, with the `SameSite` that `session.cookie.sameSite` gives the request's `Origin`.
 - Set `TRUST_PROXY` to the number of proxies you actually run, or to their addresses.
-- Keep the CSRF secret separate from the auth secret; during a rollover, list the new one first and the old one after it.
+- Keep the CSRF secret separate from the auth secret; during a rollover, list the new one first and the old one after it. Each safe request replaces a token signed by the old secret with one under the new secret, and a page that still holds the old token keeps working while the old secret is listed. Remove the old secret once your clients have made a safe request since the deploy (keeping it for one session idle timeout covers every signed-in client); a client that has not gets one 403, and a new token on its next safe request.
 - Fastify is not supported yet. The middleware and the cookies work on the raw Node request and response, but only Express is tested.
 - If you use a global prefix, run Nest 11.2.8 or later (or 12.1.3 or later), so the middleware reaches the prefix root and excluded routes and the guard's safety net never has to refuse a legitimate request.
