@@ -92,6 +92,8 @@ This guide builds on [A Node server with Redis and Prisma](/auth/build/node-serv
 
    A failure while building the context (a store down) answers `internal`, and only the error's name is logged: a store error can carry the session key.
 
+   The WebSocket adapter (`applyWSSHandler`) is not supported yet. It builds the context once per connection and passes the socket as `res`, so the cookies a first visit needs could not be set, and a session would be validated once and kept after a sign-out, a password change or a revocation until the socket closed. `node(opts)` refuses a `res` that cannot set headers with an `AuthConfigError` before it reads anything: the client sees `internal` and the connection is closed.
+
    #### On the fetch adapter
 
    <Code code={fetchTs} lang="ts" title="src/fetch.ts" />
@@ -105,7 +107,7 @@ This guide builds on [A Node server with Redis and Prisma](/auth/build/node-serv
    Three cases where the option or the meta has no effect:
 
    - **nestjs-trpc with `AuthModule` mounted.** The session is validated twice, and each validation decides on its own whether to touch: first the Nest `CsrfMiddleware` (on every route), with `AuthModule`'s `touch` option, then the tRPC context, with `createAuthContext`'s `touch` and the procedure meta. The last-active time is written when either says touch, so a poll stays passive only when it is marked in both: in `AuthModule`'s predicate (the path it sees is the HTTP path, such as `/trpc/notifications.count`, where a batch joins its procedures in one path with commas) and by `meta({ touch: false })` or the `createAuthContext` predicate. If `/trpc` is in `csrf.exempt`, the middleware returns before it validates, and the tRPC side is the only switch (see [Use with NestJS](/auth/build/nestjs/#background-polls)).
-   - **The WebSocket adapter.** On `@trpc/server` 11.28.0, the version checked, the adapter builds the context once per connection and names no call, so the connection touches once when it opens, and `touch: false` in the meta of a subscription does nothing.
+   - **The WebSocket adapter.** It is not supported yet, and `node(opts)` refuses its connections (see [The context](#the-context)). On `@trpc/server` 11.28.0, the version checked, it builds the context once per connection and names no call, so the option and the meta could not apply to a subscription on it.
    - **A predicate that returns a promise.** The result is compared with `false` only, so an async predicate always touches.
 
    The meta flag is read from tRPC's `call.procedure`, which tRPC marks `@internal`; the meta test in `packages/auth-trpc/tests/background-polls.test.ts` fails if a tRPC upgrade drops the field.
