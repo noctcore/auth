@@ -88,6 +88,13 @@ export class SessionManager<A> {
 
   async mint(input: MintInput<A>): Promise<MintResult<A>> {
     const token = generateToken(this.random);
+
+    // The sessions written before this mint began, read before the clock so
+    // that a session in it was also stamped before this one on a shared clock.
+    const before = new Set(
+      this.maxPerUser === null ? [] : (await this.store.listByUser(input.userId)).map((s) => s.id),
+    );
+
     const now = this.clock.now();
     const ttlMs = input.rememberMe ? this.rememberMeTtlMs : this.absoluteTtlMs;
     const epoch = input.epoch ?? (await this.store.getEpoch(input.userId));
@@ -126,7 +133,7 @@ export class SessionManager<A> {
       return { ok: false, reason: 'epoch_fence' };
     }
 
-    const evicted = await this.evictOverCap(input.userId);
+    const evicted = await this.evictOverCap(input.userId, session, before);
 
     return { ok: true, token, session, evicted };
   }
@@ -237,22 +244,46 @@ export class SessionManager<A> {
 
   /**
    * Runs AFTER the new session is written, so concurrent logins converge to
-   * the cap instead of all passing a pre-write check. Oldest first; the new
-   * session has the newest createdAt.
+   * the cap instead of all passing a pre-write check. Oldest first, by
+   * `createdAt` and then by id (unique, so never equal), so racing logins
+   * agree on the order whatever order the store lists in.
+   *
+   * The session this mint wrote (`self`) is never a candidate. Another session
+   * is one when it was stored before this mint began (`before`), whatever its
+   * timestamp, so a tie in `createdAt` or an instance whose clock is behind
+   * still evicts the older session. A session written while this mint ran is
+   * one only when it sorts before `self`: of two logins racing at a cap of
+   * one, only the one that sorts first is evicted, by the other.
+   *
+   * What is left: a racing session that sorts after `self` is not evicted
+   * here, even if its own mint has already finished and will not evict
+   * `self` (its eviction ran before `self` was written, and its timestamp is
+   * newer). The user then holds one session over the cap until the next
+   * mint. And when one login was written before the other began but sorts
+   * after it (a clock behind, or a tie broken by id), and both evict after
+   * both are written, each evicts the other.
    *
    * Returns the ids this call removed, as the store reports them: two logins
    * racing at the cap may pick the same oldest session, and only the one whose
    * delete removed it reports it, so each eviction reaches the hooks once.
    */
-  private async evictOverCap(userId: string): Promise<string[]> {
+  private async evictOverCap(
+    userId: string,
+    self: StoredSession<A>,
+    before: ReadonlySet<string>,
+  ): Promise<string[]> {
     if (this.maxPerUser === null) return [];
 
     const active = await this.listActive(userId);
+    const excess = active.length - this.maxPerUser;
 
-    if (active.length <= this.maxPerUser) return [];
+    if (excess <= 0) return [];
 
-    active.sort((a, b) => a.createdAt - b.createdAt);
-    const chosen = active.slice(0, active.length - this.maxPerUser).map((s) => s.id);
+    const chosen = active
+      .filter((s) => s.id !== self.id && (before.has(s.id) || olderFirst(s, self) < 0))
+      .sort(olderFirst)
+      .slice(0, excess)
+      .map((s) => s.id);
 
     return this.deleteAndReport(userId, chosen);
   }
@@ -319,4 +350,9 @@ export class SessionManager<A> {
 
     return this.deleteAndReport(userId, ids);
   }
+}
+
+/** The eviction order: oldest `createdAt` first, then by id (unique, so never equal). */
+function olderFirst(a: StoredSession, b: StoredSession): number {
+  return a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
 }
