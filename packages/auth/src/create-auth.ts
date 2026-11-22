@@ -6,8 +6,8 @@
  */
 import { AuthCore } from './core/auth-core';
 import { BackgroundTasks } from './core/background';
-import type { Duration } from './shared/duration';
-import type { AuthConfig, AuthPlugin, PasswordResetJob } from './core/config';
+import { toMilliseconds, type Duration } from './shared/duration';
+import type { AuthConfig, AuthPlugin, Door, PasswordResetJob } from './core/config';
 import { mergeHooks } from './core/hooks';
 import type { PluginContext } from './core/plugin-context';
 import { checkPlugins, namespacePluginFlows, type PluginFlows } from './core/plugins';
@@ -44,9 +44,11 @@ import { systemClock } from './ports/clock';
 import { noopMetrics, silentLogger } from './ports/logger';
 import type { AuthUser, SessionStore, StoredSession } from './ports/stores';
 import { SessionManager } from './session/session-manager';
+import { assertBoolean } from './shared/config-checks';
 import { resolveEmailNormalizer } from './shared/email';
 import { AuthConfigError } from './shared/errors';
 import type { RequestMeta } from './shared/meta';
+import { assertWindowRule, type RateLimitRule } from './throttle/rules';
 import { Throttle } from './throttle/throttle';
 import { OneTimeTokens } from './tokens/one-time-tokens';
 
@@ -75,6 +77,23 @@ function assertStoreOutlivesSessions<A>(store: SessionStore, sessions: SessionMa
       `The session store guards sessions up to ${storeLimit} ms, but sessions may last ${longest} ms: raise the store's maxSessionTtl or lower session.rememberMeTtl`,
     );
   }
+}
+
+/** Each configured door rule, checked now rather than on the first request at that door. */
+function checkedDoors(
+  doors: Partial<Record<Door, RateLimitRule>>,
+): Partial<Record<Door, RateLimitRule>> {
+  for (const [door, rule] of Object.entries(doors) as [Door, RateLimitRule | undefined][]) {
+    if (rule === undefined) continue;
+
+    // A door rule has no default limit to fall back on: a missing one is refused too.
+    assertWindowRule(`throttle.doors.${door}`, {
+      limit: rule.limit ?? Number.NaN,
+      windowMs: toMilliseconds(rule.window),
+    });
+  }
+
+  return doors;
 }
 
 export function createAuth<
@@ -114,10 +133,24 @@ export function createAuth<
 
   const policy = { ...DEFAULT_PASSWORD_POLICY, ...config.password.policy };
 
+  // `NaN` passes every comparison: a `NaN` minimum would accept an empty password.
+  if (!Number.isSafeInteger(policy.minLength))
+    throw new AuthConfigError('password.policy.minLength must be a whole number');
+
   if (policy.minLength < 8)
     throw new AuthConfigError('password.policy.minLength must be at least 8');
 
+  // And a `NaN` or infinite maximum would bound nothing.
+  if (!Number.isSafeInteger(policy.maxLength) || policy.maxLength < policy.minLength) {
+    throw new AuthConfigError(
+      'password.policy.maxLength must be a whole number of at least password.policy.minLength',
+    );
+  }
+
   const cookie = config.session?.cookie ?? {};
+
+  // A string "false" would read as on here, and as a different cookie name.
+  assertBoolean('session.cookie.secure', cookie.secure);
 
   // Validates the cookie name now rather than on the first sign-in, and refuses
   // a fixed `SameSite=None` without Secure at boot. A function-valued SameSite
@@ -160,7 +193,7 @@ export function createAuth<
     mailer: config.mailer,
     audit: config.audit,
     hooks: mergeHooks<U, A>([...coreHooks, ...plugins.map((p) => p.hooks), config.hooks]),
-    doors: config.throttle?.doors ?? {},
+    doors: checkedDoors(config.throttle?.doors ?? {}),
     cookie,
     attributeSchema: config.session?.attributes,
     emails,

@@ -1,5 +1,7 @@
 /** The throttle's configuration and the answers it gives. */
+import { assertCount } from '../shared/config-checks';
 import { toMilliseconds, type Duration } from '../shared/duration';
+import { AuthConfigError } from '../shared/errors';
 
 export interface RateLimitRule {
   readonly limit: number;
@@ -134,4 +136,15 @@ export function windowRule(
   window: Duration,
 ): WindowRule {
   return { limit: rule?.limit ?? limit, windowMs: toMilliseconds(rule?.window ?? window) };
+}
+
+/**
+ * Refuses a rule that would never count or never refuse: a `NaN`, zero,
+ * negative or fractional limit, or a zero window (each hit would open a new
+ * window, so the count would never pass 1). `name` is the option's path.
+ */
+export function assertWindowRule(name: string, rule: WindowRule): void {
+  assertCount(`${name}.limit`, rule.limit);
+
+  if (rule.windowMs <= 0) throw new AuthConfigError(`${name}.window must be longer than zero`);
 }

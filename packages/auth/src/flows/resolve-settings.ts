@@ -6,6 +6,7 @@
 import type { FlowSettings } from './settings';
 import type { AuthConfig, AuthPlugin } from '../core/config';
 import type { AuthUser } from '../ports/stores';
+import { assertBoolean, assertCount } from '../shared/config-checks';
 import { toMilliseconds } from '../shared/duration';
 import { AuthConfigError } from '../shared/errors';
 
@@ -21,6 +22,8 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
   // A string such as "false" from an env file would read as on: only a real boolean counts.
   if (typeof linkWithoutSession !== 'boolean')
     throw new AuthConfigError('emailVerification.linkWithoutSession must be true or false');
+
+  assertOptionTypes(config);
 
   const resetKind = config.passwordReset?.kind ?? 'link';
 
@@ -70,6 +73,21 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
   assertSafeSettings(settings);
 
   return settings;
+}
+
+/**
+ * The same for the other booleans, read by truthiness, and the attempt
+ * counts: `attempt >= NaN` is never true, so a `NaN` count never spends a code.
+ */
+function assertOptionTypes<U extends AuthUser, A, P extends readonly AuthPlugin[]>(
+  config: AuthConfig<U, A, P>,
+): void {
+  assertBoolean('registration.revealExisting', config.registration?.revealExisting);
+  assertBoolean('registration.autoLogin', config.registration?.autoLogin);
+  assertBoolean('passwordReset.markEmailVerified', config.passwordReset?.markEmailVerified);
+  assertCount('emailVerification.maxAttempts', config.emailVerification?.maxAttempts);
+  assertCount('passwordReset.maxAttempts', config.passwordReset?.maxAttempts);
+  assertCount('emailChange.maxAttempts', config.emailChange?.maxAttempts);
 }
 
 function assertSafeSettings(settings: FlowSettings): void {

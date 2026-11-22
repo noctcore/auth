@@ -51,6 +51,7 @@
  */
 import { counterKeys as keys } from './counter-keys';
 import {
+  assertWindowRule,
   windowRule,
   type FactorGate,
   type Hit,
@@ -63,6 +64,7 @@ import {
 } from './rules';
 import type { Clock } from '../ports/clock';
 import type { CounterStore } from '../ports/stores';
+import { assertBoolean } from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 import { LOCKOUT_EXPIRES_AT, toMilliseconds } from '../shared/duration';
 
@@ -97,6 +99,18 @@ export class Throttle {
     this.permanentAfter = permanentAfter(lockout);
     this.permanentDevices = lockout.permanent?.trustedDevices ?? true;
     this.revealLocked = lockout.revealLocked ?? false;
+
+    assertLockoutOptions(lockout, [
+      ['perAccountIp', this.perAccountIp],
+      ['perAccount', this.perAccount],
+      ['perDevice', this.perDevice],
+    ]);
+
+    // A lock of zero would never be in force, so the lockout would only count.
+    if (this.baseLockMs <= 0)
+      throw new AuthConfigError('throttle.lockout.baseLock must be longer than zero');
+    if (this.maxLockMs <= 0)
+      throw new AuthConfigError('throttle.lockout.maxLock must be longer than zero');
   }
 
   /** One hit on a fixed window. Throws when the store fails (fail closed). */
@@ -448,6 +462,20 @@ export class Throttle {
 
     return before;
   }
+}
+
+/**
+ * The lockout's rules and booleans as `createAuth` reads them from the config:
+ * a string "false" would read as on, and a `NaN` limit would never lock.
+ */
+function assertLockoutOptions(
+  lockout: LockoutOptions,
+  rules: readonly (readonly [string, WindowRule])[],
+): void {
+  for (const [key, rule] of rules) assertWindowRule(`throttle.lockout.${key}`, rule);
+
+  assertBoolean('throttle.lockout.revealLocked', lockout.revealLocked);
+  assertBoolean('throttle.lockout.permanent.trustedDevices', lockout.permanent?.trustedDevices);
 }
 
 /** The validated `permanent.afterLocks`, or undefined when the tier is off. */
