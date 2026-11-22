@@ -66,7 +66,7 @@ Every code check, TOTP or recovery code, first reserves an attempt in one budget
 
 | Budget                        | Default         | What happens when it runs out                                                                                                |
 | ----------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Per user (`attempts`) | 5 per 15 minutes, from every IP | The factor locks with the password lockout's capped backoff (5 minutes, then 15, then 45, at most an hour).                 |
+| Per user (`attempts`) | 5 per 15 minutes, from every IP | The factor locks with the password lockout's capped backoff (5 minutes, then 15, then 45, at most an hour). With `throttle.lockout.permanent` on, each lock also counts toward the permanent tier ([A108](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A108-climbing-past-the-permanent-tier-on-second-factor-codes.test.ts)). |
 | One login challenge           | 5 codes         | The challenge dies, so every new batch of guesses costs a correct password first ([A038](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A038-second-factor-brute-force.test.ts)).                                  |
 
 A locked factor refuses even the right code, and answers exactly like a wrong one.
@@ -192,7 +192,7 @@ The guide's MFA page asks for RFC 6238 codes from a 160-bit random secret, a con
 
 - **Replay.** The guide validates a code by generating one and comparing; it does not ask that a code be refused the second time. The plugin stores the last accepted step and refuses anything at or before it, atomically.
 - **How recovery codes are stored.** The guide suggests a password hash such as Argon2id. The plugin uses an HMAC keyed by the server secret: the codes are 50 random bits, not something a person chose, so a slow hash adds little, and with the key outside the database a leaked table cannot be used to test guesses at all. The plugin issues ten codes, where the guide says one or more.
-- **Telling the owner.** The guide suggests telling the user to change their password after the throttle trips. The plugin does not mail on a factor lock (it writes an audit row); it mails when the factor is turned on or off and when a recovery code is used.
+- **Telling the owner.** The guide suggests telling the user to change their password after the throttle trips. The plugin does not mail on a temporary factor lock (it writes an audit row); it mails when the factor is turned on or off and when a recovery code is used. With the password lockout's permanent tier on, factor locks count toward it, and the permanent lock they bring about mails the owner like a password one.
 - **Resets.** The guide leaves resets to the app. The plugin makes a reset of a two-factor account demand the factor, because otherwise the mailbox alone would beat it.
 
 ## Attack tests
@@ -222,6 +222,7 @@ The guide's MFA page asks for RFC 6238 codes from a 160-bit random secret, a con
 | [A091](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A091-outliving-a-two-factor-grace-window.test.ts) | Outliving a two-factor grace window without ever setting a factor up | `plugins/two-factor/enforcement.ts`, `flows/session-validation.ts`, `core/hooks.ts` |
 | [A095](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A095-reusing-an-imported-recovery-code.test.ts) | Reusing an imported recovery code | `plugins/two-factor/proofs.ts`, `plugins/two-factor/recovery-codes.ts`, `ports/two-factor.ts` |
 | [A098](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A098-racing-two-imported-recovery-codes.test.ts) | Racing two logins with two imported recovery codes to leave a dead set | `plugins/two-factor/proofs.ts`, `plugins/two-factor/challenge.ts` |
+| [A108](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A108-climbing-past-the-permanent-tier-on-second-factor-codes.test.ts) | Never reaching the permanent lockout tier while guessing codes with the password in hand | `plugins/two-factor/runtime.ts`, `core/auth-core.ts`, `throttle/throttle.ts` |
 
 </div>
 

@@ -327,7 +327,7 @@ The login lockout. Source: `throttle/rules.ts`, `throttle/throttle.ts`; the reas
 
 `throttle.lockout.permanent` takes `{ afterLocks, trustedDevices? }`.
 
-- **When it locks.** After `afterLocks` temporary locks in a row (each within `quietPeriod` of the last; a successful sign-in or a completed password reset resets the count), the next lock holds until an admin calls `auth.lockout.clear`. A password reset does not lift it. `afterLocks` must be a whole number of at least 1.
+- **When it locks.** After `afterLocks` temporary locks in a row (each within `quietPeriod` of the last; a completed sign-in or a completed password reset resets the count), the next lock holds until an admin calls `auth.lockout.clear`. The count takes password locks and the two-factor plugin's factor locks alike. A sign-in completes when its session is issued with `via: 'password'` or `via: 'second-factor'` (every factor proved); a correct password with a second factor still owed, or at `reauthenticate` or `changePassword`, does not reset it. A password reset does not lift it. `afterLocks` must be a whole number of at least 1.
 - **What it locks.** For an address with an account the lock is kept under the user id, so it follows the account through an email change, and it ends the account's sessions. For an address with no account it is kept under the address, and a sign-up on that address clears it.
 - **Turning it off later** stops login reading its marker, but `auth.lockout.inspect` still reports a leftover permanent lock until `auth.lockout.clear` lifts it.
 
@@ -347,6 +347,16 @@ The permanent tier is a denial of service anyone can trigger on purpose. Pair it
 - The `onPermanentLock` hook (`{ userId, email, meta }`) runs off the response path when the permanent tier locks an account, after its sessions end (`onSessionsRevoked` hears `locked-permanently`), beside the `account.locked_permanently` audit row and a `lockout` mail with `permanent: true`.
 
 Source: `flows/lockout-admin.ts`, `flows/lock-notice.ts`.
+
+#### Counting your own proofs
+
+For a proof your app checks itself (its own second factor, a PIN), outside login's gate:
+
+- `auth.context.recordFailedProof({ userId | email, meta })` counts a failure in the address's account-wide budget, the one login spends. A lock it sets is carried out like a password lock (the `lockout` mail, the `account.locked` audit row and, in the permanent tier, the end of the sessions and `onPermanentLock`), off the response path, and counts toward the permanent tier. It returns `{ newLock? }`. An address with no account counts the same and nobody is told.
+- `auth.context.escalateLock({ userId, meta })`, for a proof with its own budget and lock: call it once for each new lock it sets. With `permanent` on, the lock counts toward the tier in the same count as the password locks, and a permanent lock is carried out the same way. It does nothing while `permanent` is off.
+- `auth.context.throttle.recordFailure` only counts: a lock reached through it sends nothing. Prefer `recordFailedProof`.
+
+Source: `core/auth-core.ts`, `core/plugin-context.ts`.
 
 ### Door limits
 
