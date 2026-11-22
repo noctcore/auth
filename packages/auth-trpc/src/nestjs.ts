@@ -28,9 +28,22 @@ import {
   type TrpcRateLimitRule,
 } from './middlewares';
 
-/** A nestjs-trpc middleware: the shape `@UseMiddlewares` accepts. */
+/**
+ * What nestjs-trpc hands a middleware's `use`, written out structurally so
+ * the package needs no nestjs-trpc types. `next` takes an optional context
+ * typed as nestjs-trpc types it, so a class fits its `TRPCMiddleware` under
+ * `strictFunctionTypes`.
+ */
+export interface NestTrpcMiddlewareOptions<TResult> {
+  readonly ctx: object;
+  readonly type: string;
+  readonly meta?: unknown;
+  next(opts?: { ctx?: Record<string, unknown> }): Promise<TResult>;
+}
+
+/** A nestjs-trpc middleware: the shape `globalMiddlewares` and `@UseMiddlewares` accept. */
 export interface NestTrpcMiddleware {
-  use<TResult>(opts: MiddlewareCall<TResult> & { readonly meta?: unknown }): Promise<TResult>;
+  use<TResult>(opts: NestTrpcMiddlewareOptions<TResult>): Promise<TResult>;
 }
 
 export type NestTrpcMiddlewareClass = new () => NestTrpcMiddleware;
@@ -41,7 +54,7 @@ type Body = <TResult>(
 
 function middlewareClass(body: Body): NestTrpcMiddlewareClass {
   return class implements NestTrpcMiddleware {
-    use<TResult>(opts: MiddlewareCall<TResult> & { readonly meta?: unknown }): Promise<TResult> {
+    use<TResult>(opts: NestTrpcMiddlewareOptions<TResult>): Promise<TResult> {
       return body(opts);
     }
   };

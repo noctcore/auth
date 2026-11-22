@@ -140,8 +140,13 @@ loginInput [const]: z.ZodObject<{ email: z.ZodString; password: z.ZodString; rem
 loginOutput [const]: z.ZodDiscriminatedUnion<[z.ZodObject<{ kind: z.ZodLiteral<"session">; csrfToken: z.ZodString; }, z.core.$strip>, z.ZodObject<{ kind: z.ZodLiteral<"challenge">; challenge: z.ZodString; methods: z.ZodReadonly<z.ZodArray<z.ZodString>>; }, z.core.$strip>], "kind">
 MAX_TRUSTED_HOPS [const]: 16
 NestTrpcMiddleware [interface]
-    use<TResult>(opts: MiddlewareCall<TResult> & { readonly meta?: unknown; }): Promise<TResult>
+    use<TResult>(opts: NestTrpcMiddlewareOptions<TResult>): Promise<TResult>
 NestTrpcMiddlewareClass [type] = new () => NestTrpcMiddleware
+NestTrpcMiddlewareOptions [interface]<TResult>
+    next(opts?: { ctx?: Record<string, unknown>; }): Promise<TResult>
+    readonly ctx: object
+    readonly meta?: unknown
+    readonly type: string
 NodeContextInput [interface]
     readonly info?: RequestCalls | undefined
     readonly req: { readonly method?: string | undefined; readonly headers: IncomingHttpHeaders; readonly socket?: { readonly remoteAddress?: string | undefined; } | undefined; }
@@ -197,10 +202,6 @@ verifyPasswordResetCodeInput [const]: z.ZodObject<{ email: z.ZodString; code: z.
 WritesCookiesMiddleware [const]: NestTrpcMiddlewareClass
 
 ## types reached through the exports (not exported by name)
-MiddlewareCall [interface]<TResult>
-    next(opts?: { ctx: object; }): Promise<TResult>
-    readonly ctx: unknown
-    readonly type: string
 PrincipalOf [type]<TContext> = TContext extends AuthContext<infer U, infer A> ? Principal<U, A> : Principal
 RequestCalls [interface]
     readonly calls: readonly { readonly path: string; readonly procedure?: { readonly _def?: { readonly meta?: unknown; }; } | null | undefined; }[]
