@@ -76,8 +76,8 @@ The store moves the address in one compare-and-set on the old address, and the u
 Until the revert link expires or is used, the old address is held for the account that gave it up. Without the hold, the intruder could register the old address and leave the revert nowhere to go back to ([A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts)).
 
 - **Sign-up on it** gives the answer for an address with an account, and an "account exists" mail to the old address for its owner, after the same number of store round trips. A read of the holder stands where a taken or new address does its insert, so the timing is not the same; the lookup and mail run after the answer, as for a taken address.
-- **Sign-up through an invitation to it** answers `email_in_use`, as for an address with an account, and spends nothing.
-- **Another account's change to it** answers as taken.
+- **Sign-up through an invitation to it** answers `email_in_use`, as for an address with an account, and spends nothing. The answer is the same but the timing is not: a held address costs three store reads where a taken one costs one, and only the holder of the invitation token can see the difference, a token that was mailed to the held address.
+- **Another account's change to it** answers as taken. Change requests and confirms read the hold directly, which is stricter than the rule sign-up and invitation sign-up share: they refuse a hold even when its holder is gone.
 
 <Aside type="caution" title="The hold covers the library's own flows only">
   An app's admin tools, first SSO sign-ins and imports must ask `auth.isAddressHeld` before they
@@ -123,6 +123,8 @@ The guide's [email addresses](https://auth.pilcrowonpaper.com/email-addresses) p
 **The rest of the account.** A revert restores the address, not the rest of the account. It never removes a second factor, because it cannot tell the owner's from one an intruder enrolled. The owner's own factor stays, so the reset asks for it; one the intruder enrolled stays too, and the owner, who cannot pass it, needs support to verify them some other way and remove it.
 
 **An old address that has an account anyway.** The owner needs support to free it; until then the account stays locked out, however long that takes. Support clearing the lockout while the account still names the intruder's address would hand that address a working reset.
+
+**An account deleted and restored.** A hold whose account is gone holds nothing for sign-up and invitation sign-up, matching the revert, which refuses a missing account. An app that soft deletes an account and restores it while its revert link is still live may find the old address registered by someone else in between; the revert then answers as for any taken address.
 
 **A second change soon after.** The user cannot change the address again until the revert link expires (7 days by default), even if they made the first change themselves.
 
