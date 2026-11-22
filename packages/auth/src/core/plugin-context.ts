@@ -71,6 +71,7 @@ export type SessionAccess<A> = Pick<
   SessionManager<A>,
   | 'absoluteTtlMs'
   | 'rememberMeTtlMs'
+  | 'epochTtlMs'
   | 'readEpoch'
   | 'validate'
   | 'findActive'

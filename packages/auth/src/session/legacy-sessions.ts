@@ -209,7 +209,10 @@ export function adoptLegacySessions(
     bumpEpoch: (userId) => store.bumpEpoch(userId),
   };
 
-  return store.maxSessionTtlMs === undefined
-    ? wrapped
-    : { ...wrapped, maxSessionTtlMs: store.maxSessionTtlMs };
+  // The store's limits carry over, so `createAuth` still checks against them.
+  return {
+    ...wrapped,
+    ...(store.maxSessionTtlMs === undefined ? {} : { maxSessionTtlMs: store.maxSessionTtlMs }),
+    ...(store.epochTtlMs === undefined ? {} : { epochTtlMs: store.epochTtlMs }),
+  };
 }

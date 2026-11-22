@@ -110,6 +110,21 @@ function checkedDoors(
   return doors;
 }
 
+/**
+ * Refuses a device token that outlives the store's epoch: the epoch is the
+ * token's only revocation fence, and a lapsed epoch reads as 0 again, so a
+ * revoked token would verify once more.
+ */
+function assertStoreOutlivesDeviceTokens(store: SessionStore, deviceMaxAgeMs: number): void {
+  const epochLimit = store.epochTtlMs;
+
+  if (epochLimit !== undefined && deviceMaxAgeMs > epochLimit) {
+    throw new AuthConfigError(
+      `The session store keeps a revocation epoch for ${epochLimit} ms, but device tokens may last ${deviceMaxAgeMs} ms: lower throttle.lockout.deviceMaxAge or raise the store's epochTtl`,
+    );
+  }
+}
+
 export function createAuth<
   U extends AuthUser,
   A = Record<string, never>,
@@ -188,6 +203,8 @@ export function createAuth<
   const tokens = new OneTimeTokens(config.stores.tokens, clock, random, codeKeys);
 
   const throttle = new Throttle(config.stores.counters, clock, config.throttle?.lockout);
+
+  assertStoreOutlivesDeviceTokens(config.stores.sessions, throttle.deviceMaxAgeMs);
 
   // Only a store that can change emails can have an account in revert lockout.
   // A permanent lock without trusted devices refuses every session for the account.

@@ -101,6 +101,14 @@ export interface SessionStore {
    * whose remember-me or absolute TTL is longer. Omit when there is no limit.
    */
   readonly maxSessionTtlMs?: number;
+  /**
+   * How long the store keeps a user's revocation epoch after its last write,
+   * for a store that forgets it (and then reads it as 0). Device tokens and
+   * trusted devices are fenced by the epoch alone, so `createAuth` refuses a
+   * `throttle.lockout.deviceMaxAge`, and the two-factor plugin a
+   * `trustedDevices.ttl`, that is longer. Omit when the epoch never lapses.
+   */
+  readonly epochTtlMs?: number;
   /** Stores the session with a TTL of `ttlMs` and indexes it under its user. */
   create(session: StoredSession, ttlMs: number): Promise<void>;
   get(id: string): Promise<StoredSession | null>;

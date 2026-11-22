@@ -10,6 +10,7 @@ import {
   type IssuedSession,
 } from '../../src';
 import type { AuthUser } from '../../src/ports/stores';
+import type { Duration } from '../../src/shared/duration';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '../../src/testing';
 import { meta, PASSWORD, SECRET, setup } from './setup';
 
@@ -182,6 +183,25 @@ describe('createAuth configuration', () => {
 
     expect(() => createAuth(config)).toThrow(/maxSessionTtl/u);
     expect(() => createAuth({ ...config, session: { rememberMeTtl: '7d' } })).not.toThrow();
+  });
+
+  it('refuses device tokens that outlive the session store epoch', () => {
+    const stores = memoryStores();
+    const limited = Object.assign(stores.sessions, { epochTtlMs: 90 * 24 * 3600_000 });
+
+    const config = (deviceMaxAge: Duration) => ({
+      ...base(),
+      stores: { ...stores, sessions: limited },
+      secret: SECRET,
+      urls: { resetPassword: (t: string) => t },
+      throttle: { lockout: { deviceMaxAge } },
+    });
+
+    expect(() => createAuth(config('365d'))).toThrow(AuthConfigError);
+    expect(() => createAuth(config('365d'))).toThrow(/deviceMaxAge/u);
+    expect(() => createAuth(config('90d'))).not.toThrow();
+    // A store that never forgets its epoch sets no limit.
+    expect(() => createAuth({ ...config('365d'), stores: memoryStores() })).not.toThrow();
   });
 
   it('requires the URL builders for link flows', () => {

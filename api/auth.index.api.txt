@@ -512,6 +512,7 @@ SessionManager [class]<A>
     private refusalFor
     readEpoch(userId: string): Promise<number>
     readonly absoluteTtlMs: number
+    readonly epochTtlMs: number | undefined
     readonly maxPerUser: number | null
     readonly rememberMeTtlMs: number
     readonly touchIntervalMs: number
@@ -536,6 +537,7 @@ SessionStore [interface]
     get(id: string): Promise<StoredSession | null>
     getEpoch(userId: string): Promise<number>
     listByUser(userId: string): Promise<StoredSession[]>
+    readonly epochTtlMs?: number
     readonly maxSessionTtlMs?: number
     touch(session: StoredSession): Promise<boolean>
 SessionSummary [interface]
@@ -715,5 +717,5 @@ DeviceClaims [interface]
 DistributiveOmit [type]<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 HookLists [type]<U extends AuthUser, A> = { readonly [K in keyof AuthHooks<U, A>]: ReadonlyArray<AuthHooks<U, A>[K]>; }
 MaybePromise [type]<T> = T | Promise<T>
-SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
+SessionAccess [type]<A> = Pick<SessionManager<A>, 'absoluteTtlMs' | 'rememberMeTtlMs' | 'epochTtlMs' | 'readEpoch' | 'validate' | 'findActive' | 'listActive' | 'revoke' | 'revokeToken' | 'revokeAll'>
 UnionToIntersection [type]<T> = (T extends unknown ? (value: T) => void : never) extends (value: infer I) => void ? I : never
