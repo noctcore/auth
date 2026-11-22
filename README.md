@@ -104,7 +104,7 @@ createAuth({
    device cookie: wait out `throttle.lockout.deviceMaxAge` (30 days by default).
 3. **Two-factor recovery codes never expire**, so a set made before the rotation works only while
    the old secret stays configured. Before you remove it, ask users with a factor to make a new
-   set (`regenerateRecoveryCodes`), or accept that their old codes stop working. Invitations
+   set (`regenerateRecoveryCodes`) once every instance runs the new `secret` (a set made during the first deploy of a rolling deploy is made under the old secret and stops working when you remove it), or accept that their old codes stop working. Invitations
    created before 0.6 are the same: they stay readable through `previousSecret` until they
    expire, and a rotation without it voids them.
 4. **Remove `previousSecret`.** From then on a value made under the old secret is refused, exactly
