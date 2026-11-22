@@ -6,12 +6,17 @@
 // holds the password but not the second factor could start challenge after
 // challenge for free, and an outsider guessing passwords could have the
 // owner's sign-ins (or any completion, repeated) wipe out the guesses already
-// counted against the account.
+// counted against the account. A slot owed in one window must not come back
+// in the next either: a lock re-arms the account-wide counter to the lock's
+// end, so after a short lock a new window opens while the slots owed in the
+// old one (correct passwords whose challenge never completed) are still on
+// record, and a completion that reserved nothing then handed back one of the
+// new window's failures.
 //
 // Stopped by: throttle/throttle.ts (`loginSucceeded` only records a slot as
-//   owed, in a counter that lapses with the account-wide window;
-//   `refundSuccess` hands one back per completion, never more than are owed,
-//   claiming each refund atomically), core/auth-core.ts (`issueSession`: only
+//   owed; `countAttempt` clears what is owed when a new account-wide window
+//   opens; `refundSuccess` hands one back per completion, never more than are
+//   owed in the current window, claiming each refund atomically), core/auth-core.ts (`issueSession`: only
 //   a completed sign-in, `via: 'password'` or `via: 'second-factor'` without
 //   `inherit`, calls `Throttle.signInCompleted`).
 // Learn: Brute force and lockout (/auth/learn/brute-force-and-lockout/)
@@ -70,6 +75,32 @@ describe('A110: winning back the lockout budget without a completed sign-in', ()
     expect((await throttle.gateLogin(victim, 'guess-2')).allowed).toBe(true);
 
     expect(await throttle.gateLogin(victim, 'guess-3')).toMatchObject({
+      allowed: false,
+      reason: 'locked',
+    });
+  });
+
+  it('never hands back a slot owed in a window a lock ended', async () => {
+    const clock = manualClock();
+    const counters = new MemoryCounterStore(clock);
+    const throttle = new Throttle(counters, clock, { ...SMALL, baseLock: '1m' });
+    const victim = accountKey('victim@example.com');
+
+    // The owner proves the password; the challenge is left pending.
+    await throttle.gateLogin(victim, 'owner');
+    await throttle.loginSucceeded(victim, 'owner');
+
+    // Two guesses lock the account for a minute; the old window ends with the lock.
+    await throttle.gateLogin(victim, 'guess-1');
+    expect((await throttle.gateLogin(victim, 'guess-2')).allowed).toBe(false);
+    clock.advance(2 * 60_000);
+
+    // A new window: two guesses, then the old challenge completes.
+    await throttle.gateLogin(victim, 'guess-3');
+    await throttle.gateLogin(victim, 'guess-4');
+    await throttle.signInCompleted(victim);
+
+    expect(await throttle.gateLogin(victim, 'guess-5')).toMatchObject({
       allowed: false,
       reason: 'locked',
     });
