@@ -67,7 +67,7 @@ A shell's requests say `Sec-Fetch-Site: cross-site`, like an attack's. The NestJ
 
 The MAC input is length-prefixed (`csrf:<binding length>:<binding>:<nonce>`), so no binding and nonce pair can be read as another. The HMAC stops a sibling origin that can write cookies from planting a pair of its own; the binding stops a token minted for one session from working in another.
 
-The secret must be at least 32 bytes, should be used for CSRF only (not the auth secret), and can be rotated with a list of accepted previous secrets. During a rotation, hand out a token under the current secret whenever a safe request arrives with one signed by a previous secret, or no client ever moves and the previous secret can never be removed without a 403 for each of them. A page that read the old token before its cookie was replaced must still pass while the previous secret is listed.
+The secret must be at least 32 bytes, should be used for CSRF only (not the auth secret), and can be rotated with a list of accepted previous secrets. During a rotation, hand out a token under the current secret whenever a safe request arrives with one signed by a previous secret, or no client ever moves and the previous secret can never be removed without refusing each of them once. A page that read the old token before its cookie was replaced must still pass while the previous secret is listed.
 
 ### A binding before sign-in too
 
@@ -104,6 +104,7 @@ The guide's first recommendation is the `Sec-Fetch-Site` check, then `Origin`, t
 | [A100](https://github.com/noctcore/auth/blob/main/packages/auth-nestjs/tests/attacks/A100-handed-out-csrf-token-through-nest.test.ts) | Using a token read from the Nest token route for another session or pre-session | `auth-nestjs/session-cookies.ts` |
 | [A101](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A101-handed-out-csrf-token-through-trpc.test.ts) | Using a token read from `ctx.auth.csrfToken()` for another session or pre-session | `auth-trpc/context.ts` |
 | [A104](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A104-writing-cookies-from-a-trpc-query.test.ts) | Writing the session from a tRPC query that a link on another site can run | `auth-trpc/middlewares.ts` |
+| [A106](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A106-keeping-a-previous-csrf-secret-in-use.test.ts) | Keeping a previous secret in use, so a leaked one cannot be retired without breaking every client | `http/csrf-adapter.ts` |
 
 </div>
 
