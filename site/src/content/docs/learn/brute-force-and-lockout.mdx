@@ -86,6 +86,12 @@ The cookie skips no password check and grants no session. The test suite runs th
 | Eighty wrong guesses fired at once from four cookies                                               | Five password checks in all                         |
 | Ten correct logins in a row with the cookie, locked or not                                         | All succeed                                         |
 
+### The session doors spend the same budgets
+
+A stolen session cookie that is alive but not fresh is one more way to guess the password: `reauthenticate` and `changePassword` both prove it again, and a right guess returns a fresh session. So both doors reserve each attempt in login's budgets, through the same gate and the same counters, before the password check: the per (account, IP) and account-wide budgets while the account is unlocked, so guesses through login and both doors add up.
+
+Under a lock the doors are not simply refused, because that would let anyone who locks the account also block the owner's step-up. The live session stands in for a device cookie instead: the attempt reserves a slot in the session's own budget and in the budget shared by all of the account's devices, with the same rules as above. The owner still steps up under a lock someone else set, and a stolen session gets no more checks than a stolen device cookie would at login, from a budget shared with every device ([A102](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A102-guessing-the-password-through-a-stolen-session.test.ts)). A refusal answers like a wrong password, after the same password check. Each door's own rate limit (`throttle.doors`) still applies first.
+
 ### The owner hears about it
 
 Each new lock mails the account owner once, who can reset the password if the attempts were not theirs.
@@ -181,6 +187,7 @@ It also agrees with the guide's warning on strict IP limits: the per-IP door lim
 | [A085](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A085-learning-lock-state-from-the-locked-answer.test.ts)       | Learning account state from the explicit locked answer                                        | `throttle/throttle.ts`, `flows/login.ts`               |
 | [A086](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A086-escaping-a-permanent-lock-through-a-live-session.test.ts) | Escaping a permanent lock through a live session                                              | `flows/permanent-lock.ts`                              |
 | [A094](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A094-escaping-a-per-user-rate-limit.test.ts)              | Escaping a per-user tRPC rate limit with a made-up session, or spending another user's budget | `auth-trpc/middlewares.ts`                             |
+| [A102](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A102-guessing-the-password-through-a-stolen-session.test.ts) | Guessing the password through a stolen session | `flows/password-change.ts`, `throttle/throttle.ts` |
 
 </div>
 
