@@ -492,23 +492,25 @@ async function resolveState(
 }
 
 /**
- * Refuses a Node `res` that cannot read and set headers: the socket tRPC's
- * WebSocket adapter (`applyWSSHandler`) passes, which builds the context once
- * per connection. The context hands out cookies and validates the session
- * once per request, so on a socket a first visit would crash and a signed-in
- * connection would keep its session after a sign-out or a revocation. Thrown
- * before anything is read, so no connection gets a context.
+ * Refuses a Node `res` that cannot read and set headers. The socket tRPC's
+ * WebSocket adapter (`applyWSSHandler`) passes is one: that adapter builds
+ * the context once per connection, while the context hands out cookies and
+ * validates the session once per request, so on a socket a first visit would
+ * crash and a signed-in connection would keep its session after a sign-out
+ * or a revocation. A Fastify reply is another (`setHeader` lives on
+ * `reply.raw`); Fastify is not supported yet either. Thrown before anything
+ * is read, so no such request gets a context.
  */
 function refuseHeaderlessResponse(res: unknown): void {
   const { getHeader, setHeader } = (res ?? {}) as Partial<NodeContextInput['res']>;
 
   if (typeof getHeader !== 'function' || typeof setHeader !== 'function') {
     throw new AuthConfigError(
-      'createAuthContext(...).node needs an HTTP response that can set headers, and got one ' +
-        'that cannot (the socket of the tRPC WebSocket adapter, applyWSSHandler). The context ' +
-        'sets cookies and validates the session once per request, so a WebSocket connection ' +
-        'would fail on a first visit and keep a revoked session until it closes. WebSocket is ' +
-        'not supported yet.',
+      'createAuthContext(...).node needs a Node HTTP response, and got a response that cannot ' +
+        "set headers (for example the WebSocket adapter's socket or a Fastify reply). The " +
+        'context sets cookies and validates the session once per request, so a WebSocket ' +
+        'connection would fail on a first visit and keep a revoked session until it closes. ' +
+        'WebSocket and Fastify are not supported yet.',
     );
   }
 }
@@ -528,8 +530,9 @@ export interface AuthContextFactory<U extends AuthUser, A = unknown> {
   }>;
   /**
    * For the Node adapters (standalone, Express, nestjs-trpc): `createContext: (opts) => authContext.node(opts)`.
-   * The WebSocket adapter is not supported yet: a `res` that cannot set
-   * headers (its socket) is refused with an `AuthConfigError`.
+   * The WebSocket and Fastify adapters are not supported yet: a `res` that
+   * cannot set headers (the socket, a Fastify reply) is refused with an
+   * `AuthConfigError`.
    */
   node(input: NodeContextInput): Promise<{ auth: AuthState<U, A> }>;
 }
