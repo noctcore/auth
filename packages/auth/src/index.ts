@@ -110,6 +110,7 @@ export type {
 } from './ports/stores';
 export { NO_SUCH_USER_ID } from './ports/stores';
 export { createDeviceToken, verifyDeviceToken } from './throttle/device-token';
+export { DEVICE_CLOCK_SKEW_MS } from './shared/clock-skew';
 export type { AuthMailEvent, Mailer } from './ports/mail';
 export type { AuditSink, AuthEvent, AuthEventType } from './ports/audit';
 export type {

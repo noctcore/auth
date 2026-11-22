@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AuthConfigError, createAuth, type Duration } from '../../src';
 import { twoFactor } from '../../src/plugins/two-factor';
+import { DEVICE_CLOCK_SKEW_MS } from '../../src/shared/clock-skew';
 import {
   manualClock,
   memoryStores,
@@ -500,7 +501,8 @@ describe('configuration', () => {
 
   it('refuses trusted devices that outlive the session store epoch', () => {
     const stores = memoryStores();
-    const sessions = Object.assign(stores.sessions, { epochTtlMs: 90 * 24 * 3600_000 });
+    const epoch = 90 * 24 * 3600_000;
+    const sessions = Object.assign(stores.sessions, { epochTtlMs: epoch });
 
     const config = (trustedDevices: { ttl: Duration } | false) => ({
       stores: { ...stores, sessions },
@@ -514,7 +516,15 @@ describe('configuration', () => {
 
     expect(() => createAuth(config({ ttl: '365d' }))).toThrow(AuthConfigError);
     expect(() => createAuth(config({ ttl: '365d' }))).toThrow(/trustedDevices\.ttl/u);
-    expect(() => createAuth(config({ ttl: '90d' }))).not.toThrow();
+    // Equal is not enough: expiresAt comes from the trusting server's clock.
+    expect(() => createAuth(config({ ttl: '90d' }))).toThrow(/clock skew/u);
+
+    expect(() => createAuth(config({ ttl: `${epoch - DEVICE_CLOCK_SKEW_MS + 1}ms` }))).toThrow(
+      AuthConfigError,
+    );
+
+    expect(() => createAuth(config({ ttl: `${epoch - DEVICE_CLOCK_SKEW_MS}ms` }))).not.toThrow();
+    expect(() => createAuth(config({ ttl: '30d' }))).not.toThrow();
     expect(() => createAuth(config(false))).not.toThrow();
   });
 

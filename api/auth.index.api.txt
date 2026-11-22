@@ -70,6 +70,7 @@ AuthConfigError
 BACKGROUND_METRIC
 DEFAULT_DOOR_LIMITS
 DEFAULT_PASSWORD_POLICY
+DEVICE_CLOCK_SKEW_MS
 NO_SUCH_USER_ID
 OneTimeTokens
 SessionManager
@@ -254,6 +255,7 @@ cryptoRandom [const]: RandomSource
 DEFAULT_DOOR_LIMITS [const]: Readonly<Record<Door, RateLimitRule>>
 DEFAULT_PASSWORD_POLICY [const]: PasswordPolicy
 definePlugin [function]: <const Id extends string, F extends object>(plugin: AuthPlugin<Id, F>) => AuthPlugin<Id, F>
+DEVICE_CLOCK_SKEW_MS [const]: 60000
 Door [type] = 'login' | 'register' | 'password-reset-request' /** Per user: reset mails one account can receive. */ | 'password-reset-mail' | 'password-reset' | 'password-reset-code' | 'email-verification' /** Per user: verification mails one account can request. */ | 'email-verification-request' /** Per user. */ | 'password-change' /** Per user: re-entering the password for a sensitive action. */ | 'reauthenticate' /** * Per address: reset-code guesses for one email, known or not, from all IPs. * Trade-off: anyone who knows an address can spend this budget and block * that address's code-mode reset for 15 minutes. Link-mode reset (the * default) does not use this door and is unaffected. */ | 'password-reset-code-address' /** Per user: email change requests one account can make. */ | 'email-change-request' /** * Per address: email change requests naming one new address, from every * account. Keyed like the lockout, on a hash of the normalised address. */ | 'email-change-address' /** Confirming an email change with a code or a link. */ | 'email-change' /** Using a revert link. */ | 'email-change-revert'
 dummyHashFor [function]: (hasher: PasswordHasher) => Promise<string>
 Duration [type] = number | `${number}${'ms' | 's' | 'm' | 'h' | 'd'}`

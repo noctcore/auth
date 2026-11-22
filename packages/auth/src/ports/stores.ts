@@ -106,7 +106,9 @@ export interface SessionStore {
    * for a store that forgets it (and then reads it as 0). Device tokens and
    * trusted devices are fenced by the epoch alone, so `createAuth` refuses a
    * `throttle.lockout.deviceMaxAge`, and the two-factor plugin a
-   * `trustedDevices.ttl`, that is longer. Omit when the epoch never lapses.
+   * `trustedDevices.ttl`, that is not at least `DEVICE_CLOCK_SKEW_MS` (a
+   * minute) shorter. Omit when the epoch never lapses; a value that is not a
+   * positive number is refused.
    */
   readonly epochTtlMs?: number;
   /** Stores the session with a TTL of `ttlMs` and indexes it under its user. */
