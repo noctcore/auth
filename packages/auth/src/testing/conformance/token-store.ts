@@ -1,7 +1,7 @@
 /**
  * TokenStore conformance: single-use consumption under concurrency, an
- * attempt cap that cannot be overrun, and an extend that never revives a
- * consumed token.
+ * attempt cap that cannot be overrun and that charges only the token read,
+ * and an extend that never revives a consumed or expired token.
  *
  * Guide: Build, "Writing a store adapter".
  */
@@ -23,13 +23,26 @@ function sampleToken(overrides: Partial<StoredToken> = {}): StoredToken {
 }
 
 function requireExtendExpiry(store: TokenStore): NonNullable<TokenStore['extendExpiry']> {
-  return (purpose, hash, expiresAt) => {
+  return (purpose, hash, expiresAt, now) => {
     assert.ok(
       typeof store.extendExpiry === 'function',
       'TokenStore.extendExpiry is missing: without it a one-time link is extended by a consume and a put',
     );
 
-    return store.extendExpiry(purpose, hash, expiresAt);
+    return store.extendExpiry(purpose, hash, expiresAt, now);
+  };
+}
+
+function requireIncrementAttemptsByHash(
+  store: TokenStore,
+): NonNullable<TokenStore['incrementAttemptsByHash']> {
+  return (purpose, hash, max) => {
+    assert.ok(
+      typeof store.incrementAttemptsByHash === 'function',
+      'TokenStore.incrementAttemptsByHash is missing: without it a code resent during a check is charged for the old code',
+    );
+
+    return store.incrementAttemptsByHash(purpose, hash, max);
   };
 }
 
@@ -107,15 +120,23 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
         const later = token.expiresAt + 60_000;
 
         await store.put(token);
-        assert.equal(await extendExpiry(token.purpose, token.hash, later), true);
+        assert.equal(await extendExpiry(token.purpose, token.hash, later, systemClock.now()), true);
 
         assert.deepEqual(await store.find(token.purpose, token.hash), {
           ...token,
           expiresAt: later,
         });
 
-        assert.equal(await extendExpiry('other-purpose', token.hash, later), false);
-        assert.equal(await extendExpiry(token.purpose, uniqueId('hash'), later), false);
+        assert.equal(
+          await extendExpiry('other-purpose', token.hash, later, systemClock.now()),
+          false,
+        );
+
+        assert.equal(
+          await extendExpiry(token.purpose, uniqueId('hash'), later, systemClock.now()),
+          false,
+        );
+
         assert.equal(await store.find('other-purpose', token.hash), null);
       },
     },
@@ -127,7 +148,12 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
 
         await store.put(spent);
         await store.consume(spent.purpose, spent.hash);
-        assert.equal(await extendExpiry(spent.purpose, spent.hash, Date.UTC(9999, 11, 31)), false);
+
+        assert.equal(
+          await extendExpiry(spent.purpose, spent.hash, Date.UTC(9999, 11, 31), systemClock.now()),
+          false,
+        );
+
         assert.equal(await store.find(spent.purpose, spent.hash), null);
 
         // Whichever lands first, the consume wins and the token is gone.
@@ -138,13 +164,76 @@ export function tokenStoreConformance(store: TokenStore): ConformanceCase[] {
 
           const [consumed] = await Promise.all([
             store.consume(token.purpose, token.hash),
-            extendExpiry(token.purpose, token.hash, Date.UTC(9999, 11, 31)),
+            extendExpiry(token.purpose, token.hash, Date.UTC(9999, 11, 31), systemClock.now()),
           ]);
 
           assert.notEqual(consumed, null);
           assert.equal(await store.find(token.purpose, token.hash), null);
           assert.equal(await store.findByUser(token.purpose, token.userId), null);
         }
+      },
+    },
+    {
+      name: 'extendExpiry never extends a token that has expired',
+      async run() {
+        // The guard is in the update itself, so a link that expires between
+        // the caller's read and the extend keeps its expiry.
+        const extendExpiry = requireExtendExpiry(store);
+        const token = sampleToken();
+        const later = token.expiresAt + 60_000;
+
+        await store.put(token);
+        assert.equal(await extendExpiry(token.purpose, token.hash, later, token.expiresAt), false);
+
+        assert.equal(
+          await extendExpiry(token.purpose, token.hash, later, token.expiresAt + 1),
+          false,
+        );
+
+        assert.deepEqual(await store.find(token.purpose, token.hash), token);
+
+        assert.equal(
+          await extendExpiry(token.purpose, token.hash, later, token.expiresAt - 1),
+          true,
+        );
+
+        assert.equal((await store.find(token.purpose, token.hash))?.expiresAt, later);
+      },
+    },
+    {
+      name: 'incrementAttemptsByHash counts only the token with that hash, never a token that replaced it',
+      async run() {
+        const increment = requireIncrementAttemptsByHash(store);
+        const read = sampleToken();
+        const resent = sampleToken({ userId: read.userId });
+
+        await store.put(read);
+        assert.equal(await increment(read.purpose, read.hash, 5), 1);
+        assert.equal((await store.find(read.purpose, read.hash))?.attempts, 1);
+
+        // A resend between a code check's read and its count.
+        await store.put(resent);
+        assert.equal(await increment(read.purpose, read.hash, 5), null);
+        assert.deepEqual(await store.findByUser(read.purpose, read.userId), resent);
+        assert.equal(await store.find(read.purpose, read.hash), null);
+        assert.equal(await increment('other-purpose', resent.hash, 5), null);
+        assert.equal(await increment(read.purpose, uniqueId('hash'), 5), null);
+        assert.equal((await store.find(resent.purpose, resent.hash))?.attempts, 0);
+      },
+    },
+    {
+      name: 'incrementAttemptsByHash never passes the cap under 50 concurrent callers',
+      async run() {
+        const increment = requireIncrementAttemptsByHash(store);
+        const token = sampleToken();
+
+        await store.put(token);
+
+        const results = await times(50, () => increment(token.purpose, token.hash, 5));
+        const granted = results.filter((r): r is number => r !== null).sort((a, b) => a - b);
+
+        assert.deepEqual(granted, [1, 2, 3, 4, 5]);
+        assert.equal((await store.find(token.purpose, token.hash))?.attempts, 5);
       },
     },
     {

@@ -90,10 +90,11 @@ MemoryTokenStore [class]
     (new) (): MemoryTokenStore
     consume(purpose: string, hash: string): Promise<StoredToken | null>
     deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
-    extendExpiry(purpose: string, hash: string, expiresAt: number): Promise<boolean>
+    extendExpiry(purpose: string, hash: string, expiresAt: number, now: number): Promise<boolean>
     find(purpose: string, hash: string): Promise<StoredToken | null>
     findByUser(purpose: string, userId: string): Promise<StoredToken | null>
     incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    incrementAttemptsByHash(purpose: string, hash: string, max: number): Promise<number | null>
     private key
     private readonly tokens
     private removeByUser
@@ -277,10 +278,11 @@ StoredTrustedDevice [interface]
 TokenStore [interface]
     consume(purpose: string, hash: string): Promise<StoredToken | null>
     deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
-    extendExpiry?(purpose: string, hash: string, expiresAt: number): Promise<boolean>
+    extendExpiry?(purpose: string, hash: string, expiresAt: number, now: number): Promise<boolean>
     find(purpose: string, hash: string): Promise<StoredToken | null>
     findByUser(purpose: string, userId: string): Promise<StoredToken | null>
     incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    incrementAttemptsByHash?(purpose: string, hash: string, max: number): Promise<number | null>
     put(token: StoredToken): Promise<void>
 TwoFactorStore [interface]
     addTrustedDevice(device: StoredTrustedDevice, maxPerUser: number): Promise<void>

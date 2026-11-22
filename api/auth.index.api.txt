@@ -424,6 +424,7 @@ OneTimeTokens [class]
     peekLink(purpose: string, token: unknown): Promise<TokenRedemption>
     private classify
     private codeHash
+    private countAttempt
     private readonly clock
     private readonly keys
     private readonly random
@@ -686,10 +687,11 @@ TokenRedemption [type] = { readonly status: 'valid'; readonly userId: string; re
 TokenStore [interface]
     consume(purpose: string, hash: string): Promise<StoredToken | null>
     deleteByUser(userId: string, purposes?: readonly string[]): Promise<void>
-    extendExpiry?(purpose: string, hash: string, expiresAt: number): Promise<boolean>
+    extendExpiry?(purpose: string, hash: string, expiresAt: number, now: number): Promise<boolean>
     find(purpose: string, hash: string): Promise<StoredToken | null>
     findByUser(purpose: string, userId: string): Promise<StoredToken | null>
     incrementAttempts(purpose: string, userId: string, max: number): Promise<number | null>
+    incrementAttemptsByHash?(purpose: string, hash: string, max: number): Promise<number | null>
     put(token: StoredToken): Promise<void>
 toMilliseconds [function]: (duration: Duration) => number
 toPublicError [function]: (failure: AuthFailure) => { code: AuthErrorCode; retryAfterSeconds?: number; }

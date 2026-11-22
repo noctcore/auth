@@ -42,11 +42,16 @@ export class MemoryTokenStore implements TokenStore {
     return token;
   }
 
-  async extendExpiry(purpose: string, hash: string, expiresAt: number): Promise<boolean> {
+  async extendExpiry(
+    purpose: string,
+    hash: string,
+    expiresAt: number,
+    now: number,
+  ): Promise<boolean> {
     const key = this.key(purpose, hash);
     const token = this.tokens.get(key);
 
-    if (!token) return false;
+    if (!token || token.expiresAt <= now) return false;
 
     this.tokens.set(key, { ...token, expiresAt });
 
@@ -67,6 +72,23 @@ export class MemoryTokenStore implements TokenStore {
     }
 
     return null;
+  }
+
+  async incrementAttemptsByHash(
+    purpose: string,
+    hash: string,
+    max: number,
+  ): Promise<number | null> {
+    const key = this.key(purpose, hash);
+    const token = this.tokens.get(key);
+
+    if (!token || token.attempts >= max) return null;
+
+    const attempts = token.attempts + 1;
+
+    this.tokens.set(key, { ...token, attempts });
+
+    return attempts;
   }
 
   async deleteByUser(userId: string, purposes?: readonly string[]): Promise<void> {
