@@ -54,7 +54,9 @@ import { internalError, toTRPCError } from './errors';
 export interface MiddlewareCall<TResult> {
   readonly ctx: unknown;
   readonly type: string;
-  next(opts?: { ctx: object }): Promise<TResult>;
+  // `ctx` is optional, as both tRPC and nestjs-trpc type it, so the
+  // nestjs-trpc options (`NestTrpcMiddlewareOptions`) pass as a call too.
+  next(opts?: { ctx?: object }): Promise<TResult>;
 }
 
 type MetaCall<TResult> = MiddlewareCall<TResult> & { readonly meta?: unknown };

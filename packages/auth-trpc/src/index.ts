@@ -66,6 +66,7 @@ export {
   WritesCookiesMiddleware,
   type NestTrpcMiddleware,
   type NestTrpcMiddlewareClass,
+  type NestTrpcMiddlewareOptions,
 } from './nestjs';
 export {
   MAX_TRUSTED_HOPS,
