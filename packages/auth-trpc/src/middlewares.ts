@@ -52,6 +52,7 @@ import {
   type Internals,
 } from './context';
 import { internalError, toTRPCError } from './errors';
+import { revalidateSubscription } from './subscription';
 
 /** The options of a tRPC middleware call, as far as these bodies read them. */
 export interface MiddlewareCall<TResult> {
@@ -60,6 +61,8 @@ export interface MiddlewareCall<TResult> {
   // `ctx` is optional, as both tRPC and nestjs-trpc type it, so the
   // nestjs-trpc options (`NestTrpcMiddlewareOptions`) pass as a call too.
   next(opts?: { ctx?: object }): Promise<TResult>;
+  /** tRPC's signal for the call: aborts when the client leaves. */
+  readonly signal?: AbortSignal | undefined;
 }
 
 type MetaCall<TResult> = MiddlewareCall<TResult> & { readonly meta?: unknown };
@@ -145,12 +148,68 @@ export async function principalOf(call: {
   const { state } = stateOf(call.ctx);
   const user = state.session ? await state.user() : null;
 
-  if (!state.session || !user) throw toTRPCError(fail('session_expired', 'no_session'));
+  return standing(state.session, user, call.meta);
+}
 
-  if (state.session.twoFactor?.state === 'enrollment-only' && !allowsEnrollmentOnly(call.meta))
+/** The session check itself: a session, its user, and enrollment-only only where allowed. */
+function standing(
+  session: ValidatedSession<unknown> | null,
+  user: AuthUser | null,
+  meta: unknown,
+): Principal {
+  if (!session || !user) throw toTRPCError(fail('session_expired', 'no_session'));
+
+  if (session.twoFactor?.state === 'enrollment-only' && !allowsEnrollmentOnly(meta))
     throw toTRPCError(fail('two_factor_enrollment_required', 'enrollment_only'));
 
-  return { user, session: state.session };
+  return { user, session };
+}
+
+/**
+ * Runs the procedure, and on a subscription keeps its events behind the
+ * session check for as long as the stream stays open (see `subscription.ts`):
+ * the session validated again without a touch, its user loaded, the same
+ * refusals as when it opened. A store failure ends the stream with
+ * `internal`, logging only the error's name.
+ */
+async function nextChecked<TResult>(
+  call: MetaCall<TResult>,
+  principal: Principal,
+): Promise<TResult> {
+  const result = await call.next({ ctx: principal });
+
+  if (call.type !== 'subscription') return result;
+
+  const { internals } = stateOf(call.ctx);
+  const { auth, revalidateEvery } = internals.options;
+
+  if (revalidateEvery === false) return result;
+
+  const check = async (): Promise<void> => {
+    let session: ValidatedSession<unknown> | null;
+    let user: AuthUser | null;
+
+    try {
+      session = await internals.revalidate();
+      user = session ? await auth.context.users.findById(session.userId) : null;
+    } catch (error) {
+      auth.context.logger.error('auth-trpc could not revalidate a subscription', {
+        error: error instanceof Error ? error.name : typeof error,
+      });
+
+      throw internalError();
+    }
+
+    standing(session, user, call.meta);
+  };
+
+  return revalidateSubscription(result, {
+    every: revalidateEvery,
+    clock: auth.context.clock,
+    checkedAt: internals.validatedAt,
+    check,
+    signal: call.signal,
+  });
 }
 
 export const csrfBody = tagged(
@@ -175,7 +234,7 @@ export const publicBody = tagged(
 export const authedBody = tagged(
   'session',
   async <TResult>(call: MiddlewareCall<TResult>): Promise<TResult> =>
-    call.next({ ctx: await principalOf(call) }),
+    nextChecked(call, await principalOf(call)),
 );
 
 /**
@@ -263,7 +322,7 @@ export async function guardBody<TResult>(
     return call.next();
   }
 
-  return call.next({ ctx: await principalOf(call) });
+  return nextChecked(call, await principalOf(call));
 }
 
 /**
@@ -286,7 +345,7 @@ export function freshAuthBody(maxAge?: Duration) {
 
     if (!fresh.ok || !withinMaxAge) throw toTRPCError(fail('fresh_auth_required', 'stale'));
 
-    return call.next({ ctx: principal });
+    return nextChecked(call, principal);
   });
 }
 
@@ -308,7 +367,7 @@ export function roleBody(roles: readonly string[]) {
 
     if (!roles.some((role) => held.includes(role))) throw toTRPCError(fail('forbidden', 'role'));
 
-    return call.next({ ctx: principal });
+    return nextChecked(call, principal);
   });
 }
 

@@ -170,6 +170,14 @@ export interface Internals {
    * `Cache-Control: no-store` the call set.
    */
   readonly tokenHandedOut: { value: boolean };
+  /** When the context validated the session, on the core's clock. */
+  readonly validatedAt: number;
+  /**
+   * Validates the request's session token again, without counting as
+   * activity, for a subscription that outlives the request's one check.
+   * Null when there is no token or the core refuses it now.
+   */
+  revalidate(): Promise<ValidatedSession<unknown> | null>;
 }
 
 /** The header value `httpBatchStreamLink` sends; tRPC answers it with a streamed body. */
@@ -295,6 +303,15 @@ async function resolveState(
       : await auth.validateRequest({ token, meta, touch: touches(options, request) });
 
   const session = validated?.ok ? validated.value : null;
+  const validatedAt = auth.context.clock.now();
+
+  // Only reached behind a session check, so `token` is the one that validated.
+  const revalidate = async (): Promise<ValidatedSession<unknown> | null> => {
+    const again = await auth.validateRequest({ token, meta, touch: false });
+
+    return again.ok ? again.value : null;
+  };
+
   const cookies = readCsrfCookies(csrf, cookieHeader);
   // Every cookie set here travels with the session cookie, so takes its SameSite.
   const sameSite = resolveSameSite(options.cookie, request.header('origin'));
@@ -424,6 +441,8 @@ async function resolveState(
     writers,
     slot: { claimed: false },
     tokenHandedOut,
+    validatedAt,
+    revalidate,
   });
 
   return state;

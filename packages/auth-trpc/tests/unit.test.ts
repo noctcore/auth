@@ -7,6 +7,7 @@ import {
   generateToken,
   resolveSameSite,
   sha256Hex,
+  type Duration,
   type LegacySession,
   type SessionCookieConfig,
   type SessionStore,
@@ -799,5 +800,104 @@ describe('a session another instance is still adopting', () => {
     // A malformed token, and a legacy record the wrapper drops, still clear it.
     expect(await get(second, 'not-a-token')).toBe(true);
     expect(await get(second, legacyToken(true))).toBe(true);
+  });
+});
+
+describe('subscription revalidation', () => {
+  it('refuses a revalidateSubscriptions that is not a duration or false at boot', () => {
+    for (const bad of ['30 seconds', -1, Number.NaN] as never[]) {
+      expect(() => createAuthContext(options({ revalidateSubscriptions: bad }))).toThrow(
+        /revalidateSubscriptions must be a duration/u,
+      );
+    }
+  });
+
+  async function signedIn(revalidateSubscriptions: Duration) {
+    const env = makeAuth();
+
+    await env.auth.register({ email: EMAIL, password: PASSWORD, meta: { ip: '203.0.113.1' } });
+
+    const login = await env.auth.login({
+      email: EMAIL,
+      password: PASSWORD,
+      meta: { ip: '203.0.113.1' },
+    });
+
+    if (!login.ok || login.value.kind !== 'session') throw new Error('could not sign in');
+
+    const { cookie } = login.value.session;
+
+    const ctx = await createAuthContext(options({ auth: env.auth, revalidateSubscriptions })).fetch(
+      {
+        req: new Request(`${ORIGIN}/trpc/ticks`, {
+          headers: { cookie: `${cookie.name}=${cookie.value}` },
+        }),
+        resHeaders: new Headers(),
+      },
+    );
+
+    return { env, ctx, token: cookie.value };
+  }
+
+  it('reads an observable without a signal (nestjs-trpc passes none) and ends it on revocation', async () => {
+    const { env, ctx, token } = await signedIn(0);
+    const { observable } = await import('@trpc/server/observable');
+    let emit: ((value: number) => void) | undefined;
+
+    const source = observable<number>((observer) => {
+      emit = (value) => observer.next(value);
+    });
+
+    const result = await new AuthedMiddleware().use({
+      ctx,
+      type: 'subscription',
+      next: async () => ({ ok: true as const, data: source }),
+    });
+
+    const iterator = (result.data as unknown as AsyncIterable<number>)[Symbol.asyncIterator]();
+
+    emit?.(1);
+    expect(await iterator.next()).toEqual({ value: 1, done: false });
+
+    await env.auth.logout({ token, meta: { ip: '203.0.113.1' } });
+    emit?.(2);
+    await expect(iterator.next()).rejects.toThrow('session_expired');
+  });
+
+  it('passes a refused call and a non-stream value through as they are', async () => {
+    const { ctx } = await signedIn('30s');
+    const refused = { ok: false as const, error: new Error('refused') };
+    const plain = { ok: true as const, data: 42 };
+
+    for (const value of [refused, plain]) {
+      await expect(
+        new AuthedMiddleware().use({ ctx, type: 'subscription', next: async () => value }),
+      ).resolves.toBe(value);
+    }
+  });
+
+  it('logs the type of a store failure that is not an Error', async () => {
+    const { env, ctx } = await signedIn(0);
+    const logged = vi.spyOn(env.auth.context.logger, 'error');
+
+    async function* ticks() {
+      yield 1;
+    }
+
+    const result = await new AuthedMiddleware().use({
+      ctx,
+      type: 'subscription',
+      next: async () => ({ ok: true as const, data: ticks() }),
+    });
+
+    vi.spyOn(env.auth, 'validateRequest').mockRejectedValue('down');
+
+    const iterator = (result.data as AsyncIterable<number>)[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).rejects.toThrow('internal');
+
+    expect(logged).toHaveBeenCalledWith('auth-trpc could not revalidate a subscription', {
+      error: 'string',
+    });
   });
 });
