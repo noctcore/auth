@@ -534,6 +534,11 @@ describe('configuration reference page', () => {
         `\`emailChange.revertTtl\` is shorter than ${minRevertDays} days`,
         `\`throttle.lockout.permanent.afterLocks\` is not a whole number of at least ${minAfterLocks}`,
         `\`session.cookie.sameSite\` is a fixed \`'none'\` while \`session.cookie.secure\` is \`false\``,
+        '`session.cookie.secure` is not `true` or `false`',
+        '`registration.revealExisting`, `registration.autoLogin` or `passwordReset.markEmailVerified` is not `true` or `false`',
+        '`emailVerification.maxAttempts`, `passwordReset.maxAttempts` or `emailChange.maxAttempts` is not a whole number of at least 1',
+        '`throttle.doors` is not a whole number of at least 1, or its `window` is zero',
+        '`throttle.lockout.revealLocked` or `throttle.lockout.permanent.trustedDevices` is not `true` or `false`',
       ]),
     ).toEqual([]);
   });

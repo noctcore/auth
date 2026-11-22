@@ -419,24 +419,34 @@ For a client that cannot read the `csrf` cookie. The token is the one the adapte
 `createAuth` throws an `AuthConfigError` when:
 
 - a store, `password.hasher` or `mailer` is missing;
-- `password.policy.minLength` is below 8;
+- `password.policy.minLength` is below 8 or not a whole number, or `password.policy.maxLength` is not a whole number of at least `minLength`;
 - `session.cookie.name` has characters other than letters, digits, `_` and `-`;
+- `session.cookie.secure` is not `true` or `false`;
 - `session.cookie.sameSite` is a fixed `'none'` while `session.cookie.secure` is `false`;
 - `session.maxPerUser` is not a positive integer or `null`;
 - `session.touchInterval` is not shorter than a fixed `idleTimeout`;
 - `session.absoluteTtl` or `rememberMeTtl` is longer than the session store's `maxSessionTtlMs`;
 - `email.normalize` is an unknown name, or a custom normaliser fails its startup test;
+- `registration.revealExisting`, `registration.autoLogin` or `passwordReset.markEmailVerified` is not `true` or `false`;
 - `registration.autoLogin` is set without `revealExisting`;
 - link verification, link reset or link email change is chosen without its `urls` function;
 - `emailVerification.linkWithoutSession` is set without `kind: 'link'`, or is not `true` or `false`;
 - `emailVerification.digits`, `passwordReset.digits` or `emailChange.digits` is outside 6 to 9;
+- `emailVerification.maxAttempts`, `passwordReset.maxAttempts` or `emailChange.maxAttempts` is not a whole number of at least 1;
 - `emailChange.revertTtl` is shorter than 7 days;
+- a `limit` under `throttle.lockout` (`perAccountIp`, `perAccount`, `perDevice`) or `throttle.doors` is not a whole number of at least 1, or its `window` is zero;
+- `throttle.lockout.baseLock` or `throttle.lockout.maxLock` is zero;
+- `throttle.lockout.revealLocked` or `throttle.lockout.permanent.trustedDevices` is not `true` or `false`;
 - `throttle.lockout.permanent.afterLocks` is not a whole number of at least 1;
 - `previousSecret` holds a value that is not a string or bytes, is shorter than the minimum for `secret`, or repeats `secret` or another previous secret (an empty string counts as shorter);
 - a plugin requires `captcha` and none is configured;
 - `background.timeout` is zero, or `background.maxPending` is not a whole number of at least 1.
 
-Sources: `create-auth.ts`, `core/background.ts`, `flows/resolve-settings.ts`, `session/session-manager.ts`, `http/cookie.ts`, `shared/email.ts`, `throttle/throttle.ts`, `core/plugins.ts`.
+Sources: `create-auth.ts`, `core/background.ts`, `flows/resolve-settings.ts`, `session/session-manager.ts`, `http/cookie.ts`, `shared/email.ts`, `shared/config-checks.ts`, `throttle/throttle.ts`, `throttle/rules.ts`, `core/plugins.ts`; for the plugins, their `options.ts`.
+
+A boolean option has to be a real `true` or `false`, and a count a real number: a value read from the environment as the string `"false"`, or as `Number(undefined)` (`NaN`), is refused rather than read as on or as no limit. Convert it first, for example `process.env.REVEAL_EXISTING === 'true'`. Leaving a key out, or passing `null`, still gives its default.
+
+The plugins check their own options the same way when they are created: `invitations` refuses an `acceptWithoutSession` or `recheckInviter` that is not `true` or `false`, `membership` a `revokeSessionsOnChange` that is not `true` or `false`, and `twoFactor` a `trustedDevices` that is neither `false` nor an object.
 
 ## The full shape
 
