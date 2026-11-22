@@ -71,6 +71,8 @@ Every code check, TOTP or recovery code, first reserves an attempt in one budget
 
 A locked factor refuses even the right code, and answers exactly like a wrong one.
 
+The budget is the same wherever the code is typed, so wrong codes while enrolling (confirming a new authenticator) or at a step-up count toward the factor's lock just as wrong codes at login do. With `throttle.lockout.permanent` on, those locks count toward the permanent tier too: a user who keeps mistyping the code of a new authenticator can lock their account for good, until an admin clears it. With the lockout's own ladder (`throttle.lockout.durations`) set, factor locks climb that ladder instead of the multiplied one.
+
 ### Enrollment is confirmed by a code
 
 Starting it needs a fresh password proof. The new secret stays pending until a code from it is typed, within 10 minutes.

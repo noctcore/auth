@@ -103,6 +103,7 @@ const lockoutDefault = (name: string) =>
 const lockFactor = num(THROTTLE, /this\.baseLockMs \* (\d+) \*\* Math\.min/u);
 const permanentDevices = read(THROTTLE, /options\.permanent\?\.trustedDevices \?\? (\w+);/u);
 const revealLocked = read(THROTTLE, /options\.revealLocked \?\? (\w+);/u);
+const countSuccesses = read(THROTTLE, /options\.countSuccesses \?\? (\w+);/u);
 const minAfterLocks = num(THROTTLE, /afterLocks < (\d+)\)/u);
 
 const turnstileTimeout = num('auth/src/http/turnstile.ts', /options\.timeoutMs \?\? (\d+);/u);
@@ -225,12 +226,14 @@ const EXPECTED: Record<string, Record<string, string>> = {
     'throttle-lockout-peraccount': windowRule('perAccount'),
     'throttle-lockout-baselock': str(lockoutDefault('baseLock')),
     'throttle-lockout-maxlock': str(lockoutDefault('maxLock')),
+    'throttle-lockout-durations': 'none',
     'throttle-lockout-quietperiod': str(lockoutDefault('quietPeriod')),
     'throttle-lockout-perdevice': windowRule('perDevice'),
     'throttle-lockout-devicemaxage': str(lockoutDefault('deviceMaxAge')),
     'throttle-lockout-permanent': 'off',
     'throttle-lockout-permanent-trusteddevices': lit(permanentDevices),
     'throttle-lockout-reveallocked': lit(revealLocked),
+    'throttle-lockout-countsuccesses': lit(countSuccesses),
   },
   doors: Object.fromEntries(
     Object.entries(DEFAULT_DOOR_LIMITS).map(([door, r]) => [
