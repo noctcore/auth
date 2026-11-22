@@ -1,5 +1,24 @@
 # @noctcore/auth-redis
 
+## 0.8.0
+
+### Minor Changes
+
+- [#164](https://github.com/noctcore/auth/pull/164) [`e7bf0be`](https://github.com/noctcore/auth/commit/e7bf0be9b8f0e1a253edc55077ddc58e233907ed) Thanks [@Shironex](https://github.com/Shironex)! - `createAuth` refuses a device cookie or a trusted device that could outlive the session store's revocation epoch. The lockout device cookie is fenced by the user's epoch alone, and a store that forgets an epoch reads it as 0 again, so a cookie revoked by a sign-out everywhere used to verify once more after the epoch lapsed.
+  
+  - `SessionStore` has a new optional `epochTtlMs`: how long the store keeps a user's epoch after its last write. Leave it out when the epoch never lapses (nothing changes for such a store).
+  - `RedisSessionStore` reports its `epochTtl` (90 days by default) as `epochTtlMs`.
+  - `createAuth` throws `AuthConfigError` unless `throttle.lockout.deviceMaxAge` is at least a minute shorter than the store's `epochTtlMs`, and the two-factor plugin does the same for `trustedDevices.ttl`. The minute is the clock skew a device cookie is allowed (`DEVICE_CLOCK_SKEW_MS`): its issue time comes from the server that set it, so equal values are refused too.
+  - `createAuth` refuses a session store whose declared `epochTtlMs` or `maxSessionTtlMs` is not a positive number (NaN, zero, negative or not a number), instead of skipping the check.
+  - `adoptLegacySessions` carries the wrapped store's `epochTtlMs` over, the plugin context's `sessions` exposes it, and the session store conformance suite checks that a bump keeps the epoch for the declared time.
+  
+  Behaviour change: with the Redis store, an app whose `deviceMaxAge` or `trustedDevices.ttl` is not at least a minute shorter than `epochTtl` no longer starts. The defaults (30 days against 90) are unaffected, but an `epochTtl` below 30 days now needs a `deviceMaxAge` (and a `trustedDevices.ttl`) at least a minute shorter. Lower those, or raise `epochTtl`.
+
+### Patch Changes
+
+- Updated dependencies [[`c35f32e`](https://github.com/noctcore/auth/commit/c35f32e476dd9c01ef54486247ec85c73449ad64), [`c3ef03e`](https://github.com/noctcore/auth/commit/c3ef03e924fdc9ef106868ddd6b0ccebbf49bfe2), [`316c490`](https://github.com/noctcore/auth/commit/316c4903959ebeab9bbea5cfc59254a7801134c2), [`72a2d67`](https://github.com/noctcore/auth/commit/72a2d671ebb6e0b9a75b6c64280a050de377393a), [`3f1c849`](https://github.com/noctcore/auth/commit/3f1c849e570ec2dda7eecbea01aff45c273621f6), [`e7bf0be`](https://github.com/noctcore/auth/commit/e7bf0be9b8f0e1a253edc55077ddc58e233907ed), [`c1569e0`](https://github.com/noctcore/auth/commit/c1569e08b125114b81c4501360badf63ab38892e), [`8b8c847`](https://github.com/noctcore/auth/commit/8b8c8470097a1b5fe7de86d47952f78f790439fe), [`a1cb334`](https://github.com/noctcore/auth/commit/a1cb3349b4216448195f734c51c91793a7200579), [`267a758`](https://github.com/noctcore/auth/commit/267a7589753a4503c2e158c57223e4874babda72), [`3c61c82`](https://github.com/noctcore/auth/commit/3c61c822485da0e16785498bfe4694eabec3565c), [`10baeb2`](https://github.com/noctcore/auth/commit/10baeb28d39b11343d229c2db371f5df32513791), [`4e16b32`](https://github.com/noctcore/auth/commit/4e16b32fe7343be2a7e31c2c870519c29dab79e5), [`78f6e4f`](https://github.com/noctcore/auth/commit/78f6e4f3473689594bd464839c996e4d06afcf75), [`7f7f3a3`](https://github.com/noctcore/auth/commit/7f7f3a39282668a11a5b6bd28b96ed1abaa2025e), [`b907ce5`](https://github.com/noctcore/auth/commit/b907ce5713b7434cba547b9ff004fd174756d324)]:
+  - @noctcore/auth@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes

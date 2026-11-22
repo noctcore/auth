@@ -1,5 +1,32 @@
 # @noctcore/auth-prisma
 
+## 0.8.0
+
+### Minor Changes
+
+- [#188](https://github.com/noctcore/auth/pull/188) [`3c61c82`](https://github.com/noctcore/auth/commit/3c61c822485da0e16785498bfe4694eabec3565c) Thanks [@Shironex](https://github.com/Shironex)! - A one-time code check now counts its attempt on the code it read, and a link extend never revives a link that expired meanwhile.
+  
+  - `TokenStore` has a new optional `incrementAttemptsByHash(purpose, hash, max)`: the capped attempt increment of `incrementAttempts`, on the token with that hash only, null when that token is gone or at the cap. `MemoryTokenStore` and `PrismaTokenStore` (a guarded `update`, no schema change) implement it. A code resent between a check's read and its count used to be charged for the guess at the old code, and the old code answered as if it had been compared; the resent code now keeps every attempt. A store without it still works and counts by user and purpose, as before.
+  - `extendExpiry` now takes the time as a fourth argument and refuses a token whose expiry is not after it, in the same update. `MemoryTokenStore` and `PrismaTokenStore` implement it. The consume and put fallback of `extendLink` (for a store without `extendExpiry`) no longer puts back a link that expired between its check and the put.
+  - The fallback's two remaining gaps are documented on `TokenStore` and in the store adapter guide: its put replaces a link of the same user and purpose issued in between, and a put that fails after the consume loses the link.
+  - `tokenStoreConformance` has three new cases: `extendExpiry` never extends an expired token, and `incrementAttemptsByHash` counts only the token with that hash and never passes the cap under concurrent callers.
+  
+  **Behaviour change:** a code check whose code was replaced by a resend, or spent by a concurrent winner, before its attempt was counted now answers `consumed` (a guess at a code that no longer exists is never compared), where it answered `mismatch`, `exhausted` or, through the old count, charged the new code. The flows report it with the `consumed` reason (`reset_code_consumed`, `verification_consumed`, `email_change_consumed`), all still `invalid_token`. For store authors: `tokenStoreConformance` now expects `incrementAttemptsByHash` and the `now` argument of `extendExpiry`, so a third-party `TokenStore` fails the new cases until it adds them. Implement both as updates guarded on `(purpose, hash)` (and on `expiresAt` after `now` for the extend) that never insert.
+
+- [#174](https://github.com/noctcore/auth/pull/174) [`10baeb2`](https://github.com/noctcore/auth/commit/10baeb28d39b11343d229c2db371f5df32513791) Thanks [@Shironex](https://github.com/Shironex)! - One-time codes and links no longer lose a race with a concurrent request.
+  
+  - A submitted code that is expired, exhausted or at its last wrong guess is now removed by the hash that was read (`consume`), not by user and purpose. A code resent between the submit's read and its delete used to be removed with it and then answered `unknown`; it now stays valid.
+  - `OneTimeTokens.extendLink` no longer writes a link back with `put`. When the link was spent between the read and the write (two clicks on one revert link, one taking the lockout branch while the other spends it), the spent link used to be stored again with a far future expiry. It now stays spent.
+  - `TokenStore` has a new optional `extendExpiry(purpose, hash, expiresAt, now)`: it moves the expiry of the token with that hash only while it still exists and has not expired, in one step, and returns whether it changed one. `MemoryTokenStore` and `PrismaTokenStore` (a guarded `update`, no schema change) implement it. A store without it still works: `extendLink` then consumes the link and puts it back, which never revives a spent link but hides the link for one round trip.
+  - `tokenStoreConformance` has three new cases: a consume by the hash of a replaced token leaves the replacement, and `extendExpiry` extends a live token, creates nothing and never brings back a consumed one, also when racing the consume.
+  
+  Behaviour change for store authors: `tokenStoreConformance` now expects `extendExpiry`, so a third-party `TokenStore` without it fails the two `extendExpiry` cases until it adds one. Implement it as an update guarded on `(purpose, hash)` that never inserts (no upsert). Nothing changes at runtime for such a store beyond the fallback above.
+
+### Patch Changes
+
+- Updated dependencies [[`c35f32e`](https://github.com/noctcore/auth/commit/c35f32e476dd9c01ef54486247ec85c73449ad64), [`c3ef03e`](https://github.com/noctcore/auth/commit/c3ef03e924fdc9ef106868ddd6b0ccebbf49bfe2), [`316c490`](https://github.com/noctcore/auth/commit/316c4903959ebeab9bbea5cfc59254a7801134c2), [`72a2d67`](https://github.com/noctcore/auth/commit/72a2d671ebb6e0b9a75b6c64280a050de377393a), [`3f1c849`](https://github.com/noctcore/auth/commit/3f1c849e570ec2dda7eecbea01aff45c273621f6), [`e7bf0be`](https://github.com/noctcore/auth/commit/e7bf0be9b8f0e1a253edc55077ddc58e233907ed), [`c1569e0`](https://github.com/noctcore/auth/commit/c1569e08b125114b81c4501360badf63ab38892e), [`8b8c847`](https://github.com/noctcore/auth/commit/8b8c8470097a1b5fe7de86d47952f78f790439fe), [`a1cb334`](https://github.com/noctcore/auth/commit/a1cb3349b4216448195f734c51c91793a7200579), [`267a758`](https://github.com/noctcore/auth/commit/267a7589753a4503c2e158c57223e4874babda72), [`3c61c82`](https://github.com/noctcore/auth/commit/3c61c822485da0e16785498bfe4694eabec3565c), [`10baeb2`](https://github.com/noctcore/auth/commit/10baeb28d39b11343d229c2db371f5df32513791), [`4e16b32`](https://github.com/noctcore/auth/commit/4e16b32fe7343be2a7e31c2c870519c29dab79e5), [`78f6e4f`](https://github.com/noctcore/auth/commit/78f6e4f3473689594bd464839c996e4d06afcf75), [`7f7f3a3`](https://github.com/noctcore/auth/commit/7f7f3a39282668a11a5b6bd28b96ed1abaa2025e), [`b907ce5`](https://github.com/noctcore/auth/commit/b907ce5713b7434cba547b9ff004fd174756d324)]:
+  - @noctcore/auth@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes
