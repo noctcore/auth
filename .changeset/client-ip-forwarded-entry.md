@@ -1,0 +1,7 @@
+---
+'@noctcore/auth': minor
+---
+
+`clientIp` now checks the `X-Forwarded-For` entry it picks, with a hop count or a proxy list: a port, brackets and an IPv6 zone id are stripped (`203.0.113.9:51234` reads as `203.0.113.9`, `[2001:db8::1]:443` as `2001:db8::1`, `fe80::1%eth0` as `fe80::1`), and what is left must be exactly one IPv4 or IPv6 address. Before, the entry was returned as written, so behind a gateway that writes the source port every connection got its own per-IP rate-limit bucket, and a proxy's junk reached audit events and session lists. With a proxy list, an entry that is not an address is never trusted, so the walk stops there. The NestJS and tRPC adapters read the IP through `clientIp` and get the same rule.
+
+**Behaviour change:** an entry that used to be returned as written can now give another answer. An entry with a port, brackets or a zone id gives the bare address, so per-IP counters and audit rows behind such a gateway move to the bare address (old per-port counters simply expire). An entry that is still not one IP (`not-an-ip`, a port above 65535, a bracketed IPv4 address, an IPv4-mapped IPv6 address with a port and no brackets) is never returned: the socket address stands in for it, or `unknown` when there is none, so every such request from one proxy now shares that proxy's bucket. If you see your proxy's address as the client IP after upgrading, check what your proxy writes into `X-Forwarded-For`.
