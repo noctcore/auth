@@ -96,6 +96,12 @@ Two limits of this are worth knowing. First, the shared device budget can be spe
 
 Only the password proofs share login's budgets. A second-factor code has its own separate budget (see the two-factor plugin), and the other doors (password reset, email change, email verification) use only their own rate limits.
 
+### Your own proofs
+
+An app that checks a proof of its own (its own second factor, a PIN) can count each failure in login's account-wide budget with `auth.context.recordFailedProof({ userId, meta })` (or `{ email, meta }`). A lock it sets is carried out like a password lock: the owner's `lockout` mail, the `account.locked` audit row and, in the permanent tier, the end of the sessions and the `onPermanentLock` hook ([A109](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A109-silent-locks-from-a-failed-proof-outside-login.test.ts)). The lower-level `throttle.recordFailure` only counts, so a lock reached through it reaches nobody.
+
+An app whose proof has its own budget and its own lock, as the two-factor plugin's has, calls `auth.context.escalateLock({ userId, meta })` once for each new lock instead: with the permanent tier on, the lock counts toward it, and a permanent lock is carried out the same way. Finish your own second factor with `issueSession` and `via: 'second-factor'`: that is what tells the lockout the sign-in completed.
+
 ### The owner hears about it
 
 Each new lock mails the account owner once, who can reset the password if the attempts were not theirs.
@@ -134,7 +140,9 @@ Some apps need what the defaults leave out on purpose. Both options are off unle
 
 `throttle.lockout.permanent: { afterLocks }`. After `afterLocks` temporary locks in a row (each within the quiet period of the last), the next lock never lapses.
 
-**In a row** means with no successful sign-in between. A correct password proves the owner, so it resets the count (not the temporary backoff), and an attacker gains nothing by it. A completed password reset proves the mailbox and resets it too, with the temporary lock and its backoff.
+**In a row** means with no completed sign-in between. A sign-in completes when every factor is proved and the session is issued: then the owner is proved, so the count starts over (not the temporary backoff). A correct password with a second factor still owed does not count, nor does a correct password at `reauthenticate` or `changePassword`, which proves no second factor: otherwise an attacker who holds the password could start the count over before each round of guessed codes and never reach the tier ([A108](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A108-climbing-past-the-permanent-tier-on-second-factor-codes.test.ts)). A completed password reset proves the mailbox and resets it too, with the temporary lock and its backoff.
+
+**Second-factor locks count too.** A lock of the two-factor plugin's factor (its own budget, below) counts toward the tier in the same count as the password locks, so guessing codes with the password in hand reaches the permanent lock as surely as guessing the password. Getting there needs the password (or a live session, or the mailbox for a reset), a far higher bar than the address alone. An app with its own second factor does the same with `context.recordFailedProof` or `context.escalateLock` (see [Your own proofs](#your-own-proofs)).
 
 **Only an admin lifts it**, with `auth.lockout.clear({ email })` or `({ userId })`; `auth.lockout.inspect` reads the state. A password reset does not lift it, and waiting does not either. The clear is not atomic: a burst of failures running during it can lock the account again at once.
 
@@ -142,7 +150,7 @@ Some apps need what the defaults leave out on purpose. Both options are off unle
 
 **It ends the account's sessions.** A lock that left sessions alive would be a way around it: a session could reauthenticate and move the account to an unlocked address. So no session may change the email while it holds (attack [A086](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A086-escaping-a-permanent-lock-through-a-live-session.test.ts)).
 
-**It tells the owner and you.** When it locks a real account, the owner gets a `lockout` mail with `permanent: true`, an `account.locked_permanently` audit row is written, and the `onPermanentLock` hook runs off the response path, the place to page support. Second-factor locks never escalate.
+**It tells the owner and you.** When it locks a real account, the owner gets a `lockout` mail with `permanent: true`, an `account.locked_permanently` audit row is written, and the `onPermanentLock` hook runs off the response path, the place to page support. A permanent lock a second factor's lock brings about is carried out the same way.
 
 <Aside type="caution" title="The cost: the attack this page opens with">
   Anyone who knows an address can lock its owner out for good by failing on purpose from many IPs.
@@ -192,6 +200,8 @@ It also agrees with the guide's warning on strict IP limits: the per-IP door lim
 | [A086](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A086-escaping-a-permanent-lock-through-a-live-session.test.ts) | Escaping a permanent lock through a live session                                              | `flows/permanent-lock.ts`                              |
 | [A094](https://github.com/noctcore/auth/blob/main/packages/auth-trpc/tests/attacks/A094-escaping-a-per-user-rate-limit.test.ts)              | Escaping a per-user tRPC rate limit with a made-up session, or spending another user's budget | `auth-trpc/middlewares.ts`                             |
 | [A102](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A102-guessing-the-password-through-a-stolen-session.test.ts) | Guessing the password through a stolen session | `flows/password-change.ts`, `throttle/throttle.ts` |
+| [A108](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A108-climbing-past-the-permanent-tier-on-second-factor-codes.test.ts) | Never reaching the permanent tier while guessing the second factor with the password in hand | `core/auth-core.ts`, `throttle/throttle.ts`, `plugins/two-factor/runtime.ts` |
+| [A109](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A109-silent-locks-from-a-failed-proof-outside-login.test.ts) | Locking an account through a failed proof outside login, with nobody told | `core/auth-core.ts`, `flows/lock-notice.ts` |
 
 </div>
 
