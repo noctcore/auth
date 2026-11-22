@@ -1,0 +1,7 @@
+---
+'@noctcore/auth-trpc': minor
+---
+
+Every session check (`authed`, `freshAuth`, `role`, `protectedProcedure`, and the nestjs-trpc `AuthGuardMiddleware`, `AuthedMiddleware`, `FreshAuthMiddleware` and `RoleMiddleware`) now keeps a subscription's events behind it. tRPC builds the context once per HTTP request and an SSE subscription (`httpSubscriptionLink`) is one request that stays open, so a stream opened before a sign-out, a password change or a revocation kept sending events to that browser until the client left or `sse.maxDurationMs` ended it. Now, before an event leaves, when the last check is older than the new `revalidateSubscriptions` option of `createAuthContext` (default `30s`, `0` for every event, `false` to turn it off), the session is validated again without counting as activity and its user loaded, and a refusal ends the stream with `session_expired` (or `two_factor_enrollment_required`) in place of the event. A stream that sends nothing reads nothing. A store failure ends the stream with `internal`. A procedure that returns an observable is read as an async iterable, as tRPC's SSE handler reads it.
+
+Behaviour change: an open subscription behind a session check used to keep sending events after its session was revoked, expired or its user deleted; it now ends with `session_expired` at the first event after the bound. A bad `revalidateSubscriptions` value stops the boot with an `AuthConfigError`. Pass `revalidateSubscriptions: false` to keep the old behaviour.
