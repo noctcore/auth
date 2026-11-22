@@ -113,3 +113,73 @@ describe('clientIp and maskIp boundaries', () => {
     expect(maskIp('192.0.2::ffff:.4')).toBe('192.0.2:0:0::');
   });
 });
+
+describe('clientIp reads the picked X-Forwarded-For entry as an address', () => {
+  const list = ['10.0.0.0/8'];
+
+  const pick = (entry: string, remoteAddress: string | undefined = '10.0.0.2') => ({
+    hops: clientIp({ remoteAddress, forwardedFor: `198.51.100.66, ${entry}`, trustedHops: 1 }),
+    list: clientIp({ remoteAddress, forwardedFor: `198.51.100.66, ${entry}`, trustedHops: list }),
+  });
+
+  it.each([
+    ['203.0.113.9:51234', '203.0.113.9'],
+    ['[2001:db8::1]:443', '2001:db8::1'],
+    ['[2001:db8::1]', '2001:db8::1'],
+    ['  203.0.113.9:80  ', '203.0.113.9'],
+    ['fe80::1%eth0', 'fe80::1'],
+    ['[fe80::1%25eth0]:8080', 'fe80::1'],
+    ['::ffff:203.0.113.9', '::ffff:203.0.113.9'],
+    ['[::ffff:203.0.113.9]:443', '::ffff:203.0.113.9'],
+    ['2001:db8::1:443', '2001:db8::1:443'],
+  ])('reads %j as %j in both branches', (entry, expected) => {
+    expect(pick(entry)).toEqual({ hops: expected, list: expected });
+  });
+
+  it.each([
+    'not-an-ip',
+    'unknown',
+    '203.0.113.9:',
+    '203.0.113.9:123456',
+    '203.0.113.9:port',
+    '[203.0.113.9]:443',
+    '[2001:db8::1',
+    '[2001:db8::1]443',
+    '[2001:db8::1]:443:1',
+    '[2001:db8::1]:65536',
+    '203.0.113.9:65536',
+    '::ffff:203.0.113.9:443',
+    '203.0.113.9%eth0',
+    '203.0.113.256',
+    '_hidden',
+    '"203.0.113.9"',
+  ])('falls back to the socket address for %j in both branches', (entry) => {
+    expect(pick(entry)).toEqual({ hops: '10.0.0.2', list: '10.0.0.2' });
+  });
+
+  it('has no answer for a junk entry when there is no socket address either', () => {
+    expect(
+      clientIp({ remoteAddress: undefined, forwardedFor: 'junk, 10.0.0.1', trustedHops: 1 }),
+    ).toBeUndefined();
+  });
+
+  it('strips a port from a trusted hop before matching it against the list', () => {
+    expect(
+      clientIp({
+        remoteAddress: '10.0.0.2',
+        forwardedFor: '198.51.100.66, 203.0.113.9:51234, 10.0.0.7:443',
+        trustedHops: list,
+      }),
+    ).toBe('203.0.113.9');
+  });
+
+  it('never walks past an entry that is not an address', () => {
+    expect(
+      clientIp({
+        remoteAddress: '10.0.0.2',
+        forwardedFor: '198.51.100.66, junk, 10.0.0.7',
+        trustedHops: list,
+      }),
+    ).toBe('10.0.0.2');
+  });
+});
