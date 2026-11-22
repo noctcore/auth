@@ -94,6 +94,8 @@ This guide builds on [A Node server with Redis and Prisma](/auth/build/node-serv
 
    The WebSocket adapter (`applyWSSHandler`) is not supported yet. It builds the context once per connection and passes the socket as `res`, so the cookies a first visit needs could not be set, and a session would be validated once and kept after a sign-out, a password change or a revocation until the socket closed. `node(opts)` refuses a `res` that cannot set headers with an `AuthConfigError` before it reads anything: the client sees `internal` and the connection is closed.
 
+   The Fastify adapter is not supported yet either. A Fastify reply has `getHeader` but no `setHeader` (that is on `reply.raw`), so `node(opts)` refuses it the same way, on every request.
+
    #### On the fetch adapter
 
    <Code code={fetchTs} lang="ts" title="src/fetch.ts" />
