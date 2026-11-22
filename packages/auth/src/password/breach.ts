@@ -75,15 +75,17 @@ function assertPwnedPasswordsOptions(options: PwnedPasswordsOptions): void {
 }
 
 export function pwnedPasswords(options?: PwnedPasswordsOptions | null): PwnedPasswordsChecker {
-  const given = options ?? {};
+  // A default parameter replaces only undefined: null gives the defaults too.
+  options ??= {};
 
-  assertPwnedPasswordsOptions(given);
+  assertPwnedPasswordsOptions(options);
 
-  const timeoutMs = given.timeoutMs ?? 3000;
-  const doFetch = given.fetch ?? globalThis.fetch;
-  const userAgent = given.userAgent ?? 'noctcore-auth';
-  const baseUrl = given.baseUrl ?? 'https://api.pwnedpasswords.com/range/';
-  const logger = given.logger ?? silentLogger;
+  const timeoutMs = options.timeoutMs ?? 3000;
+  const doFetch = options.fetch ?? globalThis.fetch;
+  const userAgent = options.userAgent ?? 'noctcore-auth';
+  const baseUrl = options.baseUrl ?? 'https://api.pwnedpasswords.com/range/';
+  const logger = options.logger ?? silentLogger;
+  const { onResult } = options;
 
   async function lookup(password: string): Promise<BreachOutcome> {
     const digest = encodeHexUpperCase(sha1(new TextEncoder().encode(password)));
@@ -131,7 +133,7 @@ export function pwnedPasswords(options?: PwnedPasswordsOptions | null): PwnedPas
     // Frozen, so a hook that writes to it cannot change what the caller reads.
     const outcome = Object.freeze(await lookup(password));
 
-    reportOutcome(given.onResult, outcome, logger, 'pwned-passwords');
+    reportOutcome(onResult, outcome, logger, 'pwned-passwords');
 
     return outcome;
   }

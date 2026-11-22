@@ -75,16 +75,17 @@ const ARGON2ID = 2; // Algorithm.Argon2id; a const enum, so the number is used d
 const PHC = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$/u;
 
 export function argon2id(options?: Argon2idOptions | null): PasswordHasher {
-  const given = options ?? {};
+  // A default parameter replaces only undefined: null gives the defaults too.
+  options ??= {};
 
-  assertArgon2idOptions(given);
+  assertArgon2idOptions(options);
 
-  const memoryCost = given.memoryCost ?? DEFAULT_ARGON2ID.memoryCost;
-  const timeCost = given.timeCost ?? DEFAULT_ARGON2ID.timeCost;
-  const parallelism = given.parallelism ?? DEFAULT_ARGON2ID.parallelism;
+  const memoryCost = options.memoryCost ?? DEFAULT_ARGON2ID.memoryCost;
+  const timeCost = options.timeCost ?? DEFAULT_ARGON2ID.timeCost;
+  const parallelism = options.parallelism ?? DEFAULT_ARGON2ID.parallelism;
   const acceptable = OWASP_TABLE.some(([m, t]) => memoryCost >= m && timeCost >= t);
 
-  if (!acceptable && given.unsafeAllowWeakParameters !== true) {
+  if (!acceptable && options.unsafeAllowWeakParameters !== true) {
     throw new AuthConfigError(
       `Argon2id m=${memoryCost} t=${timeCost} is below the OWASP minimum (for example m=19456 t=2)`,
     );
@@ -95,14 +96,18 @@ export function argon2id(options?: Argon2idOptions | null): PasswordHasher {
     memoryCost,
     timeCost,
     parallelism,
-    ...(given.secret ? { secret: given.secret } : {}),
+    ...(options.secret ? { secret: options.secret } : {}),
   };
 
   return {
     hash: (password) => hash(password, params),
     async verify(stored, password) {
       try {
-        return await verify(stored, password, given.secret ? { secret: given.secret } : undefined);
+        return await verify(
+          stored,
+          password,
+          options.secret ? { secret: options.secret } : undefined,
+        );
       } catch {
         // A malformed stored hash (bad import or migration) is not a correct
         // password. The flow logs it through needsRehash's caller; no secret
