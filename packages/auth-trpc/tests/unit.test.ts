@@ -812,7 +812,10 @@ describe('subscription revalidation', () => {
     }
   });
 
-  async function signedIn(revalidateSubscriptions: Duration) {
+  async function signedIn(
+    revalidateSubscriptions: Duration,
+    beforeContext?: (env: ReturnType<typeof makeAuth>) => void,
+  ) {
     const env = makeAuth();
 
     await env.auth.register({ email: EMAIL, password: PASSWORD, meta: { ip: '203.0.113.1' } });
@@ -827,6 +830,8 @@ describe('subscription revalidation', () => {
 
     const { cookie } = login.value.session;
 
+    beforeContext?.(env);
+
     const ctx = await createAuthContext(options({ auth: env.auth, revalidateSubscriptions })).fetch(
       {
         req: new Request(`${ORIGIN}/trpc/ticks`, {
@@ -839,7 +844,7 @@ describe('subscription revalidation', () => {
     return { env, ctx, token: cookie.value };
   }
 
-  it('reads an observable without a signal (nestjs-trpc passes none) and ends it on revocation', async () => {
+  it('reads an observable without a signal (a guard: tRPC and nestjs-trpc pass one) and ends it on revocation', async () => {
     const { env, ctx, token } = await signedIn(0);
     const { observable } = await import('@trpc/server/observable');
     let emit: ((value: number) => void) | undefined;
@@ -861,6 +866,70 @@ describe('subscription revalidation', () => {
 
     await env.auth.logout({ token, meta: { ip: '203.0.113.1' } });
     emit?.(2);
+    await expect(iterator.next()).rejects.toThrow('session_expired');
+  });
+
+  it('counts each check from when it started, so a slow check never stretches the bound', async () => {
+    const SECOND = 1000;
+    let token = '';
+
+    // Every validation takes five seconds on the fake clock, the context's too.
+    const { env, ctx } = await signedIn('30s', ({ auth, clock }) => {
+      const validate = auth.validateRequest.bind(auth);
+
+      vi.spyOn(auth, 'validateRequest').mockImplementation(async (input) => {
+        token = input.token ?? '';
+
+        const result = await validate(input);
+
+        clock.advance(5 * SECOND);
+
+        return result;
+      });
+    });
+
+    const validate = vi.mocked(env.auth.validateRequest);
+    const start = env.clock.now() - 5 * SECOND;
+    const at = (seconds: number) => env.clock.set(start + seconds * SECOND);
+    const feed: number[] = [];
+    let wake: (() => void) | undefined;
+
+    async function* ticks() {
+      for (;;) {
+        const next = feed.shift();
+
+        if (next !== undefined) yield next;
+        else await new Promise<void>((resolve) => (wake = resolve));
+      }
+    }
+
+    const push = (value: number) => {
+      feed.push(value);
+      wake?.();
+    };
+
+    const result = await new AuthedMiddleware().use({
+      ctx,
+      type: 'subscription',
+      next: async () => ({ ok: true as const, data: ticks() }),
+    });
+
+    const iterator = (result.data as AsyncIterable<number>)[Symbol.asyncIterator]();
+
+    // The context's check started at 0 and ended at 5: at 30 the bound has passed.
+    at(30);
+    push(1);
+    expect(await iterator.next()).toEqual({ value: 1, done: false });
+    expect(validate).toHaveBeenCalledTimes(2);
+
+    // That check started at 30 and ended at 35; the session is revoked at 32.
+    at(32);
+    validate.mockRestore();
+    await env.auth.logout({ token, meta: { ip: '203.0.113.1' } });
+
+    // 34 seconds after the last check that saw the session live started.
+    at(64);
+    push(2);
     await expect(iterator.next()).rejects.toThrow('session_expired');
   });
 

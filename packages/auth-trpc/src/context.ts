@@ -297,13 +297,15 @@ async function resolveState(
   const cookieHeader = request.header('cookie');
   const token = auth.readSessionToken(cookieHeader);
 
+  // Read before the store is, so the session is known live as of this moment.
+  const validatedAt = auth.context.clock.now();
+
   const validated =
     token === null
       ? null
       : await auth.validateRequest({ token, meta, touch: touches(options, request) });
 
   const session = validated?.ok ? validated.value : null;
-  const validatedAt = auth.context.clock.now();
 
   // Only reached behind a session check, so `token` is the one that validated.
   const revalidate = async (): Promise<ValidatedSession<unknown> | null> => {

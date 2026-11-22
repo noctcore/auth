@@ -15,8 +15,11 @@
  * it as the stream's error event and the client link closes the
  * subscription. A reconnect is a new request, checked like any other.
  *
- * - A stream sends nothing after a revocation older than the bound: the event
- *   that would have been the first such is refused instead.
+ * - An event is not sent once the last check that saw the session live
+ *   started longer ago than the bound: it is refused instead. A check counts
+ *   from when it started, so a revocation during a slow check is still caught
+ *   by the next one. The bound is read on the core's clock (the wall clock
+ *   by default), which is not monotonic: a backwards step delays checks.
  * - The cost is one validation (and one user read) per stream per bound, and
  *   only while events flow: an idle stream reads nothing. Its connection
  *   stays open until the next event, the client leaving, or
@@ -60,9 +63,13 @@ async function* revalidated(
   // `for await` returns the source's iterator when this ends, by a refusal or
   // because the consumer stopped reading.
   for await (const value of source) {
-    if (clock.now() - checkedAt >= every) {
+    const now = clock.now();
+
+    if (now - checkedAt >= every) {
+      // The check may read the store at any moment until it returns, so the
+      // session is only known live as of when it started.
       await check();
-      checkedAt = clock.now();
+      checkedAt = now;
     }
 
     yield value;
@@ -85,7 +92,9 @@ export function revalidateSubscription<TResult>(
   const { data } = found;
 
   const source = isObservable(data)
-    ? observableToAsyncIterable(data, revalidation.signal ?? new AbortController().signal)
+    ? // tRPC and nestjs-trpc pass the call's signal; the fresh one is a guard
+      // for a caller that does not, and the iterator still unsubscribes when returned.
+      observableToAsyncIterable(data, revalidation.signal ?? new AbortController().signal)
     : data;
 
   if (!isAsyncIterable(source) || wrapped.has(source)) return result;
