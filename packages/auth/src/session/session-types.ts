@@ -17,7 +17,7 @@ export interface SessionOptions<A> {
   readonly idleTimeout?: Duration | ((context: { rememberMe: boolean; attributes: A }) => Duration);
   /** Minimum time between two `lastActiveAt` writes. Default 60 s. */
   readonly touchInterval?: Duration;
-  /** Oldest sessions beyond this are evicted on mint. Default 10; null for no cap. */
+  /** Oldest sessions beyond this are evicted on mint, never the one being minted. Default 10; null for no cap. */
   readonly maxPerUser?: number | null;
   /** Validates the attributes on every read. Required when attributes are declared. */
   readonly attributes?: AttributeSchema<A>;
