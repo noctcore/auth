@@ -18,10 +18,10 @@
  */
 import type { IncomingHttpHeaders } from 'node:http';
 import {
+  appendSetCookie,
   clearsSessionCookie,
   clientIp,
   resolveSameSite,
-  serializeCookie,
   type AuthUser,
   type CookieSpec,
   type RequestMeta,
@@ -182,14 +182,7 @@ export function principalOf(req: RawRequest): Principal | undefined {
 }
 
 /** Adds a `Set-Cookie` header, keeping the ones already set on the response. */
-export function appendCookie(res: RawResponse, spec: CookieSpec): void {
-  const previous = res.getHeader('set-cookie');
-
-  const list =
-    previous === undefined ? [] : Array.isArray(previous) ? previous : [String(previous)];
-
-  res.setHeader('set-cookie', [...list, serializeCookie(spec)]);
-}
+export const appendCookie: (res: RawResponse, spec: CookieSpec) => void = appendSetCookie;
 
 /**
  * The session cookie's `SameSite` for this request's `Origin`, for every

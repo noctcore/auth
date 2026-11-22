@@ -20,8 +20,12 @@
  * permissive `cors({ origin: true, credentials: true })` does not change that.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { AuthConfigError, type IssuedSession } from '@noctcore/auth';
-import { csrfCookie, newPreSession, preSessionBinding, sessionBinding } from './csrf-tokens';
+import {
+  AuthConfigError,
+  bindCsrfToSession,
+  startCsrfPreSession,
+  type IssuedSession,
+} from '@noctcore/auth';
 import type { ResolvedOptions } from './options';
 import {
   appendCookie,
@@ -51,11 +55,7 @@ export class SessionCookies {
     const res = rawResponse(response);
 
     // The CSRF cookie goes wherever the session cookie goes.
-    const csrf = csrfCookie(
-      this.options,
-      sessionBinding(issued.session),
-      issued.cookie.attributes.sameSite,
-    );
+    const csrf = bindCsrfToSession(this.options, issued.session, issued.cookie.attributes.sameSite);
 
     appendCookie(res, issued.cookie);
     appendCookie(res, issued.deviceCookie);
@@ -112,13 +112,12 @@ export class SessionCookies {
     const meta = principal?.meta ?? requestMeta(req, this.options);
     const { cookie } = await this.options.auth.logout({ token, meta });
     const sameSite = sameSiteFor(req, this.options);
-    const fresh = newPreSession(this.options, sameSite);
-    const csrf = csrfCookie(this.options, preSessionBinding(fresh.id), sameSite);
+    const fresh = startCsrfPreSession(this.options, sameSite);
 
     appendCookie(res, cookie);
-    appendCookie(res, fresh.cookie);
-    appendCookie(res, csrf.cookie);
 
-    return { csrfToken: csrf.token };
+    for (const next of fresh.cookies) appendCookie(res, next);
+
+    return { csrfToken: fresh.token };
   }
 }

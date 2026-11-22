@@ -5,9 +5,8 @@
  */
 import type { IncomingHttpHeaders } from 'node:http';
 import {
-  assertExactOrigins,
   AuthConfigError,
-  createCsrfToken,
+  resolveCsrfSettings,
   resolveSameSite,
   type AuthResult,
   type AuthUser,
@@ -166,8 +165,6 @@ export interface ResolvedOptions {
   };
 }
 
-const HEADER = /^[a-z0-9-]+$/u;
-
 /**
  * The most proxy hops the module will trust. Real deployments run one to three
  * (a CDN, a load balancer, an ingress); a larger number is far more likely a
@@ -184,27 +181,10 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
 
   const hops = resolveTrustedHops(trustedHops, MAX_TRUSTED_HOPS);
   const clientIpHeader = resolveClientIpHeader(options.clientIpHeader, hops);
-
-  if (csrf.secrets.length === 0)
-    throw new AuthConfigError('csrf.secrets needs at least one secret');
-
-  const crossSiteOrigins = assertExactOrigins(csrf.crossSiteOrigins ?? [], 'csrf.crossSiteOrigins');
-
-  if (csrf.allowedOrigins.length === 0 && crossSiteOrigins.length === 0)
-    throw new AuthConfigError('csrf.allowedOrigins is empty');
-
-  const secrets = csrf.secrets.map((secret) =>
-    typeof secret === 'string' ? new TextEncoder().encode(secret) : secret,
-  );
-
-  // The core refuses a short secret when it signs; signing once here moves
-  // that refusal to boot.
-  for (const secret of secrets) createCsrfToken(secret, 'boot-check');
-
-  const headerName = (csrf.headerName ?? 'x-csrf-token').toLowerCase();
-
-  if (!HEADER.test(headerName))
-    throw new AuthConfigError(`Invalid CSRF header name: ${headerName}`);
+  // The session cookie is `__Host-` prefixed exactly when it is Secure, and
+  // the CSRF cookies follow it, so one setting decides all three.
+  const secure = auth.cookieName.startsWith('__Host-');
+  const resolvedCsrf = resolveCsrfSettings(csrf, secure);
 
   const shutdownTimeout = options.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT;
 
@@ -212,10 +192,6 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     throw new AuthConfigError('shutdownTimeout must be a duration longer than zero');
 
   const touch = resolveTouch(options.touch);
-
-  // The session cookie is `__Host-` prefixed exactly when it is Secure, and
-  // the CSRF cookies follow it, so one setting decides all three.
-  const secure = auth.cookieName.startsWith('__Host-');
   // The adapter's cookies are Secure exactly when the session cookie is, so
   // SameSite resolves against that, never against a config that disagrees:
   // `None` without Secure is refused here for a fixed value, and by
@@ -233,16 +209,7 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     cookie,
     shutdownTimeout,
     touch,
-    csrf: {
-      secrets,
-      allowedOrigins: [...csrf.allowedOrigins, ...crossSiteOrigins],
-      crossSiteOrigins,
-      allowSameSite: csrf.allowSameSite ?? false,
-      exempt: [...(csrf.exempt ?? [])],
-      headerName,
-      cookieName: secure ? '__Host-csrf' : 'csrf',
-      preSessionCookieName: secure ? '__Host-presession' : 'presession',
-    },
+    csrf: { ...resolvedCsrf, exempt: [...(csrf.exempt ?? [])] },
   };
 }
 
