@@ -27,6 +27,7 @@ import {
   assertString,
   assertStringList,
 } from '../shared/config-checks';
+import { isBytes } from '../shared/bytes';
 import { AuthConfigError } from '../shared/errors';
 import { parseCookieHeader, serializeCookie, type CookieSpec, type SameSite } from './cookie';
 import {
@@ -142,7 +143,7 @@ export function resolveCsrfSettings(input: CsrfSettingsInput, secure: boolean): 
 
   const secrets = input.secrets.map((secret: unknown) => {
     if (typeof secret === 'string') return new TextEncoder().encode(secret);
-    if (secret instanceof Uint8Array) return secret;
+    if (isBytes(secret)) return secret;
 
     throw new AuthConfigError('csrf.secrets must hold strings or bytes');
   });

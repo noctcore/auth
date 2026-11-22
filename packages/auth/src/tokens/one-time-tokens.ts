@@ -17,6 +17,7 @@
  *
  * Guide: Learn, "Email verification" and "Password reset".
  */
+import { isBytes } from '../shared/bytes';
 import { hexDigestsEqual, hmacSha256Hex, sha256Hex } from '../crypto/hash';
 import {
   generateNumericCode,
@@ -60,7 +61,7 @@ export class OneTimeTokens {
      */
     secret: Uint8Array | readonly Uint8Array[] | undefined,
   ) {
-    this.keys = secret === undefined ? [] : secret instanceof Uint8Array ? [secret] : [...secret];
+    this.keys = secret === undefined ? [] : isBytes(secret) ? [secret] : [...secret];
   }
 
   private codeHash(purpose: string, userId: string, code: string, key = this.keys[0]): string {

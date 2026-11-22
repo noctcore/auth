@@ -6,6 +6,7 @@
  * startup or a crash on the first request that reads it. A key left out,
  * undefined or null still gives its default.
  */
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { AuthConfigError, Throttle } from '../../src';
 import { resolveCsrfSettings, type CsrfSettingsInput } from '../../src/http/csrf-adapter';
@@ -250,6 +251,61 @@ describe('secrets', () => {
     );
 
     expect(() => setup({ previousSecret: [previous] })).not.toThrow();
+  });
+});
+
+describe('bytes from another realm', () => {
+  const foreign = (fill = 0): Uint8Array =>
+    runInNewContext(`new Uint8Array(40).fill(${fill})`) as Uint8Array;
+
+  const refused = (): unknown[] => [
+    new DataView(new ArrayBuffer(40)),
+    new Uint16Array(40),
+    { length: 40, [Symbol.toStringTag]: 'Uint8Array' },
+  ];
+
+  it('takes a secret and previous secrets made in another realm', () => {
+    expect(foreign()).not.toBeInstanceOf(Uint8Array);
+
+    const other = foreign(7);
+
+    expect(() => setup({ secret: foreign() })).not.toThrow();
+    expect(() => setup({ previousSecret: other })).not.toThrow();
+    expect(() => setup({ previousSecret: [other] })).not.toThrow();
+  });
+
+  it('takes a pepper made in another realm', () => {
+    expect(() => argon2id({ secret: foreign() })).not.toThrow();
+  });
+
+  it('takes a csrf secret made in another realm', () => {
+    const settings = resolveCsrfSettings(
+      {
+        secrets: [foreign()],
+        allowedOrigins: ['https://app.example.com'],
+      },
+      false,
+    );
+
+    expect(settings.secrets).toHaveLength(1);
+  });
+
+  it('refuses a DataView, a wider typed array and a faked tag', () => {
+    for (const value of refused()) {
+      expect(() => setup({ secret: value as never })).toThrow('secret must be a string or bytes');
+      expect(() => setup({ previousSecret: value as never })).toThrow('previousSecret must be');
+      expect(() => argon2id({ secret: value as never })).toThrow('argon2id: secret must be bytes');
+
+      expect(() =>
+        resolveCsrfSettings(
+          {
+            secrets: [value as never],
+            allowedOrigins: ['https://app.example.com'],
+          },
+          false,
+        ),
+      ).toThrow('csrf.secrets must hold strings or bytes');
+    }
   });
 });
 
