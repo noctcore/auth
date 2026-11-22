@@ -36,7 +36,7 @@ import {
   RECOVERY_CODE_PURPOSE,
 } from './recovery-codes';
 import { CHALLENGE_TTL_MS } from './options';
-import type { Runtime } from './runtime';
+import { gateAttempt, type Runtime } from './runtime';
 import { matchTotp } from './totp';
 import { NO_SUCH_USER_ID, type AuthUser } from '../../ports/stores';
 import type { StoredTotpFactor } from '../../ports/two-factor';
@@ -86,7 +86,7 @@ export interface ProofRequest {
 /** Checks a proof against the user's confirmed factor. */
 export async function checkProof(runtime: Runtime, request: ProofRequest): Promise<ProofCheck> {
   const { core, store } = runtime;
-  const gate = await core.throttle.gateFactor(request.account, runtime.settings.attempts);
+  const gate = await gateAttempt(runtime, request);
   const factor = await store.findFactor(request.userId ?? NO_SUCH_USER_ID);
   // Only a confirmed factor of a named user guards anything.
   const owner = factor?.confirmed === true ? request.userId : null;

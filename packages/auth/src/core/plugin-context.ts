@@ -21,6 +21,7 @@ import type { SessionManager } from '../session/session-manager';
 import type { NormalizedEmail } from '../shared/email';
 import type { AuthFailure, AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
+import type { LockTarget, NewLock } from '../throttle/rules';
 import type { Throttle } from '../throttle/throttle';
 import type { OneTimeTokens } from '../tokens/one-time-tokens';
 
@@ -188,7 +189,12 @@ export interface PluginContext<U extends AuthUser, A> {
   verifyPassword(passwordHash: string | null | undefined, password: string): Promise<boolean>;
   /** Policy, breach check and hash for a NEW password. */
   hashNewPassword(password: string, meta: RequestMeta | undefined): Promise<AuthResult<string>>;
-  /** THE seam: every session is minted here. */
+  /**
+   * THE seam: every session is minted here. A session issued `via:
+   * 'password'` or `via: 'second-factor'` without `inherit` is a completed
+   * sign-in: it starts the count toward the permanent lockout tier over, so
+   * issue with one of these only once every factor is proved.
+   */
   issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>>;
   /**
    * Revokes every session of the user and tells the hooks. `scope` names the
@@ -200,6 +206,33 @@ export interface PluginContext<U extends AuthUser, A> {
     reason: RevocationReason,
     options?: { scope?: string },
   ): Promise<void>;
+  /**
+   * Counts a failed proof that did not go through login's gate (your own
+   * second factor, a PIN, a security question) against the address's
+   * account-wide lockout budget, the one login spends, and carries out a lock
+   * it sets the way a password lock is carried out: the owner's `lockout`
+   * mail and the `account.locked` audit row (`account.locked_permanently` in
+   * the permanent tier, which also ends the account's sessions and runs the
+   * `onPermanentLock` hooks), off the response path. The lock counts toward
+   * the permanent tier like a password lock. A target with no account counts
+   * the same and announces nothing. Returns the lock this failure set, if any.
+   * Use it instead of `throttle.recordFailure`, which only counts.
+   */
+  recordFailedProof(input: LockTarget & { readonly meta: RequestMeta }): Promise<{
+    newLock?: NewLock;
+  }>;
+  /**
+   * Counts a lock your own gate just set on a proof of this account (a second
+   * factor's, as the two-factor plugin's do) toward the permanent lockout
+   * tier, in the same count as the password locks. The lock that brings the
+   * count past `afterLocks` locks the account for good and is carried out
+   * like a permanent password lock (see `recordFailedProof`), and that lock
+   * is returned. Call it once per NEW lock, never per refusal. Reads and
+   * writes nothing while `throttle.lockout.permanent` is off.
+   */
+  escalateLock(input: { readonly userId: string; readonly meta: RequestMeta }): Promise<{
+    newLock?: NewLock;
+  }>;
   /** Tells the hooks sessions ended. Never throws. */
   notifyRevoked(
     userId: string,

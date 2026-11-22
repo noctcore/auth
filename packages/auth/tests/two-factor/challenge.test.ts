@@ -415,6 +415,61 @@ describe('the two-factor login challenge', () => {
   });
 });
 
+describe('factor locks and the permanent lockout tier', () => {
+  const permanent = { throttle: { lockout: { permanent: { afterLocks: 1 } } } };
+
+  /** Six wrong codes on unknown challenges: one lock under the challenges' own keys. */
+  async function lockUnknown(t: ReturnType<typeof twoFactorApp>) {
+    const challenge = unknownToken();
+
+    for (let i = 0; i < 6; i++) {
+      await t.auth.twoFactor.verifyChallenge({
+        challenge,
+        proof: { kind: 'totp', code: '000000' },
+        meta: meta(`198.51.100.${i}`),
+      });
+    }
+  }
+
+  it('counts nothing toward any account for the lock of an unknown challenge', async () => {
+    const t = twoFactorApp({}, permanent);
+
+    await t.enrolled();
+
+    for (let round = 0; round < 3; round++) {
+      await lockUnknown(t);
+      t.clock.advance(60 * 60_000);
+    }
+
+    const login = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    expect(login.ok && login.value.kind).toBe('challenge');
+    expect(t.mailer.sent.filter((m) => m.type === 'lockout')).toEqual([]);
+  });
+
+  it('leaves factor locks out of the count while the tier is off', async () => {
+    const t = twoFactorApp();
+    const { secret } = await t.enrolled();
+
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < 6; i++) {
+        const { challenge } = await t.challenged(EMAIL, { ip: `198.51.${round}.${i}` });
+
+        await t.auth.twoFactor.verifyChallenge({
+          challenge,
+          proof: { kind: 'totp', code: t.codeFor(secret) === '000000' ? '111111' : '000000' },
+          meta: meta(`198.51.${round}.${i}`),
+        });
+      }
+
+      t.clock.advance(60 * 60_000);
+    }
+
+    expect((await t.auth.lockout.inspect({ email: EMAIL })).locked).toBe(false);
+    expect((await t.passed(secret)).session.userId).toBeDefined();
+  });
+});
+
 describe('trusted devices', () => {
   it('trusts a device on request and lets it skip the next challenge, without a step-up', async () => {
     const t = twoFactorApp();

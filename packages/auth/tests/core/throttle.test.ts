@@ -656,7 +656,59 @@ describe('permanent tier', () => {
     });
   });
 
-  it('never escalates a second-factor lock, whatever its scope', async () => {
+  it('does not start the count over on a correct password, only on a completed sign-in', async () => {
+    const t = new Throttle(counters, clock, small);
+
+    await lockOnce(t);
+    clock.advance(5 * MIN);
+    await t.loginSucceeded(victim, 'owner');
+
+    expect(await lockOnce(t)).toMatchObject({ reason: 'permanently_locked' });
+
+    await t.clearPermanent(victim);
+    await lockOnce(t);
+    clock.advance(5 * MIN);
+    await t.signInCompleted(victim);
+
+    expect(await lockOnce(t)).toMatchObject({ reason: 'locked' });
+  });
+
+  it('counts a lock passed to escalate toward the tier, and announces the permanent one once', async () => {
+    const t = new Throttle(counters, clock, small);
+
+    expect(await t.escalate(victim)).toEqual({});
+
+    expect(await t.escalate(victim)).toEqual({
+      newLock: { until: LOCKOUT_EXPIRES_AT, permanent: true },
+    });
+
+    expect(await t.escalate(victim)).toEqual({});
+
+    expect(await t.gateLogin(victim, 'a')).toEqual({
+      allowed: false,
+      reason: 'permanently_locked',
+    });
+  });
+
+  it('counts password and escalated locks in one count, under the owner', async () => {
+    const t = new Throttle(counters, clock, small);
+
+    await lockOnce(t);
+    expect(await t.escalate(victim, 'user-1')).toMatchObject({ newLock: { permanent: true } });
+    expect(await t.isPermanentlyLocked('user-1')).toBe(true);
+  });
+
+  it('reads and writes nothing for escalate or signInCompleted while the tier is off', async () => {
+    const get = vi.spyOn(counters, 'get');
+    const set = vi.spyOn(counters, 'set');
+    const reset = vi.spyOn(counters, 'reset');
+
+    expect(await throttle.escalate(victim)).toEqual({});
+    await throttle.signInCompleted(victim);
+    expect([get, set, reset].map((spy) => spy.mock.calls.length)).toEqual([0, 0, 0]);
+  });
+
+  it('never escalates a second-factor lock by itself, whatever its scope', async () => {
     const t = new Throttle(counters, clock, small);
     const rule = { limit: 1, window: '15m' } as const;
 

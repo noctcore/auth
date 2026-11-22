@@ -29,8 +29,9 @@ export interface LockoutOptions {
   /**
    * Opt in to a permanent tier: an account that keeps getting locked stays
    * locked until an admin clears it (`auth.lockout.clear`). Off by default.
-   * The count is of locks in a row, reset by a successful sign-in or a
-   * completed password reset.
+   * The count is of locks in a row, password locks and second-factor locks
+   * alike, reset by a completed sign-in (every factor proved, not just the
+   * password) or a completed password reset.
    *
    * Trade-off: anyone who knows an address can spread failures over many IPs
    * and lock its owner out for good on purpose (denial of service). Pair it
@@ -54,8 +55,10 @@ export interface LockoutOptions {
 export interface PermanentLockOptions {
   /**
    * How many temporary locks in a row (each within `quietPeriod` of the last,
-   * with no successful sign-in or completed password reset between) an
-   * account may take: the next lock is permanent. At least 1.
+   * with no completed sign-in or password reset between; a correct password
+   * with a second factor still owed does not count as one) an account may
+   * take, password and second-factor locks alike: the next lock is
+   * permanent. At least 1.
    */
   readonly afterLocks: number;
   /**
@@ -85,6 +88,9 @@ export interface NewLock {
   readonly until: number;
   readonly permanent?: true;
 }
+
+/** Which lock: an address, or an account by its current address. */
+export type LockTarget = { readonly email: string } | { readonly userId: string };
 
 /** An account's lock state, as an admin sees it. */
 export interface LockState {

@@ -15,42 +15,19 @@
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
 import type { RequestMeta } from '../shared/meta';
-import { accountKey } from '../throttle/counter-keys';
-import type { LockState } from '../throttle/rules';
+import type { LockState, LockTarget } from '../throttle/rules';
 
-/** Which lock: an address, or an account by its current address. */
-export type LockTarget = { readonly email: string } | { readonly userId: string };
+export type { LockTarget } from '../throttle/rules';
 
 const UNLOCKED: LockState = { locked: false, permanent: false, until: null };
-
-/** The lockout key and, when the target is an account, its id. */
-async function resolve<U extends AuthUser, A>(
-  core: AuthCore<U, A>,
-  target: LockTarget,
-): Promise<{ account: string; userId?: string } | null> {
-  if ('userId' in target) {
-    const user = await core.users.findById(target.userId);
-    const email = user ? core.normalizeEmail(user.email) : null;
-
-    return user && email ? { account: accountKey(email), userId: user.id } : null;
-  }
-
-  const email = core.normalizeEmail(target.email);
-
-  if (!email) return null;
-
-  const user = await core.findCredentialByEmail(email);
-
-  return user ? { account: accountKey(email), userId: user.id } : { account: accountKey(email) };
-}
 
 export async function inspectLock<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   target: LockTarget,
 ): Promise<LockState> {
-  const resolved = await resolve(core, target);
+  const resolved = await core.resolveLockTarget(target);
 
-  return resolved ? core.throttle.lockState(resolved.account, resolved.userId) : UNLOCKED;
+  return resolved ? core.throttle.lockState(resolved.account, resolved.owner?.id) : UNLOCKED;
 }
 
 /**
@@ -63,17 +40,18 @@ export async function clearLock<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   input: LockTarget & { readonly meta: RequestMeta },
 ): Promise<LockState> {
-  const resolved = await resolve(core, input);
+  const resolved = await core.resolveLockTarget(input);
 
   if (!resolved) return UNLOCKED;
 
-  const before = await core.throttle.clearPermanent(resolved.account, resolved.userId);
+  const userId = resolved.owner?.id;
+  const before = await core.throttle.clearPermanent(resolved.account, userId);
 
   if (before.locked) {
     await core.emit(
       {
         type: 'account.lock_cleared',
-        ...(resolved.userId === undefined ? {} : { userId: resolved.userId }),
+        ...(userId === undefined ? {} : { userId }),
         data: { permanent: before.permanent },
       },
       input.meta,
