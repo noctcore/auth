@@ -15,6 +15,7 @@
 import { encodeHexLowerCase } from '@oslojs/encoding';
 import { hexDigestsEqual, hmacSha256Hex } from '../crypto/hash';
 import { cryptoRandom, randomBytes, type RandomSource } from '../crypto/random';
+import { DEVICE_CLOCK_SKEW_MS } from '../shared/clock-skew';
 
 // Canonical decimals only (no leading zeros), so one token has one spelling.
 const TOKEN = /^([0-9a-f]{32})\.(0|[1-9]\d{0,15})\.(0|[1-9]\d{0,15})\.([0-9a-f]{64})$/u;
@@ -69,7 +70,8 @@ export function verifyDeviceToken(
 
   if (Number(epoch) !== check.epoch) return null;
   // A minute of clock skew between servers, no more.
-  if (issuedAt > check.now + 60_000 || check.now - issuedAt > check.maxAgeMs) return null;
+  if (issuedAt > check.now + DEVICE_CLOCK_SKEW_MS || check.now - issuedAt > check.maxAgeMs)
+    return null;
 
   return hexDigestsEqual(
     given,

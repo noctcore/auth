@@ -11,6 +11,7 @@ import {
 } from '../../src';
 import type { AuthUser } from '../../src/ports/stores';
 import type { Duration } from '../../src/shared/duration';
+import { DEVICE_CLOCK_SKEW_MS } from '../../src/shared/clock-skew';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '../../src/testing';
 import { meta, PASSWORD, SECRET, setup } from './setup';
 
@@ -186,8 +187,10 @@ describe('createAuth configuration', () => {
   });
 
   it('refuses device tokens that outlive the session store epoch', () => {
+    const EPOCH = 90 * 24 * 3600_000;
+
     const stores = memoryStores();
-    const limited = Object.assign(stores.sessions, { epochTtlMs: 90 * 24 * 3600_000 });
+    const limited = Object.assign(stores.sessions, { epochTtlMs: EPOCH });
 
     const config = (deviceMaxAge: Duration) => ({
       ...base(),
@@ -199,9 +202,35 @@ describe('createAuth configuration', () => {
 
     expect(() => createAuth(config('365d'))).toThrow(AuthConfigError);
     expect(() => createAuth(config('365d'))).toThrow(/deviceMaxAge/u);
-    expect(() => createAuth(config('90d'))).not.toThrow();
+    // Equal is not enough: the token's issuedAt may sit a clock skew ahead.
+    expect(() => createAuth(config('90d'))).toThrow(/clock skew/u);
+
+    expect(() => createAuth(config(`${EPOCH - DEVICE_CLOCK_SKEW_MS + 1}ms`))).toThrow(
+      /deviceMaxAge/u,
+    );
+
+    expect(() => createAuth(config(`${EPOCH - DEVICE_CLOCK_SKEW_MS}ms`))).not.toThrow();
+    expect(() => createAuth(config('30d'))).not.toThrow();
     // A store that never forgets its epoch sets no limit.
     expect(() => createAuth({ ...config('365d'), stores: memoryStores() })).not.toThrow();
+  });
+
+  it('refuses a session store limit that is not a positive number', () => {
+    for (const field of ['epochTtlMs', 'maxSessionTtlMs']) {
+      for (const bad of [Number.NaN, -1, 0, '90d']) {
+        const stores = memoryStores();
+        const sessions = Object.assign(stores.sessions, { [field]: bad });
+
+        expect(() =>
+          createAuth({
+            ...base(),
+            stores: { ...stores, sessions },
+            secret: SECRET,
+            urls: { resetPassword: (t: string) => t },
+          }),
+        ).toThrow(new RegExp(`${field} must be a positive number`, 'u'));
+      }
+    }
   });
 
   it('requires the URL builders for link flows', () => {

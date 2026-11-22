@@ -39,6 +39,7 @@ import { parseCookieHeader, prefixedCookieName } from '../../http/cookie';
 import type { StoredSession } from '../../ports/stores';
 import { AuthConfigError } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
+import { DEVICE_CLOCK_SKEW_MS } from '../../shared/clock-skew';
 
 export type {
   ChallengeMethod,
@@ -76,9 +77,11 @@ export type {
 } from '../../ports/two-factor';
 
 /**
- * Refuses a trusted device that outlives the session store's epoch. The stored
- * record is deleted on revocation, but the epoch is the fence when that fails,
- * and a lapsed epoch reads as 0 again.
+ * Refuses a trusted device that could outlive the session store's epoch. The
+ * stored record is deleted on revocation, but the epoch is the fence when that
+ * fails, and a lapsed epoch reads as 0 again. Its `expiresAt` comes from the
+ * trusting server's clock, so the same clock skew margin as device tokens
+ * applies.
  */
 function assertEpochOutlivesTrustedDevices(
   settings: TwoFactorSettings,
@@ -86,9 +89,13 @@ function assertEpochOutlivesTrustedDevices(
 ): void {
   const ttlMs = settings.trustedDevices?.ttlMs;
 
-  if (ttlMs !== undefined && epochTtlMs !== undefined && ttlMs > epochTtlMs) {
+  if (
+    ttlMs !== undefined &&
+    epochTtlMs !== undefined &&
+    ttlMs + DEVICE_CLOCK_SKEW_MS > epochTtlMs
+  ) {
     throw new AuthConfigError(
-      `twoFactor: the session store keeps a revocation epoch for ${epochTtlMs} ms, but trusted devices may last ${ttlMs} ms: lower trustedDevices.ttl or raise the store's epochTtl`,
+      `twoFactor: the session store keeps a revocation epoch for ${epochTtlMs} ms, but trusted devices may last ${ttlMs} ms plus ${DEVICE_CLOCK_SKEW_MS} ms of clock skew: lower trustedDevices.ttl or raise the store's epochTtl`,
     );
   }
 }

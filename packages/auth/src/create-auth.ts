@@ -48,6 +48,7 @@ import { assertBoolean } from './shared/config-checks';
 import { resolveEmailNormalizer } from './shared/email';
 import { AuthConfigError } from './shared/errors';
 import type { RequestMeta } from './shared/meta';
+import { DEVICE_CLOCK_SKEW_MS } from './shared/clock-skew';
 import { assertWindowRule, type RateLimitRule } from './throttle/rules';
 import { Throttle } from './throttle/throttle';
 import { OneTimeTokens } from './tokens/one-time-tokens';
@@ -67,9 +68,24 @@ function assertRequiredConfig<U extends AuthUser, A, P extends readonly AuthPlug
   if (!config.mailer) throw new AuthConfigError('mailer is required');
 }
 
+/** A limit the session store declares, refused unless it is a positive number (fail closed). */
+function declaredLimit(
+  store: SessionStore,
+  field: 'maxSessionTtlMs' | 'epochTtlMs',
+): number | undefined {
+  const value: unknown = store[field];
+
+  if (value === undefined) return undefined;
+
+  if (typeof value !== 'number' || !(value > 0))
+    throw new AuthConfigError(`The session store's ${field} must be a positive number of ms`);
+
+  return value;
+}
+
 /** Refuses session lifetimes longer than the store promises to keep its revocation fence. */
 function assertStoreOutlivesSessions<A>(store: SessionStore, sessions: SessionManager<A>): void {
-  const storeLimit = store.maxSessionTtlMs;
+  const storeLimit = declaredLimit(store, 'maxSessionTtlMs');
   const longest = Math.max(sessions.absoluteTtlMs, sessions.rememberMeTtlMs);
 
   if (storeLimit !== undefined && longest > storeLimit) {
@@ -111,16 +127,18 @@ function checkedDoors(
 }
 
 /**
- * Refuses a device token that outlives the store's epoch: the epoch is the
- * token's only revocation fence, and a lapsed epoch reads as 0 again, so a
- * revoked token would verify once more.
+ * Refuses a device token that could outlive the store's epoch: the epoch is
+ * the token's only revocation fence, and a lapsed epoch reads as 0 again, so a
+ * revoked token would verify once more. The token's `issuedAt` comes from the
+ * issuing server's clock and may sit up to `DEVICE_CLOCK_SKEW_MS` ahead, so
+ * the max age plus that margin must fit inside the epoch TTL.
  */
 function assertStoreOutlivesDeviceTokens(store: SessionStore, deviceMaxAgeMs: number): void {
-  const epochLimit = store.epochTtlMs;
+  const epochLimit = declaredLimit(store, 'epochTtlMs');
 
-  if (epochLimit !== undefined && deviceMaxAgeMs > epochLimit) {
+  if (epochLimit !== undefined && deviceMaxAgeMs + DEVICE_CLOCK_SKEW_MS > epochLimit) {
     throw new AuthConfigError(
-      `The session store keeps a revocation epoch for ${epochLimit} ms, but device tokens may last ${deviceMaxAgeMs} ms: lower throttle.lockout.deviceMaxAge or raise the store's epochTtl`,
+      `The session store keeps a revocation epoch for ${epochLimit} ms, but device tokens may last ${deviceMaxAgeMs} ms plus ${DEVICE_CLOCK_SKEW_MS} ms of clock skew: lower throttle.lockout.deviceMaxAge or raise the store's epochTtl`,
     );
   }
 }
