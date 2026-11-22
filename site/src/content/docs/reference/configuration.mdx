@@ -8,6 +8,7 @@ import ConfigTable from '../../../components/reference/ConfigTable.astro';
 import {
   argon2idOptions,
   collaborators,
+  csrfHandout,
   doors,
   email,
   emailChange,
@@ -15,6 +16,7 @@ import {
   essentials,
   legacySessionsOptions,
   lockout,
+  nestjsAdapterOptions,
   password,
   passwordReset,
   prismaStoresOptions,
@@ -22,8 +24,10 @@ import {
   redisStoresOptions,
   registration,
   required,
+  rotation,
   session,
   sessionCookie,
+  trpcAdapterOptions,
   turnstileOptions,
   urls,
 } from '../../../components/reference/config-keys';
@@ -52,6 +56,7 @@ Click a key for its link. Paths are relative to `packages/auth/src/` unless they
     <li><a href="#lockout">Lockout</a></li>
     <li><a href="#door-limits">Door limits</a></li>
     <li><a href="#collaborators">Collaborators</a></li>
+    <li><a href="#adapter-options">Adapter options</a></li>
     <li><a href="#startup-checks">Startup checks</a></li>
     <li><a href="#store-and-hasher-options">Stores and hasher</a></li>
   </ul>
@@ -77,12 +82,35 @@ Any store that passes the conformance suite in `@noctcore/auth/testing` is valid
 
 ### What rotating the secret does
 
-Separate keys are derived from `secret` for code HMACs, trusted-device tokens and session handles, so one key never serves two purposes. Rotating it:
+Separate keys are derived from `secret` for code HMACs, trusted-device tokens, session handles and plugins' keyed hashes (such as the two-factor recovery codes), so one key never serves two purposes. Source: `crypto/keys.ts`, `core/plugin-context.ts`.
 
-- invalidates outstanding codes and device cookies;
-- never invalidates sessions or pending invitations: an invitation token is stored as a SHA-256, under no key. Only invitations created before 0.6, found through a fallback lookup under their old keyed hash until they expire, are voided by a rotation;
-- changes every session handle: a client holding an old one gets `{ revoked: false }` and must list again (see [Session handles](/auth/learn/sessions-and-expiry/#session-handles));
-- invalidates every recovery code of the two-factor plugin, because their HMAC key is derived from it: after a rotation, have every user with a factor regenerate their recovery codes.
+**Rotating with `previousSecret`.** Deploy the new value in `secret` and the one it replaced in `previousSecret` (a list, newest first, if a second rotation starts before the first ends):
+
+<ConfigTable rows={rotation} />
+
+Every key is derived from each secret too, so these keep verifying during the grace window, while everything new is made under `secret` only:
+
+- outstanding codes and trusted-device cookies;
+- session handles: a handle listed before the rotation still revokes its session, and `sessions.list` shows the new handles at once;
+- two-factor recovery codes, through the plugins' keyed hashes;
+- invitations created before 0.6, which are found through a fallback lookup under their old keyed hash (it tries each previous secret as well) until they expire.
+
+Sessions and invitations created since 0.6 never depend on the secret: an invitation token is stored as a SHA-256, under no key.
+
+Remove `previousSecret` once the longest-lived value has expired: the trusted-device cookie (`throttle.lockout.deviceMaxAge`), and the recovery codes that users made before the rotation, which never expire. Ask every user with a factor to make a new set first, or accept that their old codes stop working. Leave the key out, or pass `undefined`, when no rotation is under way: an empty string is not "unset", and startup refuses it as shorter than the minimum.
+
+**Rotating without it** invalidates all of the following at once:
+
+- outstanding codes and device cookies;
+- every session handle: a client holding an old one gets `{ revoked: false }` and must list again (see [Session handles](/auth/learn/sessions-and-expiry/#session-handles));
+- every recovery code of the two-factor plugin, because their HMAC key is derived from the secret: have every user with a factor regenerate their recovery codes;
+- invitations created before 0.6, found through a fallback lookup under their old keyed hash until they expire.
+
+Sessions themselves never depend on the secret, so no rotation signs anyone out.
+
+**After a suspected leak, rotate without `previousSecret`**, or keep the window to minutes. While the old secret is configured it is still accepted: whoever holds it can forge device cookies and code HMACs that verify.
+
+**Rolling deploys.** An instance still configured with the old secret alone cannot verify a code, device cookie or handle that an instance on the new one issued, so those fail on it until the roll-out ends. To avoid the gap, deploy twice: first with the current secret in `secret` and the new one in `previousSecret`, so every instance can verify under both, then swap them.
 
 ## Password
 
@@ -334,7 +362,7 @@ None of these is required. Source: `core/config.ts`, `create-auth.ts`, `ports/`.
 
 **`audit`.** Events that record a grant are awaited before the grant is returned; a failing sink never fails the flow.
 
-**`plugins`.** The two-factor plugin (`twoFactor` from `@noctcore/auth/two-factor`) is configured on its own; its options are in [Two-factor](/auth/build/two-factor/#wiring-the-plugin). The membership plugin (`membership` from `@noctcore/auth/membership`) is configured the same way; its options are in [Membership guards](/auth/build/membership/#wiring-the-plugin). So is the invitations plugin (`invitations` from `@noctcore/auth/invitations`), in [Invitations](/auth/build/invitations/#wiring-the-plugin).
+**`plugins`.** The two-factor plugin (`twoFactor` from `@noctcore/auth/two-factor`) is configured on its own; its options are in [Two-factor](/auth/build/two-factor/#wiring-the-plugin). The membership plugin (`membership` from `@noctcore/auth/membership`) is configured the same way; its options are in [Membership guards](/auth/build/membership/#wiring-the-plugin). So is the invitations plugin (`invitations` from `@noctcore/auth/invitations`), in [Invitations](/auth/build/invitations/#wiring-the-plugin). A plugin gets its keyed hashes from the core (`keyedHash`, and since 0.7.0 `keyedHashes` and `matchesSessionHandle`, which try the previous secrets of a rotation). A hand-written `PluginContext` stand-in, such as a test double, has to add those two members to compile against 0.7.0 and later.
 
 **`logger`**: where the package reports what it cannot return, such as a failed breach check, or a mailer or audit sink that threw.
 
@@ -356,6 +384,34 @@ Builds a `captcha` for Cloudflare Turnstile.
 
 `onResult` is called with every outcome (`{ verdict, door, errorCodes, reason?, status? }`) to log or count it; it is not awaited (keep its synchronous part cheap, since that still runs on the request path), cannot change the verdict, and a throw is reported to `logger`. Outcomes never carry the token or the secret. The verifier's `check(token, context)` returns the same outcome. The reasons are listed in [Captcha](/auth/learn/captcha/#the-rule).
 
+## Adapter options
+
+The adapters take their own options beside the `createAuth` result; the guides cover them ([NestJS](/auth/build/nestjs/), [tRPC](/auth/build/trpc/)). The ones below tie in with keys on this page. Source: `auth-nestjs/src/options.ts`, `auth-trpc/src/options.ts`, `session/session-manager.ts`.
+
+### Counting activity: `touch`
+
+`session.touchInterval` says how often last-active may be written; `touch` decides which requests may write it at all. A request that counts as activity refreshes last-active at most once per `touchInterval`. A passive one (a poll on a timer) is validated and answered with its session as usual, but never refreshes last-active, so an idle session still expires while only polls arrive. The core's `validateRequest` takes the same switch as `touch: false`. Anything but a boolean or a function stops the boot with an `AuthConfigError`. Background: [Background polls](/auth/learn/sessions-and-expiry/#background-polls).
+
+#### `AuthModule.forRoot(options)`
+
+<ConfigTable rows={nestjsAdapterOptions} prefix="nestjs-authmodule" label="Option" />
+
+The predicate runs before the session is validated and cannot read route decorators. Its `path` is the raw request path with the global prefix and without the query string: it is not normalised, so a trailing slash or a different case is a different path, and a predicate that compares it should normalise first. See [Use with NestJS](/auth/build/nestjs/#background-polls).
+
+#### `createAuthContext(options)`
+
+<ConfigTable rows={trpcAdapterOptions} prefix="trpc-createauthcontext" label="Option" />
+
+The predicate and the meta are read from the calls tRPC parsed before it built the context. When tRPC names no call, the request touches. See [Use with tRPC](/auth/build/trpc/#background-polls) for the cases where this has no effect.
+
+### Handing out the CSRF token
+
+For a client that cannot read the `csrf` cookie. The token is the one the adapter already set as the cookie on that response, bound to the same session or pre-session. Source: `auth-nestjs/src/session-cookies.ts`, `auth-trpc/src/context.ts`, `auth-trpc/src/response-meta.ts`.
+
+<ConfigTable rows={csrfHandout} prefix="csrf-handout" label="Call" third="What it does" />
+
+`authResponseMeta` drops `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control`, every `*-CDN-Cache-Control`, `X-Accel-Expires` and `Edge-Control` from the headers your `responseMeta` returns, only on a response that handed out a token; any other response gets your answer unchanged. Other proxy-specific cache headers are left alone, so keep such rules off the token route.
+
 ## Startup checks
 
 `createAuth` throws an `AuthConfigError` when:
@@ -374,6 +430,7 @@ Builds a `captcha` for Cloudflare Turnstile.
 - `emailVerification.digits`, `passwordReset.digits` or `emailChange.digits` is outside 6 to 9;
 - `emailChange.revertTtl` is shorter than 7 days;
 - `throttle.lockout.permanent.afterLocks` is not a whole number of at least 1;
+- `previousSecret` holds a value that is not a string or bytes, is shorter than the minimum for `secret`, or repeats `secret` or another previous secret (an empty string counts as shorter);
 - a plugin requires `captcha` and none is configured;
 - `background.timeout` is zero, or `background.maxPending` is not a whole number of at least 1.
 
