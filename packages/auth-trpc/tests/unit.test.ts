@@ -286,7 +286,17 @@ describe('the cookie writers', () => {
 
     // Nor on a subscription, whose response is a stream as well.
     await expect(middleware.use({ ctx, type: 'subscription', next })).rejects.toThrow(
-      /cannot mark a subscription/u,
+      /cannot mark a subscription: its response is a stream/u,
+    );
+
+    // Nor on a query, which skips the CSRF check (A104), nor on any type tRPC
+    // might add that is not a mutation.
+    await expect(middleware.use({ ctx, type: 'query', next })).rejects.toThrow(
+      /cannot mark a query: a query skips the CSRF check/u,
+    );
+
+    await expect(middleware.use({ ctx, type: 'unknown', next })).rejects.toThrow(
+      /cannot mark a unknown: only a mutation passes the CSRF check/u,
     );
 
     expect(next).not.toHaveBeenCalled();
