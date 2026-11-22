@@ -69,11 +69,11 @@ RedisSessionStore [class]
     listByUser(userId: string): Promise<StoredSession[]>
     private epochKey
     private readonly clock
-    private readonly epochTtlMs
     private readonly prefix
     private readonly redis
     private sessionKey
     private userKey
+    readonly epochTtlMs: number
     readonly maxSessionTtlMs: number
     touch(session: StoredSession): Promise<boolean>
 RedisSessionStoreOptions [interface]

@@ -76,10 +76,33 @@ describe.skipIf(!url)('redis stores', () => {
       mailer: { send: async () => undefined },
       secret: 'redis-test-secret-at-least-32-bytes-long',
       urls: { resetPassword: (t: string) => t },
+      // Device tokens may not outlive the 20 day epoch either.
+      throttle: { lockout: { deviceMaxAge: '7d' as const } },
     };
 
     expect(() => createAuth(config)).toThrow(/maxSessionTtl/u);
     expect(() => createAuth({ ...config, session: { rememberMeTtl: '7d' } })).not.toThrow();
+  });
+
+  it('tells createAuth how long it keeps an epoch, so no device token outlives it', async () => {
+    const { createAuth } = await import('@noctcore/auth');
+    const { memoryStores, plainHasher } = await import('@noctcore/auth/testing');
+    const memory = memoryStores();
+    const store = new RedisSessionStore(redis, { prefix });
+
+    expect(store.epochTtlMs).toBe(90 * 24 * 3600_000);
+
+    const config = (deviceMaxAge: '365d' | '30d') => ({
+      stores: { ...memory, sessions: store },
+      password: { hasher: plainHasher() },
+      mailer: { send: async () => undefined },
+      secret: 'redis-test-secret-at-least-32-bytes-long',
+      urls: { resetPassword: (t: string) => t },
+      throttle: { lockout: { deviceMaxAge } },
+    });
+
+    expect(() => createAuth(config('365d'))).toThrow(/deviceMaxAge/u);
+    expect(() => createAuth(config('30d'))).not.toThrow();
   });
 
   it('refuses an epoch TTL that does not outlive the longest session', () => {
