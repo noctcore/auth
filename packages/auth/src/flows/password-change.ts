@@ -190,6 +190,11 @@ async function proveCurrentPassword<U extends AuthUser, A>(
 
   await core.throttle.loginSucceeded(account, meta.ip, gate.viaDevice ? deviceId : null);
 
+  // The caller holds a session from a completed sign-in, so a correct password
+  // here is not a step toward one: with `countSuccesses` false its slot comes
+  // back now. A device slot was handed back above, and owed nothing.
+  if (!gate.viaDevice) await core.throttle.refundSuccess(account);
+
   return ok(publicUser(credential));
 }
 

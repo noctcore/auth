@@ -16,7 +16,8 @@
  *   without touching the owner on another network, and a larger account-wide
  *   one against distributed guessing.
  * - Spending the account-wide budget locks the account with exponential
- *   backoff, capped (1 h by default). The tier resets only after a quiet
+ *   backoff, capped (1 h by default), or with the app's own `durations`
+ *   ladder (the last entry repeats). The tier resets only after a quiet
  *   period (24 h by default) with no new lock. A new lock mails the owner.
  * - Opt-in permanent tier (`lockout.permanent`): after `afterLocks` temporary
  *   locks in a row (a completed sign-in, every factor proved, or a
@@ -29,7 +30,10 @@
  *   address clears that one). Trusted devices still get through it unless
  *   `trustedDevices` is false.
  * - A correct password returns only the budget of the source that proved it
- *   (its per-(account, IP) or per-device budget), never the account-wide one.
+ *   (its per-(account, IP) or per-device budget), never the account-wide one,
+ *   unless `countSuccesses` is false: then the account-wide slot comes back
+ *   too, but only once the sign-in completes (`signInCompleted`), and never
+ *   more slots than correct passwords reserved in the window.
  * - Trusted devices: every issued session carries a signed device token bound
  *   to the user, their revocation epoch and an issue time (see device-token.ts).
  *   The token matters only while the account is LOCKED: an unlocked account
@@ -65,7 +69,7 @@ import {
 } from './rules';
 import type { Clock } from '../ports/clock';
 import type { CounterStore } from '../ports/stores';
-import { assertBoolean, configMilliseconds } from '../shared/config-checks';
+import { assertBoolean, assertList, configMilliseconds } from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 import { LOCKOUT_EXPIRES_AT, toMilliseconds } from '../shared/duration';
 
@@ -77,6 +81,8 @@ export class Throttle {
   readonly deviceMaxAgeMs: number;
   private readonly baseLockMs: number;
   private readonly maxLockMs: number;
+  /** The `durations` ladder in ms, used in place of `baseLock` and `maxLock`; undefined when not set. */
+  private readonly lockLadderMs: readonly number[] | undefined;
   private readonly quietPeriodMs: number;
   /** Temporary locks in a row before the next is permanent; undefined when the tier is off. */
   private readonly permanentAfter: number | undefined;
@@ -84,6 +90,12 @@ export class Throttle {
   readonly permanentDevices: boolean;
   /** Whether login may answer `account_locked` for a locked account. */
   readonly revealLocked: boolean;
+  /**
+   * Whether a correct password keeps spending the account-wide budget
+   * (`countSuccesses`, default true). False: a completed sign-in hands the
+   * slot back, so only failures count.
+   */
+  readonly countSuccesses: boolean;
 
   constructor(
     private readonly counters: CounterStore,
@@ -104,6 +116,8 @@ export class Throttle {
     this.permanentAfter = permanentAfter(options);
     this.permanentDevices = options.permanent?.trustedDevices ?? true;
     this.revealLocked = options.revealLocked ?? false;
+    this.countSuccesses = options.countSuccesses ?? true;
+    this.lockLadderMs = lockLadder(options);
 
     assertLockoutOptions(options, [
       ['perAccountIp', this.perAccountIp],
@@ -248,7 +262,7 @@ export class Throttle {
 
     const running = await this.counters.get(keys.lock(account));
 
-    return { lock: { until: running?.resetAt ?? this.clock.now() + this.baseLockMs } };
+    return { lock: { until: running?.resetAt ?? this.clock.now() + this.lockDuration(1) } };
   }
 
   /** Where the permanent marker lives: under the account when there is one, else the address. */
@@ -284,8 +298,9 @@ export class Throttle {
   /**
    * Call BEFORE checking a second-factor code: checks the factor's lock and
    * reserves one attempt in `account`'s budget, counted per account across
-   * every IP. Spending the budget locks the factor with the same capped
-   * backoff as the password lockout (`baseLock`, `maxLock`, `quietPeriod`).
+   * every IP. Spending the budget locks the factor with the same backoff as
+   * the password lockout (`baseLock` and `maxLock`, or `durations`, and
+   * `quietPeriod`), counted in the factor's own tier.
    * Its keys live under their own prefix, so a factor lock never locks the
    * password and back, whatever `account` is. A new lock (`newLock`) does not
    * count toward the permanent tier by itself: pass it on to `escalate` (the
@@ -375,8 +390,7 @@ export class Throttle {
   ): Promise<{ newLock?: NewLock }> {
     const previous = await this.counters.get(keys.tier(account));
     const tier = (previous?.count ?? 0) + 1;
-    const backoffMs = this.baseLockMs * 3 ** Math.min(tier - 1, 20);
-    const duration = Math.min(backoffMs, this.maxLockMs);
+    const duration = this.lockDuration(tier);
     // An increment arms its TTL only on the first hit, so a running lock keeps its end.
     const lock = await this.counters.increment(keys.lock(account), duration);
 
@@ -401,6 +415,21 @@ export class Throttle {
     }
 
     return { newLock: { until: lock.resetAt } };
+  }
+
+  /**
+   * How long lock number `tier` (from 1) lasts: entry `tier` of the
+   * `durations` ladder, its last entry once the ladder runs out, or else
+   * `baseLock` multiplied by 3 per earlier lock, capped at `maxLock`.
+   */
+  private lockDuration(tier: number): number {
+    // Entry `tier`, or the last one: the ladder is never empty (startup refuses that).
+    if (this.lockLadderMs)
+      return this.lockLadderMs.reduce((pick, entry, index) => (index < tier ? entry : pick));
+
+    const backoffMs = this.baseLockMs * 3 ** Math.min(tier - 1, 20);
+
+    return Math.min(backoffMs, this.maxLockMs);
   }
 
   /**
@@ -452,25 +481,93 @@ export class Throttle {
    * returned. Pass `deviceId` only for a `viaDevice` attempt: both of its
    * reserved device slots (its own and the shared one) come back.
    *
+   * With `countSuccesses` false, an attempt that reserved an account-wide
+   * slot (not a `viaDevice` one) is also recorded as owed one slot back, in
+   * a counter that lapses with the account-wide window. The slot itself
+   * comes back only when the sign-in completes (`signInCompleted`), or at
+   * once at a door that proves nothing more (`refundSuccess`).
+   *
    * It does NOT start the count toward the permanent tier over: a second
    * factor may still be owed, and an attacker who holds the password would
    * otherwise reset the climb before every round of guessed codes. Only a
    * completed sign-in does (`signInCompleted`).
    */
   async loginSucceeded(account: string, ip: string, deviceId?: string | null): Promise<void> {
-    if (!deviceId) return this.counters.reset(keys.accountIp(account, ip));
+    if (deviceId) {
+      await this.counters.decrement(keys.device(account, deviceId));
+      await this.counters.decrement(keys.devices(account));
 
-    await this.counters.decrement(keys.device(account, deviceId));
-    await this.counters.decrement(keys.devices(account));
+      return;
+    }
+
+    await this.counters.reset(keys.accountIp(account, ip));
+
+    if (!this.countSuccesses) await this.owe(account);
   }
 
   /**
    * A sign-in completed, every factor proved and the session about to be
    * issued: the locks in a row toward the permanent tier start over (the
-   * temporary backoff does not). Reads and writes nothing while the tier is off.
+   * temporary backoff does not), and with `countSuccesses` false one owed
+   * account-wide slot comes back (`refundSuccess`). Reads and writes nothing
+   * while the tier is off and successes count.
    */
   async signInCompleted(account: string): Promise<void> {
     if (this.permanentAfter !== undefined) await this.counters.reset(keys.escalation(account));
+
+    await this.refundSuccess(account);
+  }
+
+  /**
+   * With `countSuccesses` false, hands back one account-wide slot a correct
+   * password reserved (`loginSucceeded`) and has not had back yet. Login
+   * calls it through `signInCompleted`, so a correct password with a second
+   * factor still owed gets nothing back until the factor is proved;
+   * `reauthenticate` and `changePassword` call it right after the correct
+   * password, since their caller holds a session from a completed sign-in.
+   *
+   * Each refund claims a number from a second counter and goes ahead only
+   * while the claims stay within the slots owed, so parallel completions
+   * never hand back more than was reserved in the window, and the store
+   * never takes the budget below zero. Both counters lapse with the window
+   * the slots were reserved in, so a slot never comes back out of a newer
+   * window. Reads and writes nothing while successes count.
+   */
+  async refundSuccess(account: string): Promise<void> {
+    if (this.countSuccesses) return;
+
+    const owed = await this.counters.get(keys.owed(account));
+
+    if (owed === null || owed.count <= 0) return;
+
+    const claimKey = keys.refunded(account);
+    const claim = await this.counters.increment(claimKey, this.msUntil(owed.resetAt));
+
+    if (claim.count > owed.count) {
+      await this.counters.decrement(claimKey);
+
+      return;
+    }
+
+    await this.counters.decrement(keys.account(account));
+  }
+
+  /**
+   * One more account-wide slot owed back, in a counter that lapses when the
+   * account-wide window does. Nothing is owed when that window has already
+   * ended (its slot went with it).
+   */
+  private async owe(account: string): Promise<void> {
+    const all = await this.counters.get(keys.account(account));
+
+    if (all === null) return;
+
+    await this.counters.increment(keys.owed(account), this.msUntil(all.resetAt));
+  }
+
+  /** The time left until `at`, at least 1 ms, as a TTL. */
+  private msUntil(at: number): number {
+    return Math.max(1, at - this.clock.now());
   }
 
   /**
@@ -484,6 +581,13 @@ export class Throttle {
     await this.counters.reset(keys.account(account));
 
     if (this.permanentAfter !== undefined) await this.counters.reset(keys.escalation(account));
+
+    if (this.countSuccesses) return;
+
+    // The slots owed back belong to the budget just reset: a new window must
+    // not have its failures handed back.
+    await this.counters.reset(keys.owed(account));
+    await this.counters.reset(keys.refunded(account));
   }
 
   /**
@@ -532,7 +636,44 @@ function assertLockoutOptions(
   for (const [key, rule] of rules) assertWindowRule(`throttle.lockout.${key}`, rule);
 
   assertBoolean('throttle.lockout.revealLocked', lockout.revealLocked);
+  assertBoolean('throttle.lockout.countSuccesses', lockout.countSuccesses);
   assertBoolean('throttle.lockout.permanent.trustedDevices', lockout.permanent?.trustedDevices);
+}
+
+/**
+ * The validated `durations` ladder in milliseconds, or undefined when it is
+ * left out. Refuses a list that is empty, has an entry that is not a
+ * duration or is zero, or is set together with `baseLock` or `maxLock`
+ * (one of the two would be silently ignored).
+ */
+function lockLadder(lockout: LockoutOptions): readonly number[] | undefined {
+  const { durations } = lockout;
+  const name = 'throttle.lockout.durations';
+
+  if (durations === undefined || durations === null) return undefined;
+
+  assertList(name, durations);
+
+  if (durations.length === 0) throw new AuthConfigError(`${name} must list at least one duration`);
+
+  if (
+    (lockout.baseLock !== undefined && lockout.baseLock !== null) ||
+    (lockout.maxLock !== undefined && lockout.maxLock !== null)
+  ) {
+    throw new AuthConfigError(
+      `${name} replaces throttle.lockout.baseLock and maxLock: set durations or those two, not both`,
+    );
+  }
+
+  return Array.from(durations, (entry, index) => {
+    const path = `${name}[${index}]`;
+    // A NaN fallback: an entry left out (a null) is refused like any non-duration.
+    const ms = configMilliseconds(path, entry, Number.NaN);
+
+    if (ms <= 0) throw new AuthConfigError(`${path} must be longer than zero`);
+
+    return ms;
+  });
 }
 
 /** The validated `permanent.afterLocks`, or undefined when the tier is off. */
