@@ -22,19 +22,20 @@
  * `SessionCookies.csrfToken` can return it to a client that cannot read the
  * cookie (a desktop shell on its own scheme, a web app on another origin).
  *
+ * The verdict and the handout are the core's (`csrfRequestAllowed`,
+ * `handOutCsrfToken`), the same functions auth-trpc calls, so an app that
+ * mounts both adapters applies one rule to one cookie. This file decides
+ * only which requests are judged and how a refusal is answered.
+ *
  * Guide: Learn, "CSRF".
  */
 import { Inject, Injectable, type NestMiddleware } from '@nestjs/common';
-import { parseCookieHeader, verifyFetchSite, verifyRequestOrigin } from '@noctcore/auth';
 import {
-  binding,
+  csrfRequestAllowed,
+  handOutCsrfToken,
   isSafeMethod,
-  csrfCookie,
-  csrfTokenValid,
-  newPreSession,
-  preSessionBinding,
-  readPreSession,
-} from './csrf-tokens';
+  readCsrfCookies,
+} from '@noctcore/auth';
 import type { ResolvedOptions } from './options';
 import {
   appendCookie,
@@ -100,12 +101,8 @@ export class CsrfMiddleware implements NestMiddleware {
   /** True when the request may go on. Sets the cookies a safe request should carry back. */
   private async check(req: RawRequest, res: RawResponse): Promise<boolean> {
     const { csrf } = this.options;
-    const method = req.method ?? 'GET';
     const state = await sessionState(req, this.options);
-    const cookies = parseCookieHeader(header(req, 'cookie'));
-    const preSession = readPreSession(cookies.get(csrf.preSessionCookieName));
-    const cookieToken = cookies.get(csrf.cookieName);
-    const origin = header(req, 'origin');
+    const cookies = readCsrfCookies(csrf, header(req, 'cookie'));
     // Every cookie set here travels with the session cookie, so takes its SameSite.
     const sameSite = sameSiteFor(req, this.options);
 
@@ -113,60 +110,21 @@ export class CsrfMiddleware implements NestMiddleware {
     // sending it. One another request may still be adopting is kept.
     if (state.clearCookie) appendCookie(res, blankSessionCookie(this.options, sameSite));
 
-    if (!isSafeMethod(method)) {
-      const secFetchSite = header(req, 'sec-fetch-site');
-
-      const originOk = verifyRequestOrigin({
-        method,
-        origin,
-        allowedOrigins: csrf.allowedOrigins,
-      });
-
-      // Fetch metadata, when the browser sends it. A client that sends none (an
-      // old browser, a native client) still needs the allowed Origin and the token.
-      const fetchSiteOk = verifyFetchSite({
-        method,
-        secFetchSite,
-        allowSameSite: csrf.allowSameSite,
-        origin,
-        crossSiteOrigins: csrf.crossSiteOrigins,
-      });
-
-      const siteOk = fetchSiteOk || secFetchSite === undefined;
-
-      const tokenOk = csrfTokenValid(this.options, {
-        cookieToken,
+    if (!isSafeMethod(req.method ?? 'GET')) {
+      return csrfRequestAllowed(csrf, {
+        session: state.session,
+        cookies,
+        origin: header(req, 'origin'),
+        secFetchSite: header(req, 'sec-fetch-site'),
         headerToken: header(req, csrf.headerName),
-        bound: binding(state.session, preSession),
       });
-
-      return originOk && siteOk && tokenOk;
     }
 
-    let bound = binding(state.session, preSession);
+    const handout = handOutCsrfToken(this.options, { session: state.session, cookies, sameSite });
 
-    if (bound === null) {
-      const fresh = newPreSession(this.options, sameSite);
+    for (const cookie of handout.cookies) appendCookie(res, cookie);
 
-      appendCookie(res, fresh.cookie);
-      bound = preSessionBinding(fresh.id);
-    }
-
-    const current = csrfTokenValid(this.options, {
-      cookieToken,
-      headerToken: cookieToken,
-      bound,
-    });
-
-    if (current) {
-      // A current token verified against the cookie, so the cookie is set.
-      handCsrfToken(req, cookieToken as string);
-    } else {
-      const fresh = csrfCookie(this.options, bound, sameSite);
-
-      appendCookie(res, fresh.cookie);
-      handCsrfToken(req, fresh.token);
-    }
+    handCsrfToken(req, handout.token);
 
     return true;
   }

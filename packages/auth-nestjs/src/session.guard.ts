@@ -44,8 +44,13 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { AuthErrorCode, AuthUser, StoredSession, ValidatedSession } from '@noctcore/auth';
-import { isSafeMethod } from './csrf-tokens';
+import {
+  isSafeMethod,
+  type AuthErrorCode,
+  type AuthUser,
+  type StoredSession,
+  type ValidatedSession,
+} from '@noctcore/auth';
 import type { ResolvedOptions } from './options';
 import { csrfPassed, rawRequest, sessionState, setPrincipal, type RawRequest } from './request';
 import {
