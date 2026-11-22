@@ -470,6 +470,88 @@ describe('factor locks and the permanent lockout tier', () => {
   });
 });
 
+describe('completed sign-ins and the lockout', () => {
+  const lockout = {
+    perAccount: { limit: 2, window: '15m' },
+    perAccountIp: { limit: 100, window: '15m' },
+  } as const;
+
+  /** Three wrong passwords from fresh sources: one new password lock. */
+  async function lockOnce(t: ReturnType<typeof twoFactorApp>, round: number) {
+    for (let i = 0; i < 3; i++)
+      await t.auth.login({
+        email: EMAIL,
+        password: 'wrong passphrase!',
+        meta: meta(`192.0.${round}.${i}`),
+      });
+  }
+
+  it('counts a challenge passed by a trusted device as a completed sign-in: the escalation starts over', async () => {
+    const t = twoFactorApp(
+      {},
+      { throttle: { lockout: { ...lockout, permanent: { afterLocks: 1 } } } },
+    );
+
+    const { secret } = await t.enrolled();
+    const first = await t.challenged();
+
+    const remembered = await t.auth.twoFactor.verifyChallenge({
+      challenge: first.challenge,
+      proof: { kind: 'totp', code: t.codeFor(secret) },
+      rememberDevice: true,
+      meta: meta(),
+    });
+
+    if (!remembered.ok) throw new Error(remembered.reason);
+
+    await lockOnce(t, 1);
+    t.clock.advance(5 * 60_000);
+
+    const { challenge } = await t.challenged();
+
+    const skipped = await t.auth.twoFactor.verifyChallenge({
+      challenge,
+      proof: { kind: 'trusted-device', token: remembered.value.trustedDevice?.token },
+      meta: meta(),
+    });
+
+    expect(skipped.ok).toBe(true);
+
+    // Without the reset, this second lock in a row would be the permanent one.
+    await lockOnce(t, 2);
+
+    expect(await t.auth.lockout.inspect({ email: EMAIL })).toMatchObject({
+      locked: true,
+      permanent: false,
+    });
+  });
+
+  it('with countSuccesses false, hands no slot back for a correct password while the factor is owed', async () => {
+    const t = twoFactorApp({}, { throttle: { lockout: { ...lockout, countSuccesses: false } } });
+
+    await t.enrolled();
+    await t.challenged(EMAIL, { ip: '198.51.100.1' });
+    await t.challenged(EMAIL, { ip: '198.51.100.2' });
+
+    const third = await t.auth.login({
+      email: EMAIL,
+      password: PASSWORD,
+      meta: meta('198.51.100.3'),
+    });
+
+    expect(third).toMatchObject({ ok: false, code: 'invalid_credentials', reason: 'locked' });
+  });
+
+  it('with countSuccesses false, hands the slot back once the factor is proved', async () => {
+    const t = twoFactorApp({}, { throttle: { lockout: { ...lockout, countSuccesses: false } } });
+    const { secret } = await t.enrolled();
+
+    for (let i = 0; i < 6; i++) await t.passed(secret);
+
+    expect((await t.auth.lockout.inspect({ email: EMAIL })).locked).toBe(false);
+  });
+});
+
 describe('trusted devices', () => {
   it('trusts a device on request and lets it skip the next challenge, without a step-up', async () => {
     const t = twoFactorApp();

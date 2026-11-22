@@ -203,6 +203,117 @@ describe('permanent lockout tier', () => {
   });
 });
 
+describe('countSuccesses', () => {
+  /** `count` correct sign-ins from fresh sources; the answers. */
+  async function signIns(app: Env, count: number) {
+    const answers = [];
+
+    for (let i = 0; i < count; i++) {
+      const result = await app.auth.login({
+        email: EMAIL,
+        password: PASSWORD,
+        meta: meta(`198.51.100.${i}`),
+      });
+
+      answers.push(result.ok ? 'session' : result.reason);
+    }
+
+    return answers;
+  }
+
+  const wrong = (app: Env, ip: string) =>
+    app.auth.login({ email: EMAIL, password: 'wrong passphrase!', meta: meta(ip) });
+
+  it('by default counts correct sign-ins toward the account-wide lock', async () => {
+    const app = await registered({});
+
+    // Registration signed nobody in: the third correct password in the window locks.
+    expect(await signIns(app, 3)).toEqual(['session', 'session', 'locked']);
+  });
+
+  it('when false, locks nothing for six correct sign-ins in a window', async () => {
+    const app = await registered({ countSuccesses: false });
+
+    expect(await signIns(app, 6)).toEqual(Array.from({ length: 6 }, () => 'session'));
+    expect((await app.auth.lockout.inspect({ email: EMAIL })).locked).toBe(false);
+  });
+
+  it('when false, still locks on failures, with correct sign-ins between them', async () => {
+    const app = await registered({ countSuccesses: false });
+
+    await wrong(app, '192.0.2.1');
+    expect(await signIns(app, 2)).toEqual(['session', 'session']);
+    await wrong(app, '192.0.2.2');
+    await wrong(app, '192.0.2.3');
+
+    expect((await app.auth.lockout.inspect({ email: EMAIL })).locked).toBe(true);
+  });
+
+  it('when false, hands back the slot of a correct password at reauthenticate', async () => {
+    const app = await registered({ countSuccesses: false });
+    const login = await signIn(app);
+
+    if (!login.ok || login.value.kind !== 'session') throw new Error('sign-in failed');
+
+    let session = login.value.session.session;
+
+    for (let i = 0; i < 4; i++) {
+      const renewed = await app.auth.reauthenticate({ session, password: PASSWORD, meta: meta() });
+
+      if (!renewed.ok) throw new Error(renewed.reason);
+
+      session = renewed.value.session;
+    }
+
+    expect((await app.auth.lockout.inspect({ email: EMAIL })).locked).toBe(false);
+  });
+
+  it('refuses a countSuccesses that is not true or false', () => {
+    expect(() => setup({ throttle: { lockout: { countSuccesses: 'false' as never } } })).toThrow(
+      'throttle.lockout.countSuccesses must be true or false',
+    );
+  });
+});
+
+describe('durations', () => {
+  it("locks for 15 min, then 1 h and 1 h with ['15m', '1h']", async () => {
+    const app = await registered({ durations: ['15m', '1h'] });
+    const locks = [];
+
+    for (let round = 0; round < 3; round++) {
+      await lockOnce(app);
+
+      const { until } = await app.auth.lockout.inspect({ email: EMAIL });
+
+      locks.push((until?.getTime() ?? 0) - app.clock.now());
+      app.clock.advance(60 * MIN);
+    }
+
+    expect(locks).toEqual([15 * MIN, 60 * MIN, 60 * MIN]);
+  });
+
+  it('refuses an empty list, an entry that is not a duration, and durations with baseLock or maxLock', () => {
+    const boot = (lockout: unknown) => () =>
+      setup({ throttle: { lockout: lockout as LockoutOptions } });
+
+    const both = 'throttle.lockout.durations replaces throttle.lockout.baseLock and maxLock';
+
+    expect(boot({ durations: [] })).toThrow(AuthConfigError);
+
+    expect(boot({ durations: [] })).toThrow(
+      'throttle.lockout.durations must list at least one duration',
+    );
+
+    expect(boot({ durations: ['15m', '1 hour'] })).toThrow(
+      'throttle.lockout.durations[1] must be a duration',
+    );
+
+    expect(boot({ durations: ['15m'], baseLock: '5m' })).toThrow(both);
+    expect(boot({ durations: ['15m'], maxLock: '1h' })).toThrow(both);
+    expect(boot({ durations: ['15m', 60] })).not.toThrow();
+  });
+});
+
 describe('admin lockout tools', () => {
   it('inspects and clears a permanent lock by address or by user id', async () => {
     const env = await registered({ permanent: { afterLocks: 1 } });
