@@ -407,3 +407,54 @@ describe('a refused code and a resend racing it', () => {
     );
   });
 });
+
+describe('extendLink racing the click that spends the link', () => {
+  async function spentWhileExtending(without: readonly (keyof TokenStore)[]) {
+    const { token, expiresAt } = await tokens.issueLink('email-revert', 'u1', 60_000);
+
+    const racing = new OneTimeTokens(
+      interleaved(
+        store,
+        'find',
+        async () => expect((await tokens.redeemLink('email-revert', token)).status).toBe('valid'),
+        without,
+      ),
+      clock,
+      cryptoRandom,
+      secret,
+    );
+
+    await racing.extendLink('email-revert', token, expiresAt + 60_000);
+
+    expect(await store.findByUser('email-revert', 'u1')).toBeNull();
+    expect((await tokens.peekLink('email-revert', token)).status).toBe('unknown');
+  }
+
+  it('leaves a link spent between its read and the extend spent', async () => {
+    await spentWhileExtending([]);
+  });
+
+  it('leaves it spent with a store that has no extendExpiry', async () => {
+    await spentWhileExtending(['extendExpiry']);
+  });
+
+  it('extends a live link through a store that has no extendExpiry, keeping its attempts and data', async () => {
+    const { token, expiresAt } = await tokens.issueLink('email-revert', 'u1', 60_000, {
+      email: 'a',
+    });
+
+    const legacy = new OneTimeTokens(
+      interleaved(store, 'find', async () => undefined, ['extendExpiry']),
+      clock,
+      cryptoRandom,
+      secret,
+    );
+
+    await legacy.extendLink('email-revert', token, expiresAt + 60_000);
+
+    expect(await store.findByUser('email-revert', 'u1')).toMatchObject({
+      expiresAt: expiresAt + 60_000,
+      data: { email: 'a' },
+    });
+  });
+});

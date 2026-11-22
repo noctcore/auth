@@ -255,15 +255,30 @@ export class OneTimeTokens {
     return { userId: found.userId, data: found.data };
   }
 
-  /** Moves a live link's expiry out to `expiresAt`; never shortens it. Unknown or expired links stay as they are. */
+  /**
+   * Moves a live link's expiry out to `expiresAt`; never shortens it. Unknown
+   * or expired links stay as they are, and so does a link spent between the
+   * read and the write: the extend never writes a link back.
+   */
   async extendLink(purpose: string, token: unknown, expiresAt: number): Promise<void> {
     if (!isTokenShape(token)) return;
 
-    const found = await this.store.find(purpose, sha256Hex(token));
+    const hash = sha256Hex(token);
+    const found = await this.store.find(purpose, hash);
 
     if (!found || found.expiresAt <= this.clock.now() || found.expiresAt >= expiresAt) return;
 
-    await this.store.put({ ...found, expiresAt });
+    if (this.store.extendExpiry) {
+      await this.store.extendExpiry(purpose, hash, expiresAt);
+
+      return;
+    }
+
+    // A store without extendExpiry: only the caller that takes the link puts
+    // it back, so a link spent meanwhile is not taken and stays spent.
+    const taken = await this.store.consume(purpose, hash);
+
+    if (taken) await this.store.put({ ...taken, expiresAt });
   }
 
   revokeAll(userId: string, purposes: readonly string[]): Promise<void> {
