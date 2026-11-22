@@ -67,7 +67,7 @@ A shell's requests say `Sec-Fetch-Site: cross-site`, like an attack's. The NestJ
 
 The MAC input is length-prefixed (`csrf:<binding length>:<binding>:<nonce>`), so no binding and nonce pair can be read as another. The HMAC stops a sibling origin that can write cookies from planting a pair of its own; the binding stops a token minted for one session from working in another.
 
-The secret must be at least 32 bytes, should be used for CSRF only (not the auth secret), and can be rotated with a list of accepted previous secrets. During a rotation, hand out a token under the current secret whenever a safe request arrives with one signed by a previous secret, or no client ever moves and the previous secret can never be removed without refusing each of them once. A page that read the old token before its cookie was replaced must still pass while the previous secret is listed.
+The secret must be at least 32 bytes, should be used for CSRF only (not the auth secret), and can be rotated with a list of accepted previous secrets. During a rotation, hand out a token under the current secret whenever a safe request arrives with one signed by a previous secret, or no client ever moves and the previous secret can never be removed without refusing each of them once. Keep the strict compare of header and cookie while doing it: a page that kept the old token in memory is refused once after another request replaced the cookie, and must read the token again (or retry once after a safe request). Accepting an old-secret header over the new cookie would let anyone holding the previous secret, and the binding, mint a header.
 
 ### A binding before sign-in too
 
