@@ -76,11 +76,12 @@ The store moves the address in one compare-and-set on the old address, and the u
 Until the revert link expires or is used, the old address is held for the account that gave it up. Without the hold, the intruder could register the old address and leave the revert nowhere to go back to ([A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts)).
 
 - **Sign-up on it** gives the answer for an address with an account, and an "account exists" mail to the old address for its owner, after the same number of store round trips. A read of the holder stands where a taken or new address does its insert, so the timing is not the same; the lookup and mail run after the answer, as for a taken address.
+- **Sign-up through an invitation to it** answers `email_in_use`, as for an address with an account, and spends nothing.
 - **Another account's change to it** answers as taken.
 
 <Aside type="caution" title="The hold covers the library's own flows only">
-  An app's invitations, admin tools, first SSO sign-ins and imports must ask `auth.isAddressHeld`
-  before they create a user.
+  An app's admin tools, first SSO sign-ins and imports must ask `auth.isAddressHeld` before they
+  create a user.
 </Aside>
 
 ### The old address can undo it
@@ -145,7 +146,7 @@ The guide's [email addresses](https://auth.pilcrowonpaper.com/email-addresses) p
 | [A058](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A058-email-change-enumeration.test.ts) | Learning whether an address has an account through the email change answer | `flows/email-change.ts`, `ports/mail.ts` |
 | [A059](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A059-email-change-race.test.ts) | Racing two email changes | `tokens/one-time-tokens.ts`, `ports/stores.ts`, `flows/email-change.ts` |
 | [A060](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A060-retaking-the-account-after-a-revert.test.ts) | Taking the account back after the owner reverted the change | `flows/email-change.ts`, `plugins/two-factor/hooks.ts` |
-| [A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts) | Registering the old address so the revert has nowhere to go | `flows/email-reservation.ts`, `flows/register.ts`, `flows/email-change.ts` |
+| [A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts) | Registering the old address so the revert has nowhere to go | `flows/email-reservation.ts`, `flows/register.ts`, `plugins/invitations/accept.ts`, `flows/email-change.ts` |
 | [A062](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A062-resetting-at-the-new-address-after-a-refused-revert.test.ts) | Resetting the password at the intruder's address after a refused revert | `flows/email-lockout.ts`, `flows/email-change.ts`, `flows/password-reset.ts`, `create-auth.ts` |
 | [A063](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A063-stripping-the-owners-factor-with-a-revert.test.ts) | Stripping the owner's second factor with an email revert | `flows/email-change.ts`, `plugins/two-factor/hooks.ts` |
 

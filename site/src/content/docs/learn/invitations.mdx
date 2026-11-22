@@ -106,6 +106,7 @@ Once the address has an account, the link only works for that account: signed in
 
 | Test | Attack | Stopped by |
 | ---- | ------ | ---------- |
+| [A061](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A061-registering-the-old-address-before-the-revert.test.ts) | Registering the old address so the revert has nowhere to go | `plugins/invitations/accept.ts`, `flows/email-reservation.ts` |
 | [A069](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A069-reusing-or-racing-an-invitation.test.ts) | Reusing an invitation, or racing two accepts of one | `plugins/invitations/accept.ts`, `ports/invitations.ts` |
 | [A070](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A070-accepting-with-another-address.test.ts) | Accepting an invitation with an account at another address | `plugins/invitations/accept.ts` |
 | [A071](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A071-pre-hijacking-through-an-invitation.test.ts) | Collecting an invitation with an unverified account (pre-hijacking) | `plugins/invitations/accept.ts` |
