@@ -108,6 +108,43 @@ describe('resolveOptions', () => {
     );
   });
 
+  it('refuses CSRF options of the wrong type, as the environment gives them', () => {
+    const csrf = { secrets: [CSRF_SECRET], allowedOrigins: [ORIGIN] };
+
+    for (const [bad, message] of [
+      [{ allowSameSite: 'false' }, 'csrf.allowSameSite must be true or false'],
+      [{ allowSameSite: 1 }, 'csrf.allowSameSite must be true or false'],
+      [{ secrets: CSRF_SECRET }, 'csrf.secrets must be a list'],
+      [{ secrets: [undefined] }, 'csrf.secrets must hold strings or bytes'],
+      [{ allowedOrigins: ORIGIN }, 'csrf.allowedOrigins must be a list'],
+      [{ crossSiteOrigins: 'app://desktop' }, 'csrf.crossSiteOrigins must be a list'],
+      [{ headerName: 42 }, 'csrf.headerName must be a string'],
+      [{ exempt: '/webhook' }, 'csrf.exempt must be a list of paths and RegExps'],
+      [{ exempt: /^\/webhook/u }, 'csrf.exempt must be a list of paths and RegExps'],
+      [{ exempt: ['/webhook', undefined] }, 'csrf.exempt must be a list of paths and RegExps'],
+    ] as const) {
+      const resolve = () => resolveOptions(options({ csrf: { ...csrf, ...bad } as never }));
+
+      expect(resolve).toThrow(AuthConfigError);
+      expect(resolve).toThrow(message);
+    }
+
+    for (const [given, resolved] of [
+      [{ allowSameSite: true }, true],
+      [{ allowSameSite: false }, false],
+      [{}, false],
+    ] as const) {
+      expect(resolveOptions(options({ csrf: { ...csrf, ...given } })).csrf.allowSameSite).toBe(
+        resolved,
+      );
+    }
+
+    expect(
+      resolveOptions(options({ csrf: { ...csrf, exempt: ['/webhook', /^\/hooks\//u] } })).csrf
+        .exempt,
+    ).toHaveLength(2);
+  });
+
   it('refuses a header name that is not a plain token', () => {
     expect(() =>
       resolveOptions(

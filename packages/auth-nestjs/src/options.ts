@@ -185,6 +185,15 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
   // the CSRF cookies follow it, so one setting decides all three.
   const secure = auth.cookieName.startsWith('__Host-');
   const resolvedCsrf = resolveCsrfSettings(csrf, secure);
+  const exempt: unknown = csrf.exempt ?? [];
+
+  // A rule that is neither would throw on every unsafe request instead of at boot.
+  if (
+    !Array.isArray(exempt) ||
+    exempt.some((rule) => typeof rule !== 'string' && !(rule instanceof RegExp))
+  ) {
+    throw new AuthConfigError('csrf.exempt must be a list of paths and RegExps');
+  }
 
   const shutdownTimeout = options.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT;
 
@@ -209,7 +218,7 @@ export function resolveOptions<U extends AuthUser>(options: AuthModuleOptions<U>
     cookie,
     shutdownTimeout,
     touch,
-    csrf: { ...resolvedCsrf, exempt: [...(csrf.exempt ?? [])] },
+    csrf: { ...resolvedCsrf, exempt: [...(exempt as readonly (string | RegExp)[])] },
   };
 }
 
