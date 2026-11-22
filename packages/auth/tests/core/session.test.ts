@@ -191,7 +191,7 @@ describe('SessionManager options and edges', () => {
   it('picks the idle timeout per session when it is a function, and checks a fixed one at startup', async () => {
     const perSession = manager({
       idleTimeout: ({ rememberMe }) => (rememberMe ? '2h' : '10m'),
-      touchInterval: '15m',
+      touchInterval: '5m',
     });
 
     const short = await mintFor(perSession);
@@ -210,6 +210,34 @@ describe('SessionManager options and edges', () => {
 
     expect(fixed.session.idleTimeoutMs).toBe(5 * MIN);
     expect(() => manager({ idleTimeout: '5m', touchInterval: '5m' })).toThrow(AuthConfigError);
+  });
+
+  it('refuses a mint whose per-session idle timeout is not longer than the touch interval', async () => {
+    const m = manager({
+      idleTimeout: ({ rememberMe }) => (rememberMe ? '2h' : '10m'),
+      touchInterval: '15m',
+    });
+
+    // Steady use every 3 minutes never reaches the touch interval, so a
+    // 10 minute idle timeout would refuse the session as idle at minute 11.
+    await expect(mintFor(m)).rejects.toThrow(AuthConfigError);
+    expect(await store.listByUser('u1')).toEqual([]);
+
+    const equal = manager({ idleTimeout: () => '15m', touchInterval: '15m' });
+
+    await expect(mintFor(equal)).rejects.toThrow(AuthConfigError);
+
+    // The same function's longer value for another session still mints, and
+    // stays valid under steady use well past the shorter timeout.
+    const long = await mintFor(m, 'u1', { rememberMe: true });
+
+    if (!long.ok) throw new Error('mint failed');
+
+    for (let minute = 3; minute <= 30; minute += 3) {
+      clock.advance(3 * MIN);
+
+      expect((await m.validate(long.token)).ok).toBe(true);
+    }
   });
 
   it('keeps every session when the per-user cap is off, and refuses a cap below one', async () => {

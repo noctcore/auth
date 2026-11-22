@@ -35,6 +35,17 @@ import type { SessionStore, StoredSession } from '../ports/stores';
 import { toMilliseconds } from '../shared/duration';
 import { AuthConfigError } from '../shared/errors';
 
+/**
+ * A session must be touched before it can go idle: with an idle timeout no
+ * longer than the touch interval, a session used steadily is never touched and
+ * is refused as idle while its user is active.
+ */
+function assertIdleOutlastsTouch(idleMs: number, touchIntervalMs: number): void {
+  if (touchIntervalMs >= idleMs) {
+    throw new AuthConfigError('session.touchInterval must be shorter than the idle timeout');
+  }
+}
+
 export class SessionManager<A> {
   readonly absoluteTtlMs: number;
   readonly rememberMeTtlMs: number;
@@ -60,23 +71,28 @@ export class SessionManager<A> {
       throw new AuthConfigError('session.maxPerUser must be a positive integer or null');
     }
 
-    // An idle timeout chosen per session (a function) can only be checked
-    // when a session is minted; a fixed one is checked here, at startup.
-    const fixedIdleMs =
-      typeof options.idleTimeout === 'function'
-        ? null
-        : toMilliseconds(options.idleTimeout ?? '30m');
-
-    if (fixedIdleMs !== null && this.touchIntervalMs >= fixedIdleMs) {
-      throw new AuthConfigError('session.touchInterval must be shorter than the idle timeout');
+    // A fixed idle timeout is checked here, at startup; one chosen per session
+    // (a function) is checked against the same rule each time a session is
+    // minted (see `idleTimeoutMs`).
+    if (typeof options.idleTimeout !== 'function') {
+      assertIdleOutlastsTouch(toMilliseconds(options.idleTimeout ?? '30m'), this.touchIntervalMs);
     }
   }
 
   private idleTimeoutMs(rememberMe: boolean, attributes: A): number {
     const configured = this.options.idleTimeout;
 
-    if (typeof configured === 'function')
-      return toMilliseconds(configured({ rememberMe, attributes }));
+    if (typeof configured === 'function') {
+      const idleMs = toMilliseconds(configured({ rememberMe, attributes }));
+
+      // Thrown before anything is read or written, like a bad fixed value at
+      // startup: the login fails loudly instead of issuing a session that
+      // dies while it is in use.
+      assertIdleOutlastsTouch(idleMs, this.touchIntervalMs);
+
+      return idleMs;
+    }
+
     if (configured !== undefined) return toMilliseconds(configured);
 
     return toMilliseconds(rememberMe ? '7d' : '30m');
@@ -88,6 +104,7 @@ export class SessionManager<A> {
 
   async mint(input: MintInput<A>): Promise<MintResult<A>> {
     const token = generateToken(this.random);
+    const idleTimeoutMs = this.idleTimeoutMs(input.rememberMe, input.attributes);
 
     // The sessions written before this mint began, read before the clock so
     // that a session in it was also stamped before this one on a shared clock.
@@ -106,7 +123,7 @@ export class SessionManager<A> {
       authenticatedAt: input.authenticatedAt,
       lastActiveAt: now,
       expiresAt: now + ttlMs,
-      idleTimeoutMs: this.idleTimeoutMs(input.rememberMe, input.attributes),
+      idleTimeoutMs,
       epoch,
       rememberMe: input.rememberMe,
       persistentCookie: input.persistentCookie,
