@@ -444,7 +444,7 @@ export const lockout: readonly ConfigRow[] = [
     key: 'throttle.lockout.deviceMaxAge',
     type: 'Duration',
     default: "`'30d'`",
-    does: "The oldest trusted-device cookie accepted, checked on use. At most the session store's `epochTtlMs`.",
+    does: "The oldest trusted-device cookie accepted, checked on use. At least a minute (the clock skew a device cookie is allowed) shorter than the session store's `epochTtlMs`.",
   },
   {
     key: 'throttle.lockout.permanent',
@@ -657,7 +657,7 @@ export const redisStoresOptions: readonly ConfigRow[] = [
     key: 'epochTtl',
     type: 'Duration',
     default: "`'90d'`",
-    does: "How long a user's revocation epoch outlives its last write. Must be longer than `maxSessionTtl`, and at least `throttle.lockout.deviceMaxAge` and a two-factor `trustedDevices.ttl`.",
+    does: "How long a user's revocation epoch outlives its last write. Must be longer than `maxSessionTtl`, and at least a minute (the clock skew a device cookie is allowed) longer than `throttle.lockout.deviceMaxAge` and a two-factor `trustedDevices.ttl`.",
   },
   { key: 'clock', type: 'Clock', default: 'system clock', does: 'For tests.' },
 ];

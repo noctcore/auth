@@ -13,7 +13,7 @@ import { BUMP, CREATE } from './scripts';
 export class RedisSessionStore implements SessionStore {
   private readonly prefix: string;
   private readonly clock: Clock;
-  /** How long a user's epoch outlives its last write; `createAuth` refuses a longer device token. */
+  /** How long a user's epoch outlives its last write; `createAuth` refuses a device token that is not a clock skew shorter. */
   readonly epochTtlMs: number;
   /** The longest session this store guards; `createAuth` refuses a longer remember-me TTL. */
   readonly maxSessionTtlMs: number;

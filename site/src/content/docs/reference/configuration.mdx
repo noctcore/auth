@@ -319,7 +319,7 @@ The login lockout. Source: `throttle/rules.ts`, `throttle/throttle.ts`; the reas
 
 **Session doors.** `reauthenticate` and `changePassword` spend these same budgets: `perAccountIp` and `perAccount` while the account is unlocked, and under a lock the live session counts as one more device in `perDevice`. Guesses through login and both doors add up.
 
-**`deviceMaxAge`** must not exceed the session store's `epochTtlMs` (the Redis store's `epochTtl`, 90 days by default). A device cookie is revoked only by the user's revocation epoch, and a store that forgets an epoch reads it as 0 again, so a cookie revoked by a sign-out everywhere would verify once more after the lapse.
+**`deviceMaxAge`** must be at least a minute shorter than the session store's `epochTtlMs` (the Redis store's `epochTtl`, 90 days by default). A device cookie is revoked only by the user's revocation epoch, and a store that forgets an epoch reads it as 0 again, so a cookie revoked by a sign-out everywhere would verify once more after the lapse. The minute is the clock skew a cookie is allowed: its issue time comes from the server that set it, which may run ahead, so equal values are refused too.
 
 **`revealLocked`.** Unknown addresses lock and answer the same, but the answer tells anyone that the address is locked and when it lifts: an enumeration signal the generic answer does not give. Pair it with a captcha and per-IP rate limits.
 
@@ -428,7 +428,7 @@ For a client that cannot read the `csrf` cookie. The token is the one the adapte
 - `session.maxPerUser` is not a positive integer or `null`;
 - `session.touchInterval` is not shorter than a fixed `idleTimeout`;
 - `session.absoluteTtl` or `rememberMeTtl` is longer than the session store's `maxSessionTtlMs`;
-- `throttle.lockout.deviceMaxAge`, or the two-factor plugin's `trustedDevices.ttl`, is longer than the session store's `epochTtlMs`;
+- `throttle.lockout.deviceMaxAge`, or the two-factor plugin's `trustedDevices.ttl`, plus a minute of clock skew is longer than the session store's `epochTtlMs`, or the store declares `epochTtlMs` or `maxSessionTtlMs` as anything but a positive number;
 - `email.normalize` is an unknown name, or a custom normaliser fails its startup test;
 - `registration.revealExisting`, `registration.autoLogin` or `passwordReset.markEmailVerified` is not `true` or `false`;
 - `registration.autoLogin` is set without `revealExisting`;
@@ -473,7 +473,7 @@ Source: `packages/auth-redis/src/options.ts`, `session-store.ts`.
 
 <ConfigTable rows={redisStoresOptions} prefix="redisstores" label="Option" />
 
-If `epochTtl` is not longer than `maxSessionTtl`, the store refuses to start. If an epoch ever lapses, the user's sessions fail closed. The store reports `epochTtl` as `epochTtlMs`, and `createAuth` refuses a `throttle.lockout.deviceMaxAge` or a two-factor `trustedDevices.ttl` longer than it: those are fenced by the epoch alone, so a lapse would let a revoked one through again.
+If `epochTtl` is not longer than `maxSessionTtl`, the store refuses to start. If an epoch ever lapses, the user's sessions fail closed. The store reports `epochTtl` as `epochTtlMs`, and `createAuth` refuses a `throttle.lockout.deviceMaxAge` or a two-factor `trustedDevices.ttl` that is not at least a minute (the allowed clock skew) shorter: those are fenced by the epoch alone, so a lapse would let a revoked one through again.
 
 <Aside type="caution" title="Run Redis with maxmemory-policy noeviction">
 An evicting policy may drop an epoch (signing users out), a lockout counter (handing an attacker a fresh budget) or a lock key (ending a lock early).
