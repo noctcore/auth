@@ -303,7 +303,7 @@ export class Throttle {
     await this.counters.reset(keys.account(keys.factor(account)));
   }
 
-  /** A failed proof outside login (a wrong current password) still spends the account-wide budget. */
+  /** A failed proof with no attempt reserved by `gateLogin` still spends the account-wide budget. */
   async recordFailure(account: string, owner?: string | null): Promise<{ newLock?: NewLock }> {
     const all = await this.counters.increment(keys.account(account), this.perAccount.windowMs);
 
