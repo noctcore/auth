@@ -163,7 +163,7 @@ export function createAuthMiddlewares<
   const root = t as unknown as UntypedRoot;
   const make = (body: Body) => root.middleware(body) as never;
   const authed = make(authedBody);
-  const tiers = resolveRateLimitTiers(options.rateLimits);
+  const tiers = resolveRateLimitTiers(options?.rateLimits);
 
   return {
     csrf: make(csrfBody),
