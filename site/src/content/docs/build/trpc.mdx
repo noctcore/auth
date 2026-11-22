@@ -114,6 +114,18 @@ This guide builds on [A Node server with Redis and Prisma](/auth/build/node-serv
 
    The meta flag is read from tRPC's `call.procedure`, which tRPC marks `@internal`; the meta test in `packages/auth-trpc/tests/background-polls.test.ts` fails if a tRPC upgrade drops the field.
 
+   #### Subscriptions
+
+   tRPC builds the context once per HTTP request, and a subscription served over SSE (`httpSubscriptionLink`, on by default in `@trpc/server` 11) is one request that stays open until the client leaves or `sse.maxDurationMs` ends it, which has no default. The session is validated when the stream opens, so on its own a stream opened before a sign-out, a password change or a revocation would go on sending events to that browser. A reconnect is a new request, validated like any other.
+
+   So every session check (`authed`, `freshAuth`, `role`, `protectedProcedure`, and the nestjs-trpc `AuthGuardMiddleware`, `AuthedMiddleware`, `FreshAuthMiddleware` and `RoleMiddleware`) keeps a subscription's events behind it. Before an event leaves, when the last check is older than the `revalidateSubscriptions` option of `createAuthContext` (default `30s`), the session is validated again and its user loaded. When either is gone, or the session became enrollment-only, the stream ends with `session_expired` (or `two_factor_enrollment_required`) in place of the event: tRPC sends it as the stream's error event and `httpSubscriptionLink` closes the subscription without retrying. The procedure's own iterator is returned, so its `finally` runs as it does when the client leaves.
+
+   - **The bound.** No event leaves later than `revalidateSubscriptions` after the session was revoked. `0` checks before every event; `false` turns the check off and the stream keeps the session it opened with.
+   - **The cost.** One session validation and one user read per open stream per bound, and only while events flow: a stream that sends nothing reads nothing, and its connection stays open until its next event, the client leaving, or `sse.maxDurationMs`. Set `sse.maxDurationMs` in `initTRPC.create({ sse: { maxDurationMs } })` too if idle streams should not stay open for long.
+   - **No touch.** The check does not count as activity, so an open stream never keeps an idle session alive, whatever `touch` says. A store failure ends the stream with `internal`, logging only the error's name.
+   - **What is checked again.** The session, its user and the enrollment-only standing. A role and a fresh proof are checked when the stream opens, and not again until the client reconnects. A public subscription has no session check, so one that reads `ctx.auth.session` keeps the session it opened with: build it on `protectedProcedure`.
+   - **Observables.** A procedure that returns an observable is read as an async iterable, as tRPC's SSE handler reads it.
+
 4. ### The client
 
    <Code code={clientTs} lang="ts" title="src/client.ts" />
