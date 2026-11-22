@@ -64,8 +64,8 @@ const totpDrift = num(TOTP, /export const TOTP_DRIFT_STEPS = (\d+);/u);
 const FACTOR_OPTIONS = 'auth/src/plugins/two-factor/options.ts';
 const factorAttempts = ruleDefault(FACTOR_OPTIONS, 'attempts');
 const factorPerIp = ruleDefault(FACTOR_OPTIONS, 'perIp');
-const stepUpWindow = read(FACTOR_OPTIONS, /options\.stepUpWindow \?\? '(\w+)'/u);
-const trustedTtl = read(FACTOR_OPTIONS, /option\?\.ttl \?\? '(\w+)'/u);
+const stepUpWindow = read(FACTOR_OPTIONS, /options\.stepUpWindow,\s*'(\w+)'/u);
+const trustedTtl = read(FACTOR_OPTIONS, /option\?\.ttl,\s*'(\w+)'/u);
 const trustedMax = num(FACTOR_OPTIONS, /option\?\.maxPerUser \?\? (\d+);/u);
 const challengeTtlMs = lifetime(FACTOR_OPTIONS, 'CHALLENGE_TTL_MS');
 const challengeCodes = num(FACTOR_OPTIONS, /export const CHALLENGE_MAX_ATTEMPTS = (\d+);/u);
@@ -80,9 +80,9 @@ const recoveryBits = recoveryLength * Math.log2(recoveryAlphabet);
 const guessesExponent = Math.round(recoveryBits - Math.log2(recoveryCount));
 
 const THROTTLE = 'auth/src/throttle/throttle.ts';
-const baseLock = read(THROTTLE, /lockout\.baseLock \?\? '(\w+)'/u);
-const maxLock = read(THROTTLE, /lockout\.maxLock \?\? '(\w+)'/u);
-const deviceMaxAge = read(THROTTLE, /lockout\.deviceMaxAge \?\? '(\w+)'/u);
+const baseLock = read(THROTTLE, /options\.baseLock,\s*'(\w+)'/u);
+const maxLock = read(THROTTLE, /options\.maxLock,\s*'(\w+)'/u);
+const deviceMaxAge = read(THROTTLE, /options\.deviceMaxAge,\s*'(\w+)'/u);
 const lockFactor = num(THROTTLE, /this\.baseLockMs \* (\d+) \*\* Math\.min/u);
 const baseLockMinutes = inUnit(baseLock, MINUTE);
 
@@ -90,16 +90,16 @@ const SETTINGS = 'auth/src/flows/resolve-settings.ts';
 const changeTtl = read(SETTINGS, /changeKind === 'code' \? '(\w+)'/u);
 const changeDigits = num(SETTINGS, /emailChange\?\.digits \?\? (\d+)/u);
 const changeAttempts = num(SETTINGS, /emailChange\?\.maxAttempts \?\? (\d+)/u);
-const revertTtl = read(SETTINGS, /emailChange\?\.revertTtl \?\? '(\w+)'/u);
-const blockAfterRevert = read(SETTINGS, /emailChange\?\.blockAfterRevert \?\? '(\w+)'/u);
+const revertTtl = read(SETTINGS, /emailChange\?\.revertTtl,\s*'(\w+)'/u);
+const blockAfterRevert = read(SETTINGS, /emailChange\?\.blockAfterRevert,\s*'(\w+)'/u);
 const minRevertMs = lifetime(SETTINGS, 'MIN_REVERT_TTL_MS');
-const freshAuthDefault = read(SETTINGS, /freshAuthAge \?\? '(\w+)'/u);
+const freshAuthDefault = read(SETTINGS, /freshAuthAge,\s*'(\w+)'/u);
 const verifyDigits = Number(readAll(SETTINGS, /\.digits \?\? (\d+)/u, 3));
 const verifyAttempts = Number(readAll(SETTINGS, /\.maxAttempts \?\? (\d+)/u, 3));
 const changeAddressDoor = DEFAULT_DOOR_LIMITS['email-change-address'];
 
 const INVITE_OPTIONS = 'auth/src/plugins/invitations/options.ts';
-const inviteTtl = read(INVITE_OPTIONS, /options\.ttl \?\? '(\w+)'/u);
+const inviteTtl = read(INVITE_OPTIONS, /options\.ttl,\s*'(\w+)'/u);
 const inviteMaxTtlMs = lifetime(INVITE_OPTIONS, 'MAX_TTL_MS');
 const inviteRecheck = read(INVITE_OPTIONS, /options\.recheckInviter \?\? (\w+)/u);
 const inviteWithoutSession = read(INVITE_OPTIONS, /options\.acceptWithoutSession \?\? (\w+);/u);
@@ -121,7 +121,7 @@ const policy = /DEFAULT_PASSWORD_POLICY: PasswordPolicy = \{ minLength: (\d+), m
 );
 
 const SESSION = 'auth/src/session/session-manager.ts';
-const touchInterval = read(SESSION, /options\.touchInterval \?\? '(\w+)'/u);
+const touchInterval = read(SESSION, /options\.touchInterval,\s*'(\w+)'/u);
 const idleTimeout = /rememberMe \? '(\w+)' : '(\w+)'/u.exec(source(SESSION))?.[2] ?? '';
 
 // The facts -----------------------------------------------------------------

@@ -439,7 +439,8 @@ Source: `auth/src/http/csrf-adapter.ts`. Background: [CSRF](/auth/learn/csrf/).
 - `password.policy.minLength` is below 8 or not a whole number, or `password.policy.maxLength` is not a whole number of at least `minLength`;
 - `session.cookie.name` is not a string, or has characters other than letters, digits, `_` and `-`;
 - `session.cookie.secure` is not `true` or `false`;
-- `session.cookie.sameSite` is a fixed value other than `'lax'`, `'strict'` or `'none'` (`'None'` used to skip the next check), or a fixed `'none'` while `session.cookie.secure` is `false` (a function's value is checked the same way when a cookie is built);
+- `session.cookie.sameSite` is a fixed `'none'` while `session.cookie.secure` is `false`;
+- `session.cookie.sameSite` is a fixed value other than `'lax'`, `'strict'` or `'none'` (`'None'` used to skip the check above; a function's value is checked the same way when a cookie is built);
 - `session.attributes` has no `parse` function;
 - `session.maxPerUser` is not a positive integer or `null`;
 - `session.touchInterval` is not shorter than a fixed `idleTimeout` (an `idleTimeout` function is checked at each sign-in instead, see [Session](#session));

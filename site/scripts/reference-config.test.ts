@@ -43,7 +43,7 @@ const breachBaseUrl = read(BREACH, /options\.baseUrl \?\? '([^']+)';/u);
 
 const SESSION = 'auth/src/session/session-manager.ts';
 const sessionDefault = (name: string) =>
-  read(SESSION, new RegExp(`options\\.${name} \\?\\? '(\\w+)'`, 'u'));
+  read(SESSION, new RegExp(`options\\.${name},\\s*'(\\w+)'`, 'u'));
 const absoluteTtl = sessionDefault('absoluteTtl');
 const rememberMeTtl = sessionDefault('rememberMeTtl');
 const touchInterval = sessionDefault('touchInterval');
@@ -54,7 +54,7 @@ const maxPerUser = num(SESSION, /options\.maxPerUser === undefined \? (\d+)/u);
 
 const SETTINGS = 'auth/src/flows/resolve-settings.ts';
 const setting = (pattern: string) => read(SETTINGS, new RegExp(pattern, 'u'));
-const freshAuthAge = setting(`freshAuthAge \\?\\? '(\\w+)'`);
+const freshAuthAge = setting(`freshAuthAge,\\s*'(\\w+)'`);
 const digits = Number(readAll(SETTINGS, /\.digits \?\? (\d+)/u, 3));
 const maxAttempts = Number(readAll(SETTINGS, /\.maxAttempts \?\? (\d+)/u, 3));
 const digitRange = /digits < (\d+) \|\| digits > (\d+)\)/u.exec(source(SETTINGS));
@@ -90,7 +90,7 @@ const defaultPolicy = read(
 
 const THROTTLE = 'auth/src/throttle/throttle.ts';
 function windowRule(name: string): string {
-  const match = new RegExp(`windowRule\\(lockout\\.${name}, (\\d+), '(\\w+)'\\)`, 'u').exec(
+  const match = new RegExp(`windowRule\\(name\\('${name}'\\), options\\.${name}, (\\d+), '(\\w+)'\\)`, 'u').exec(
     source(THROTTLE),
   );
 
@@ -99,10 +99,10 @@ function windowRule(name: string): string {
   return rule(Number(match?.[1]), match?.[2] ?? '');
 }
 const lockoutDefault = (name: string) =>
-  read(THROTTLE, new RegExp(`lockout\\.${name} \\?\\? '(\\w+)'`, 'u'));
+  read(THROTTLE, new RegExp(`options\\.${name},\\s*'(\\w+)'`, 'u'));
 const lockFactor = num(THROTTLE, /this\.baseLockMs \* (\d+) \*\* Math\.min/u);
-const permanentDevices = read(THROTTLE, /lockout\.permanent\?\.trustedDevices \?\? (\w+);/u);
-const revealLocked = read(THROTTLE, /lockout\.revealLocked \?\? (\w+);/u);
+const permanentDevices = read(THROTTLE, /options\.permanent\?\.trustedDevices \?\? (\w+);/u);
+const revealLocked = read(THROTTLE, /options\.revealLocked \?\? (\w+);/u);
 const minAfterLocks = num(THROTTLE, /afterLocks < (\d+)\)/u);
 
 const turnstileTimeout = num('auth/src/http/turnstile.ts', /options\.timeoutMs \?\? (\d+);/u);
@@ -202,7 +202,7 @@ const EXPECTED: Record<string, Record<string, string>> = {
     'passwordreset-ttl': `${str(resetTtl.link)} for links, ${str(resetTtl.code)} for codes`,
     'passwordreset-digits': lit(digits),
     'passwordreset-maxattempts': lit(maxAttempts),
-    'passwordreset-ticketttl': str(setting("ticketTtl \\?\\? '(\\w+)'")),
+    'passwordreset-ticketttl': str(setting("ticketTtl,\\s*'(\\w+)'")),
     'passwordreset-enqueue': 'none',
     'passwordreset-markemailverified': lit(setting('markEmailVerified \\?\\? (\\w+)')),
   },
@@ -211,8 +211,8 @@ const EXPECTED: Record<string, Record<string, string>> = {
     'emailchange-ttl': `${str(changeTtl.code)} for codes, ${str(changeTtl.link)} for links`,
     'emailchange-digits': lit(digits),
     'emailchange-maxattempts': lit(maxAttempts),
-    'emailchange-revertttl': str(setting("revertTtl \\?\\? '(\\w+)'")),
-    'emailchange-blockafterrevert': str(setting("blockAfterRevert \\?\\? '(\\w+)'")),
+    'emailchange-revertttl': str(setting("revertTtl,\\s*'(\\w+)'")),
+    'emailchange-blockafterrevert': str(setting("blockAfterRevert,\\s*'(\\w+)'")),
   },
   urls: {
     'urls-verifyemail': 'none',
