@@ -96,6 +96,27 @@ export function sessionStoreConformance(
         );
       },
     });
+
+    const declared = store.epochTtlMs;
+
+    if (declared !== undefined) {
+      cases.push({
+        name: 'a bump keeps the epoch for the epochTtlMs the store declares',
+        async run() {
+          const userId = sampleSession().userId;
+
+          await store.bumpEpoch(userId);
+
+          const remaining = await epochTtlMs(userId);
+
+          // A minute of slack for a slow round trip; never longer than declared.
+          assert.ok(
+            remaining > declared - 60_000 && remaining <= declared,
+            `epoch kept ${remaining} ms, but the store declares epochTtlMs ${declared}`,
+          );
+        },
+      });
+    }
   }
 
   return cases;
