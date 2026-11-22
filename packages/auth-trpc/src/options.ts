@@ -13,6 +13,7 @@ import {
   type AuthResult,
   type AuthUser,
   type Clock,
+  type Duration,
   type CookieSpec,
   type Hit,
   type RateLimitRule,
@@ -23,6 +24,7 @@ import {
   type TrustedHops,
   resolveClientIpHeader,
   resolveTrustedHops,
+  toMilliseconds,
 } from '@noctcore/auth';
 
 /**
@@ -131,6 +133,19 @@ export interface AuthContextOptions<U extends AuthUser = AuthUser, A = unknown> 
    * guarded procedures' decisions do not change.
    */
   readonly touch?: boolean | ((path: string) => boolean);
+  /**
+   * How long a subscription behind a session check (`authed`, `freshAuth`,
+   * `role`, `protectedProcedure`, the nestjs-trpc guard) may go on sending
+   * events on the session it opened with. tRPC builds the context once per
+   * HTTP request, and an SSE subscription is one request that stays open, so
+   * its session is validated once. Before an event leaves, when the last
+   * check is older than this, the session is validated again (without
+   * counting as activity) and its user loaded; when either is gone, or the
+   * session became enrollment-only, the stream ends with `session_expired`
+   * (or `two_factor_enrollment_required`) instead of the event. `0` checks
+   * before every event. `false` turns it off. Default `30s`.
+   */
+  readonly revalidateSubscriptions?: Duration | false;
 }
 
 /** The options after the boot checks, with secrets as bytes and cookie names fixed. */
@@ -145,6 +160,8 @@ export interface ResolvedOptions {
   /** False when no procedure touches; otherwise whether the procedure at a path does. */
   readonly touch: false | ((path: string) => boolean);
   readonly csrf: CsrfSettings;
+  /** Milliseconds a subscription's session check stays good for, or false when off. */
+  readonly revalidateEvery: number | false;
 }
 
 /**
@@ -187,7 +204,27 @@ export function resolveOptions<U extends AuthUser, A>(
     cookie,
     touch,
     csrf: resolvedCsrf,
+    revalidateEvery: resolveRevalidateEvery(options.revalidateSubscriptions),
   };
+}
+
+/** The default bound on how long an open subscription keeps a revoked session. */
+export const DEFAULT_REVALIDATE_SUBSCRIPTIONS: Duration = '30s';
+
+/** The `revalidateSubscriptions` option resolved; a bad duration stops the boot. */
+function resolveRevalidateEvery(
+  every: AuthContextOptions['revalidateSubscriptions'],
+): ResolvedOptions['revalidateEvery'] {
+  if (every === false) return false;
+
+  try {
+    return toMilliseconds(every ?? DEFAULT_REVALIDATE_SUBSCRIPTIONS);
+  } catch {
+    throw new AuthConfigError(
+      'revalidateSubscriptions must be a duration (such as 30s, or 0 to check before every ' +
+        'event) or false',
+    );
+  }
 }
 
 /** The `touch` option resolved; anything but a boolean or a function stops the boot. */

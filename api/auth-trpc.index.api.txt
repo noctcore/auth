@@ -71,6 +71,7 @@ AuthContextOptions [interface]<U extends AuthUser = AuthUser, A = unknown>
     readonly auth: TrpcAuth<U, A>
     readonly clientIpHeader?: string
     readonly csrf: CsrfOptions
+    readonly revalidateSubscriptions?: Duration | false
     readonly roles?: (user: U) => readonly string[] | Promise<readonly string[]>
     readonly touch?: boolean | ((path: string) => boolean)
     readonly trustedHops: TrustedHops
