@@ -100,7 +100,7 @@ This guide builds on [A Node server with Redis and Prisma](/auth/build/node-serv
 
    <Code code={fetchTs} lang="ts" title="src/fetch.ts" />
 
-   A fetch `Request` carries no peer address, so pass it from your server (on Bun, `server.requestIP(req)?.address`). Behind proxies, count them in `trustedHops` as on Node, or list them by address: with a list and no peer address, nothing is trusted.
+   A fetch `Request` carries no peer address, so pass it from your server (on Bun, `server.requestIP(req)?.address`). Behind proxies, count them in `trustedHops` as on Node (without a peer address the count picks the same `X-Forwarded-For` entry it would with one), or list them by address: with a list and no peer address, nothing is trusted.
 
    #### Background polls
 
