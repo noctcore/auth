@@ -24,6 +24,17 @@ describe('membership options', () => {
       );
   });
 
+  it('refuses a revokeSessionsOnChange that is not true or false', () => {
+    for (const value of ['true', 'false', 1])
+      expect(() =>
+        membership({ store, adminRoles: ['admin'], revokeSessionsOnChange: value as never }),
+      ).toThrow('membership: revokeSessionsOnChange must be true or false');
+
+    expect(() =>
+      membership({ store, adminRoles: ['admin'], revokeSessionsOnChange: true }),
+    ).not.toThrow();
+  });
+
   it('binds one plugin instance to one createAuth', () => {
     const plugin = membership({ store, adminRoles: ['admin'] });
 

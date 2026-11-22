@@ -109,6 +109,15 @@ describe('invitations options', () => {
     expect(() => invitations(options({ acceptWithoutSession: true }))).not.toThrow();
   });
 
+  it('refuses a recheckInviter that is not true or false', () => {
+    for (const value of ['false', 0, 1])
+      expect(() => invitations(options({ recheckInviter: value as never }))).toThrow(
+        'invitations: recheckInviter must be true or false',
+      );
+
+    expect(() => invitations(options({ recheckInviter: false }))).not.toThrow();
+  });
+
   it('binds one plugin instance to one createAuth', () => {
     const plugin = invitations(options());
 

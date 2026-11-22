@@ -466,6 +466,12 @@ describe('configuration', () => {
     expect(make({ trustedDevices: { maxPerUser: 0 } })).toThrow(/maxPerUser/u);
     expect(make({ trustedDevices: { maxPerUser: 1.5 } })).toThrow(/maxPerUser/u);
     expect(make({ trustedDevices: { maxPerUser: 1 } })).not.toThrow();
+    expect(make({ trustedDevices: false })).not.toThrow();
+
+    for (const value of [true, 'false', 0])
+      expect(make({ trustedDevices: value })).toThrow(
+        'twoFactor: trustedDevices must be false or an object',
+      );
 
     for (const name of ['attempts', 'perIp']) {
       expect(make({ [name]: { limit: 0, window: '1m' } })).toThrow(`${name}.limit`);

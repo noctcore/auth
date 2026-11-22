@@ -206,6 +206,10 @@ function resolveTrustedDevices(
 ): TwoFactorSettings['trustedDevices'] {
   if (option === false) return null;
 
+  // `true` or a string such as "false" from an env file would read as on with the defaults.
+  if (option !== undefined && option !== null && typeof option !== 'object')
+    throw new AuthConfigError('twoFactor: trustedDevices must be false or an object');
+
   const ttlMs = toMilliseconds(option?.ttl ?? '30d');
   const maxPerUser = option?.maxPerUser ?? 5;
 

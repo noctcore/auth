@@ -1,5 +1,6 @@
 import type { StoredInvitation, InvitationStore } from '../../ports/invitations';
 import type { AuthUser } from '../../ports/stores';
+import { assertBoolean } from '../../shared/config-checks';
 import { toMilliseconds, type Duration } from '../../shared/duration';
 import type { NormalizedEmail } from '../../shared/email';
 import { AuthConfigError } from '../../shared/errors';
@@ -119,6 +120,8 @@ export function resolveSettings(options: InvitationsOptions): InvitationsSetting
 
   if (typeof acceptWithoutSession !== 'boolean')
     throw new AuthConfigError('invitations: acceptWithoutSession must be true or false');
+
+  assertBoolean('invitations: recheckInviter', options.recheckInviter);
 
   return {
     authorize: options.authorize,
