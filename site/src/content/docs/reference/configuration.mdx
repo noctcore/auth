@@ -317,6 +317,8 @@ The login lockout. Source: `throttle/rules.ts`, `throttle/throttle.ts`; the reas
 
 **Device cookies.** Holding many device cookies adds no guesses: `perDevice` is also the budget all of an account's devices share.
 
+**Session doors.** `reauthenticate` and `changePassword` spend these same budgets: `perAccountIp` and `perAccount` while the account is unlocked, and under a lock the live session counts as one more device in `perDevice`. Guesses through login and both doors add up.
+
 **`revealLocked`.** Unknown addresses lock and answer the same, but the answer tells anyone that the address is locked and when it lifts: an enumeration signal the generic answer does not give. Pair it with a captcha and per-IP rate limits.
 
 #### The permanent tier

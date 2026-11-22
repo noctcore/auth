@@ -489,8 +489,16 @@ export const doors: readonly ConfigRow[] = [
     default: "3 per `'1h'`",
     does: 'User: verification mails one account can request. Spent before the mail is handed over.',
   },
-  { key: 'password-change', default: "5 per `'5m'`", does: 'User' },
-  { key: 'reauthenticate', default: "5 per `'5m'`", does: 'User' },
+  {
+    key: 'password-change',
+    default: "5 per `'5m'`",
+    does: "User. Each attempt also spends login's lockout budgets (`throttle.lockout`).",
+  },
+  {
+    key: 'reauthenticate',
+    default: "5 per `'5m'`",
+    does: "User. Each attempt also spends login's lockout budgets (`throttle.lockout`).",
+  },
   {
     key: 'email-change-request',
     default: "3 per `'1h'`",
