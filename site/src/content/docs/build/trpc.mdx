@@ -143,7 +143,7 @@ So the first procedure of a batch to reach `writesCookies` claims the request, a
 
 ## Rate limit tiers, per-user keys and exemptions
 
-`createAuthMiddlewares(t, { rateLimits })` takes named rules, checked when the middlewares are made (a bad name, window or `keyBy` throws an `AuthConfigError` at boot):
+`createAuthMiddlewares(t, { rateLimits })` takes named rules, checked when the middlewares are made (a bad name, a `limit` that is not a whole number of at least 1, a `window` that is not a duration longer than zero, or a bad `keyBy` throws an `AuthConfigError` at boot, and so does the same in a rule passed to `rateLimited`):
 
 ```ts
 const t = initTRPC.context<Context>().meta<RateLimitMeta>().create({ errorFormatter: authErrorFormatter });
