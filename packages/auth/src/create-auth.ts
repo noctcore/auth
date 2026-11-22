@@ -79,18 +79,32 @@ function assertStoreOutlivesSessions<A>(store: SessionStore, sessions: SessionMa
   }
 }
 
+/** The keys of `options` whose value is neither undefined nor null, so a spread over defaults keeps them. */
+function definedKeys<T extends object>(options: T | undefined): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(options ?? {}).filter(([, value]) => value !== undefined && value !== null),
+  ) as Partial<T>;
+}
+
 /** Each configured door rule, checked now rather than on the first request at that door. */
 function checkedDoors(
   doors: Partial<Record<Door, RateLimitRule>>,
 ): Partial<Record<Door, RateLimitRule>> {
-  for (const [door, rule] of Object.entries(doors) as [Door, RateLimitRule | undefined][]) {
-    if (rule === undefined) continue;
+  for (const [door, rule] of Object.entries(doors) as [Door, RateLimitRule | null | undefined][]) {
+    // Left out or null: the door reads its default (`DEFAULT_DOOR_LIMITS`).
+    if (rule === undefined || rule === null) continue;
+
+    const name = `throttle.doors.${door}`;
+    let windowMs: number;
+
+    try {
+      windowMs = toMilliseconds(rule.window);
+    } catch {
+      throw new AuthConfigError(`${name}.window must be a duration`);
+    }
 
     // A door rule has no default limit to fall back on: a missing one is refused too.
-    assertWindowRule(`throttle.doors.${door}`, {
-      limit: rule.limit ?? Number.NaN,
-      windowMs: toMilliseconds(rule.window),
-    });
+    assertWindowRule(name, { limit: rule.limit ?? Number.NaN, windowMs });
   }
 
   return doors;
@@ -131,7 +145,8 @@ export function createAuth<
     logger.error(message, details ?? {}),
   );
 
-  const policy = { ...DEFAULT_PASSWORD_POLICY, ...config.password.policy };
+  // A key left out, undefined or null keeps its default instead of overwriting it.
+  const policy = { ...DEFAULT_PASSWORD_POLICY, ...definedKeys(config.password.policy) };
 
   // `NaN` passes every comparison: a `NaN` minimum would accept an empty password.
   if (!Number.isSafeInteger(policy.minLength))

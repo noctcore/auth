@@ -4,9 +4,9 @@
  * truthiness or compared with `>`, each would quietly turn a check off.
  */
 import { describe, expect, it } from 'vitest';
-import { AuthConfigError } from '../../src';
+import { AuthConfigError, DEFAULT_DOOR_LIMITS } from '../../src';
 import { plainHasher } from '../../src/testing';
-import { setup } from './setup';
+import { meta, PASSWORD, setup } from './setup';
 
 const NOT_BOOLEANS = ['false', 'true', 0, 1] as const;
 const NOT_COUNTS = [Number.NaN, 0, -1, 1.5, Number.POSITIVE_INFINITY, '5'] as const;
@@ -128,6 +128,32 @@ describe('door rules', () => {
     );
   });
 
+  it('refuses a door window that is missing or not a duration', () => {
+    for (const window of [undefined, Number.NaN, 'soon'])
+      expect(() =>
+        setup({ throttle: { doors: { login: { limit: 3, window } as never } } }),
+      ).toThrow('throttle.doors.login.window must be a duration');
+  });
+
+  it('boots with a null door rule and gives that door its default limit', async () => {
+    const { auth } = setup({ throttle: { doors: { login: null as never } } });
+    const codes: (string | false)[] = [];
+
+    // Different addresses, so only the door's own budget (10 per minute) refuses.
+    for (let i = 0; i < DEFAULT_DOOR_LIMITS.login.limit + 1; i += 1) {
+      const result = await auth.login({
+        email: `u${i}@example.com`,
+        password: PASSWORD,
+        meta: meta(),
+      });
+
+      codes.push(!result.ok && result.code);
+    }
+
+    expect(codes.at(-2)).toBe('invalid_credentials');
+    expect(codes.at(-1)).toBe('rate_limited');
+  });
+
   it('accepts a whole-number door rule', () => {
     expect(() =>
       setup({ throttle: { doors: { login: { limit: 1, window: '1s' } } } }),
@@ -155,5 +181,31 @@ describe('password policy lengths', () => {
     }
 
     expect(withPolicy({ minLength: 8, maxLength: 8 })).not.toThrow();
+  });
+
+  it('keeps the default length for a key left undefined or null', async () => {
+    for (const value of [undefined, null]) {
+      for (const key of ['minLength', 'maxLength'])
+        expect(withPolicy({ [key]: value })).not.toThrow();
+
+      const { auth } = withPolicy({ minLength: value, maxLength: value })();
+
+      const short = await auth.register({
+        email: 'a@example.com',
+        password: 'x'.repeat(11),
+        meta: meta(),
+      });
+
+      const long = await auth.register({
+        email: 'b@example.com',
+        password: 'x'.repeat(257),
+        meta: meta(),
+      });
+
+      expect([!short.ok && short.code, !long.ok && long.code]).toEqual([
+        'weak_password',
+        'password_too_long',
+      ]);
+    }
   });
 });
