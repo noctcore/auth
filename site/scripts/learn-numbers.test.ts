@@ -174,6 +174,13 @@ function forwardedExample(hops: number): string {
   return clientIp({ remoteAddress, forwardedFor, trustedHops: hops }) ?? '';
 }
 
+/** A forwarded entry and the address clientIp reads from it, as the trust proxy page writes them. */
+function forwardedEntry(written: string): string {
+  const read = clientIp({ remoteAddress: '10.0.0.2', forwardedFor: written, trustedHops: 1 });
+
+  return `\`${written}\` is \`${read ?? ''}\``;
+}
+
 // The facts -----------------------------------------------------------------
 
 const PAGES: Record<string, readonly string[]> = {
@@ -211,6 +218,9 @@ const PAGES: Record<string, readonly string[]> = {
     `With 1 trusted hop the client IP is \`${forwardedExample(1)}\``,
     `With 0 trusted hops it is \`${forwardedExample(0)}\``,
     `With 2 trusted hops it is \`${forwardedExample(2)}\``,
+    `strips a port (${forwardedEntry('203.0.113.9:51234')})`,
+    `brackets (${forwardedEntry('[2001:db8::1]:443')})`,
+    `an IPv6 zone id (${forwardedEntry('fe80::1%eth0')})`,
     `from 0 to ${maxHops}`,
     `the Express presets ${presetRanges}, the same ranges Express gives them`,
     `unset is ${unsetHopsInDevelopment} in development`,
