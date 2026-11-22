@@ -64,7 +64,7 @@ So `validateRequest` takes `touch: false` for traffic the client makes on its ow
 
 ### A cap per user, and word of what it ends
 
-A user holds at most `session.maxPerUser` sessions (10 by default). Issuing one more evicts the oldest, after the new session is written, so sign-ins racing at the cap still end up within it.
+A user holds at most `session.maxPerUser` sessions (10 by default). Issuing one more evicts the oldest, after the new session is written, so sign-ins racing at the cap still end up within it. The oldest are picked by creation time, then by id, and the session being issued is never one of them: a sign-in in the same millisecond as an older session, or on an instance whose clock is behind, still hands out a live session. A session written while the sign-in ran is evicted only if it sorts before the new one, so of two sign-ins racing at a cap of one, exactly one is left. Two narrow cases remain. A sign-in that stalls between reading the clock and writing its session, while a later one runs to the end, leaves the user one session over the cap until the next sign-in. And two sign-ins on instances whose clocks disagree (or in the same millisecond) can each evict the other, leaving none, when the one written first sorts last.
 
 An evicted session is gone like a revoked one, but whatever the app holds for it (an open socket, a cache entry) is not, so the library names it:
 

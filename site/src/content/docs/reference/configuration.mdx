@@ -150,7 +150,7 @@ The `session` key takes the session options and two more keys, `cookie` and `fre
 
 ### Evictions at the cap
 
-The oldest sessions beyond `session.maxPerUser` are evicted after the new one is written, so concurrent sign-ins converge on the cap.
+The oldest sessions beyond `session.maxPerUser` are evicted after the new one is written, so concurrent sign-ins converge on the cap. They are picked by creation time, then by id, and never include the session being issued, even when its creation time ties an older one or its instance's clock is behind. A session written while the sign-in ran is evicted only if it sorts before the new one, so two sign-ins racing at a cap of one leave exactly one. A sign-in that stalls before its write can leave one session over the cap until the next sign-in, and sign-ins on instances whose clocks disagree can, rarely, evict each other. Each sign-in reads the user's sessions once more, before its write, when a cap is set.
 
 - The issued session lists the evicted sessions' handles in `evictedHandles` (safe for a client) and their store keys in `evicted` (server-side only).
 - `onSessionsRevoked` hears of them with reason `evicted`, so you can close their sockets and drop their caches.
