@@ -416,6 +416,20 @@ For a client that cannot read the `csrf` cookie. The token is the one the adapte
 
 `authResponseMeta` drops `Cache-Control`, `Surrogate-Control`, `CDN-Cache-Control`, every `*-CDN-Cache-Control`, `X-Accel-Expires` and `Edge-Control` from the headers your `responseMeta` returns, only on a response that handed out a token; any other response gets your answer unchanged. Other proxy-specific cache headers are left alone, so keep such rules off the token route.
 
+### For adapter authors: the CSRF layer
+
+Both adapters run one CSRF implementation from `@noctcore/auth`, so an adapter of your own (another framework, another tRPC transport) can give the same answers for the same cookies. These exports are public API, checked by the API snapshot and versioned like the rest of the core:
+
+- `resolveCsrfSettings(input, secure)`: the boot checks (at least one secret of 32 bytes, exact `crossSiteOrigins`, a non-empty allowlist, a valid header name) and the cookie names, `__Host-` prefixed when `secure`.
+- `readCsrfCookies(csrf, cookieHeader)`: the pre-session id and the CSRF cookie from the `Cookie` header.
+- `csrfRequestAllowed(csrf, request)`: the verdict on a request judged as unsafe (Origin allowlist, `Sec-Fetch-Site`, the signed double-submit token). Your adapter decides which requests it judges.
+- `handOutCsrfToken(options, request)`: what a safe request sets, and the token to hand to a client that cannot read the cookie.
+- `bindCsrfToSession(options, session, sameSite)` and `startCsrfPreSession(options, sameSite)`: the CSRF cookie to write with a new session, and the fresh pre-session after one ends.
+- `appendSetCookie(res, spec)`: adds a `Set-Cookie` header to a Node-style response without dropping the ones already set.
+- `isSafeMethod(method)`: the methods that skip the check (GET, HEAD, OPTIONS, ASCII case folding only).
+
+Source: `auth/src/http/csrf-adapter.ts`. Background: [CSRF](/auth/learn/csrf/).
+
 ## Startup checks
 
 `createAuth` throws an `AuthConfigError` when:
