@@ -491,6 +491,28 @@ async function resolveState(
   return state;
 }
 
+/**
+ * Refuses a Node `res` that cannot read and set headers: the socket tRPC's
+ * WebSocket adapter (`applyWSSHandler`) passes, which builds the context once
+ * per connection. The context hands out cookies and validates the session
+ * once per request, so on a socket a first visit would crash and a signed-in
+ * connection would keep its session after a sign-out or a revocation. Thrown
+ * before anything is read, so no connection gets a context.
+ */
+function refuseHeaderlessResponse(res: unknown): void {
+  const { getHeader, setHeader } = (res ?? {}) as Partial<NodeContextInput['res']>;
+
+  if (typeof getHeader !== 'function' || typeof setHeader !== 'function') {
+    throw new AuthConfigError(
+      'createAuthContext(...).node needs an HTTP response that can set headers, and got one ' +
+        'that cannot (the socket of the tRPC WebSocket adapter, applyWSSHandler). The context ' +
+        'sets cookies and validates the session once per request, so a WebSocket connection ' +
+        'would fail on a first visit and keep a revoked session until it closes. WebSocket is ' +
+        'not supported yet.',
+    );
+  }
+}
+
 export interface AuthContextFactory<U extends AuthUser, A = unknown> {
   /**
    * For the fetch adapter: `createContext: (opts) => authContext.fetch(opts)`.
@@ -504,7 +526,11 @@ export interface AuthContextFactory<U extends AuthUser, A = unknown> {
   ): Promise<{
     auth: AuthState<U, A>;
   }>;
-  /** For the Node adapters (standalone, Express, nestjs-trpc): `createContext: (opts) => authContext.node(opts)`. */
+  /**
+   * For the Node adapters (standalone, Express, nestjs-trpc): `createContext: (opts) => authContext.node(opts)`.
+   * The WebSocket adapter is not supported yet: a `res` that cannot set
+   * headers (its socket) is refused with an `AuthConfigError`.
+   */
   node(input: NodeContextInput): Promise<{ auth: AuthState<U, A> }>;
 }
 
@@ -537,6 +563,10 @@ export function createAuthContext<U extends AuthUser, A = unknown>(
 
   return {
     fetch: (input, peer) => create(fromFetch(input, peer?.remoteAddress)),
-    node: (input) => create(fromNode(input)),
+    node: async (input) => {
+      refuseHeaderlessResponse(input.res);
+
+      return create(fromNode(input));
+    },
   };
 }
