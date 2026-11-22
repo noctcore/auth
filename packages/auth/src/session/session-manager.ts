@@ -26,6 +26,7 @@ import type {
   SessionRefusal,
   ValidateResult,
 } from './session-types';
+import { assertIdleOutlastsTouch } from './idle-rule';
 import { lookUpSession } from './legacy-sessions';
 import { sha256Hex } from '../crypto/hash';
 import { generateToken, isTokenShape, type RandomSource } from '../crypto/random';
@@ -34,17 +35,6 @@ import type { Logger } from '../ports/logger';
 import type { SessionStore, StoredSession } from '../ports/stores';
 import { toMilliseconds } from '../shared/duration';
 import { AuthConfigError } from '../shared/errors';
-
-/**
- * A session must be touched before it can go idle: with an idle timeout no
- * longer than the touch interval, a session used steadily is never touched and
- * is refused as idle while its user is active.
- */
-function assertIdleOutlastsTouch(idleMs: number, touchIntervalMs: number): void {
-  if (touchIntervalMs >= idleMs) {
-    throw new AuthConfigError('session.touchInterval must be shorter than the idle timeout');
-  }
-}
 
 export class SessionManager<A> {
   readonly absoluteTtlMs: number;
@@ -159,7 +149,11 @@ export class SessionManager<A> {
   async validate(token: unknown, options: { touch?: boolean } = {}): Promise<ValidateResult<A>> {
     if (!isTokenShape(token)) return { ok: false, reason: 'malformed' };
 
-    const { session: stored, adopting } = await lookUpSession(this.store, sha256Hex(token));
+    const { session: stored, adopting } = await lookUpSession(
+      this.store,
+      sha256Hex(token),
+      this.touchIntervalMs,
+    );
 
     if (!stored) return { ok: false, reason: adopting ? 'adopting' : 'unknown' };
 
