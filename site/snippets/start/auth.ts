@@ -26,6 +26,20 @@ const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
 
 redis.on('error', (error) => process.stderr.write(`redis: ${error.name}\n`));
 
+// With the offline queue off, a command sent before the connection is up is
+// rejected, so wait for it (bounded) before serving.
+await new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(
+    () => reject(new Error('Redis was not ready within 10 seconds')),
+    10_000,
+  );
+
+  redis.once('ready', () => {
+    clearTimeout(timer);
+    resolve();
+  });
+});
+
 const { sessions, counters } = redisStores(redis, { prefix: 'auth:' });
 
 export const auth = createAuth({
