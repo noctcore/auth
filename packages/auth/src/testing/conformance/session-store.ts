@@ -250,6 +250,56 @@ function sessionCases(
       },
     },
     {
+      name: 'a mint at the per-user cap keeps the session it just wrote when creation times tie',
+      async run() {
+        for (let i = 0; i < 10; i++) {
+          // One instant for both mints. The older session is the remember-me
+          // one on even iterations, so a store that lists by expiry puts the
+          // new session first.
+          const instant = systemClock.now();
+          const frozen = { now: () => instant };
+
+          const manager = new SessionManager(
+            store,
+            { maxPerUser: 1 },
+            frozen,
+            cryptoRandom,
+            silentLogger,
+          );
+
+          const userId = uniqueId('user');
+
+          const mint = (rememberMe: boolean) =>
+            manager.mint({
+              userId,
+              attributes: {},
+              rememberMe,
+              persistentCookie: false,
+              authenticatedAt: instant,
+              meta: { ip: '203.0.113.7' },
+            });
+
+          const older = await mint(i % 2 === 0);
+          const newer = await mint(i % 2 !== 0);
+
+          assert.ok(older.ok && newer.ok, `iteration ${i}: mint refused`);
+
+          assert.ok(
+            !newer.evicted.includes(newer.session.id),
+            `iteration ${i}: the mint evicted its own session`,
+          );
+
+          assert.deepEqual(
+            (await store.listByUser(userId)).map((s) => s.id),
+            [newer.session.id],
+            `iteration ${i}`,
+          );
+
+          assert.equal((await manager.validate(newer.token, { touch: false })).ok, true);
+        }
+      },
+    },
+    {
       name: 'lists only the live sessions of that user, and delete removes them',
       async run() {
         const userId = uniqueId('user');
@@ -377,6 +427,65 @@ function deleteReportCases(
           const gone = created.filter((id) => !live.has(id)).sort();
 
           assert.ok(live.size <= 2, `iteration ${i}: ${live.size} sessions over a cap of 2`);
+          assert.deepEqual([...reported].sort(), gone, `iteration ${i}: evictions misreported`);
+        }
+      },
+    },
+    {
+      name: 'two logins racing at a cap of one leave exactly one session and report once',
+      async run() {
+        for (let i = 0; i < 10; i++) {
+          // One clock for both instances, as in one process: it ticks on
+          // every read, so racing mints never tie.
+          const start = systemClock.now();
+          let tick = start;
+          const shared = { now: () => tick++ };
+          const options = { maxPerUser: 1 };
+
+          const primary = new SessionManager(store, options, shared, cryptoRandom, silentLogger);
+          const secondary = new SessionManager(other, options, shared, cryptoRandom, silentLogger);
+
+          const userId = uniqueId('user');
+
+          const mint = (manager: SessionManager<unknown>, rememberMe: boolean) =>
+            manager.mint({
+              userId,
+              attributes: {},
+              rememberMe,
+              persistentCookie: false,
+              authenticatedAt: start,
+              meta: { ip: '203.0.113.7' },
+            });
+
+          const existing = await mint(primary, true);
+
+          assert.ok(existing.ok, `iteration ${i}: mint refused`);
+
+          const raced = await Promise.all([
+            mint(primary, i % 2 === 0),
+            mint(secondary, i % 2 !== 0),
+          ]);
+
+          const created = [existing.session.id];
+          const reported: string[] = [];
+
+          for (const minted of raced) {
+            assert.ok(minted.ok, `iteration ${i}: mint refused`);
+
+            assert.ok(
+              !minted.evicted.includes(minted.session.id),
+              `iteration ${i}: a mint evicted its own session`,
+            );
+
+            created.push(minted.session.id);
+            reported.push(...minted.evicted);
+          }
+
+          const live = new Set((await store.listByUser(userId)).map((s) => s.id));
+          const gone = created.filter((id) => !live.has(id)).sort();
+
+          assert.equal(live.size, 1, `iteration ${i}: ${live.size} sessions at a cap of 1`);
+          assert.ok(!live.has(existing.session.id), `iteration ${i}: the older session survived`);
           assert.deepEqual([...reported].sort(), gone, `iteration ${i}: evictions misreported`);
         }
       },
