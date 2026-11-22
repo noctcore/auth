@@ -102,6 +102,14 @@ This guide builds on [A Node server with Redis and Prisma](/auth/build/node-serv
 
    Every request that carries a session counts as activity and refreshes its last-active time, at most once per `touchInterval`. For procedures the page calls on its own, such as a poll on a timer, mark them passive so an idle session still expires while only they are called (see [Background polls](/auth/learn/sessions-and-expiry/#background-polls)): set `touch: false` in the procedure's meta, or pass `createAuthContext` a `touch` predicate over procedure paths, such as `touch: (path) => path !== 'notifications.count'`. Both are read from the calls tRPC parsed before it built the context, and a batch touches when any of its procedures is active. A passive call is still answered with its session, and the CSRF verdict and the guarded procedures do not change. `touch: false` on `createAuthContext` touches on no request; the default touches on every one.
 
+   Three cases where the option or the meta has no effect:
+
+   - **nestjs-trpc with `AuthModule` mounted.** The Nest middleware validates `/trpc/*` before tRPC builds the context, and it decides on its own `touch` option, so `meta({ touch: false })` and the `createAuthContext` predicate change nothing there. Mark the same paths passive in `AuthModule`'s `touch` predicate (see [Use with NestJS](/auth/build/nestjs/#background-polls)); the path it sees is the HTTP path, such as `/trpc/notifications.count` (a batch joins its procedures in one path with commas), not the procedure path.
+   - **The WebSocket adapter.** tRPC builds the context once per connection and names no call, so the connection touches once when it opens, and `touch: false` in the meta of a subscription does nothing.
+   - **A predicate that returns a promise.** The result is compared with `false` only, so an async predicate always touches.
+
+   The meta flag is read from tRPC's `call.procedure`, which tRPC marks `@internal`; the meta test in `packages/auth-trpc/tests/background-polls.test.ts` fails if a tRPC upgrade drops the field.
+
 4. ### The client
 
    <Code code={clientTs} lang="ts" title="src/client.ts" />
