@@ -1,15 +1,16 @@
 // The shared CSRF table (packages/auth/tests/adapters/csrf-cases.ts), run
 // through CsrfMiddleware. auth-trpc runs the same rows through its context,
 // so the two adapters cannot give different answers for the same cookies.
+import { isSafeMethod } from '@noctcore/auth';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   buildRequest,
-  CSRF_CASES,
+  casesFor,
   expectedOutcome,
   outcome,
-  PARITY_ORIGIN,
-  PARITY_SECRETS,
+  PARITY_CONFIGS,
   type Observed,
+  type ParityConfig,
   type ParitySession,
 } from '../../auth/tests/adapters/csrf-cases';
 import { CsrfMiddleware } from '../src/csrf.middleware';
@@ -35,13 +36,8 @@ class Response implements RawResponse {
 describe('the CSRF table, through CsrfMiddleware', () => {
   const { auth } = makeAuth();
 
-  const middleware = new CsrfMiddleware(
-    resolveOptions({
-      auth,
-      trustedHops: 0,
-      csrf: { secrets: PARITY_SECRETS, allowedOrigins: [PARITY_ORIGIN] },
-    }),
-  );
+  const middleware = (config: ParityConfig): CsrfMiddleware =>
+    new CsrfMiddleware(resolveOptions({ auth, trustedHops: 0, csrf: PARITY_CONFIGS[config] }));
 
   let session: ParitySession;
 
@@ -59,13 +55,13 @@ describe('the CSRF table, through CsrfMiddleware', () => {
     session = { id: issued.session.id, cookie: `${auth.cookieName}=${issued.token}` };
   });
 
-  it.each(CSRF_CASES.map((row) => [row.name, row] as const))('%s', async (_name, row) => {
+  it.each(casesFor('nestjs').map((row) => [row.name, row] as const))('%s', async (_name, row) => {
     const request = buildRequest(row, session);
     const req = { method: request.method, url: '/api/x', headers: { ...request.headers } };
     const res = new Response();
     let passed = false;
 
-    await middleware.use(req, res, () => {
+    await middleware(request.config).use(req, res, () => {
       passed = true;
     });
 
@@ -73,10 +69,9 @@ describe('the CSRF table, through CsrfMiddleware', () => {
       (line) => line.split('=')[0] as string,
     );
 
-    const seen: Observed =
-      row.method === 'POST'
-        ? { allowed: passed && res.statusCode === 200 }
-        : { setCookies, token: handedCsrfToken(req) ?? '' };
+    const seen: Observed = !isSafeMethod(row.method)
+      ? { allowed: passed && res.statusCode === 200 }
+      : { setCookies, token: handedCsrfToken(req) ?? '' };
 
     expect(outcome(request, seen)).toEqual(expectedOutcome(row));
   });

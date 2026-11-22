@@ -17,6 +17,7 @@ export const CURRENT_SECRET = 'csrf-secret-that-is-at-least-32-bytes-long';
 export const PREVIOUS_SECRET = 'previous-csrf-secret-at-least-32-bytes-long';
 /** The rollover configuration every runner boots with: current first, previous after. */
 export const PARITY_SECRETS = [CURRENT_SECRET, PREVIOUS_SECRET] as const;
+export const DESKTOP_ORIGIN = 'app://desktop';
 
 /** Which CSRF cookie the request carries. */
 type TokenKind =
@@ -29,9 +30,36 @@ type TokenKind =
   | 'garbage'
   | 'none';
 
+/** The CSRF options a row runs under; every runner boots one adapter per config. */
+export const PARITY_CONFIGS = {
+  default: { secrets: PARITY_SECRETS, allowedOrigins: [PARITY_ORIGIN] },
+  /** A desktop shell on its own scheme, whose requests arrive as `cross-site`. */
+  desktop: {
+    secrets: PARITY_SECRETS,
+    allowedOrigins: [PARITY_ORIGIN],
+    crossSiteOrigins: [DESKTOP_ORIGIN],
+  },
+  /** Sibling subdomains trusted through `Sec-Fetch-Site: same-site`. */
+  sameSite: { secrets: PARITY_SECRETS, allowedOrigins: [PARITY_ORIGIN], allowSameSite: true },
+} as const;
+
+export type ParityConfig = keyof typeof PARITY_CONFIGS;
+
+/** The adapters a row applies to. */
+export type ParityAdapter = 'nestjs' | 'trpc';
+
 export interface CsrfCase {
   readonly name: string;
-  readonly method: 'GET' | 'POST';
+  /**
+   * The request method. A safe one (GET, HEAD, OPTIONS) gets the handout,
+   * any other the verdict. tRPC carries mutations on POST only, so the other
+   * unsafe methods are Nest rows.
+   */
+  readonly method: 'GET' | 'HEAD' | 'OPTIONS' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** Default `default`. */
+  readonly config?: ParityConfig;
+  /** Default both. */
+  readonly adapters?: readonly ParityAdapter[];
   readonly signedIn: boolean;
   /** Signed out: whether the browser holds a pre-session id, or a value we could not have minted. */
   readonly preSession: 'valid' | 'malformed' | 'none';
@@ -52,11 +80,9 @@ export interface CsrfCase {
       };
 }
 
-const post = (
-  name: string,
-  allowed: boolean,
-  fields: Partial<Omit<CsrfCase, 'name' | 'method' | 'expected'>> = {},
-): CsrfCase => ({
+type Fields = Partial<Omit<CsrfCase, 'name' | 'expected'>>;
+
+const post = (name: string, allowed: boolean, fields: Fields = {}): CsrfCase => ({
   name,
   method: 'POST',
   signedIn: true,
@@ -70,7 +96,7 @@ const post = (
 const get = (
   name: string,
   sets: readonly ('presession' | 'csrf')[],
-  fields: Partial<Omit<CsrfCase, 'name' | 'method' | 'expected'>> = {},
+  fields: Fields = {},
 ): CsrfCase => ({
   name,
   method: 'GET',
@@ -112,6 +138,50 @@ export const CSRF_CASES: readonly CsrfCase[] = [
     preSession: 'malformed',
     cookie: 'other',
   }),
+  post('passes a cross-site request from a crossSiteOrigins entry', true, {
+    config: 'desktop',
+    origin: DESKTOP_ORIGIN,
+    secFetchSite: 'cross-site',
+  }),
+  post('refuses a cross-site request from an allowed origin not on crossSiteOrigins', false, {
+    config: 'desktop',
+    secFetchSite: 'cross-site',
+  }),
+  post('refuses a crossSiteOrigins entry without the token', false, {
+    config: 'desktop',
+    origin: DESKTOP_ORIGIN,
+    secFetchSite: 'cross-site',
+    header: 'none',
+  }),
+  post('passes same-site when allowSameSite is on', true, {
+    config: 'sameSite',
+    secFetchSite: 'same-site',
+  }),
+  post('still refuses cross-site when allowSameSite is on', false, {
+    config: 'sameSite',
+    secFetchSite: 'cross-site',
+  }),
+  ...(['PUT', 'PATCH', 'DELETE'] as const).flatMap((method) => [
+    post(`passes a ${method} with its own token`, true, { method, adapters: ['nestjs'] }),
+    post(`refuses a ${method} without the header token`, false, {
+      method,
+      adapters: ['nestjs'],
+      header: 'none',
+    }),
+    post(`refuses a cross-site ${method}`, false, {
+      method,
+      adapters: ['nestjs'],
+      secFetchSite: 'cross-site',
+    }),
+  ]),
+  ...(['HEAD', 'OPTIONS'] as const).flatMap((method) => [
+    get(`keeps a current token on ${method}`, [], { method }),
+    get(`mints a pre-session and a CSRF cookie on a first ${method}`, ['presession', 'csrf'], {
+      method,
+      signedIn: false,
+      cookie: 'none',
+    }),
+  ]),
   get('keeps a current token bound to the session', []),
   get('keeps a token signed by the previous secret', [], { cookie: 'own-previous' }),
   get('keeps a current token bound to the pre-session', [], {
@@ -139,20 +209,24 @@ export interface ParitySession {
   readonly cookie: string;
 }
 
+/** The rows that apply to one adapter. */
+export const casesFor = (adapter: ParityAdapter): readonly CsrfCase[] =>
+  CSRF_CASES.filter((row) => row.adapters?.includes(adapter) ?? true);
+
 export interface ParityRequest {
-  readonly method: 'GET' | 'POST';
+  readonly method: CsrfCase['method'];
+  /** The config the runner's adapter must run under. */
+  readonly config: ParityConfig;
   readonly headers: Readonly<Record<string, string>>;
   /** The CSRF cookie value the request carries, if any. */
   readonly cookieToken: string | undefined;
 }
 
 /** Plain HTTP, so the cookies carry no `__Host-` prefix, as in every runner. */
-const settings = resolveCsrfSettings(
-  { secrets: PARITY_SECRETS, allowedOrigins: [PARITY_ORIGIN] },
-  false,
-);
+const settings = resolveCsrfSettings(PARITY_CONFIGS.default, false);
 
 const encoder = new TextEncoder();
+const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** A pre-session id as the adapters mint them: 16 random bytes in lowercase hex. */
 const freshPreSession = (): string => encodeHexLowerCase(randomBytes(16));
@@ -194,9 +268,9 @@ export function buildRequest(row: CsrfCase, session: ParitySession): ParityReque
 
   const echoed = { same: cookieToken, other, none: undefined }[row.header ?? 'none'];
 
-  if (row.method === 'POST' && echoed !== undefined) headers[settings.headerName] = echoed;
+  if (!SAFE.has(row.method) && echoed !== undefined) headers[settings.headerName] = echoed;
 
-  return { method: row.method, headers, cookieToken };
+  return { method: row.method, config: row.config ?? 'default', headers, cookieToken };
 }
 
 /** What a runner saw its adapter do with one request. */

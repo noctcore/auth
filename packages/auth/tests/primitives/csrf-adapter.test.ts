@@ -20,6 +20,7 @@ import {
   CURRENT_SECRET,
   expectedOutcome,
   outcome,
+  PARITY_CONFIGS,
   PARITY_ORIGIN,
   PARITY_SECRETS,
   PREVIOUS_SECRET,
@@ -271,11 +272,11 @@ describe('appendSetCookie', () => {
 // The shared table, run against the core's functions themselves; the
 // adapters run the same table against their real entry points.
 describe('the CSRF table every adapter answers', () => {
-  const ctx = context();
   const session = { id: 'session-id', cookie: 'session=unused' };
 
   it.each(CSRF_CASES.map((row) => [row.name, row] as const))('%s', (_name, row) => {
     const request = buildRequest(row, session);
+    const ctx = { secure: false, csrf: resolveCsrfSettings(PARITY_CONFIGS[request.config], false) };
     const cookies = readCsrfCookies(ctx.csrf, request.headers['cookie']);
     const ref = row.signedIn ? { id: session.id } : null;
     let seen: Observed;
