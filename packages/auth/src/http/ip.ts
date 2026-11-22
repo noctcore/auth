@@ -129,7 +129,8 @@ const isPort = (text: string): boolean => PORT.test(text) && Number(text) <= 65_
  * `[2001:db8::1]:443`), brackets or an IPv6 zone id (`fe80::1%eth0`); those
  * are stripped, so a port that changes per connection never becomes part of
  * a rate-limit key. An unbracketed IPv6 address is taken whole: its last
- * group cannot be told apart from a port. Whatever is left must be exactly
+ * group cannot be told apart from a port (`2001:db8::1:443` is itself a
+ * valid address, so no rule can strip a port there without misreading one). Whatever is left must be exactly
  * one IPv4 or IPv6 address (an IPv4-mapped one included), as `isIp` reads it.
  */
 function forwardedAddress(entry: string): string | undefined {
@@ -196,7 +197,8 @@ function singleAddress(raw: string | readonly string[] | null | undefined): stri
  * port, brackets and an IPv6 zone id are stripped, and an entry that is still
  * not one IP is never returned. The socket address stands in for it, or
  * undefined when there is none, so a junk or per-connection entry never
- * becomes a rate-limit key or an audit value.
+ * becomes a rate-limit key or an audit value. An empty socket address counts
+ * as none.
  */
 export function clientIp(input: {
   remoteAddress: string | undefined;
@@ -205,7 +207,8 @@ export function clientIp(input: {
   trustedHeader?: string | readonly string[] | null | undefined;
 }): string | undefined {
   const hops = input.trustedHops;
-  const remote = input.remoteAddress;
+  // An empty socket address names no peer: it is missing, in every branch.
+  const remote = input.remoteAddress === '' ? undefined : input.remoteAddress;
 
   const peerTrusted =
     typeof hops === 'number' ? hops > 0 : remote !== undefined && isTrustedAddress(remote, hops);
