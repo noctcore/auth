@@ -1,15 +1,19 @@
 // A061: registering the old address so the revert has nowhere to go.
 //
 // The intruder changes the owner's account from A to B, then registers a new
-// account on A (or moves another account they hold to A). The owner's revert
-// link would restore A, but A now has an account: the revert fails, and the
-// intruder keeps the account on B.
+// account on A (through sign-up, or through an invitation to A sent from any
+// scope where the intruder can invite), or moves another account they hold to
+// A. The owner's revert link would restore A, but A now has an account: the
+// revert fails, and the intruder keeps the account on B.
 //
 // Stopped by: flows/email-reservation.ts (A is held for the owner while the
 //   revert link lives), flows/register.ts (a held address is answered as
 //   taken: the same answer, one "account exists" mail to A for its owner, the
 //   same number of store round trips before the answer, with a read of the
-//   holder in the insert's place), flows/email-change.ts (other accounts'
+//   holder in the insert's place), plugins/invitations/accept.ts (`register`
+//   answers a held address as taken, `email_in_use`, and spends nothing; the
+//   account is read before the hold, so a confirm between the two is seen),
+//   flows/email-change.ts (other accounts'
 //   requests and confirms treat a held address as taken; if A has an account
 //   anyway, the revert still removes the password, revokes every session and
 //   pending token, and keeps the link usable).
@@ -19,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { meta, onFakeClock, PASSWORD, recordStoreCalls, settled, setup } from './support';
 import { plainHasher } from '../../src/testing';
 import { changed } from '../flows/email-change-support';
+import { invitationApp, SCOPE } from '../invitations/setup';
 
 const OWNER = 'ada@example.com';
 const INTRUDER = 'mallory@example.com';
@@ -112,6 +117,25 @@ describe('A061: registering the old address so the revert has nowhere to go', ()
 
     expect(answer).toEqual({ ok: true, value: { session: null } });
     expect(calls.slice(0, 3)).toEqual(['counters.increment', 'tokens.find', 'users.findById']);
+  });
+
+  it('an invitation to the old address cannot create an account on it, and the revert still restores it', async () => {
+    const t = invitationApp();
+    const intruder = await t.user({ canInvite: true });
+    const owner = await t.user({ email: OWNER });
+    const taken = await changed(t, owner.session, INTRUDER);
+    const { token } = await t.invite(intruder, OWNER);
+
+    expect(await t.auth.invitations.register({ token, password: PASSWORD, meta: meta() })).toEqual({
+      ok: false,
+      code: 'email_in_use',
+      reason: 'email_in_use',
+    });
+
+    expect(await t.stores.users.findCredentialByEmail(OWNER as never)).toBeNull();
+    expect(await t.store.listByScope(SCOPE, t.clock.now())).toHaveLength(1);
+    expect((await t.auth.revertEmailChange({ token: taken.revert, meta: meta() })).ok).toBe(true);
+    expect((await t.stores.users.findById(owner.userId))?.email).toBe(OWNER);
   });
 
   it("another account's change request to the old address answers as taken and mails the owner", async () => {
