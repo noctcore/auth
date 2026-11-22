@@ -4,7 +4,9 @@
 '@noctcore/auth-trpc': minor
 ---
 
-The startup option checks are finished: every public option that was read without a type check now refuses a value of the wrong type when `createAuth`, a plugin, a factory (`argon2id`, `turnstile`, `pwnedPasswords`) or an adapter starts, with an `AuthConfigError` that names the option, instead of a raw `TypeError` at startup or a crash on the first request that reads it.
+The startup option checks are finished: the value options listed below, which were read without a type check, now refuse a value of the wrong type when `createAuth`, a plugin, a factory (`argon2id`, `turnstile`, `pwnedPasswords`) or an adapter starts, with an `AuthConfigError` that names the option, instead of a raw `TypeError` at startup or a crash on the first request that reads it.
+
+The ports (`logger`, `clock`, `metrics`, and the `logger` of `turnstile` and `pwnedPasswords`) are not checked.
 
 - `throttle: { lockout: null }` boots with the defaults, like a missing `lockout` (it threw a `TypeError`).
 - A duration that does not parse (`'15 min'`, `NaN`, a negative number) throws an `AuthConfigError` naming the key instead of a `TypeError` from the parser: the flow `ttl`s, `passwordReset.ticketTtl`, `emailChange.revertTtl` and `blockAfterRevert`, the `session` durations, the `throttle.lockout` durations and rule windows, `background.timeout`, and the plugins' durations and rule windows.
