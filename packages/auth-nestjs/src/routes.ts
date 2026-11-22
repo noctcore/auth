@@ -40,6 +40,43 @@ function joinPath(...parts: readonly unknown[]): string {
     .join('/')}`;
 }
 
+/**
+ * Every method a controller has, its own and the ones it inherits from a base
+ * class or a mixin, the way Nest finds its routes (`MetadataScanner
+ * .getAllMethodNames` in `@nestjs/core`): walk the prototype chain up to
+ * `Object.prototype`, take each name once at the nearest level, so an override
+ * replaces the base handler (and an override without a route decorator is no
+ * route, as in Nest), and skip the constructor, getters and setters. The
+ * handler is the function found at that level: its route, role and public
+ * metadata are what Nest and the guard read through `getHandler()`.
+ */
+function controllerMethods(prototype: object) {
+  const seen = new Set<string>();
+  const methods = [];
+
+  for (
+    let level: object | null = prototype;
+    level !== null && level !== Object.prototype;
+    level = Reflect.getPrototypeOf(level)
+  ) {
+    for (const name of Object.getOwnPropertyNames(level)) {
+      if (seen.has(name)) continue;
+
+      seen.add(name);
+
+      // The descriptor, not `level[name]`, so a getter is never run.
+      const descriptor = Object.getOwnPropertyDescriptor(level, name);
+      const handler: unknown = descriptor?.value;
+
+      if (name === 'constructor' || typeof handler !== 'function') continue;
+
+      methods.push([name, handler] as const);
+    }
+  }
+
+  return methods;
+}
+
 /** Lists the routes of every controller in an initialised app (call after `app.init()`). */
 export function describeRoutes(app: INestApplication): RouteAccess[] {
   return collectRoutes(app.get(DiscoveryService), app.get(Reflector));
@@ -50,14 +87,8 @@ export function collectRoutes(discovery: DiscoveryService, reflector: Reflector)
 
   for (const wrapper of discovery.getControllers()) {
     const controller = wrapper.metatype as new (...args: never[]) => object;
-    const prototype = controller.prototype as object;
 
-    for (const name of Object.getOwnPropertyNames(prototype)) {
-      // The descriptor, not `prototype[name]`, so a getter is never run.
-      const handler: unknown = Object.getOwnPropertyDescriptor(prototype, name)?.value;
-
-      if (typeof handler !== 'function') continue;
-
+    for (const [name, handler] of controllerMethods(controller.prototype as object)) {
       const method = reflector.get<RequestMethod | undefined>(METHOD, handler);
 
       if (method === undefined) continue;
