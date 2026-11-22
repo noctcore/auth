@@ -10,7 +10,9 @@
  * `findSecretQueries(router)` walks every procedure and lists each query or
  * subscription whose input has a key that names a secret (any word of the
  * key is `password`, `passphrase`, `passcode`, `secret`, `token`, `otp`,
- * `totp`, `code` or `pin`, at any depth, see `secretKeys`). It fails closed:
+ * `totp`, `code` or `pin`, or its plural, or a run-together name ending in
+ * one such as `resettoken` or `otpcode`, or `apiKey`, at any depth, see
+ * `secretKeys` and `isSecretKey`). It fails closed:
  * an input it cannot read (a validator that is not Zod 4, or a Zod schema that
  * can hold any key, such as `z.unknown()` or `z.custom()`) and a lazy router
  * it cannot load synchronously are listed too, unless their path is in
@@ -21,18 +23,40 @@
 import { AuthConfigError } from '@noctcore/auth';
 import type { AnyRouter } from '@trpc/server';
 
-const SECRET_WORDS = new Set([
-  'password',
-  'passwd',
-  'passphrase',
-  'passcode',
-  'secret',
-  'token',
+/** Words that name a secret on their own: `token`, `password`, `code`. */
+const SECRET_WORDS = ['password', 'passwd', 'passphrase', 'passcode', 'secret', 'token', 'totp'];
+
+/**
+ * Words too short to match as the ending of a longer word: `code` hides in
+ * `postcode`, `barcode` and `unicode`, `pin` in `spin`, `otp` in `hotpot`.
+ * They match alone, or after one of `SHORT_SECRET_LEADS` (`otpcode`).
+ */
+const SHORT_SECRET_WORDS = ['code', 'pin', 'otp'];
+
+const SHORT_SECRET_LEADS = new Set([
   'otp',
   'totp',
-  'code',
-  'pin',
+  'sms',
+  'email',
+  'verification',
+  'verify',
+  'auth',
+  'authorization',
+  'recovery',
+  'backup',
+  'login',
+  'confirm',
+  'confirmation',
+  'activation',
+  'security',
+  'access',
+  'reset',
+  'invite',
+  'mfa',
 ]);
+
+/** Two words that name a secret only together: `apiKey` (a bare `key` is too common). */
+const SECRET_PAIRS = new Set(['apikey']);
 
 /** `currentPassword`, `reset_token`, `OTP-code` → its lower-case words. */
 function words(key: string): string[] {
@@ -44,8 +68,31 @@ function words(key: string): string[] {
     .filter((word) => word !== '');
 }
 
-export const isSecretKey = (key: string): boolean =>
-  words(key).some((word) => SECRET_WORDS.has(word));
+/**
+ * One lower-case word names a secret when, minus a plural `s`, it is a secret
+ * word (`tokens`), ends in a long one (`resettoken`, `accesstokens`), or ends
+ * in a short one behind a known lead (`otpcode`, `verificationcode`).
+ */
+function isSecretWord(word: string): boolean {
+  const singular = word.endsWith('s') ? word.slice(0, -1) : word;
+
+  if (SECRET_WORDS.some((stem) => singular.endsWith(stem))) return true;
+
+  return SHORT_SECRET_WORDS.some(
+    (stem) =>
+      singular === stem ||
+      (singular.endsWith(stem) && SHORT_SECRET_LEADS.has(singular.slice(0, -stem.length))),
+  );
+}
+
+export function isSecretKey(key: string): boolean {
+  const parts = words(key);
+
+  return (
+    parts.some(isSecretWord) ||
+    parts.some((part, i) => SECRET_PAIRS.has(part + (parts[i + 1] ?? '').replace(/s$/u, '')))
+  );
+}
 
 interface ZodDef {
   readonly type: string;
