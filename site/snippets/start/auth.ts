@@ -15,10 +15,18 @@ const { users, tokens } = prismaStores({
   tokenDelegate: prisma.authToken,
 });
 
-const { sessions, counters } = redisStores(
-  new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379'),
-  { prefix: 'auth:' },
-);
+// Bounded, so a Redis outage fails requests in milliseconds, not after about 73 s.
+const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  maxRetriesPerRequest: 1,
+  enableOfflineQueue: false,
+  connectTimeout: 2_000,
+  commandTimeout: 1_000,
+  retryStrategy: (attempt) => Math.min(attempt * 200, 2_000),
+});
+
+redis.on('error', (error) => process.stderr.write(`redis: ${error.name}\n`));
+
+const { sessions, counters } = redisStores(redis, { prefix: 'auth:' });
 
 export const auth = createAuth({
   stores: { users, tokens, sessions, counters },
