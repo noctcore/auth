@@ -9,6 +9,7 @@
 import { DEFAULT_DOOR_LIMITS, TOKEN_BYTES, type Mailer } from '@noctcore/auth';
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { join } from 'node:path';
 import * as keys from '../src/components/reference/config-keys';
 import { authConfig } from '../snippets/reference/config';
@@ -123,6 +124,10 @@ const PRISMA = 'auth-prisma/src/user-store.ts';
 const prismaFields = ['id', 'email', 'emailVerified', 'passwordHash']
   .map((field) => read(PRISMA, new RegExp(`${field}: fields\\.${field} \\?\\? '(\\w+)'`, 'u')))
   .concat(read(PRISMA, /deletedAt: fields\.deletedAt === undefined \? '(\w+)'/u));
+
+/** The adapters resolve `touch` left out to a predicate that says yes: `true`. */
+const touchDefault = (path: string) =>
+  read(path, /if \(touch === undefined \|\| touch === true\) return \(\) => (true);/u);
 
 // What create-auth.ts falls back to for each collaborator.
 const fallback = (name: string) => read(CREATE, new RegExp(`config\\.${name} \\?\\? (\\w+);`, 'u'));
@@ -266,6 +271,21 @@ const EXPECTED: Record<string, Record<string, string>> = {
     'argon2id-secret': 'none',
     'argon2id-unsafeallowweakparameters': lit(false),
   },
+  rotation: {
+    previoussecret: 'none',
+  },
+  nestjsAdapterOptions: {
+    'nestjs-authmodule-touch': lit(touchDefault('auth-nestjs/src/options.ts')),
+  },
+  trpcAdapterOptions: {
+    'trpc-createauthcontext-touch': lit(touchDefault('auth-trpc/src/options.ts')),
+    'trpc-createauthcontext-meta-touch': 'none',
+  },
+  csrfHandout: {
+    'csrf-handout-sessioncookies-csrftoken-request-response': 'none',
+    'csrf-handout-ctx-auth-csrftoken': 'none',
+    'csrf-handout-authresponsemeta-responsemeta': 'none',
+  },
   redisStoresOptions: {
     'redisstores-prefix': str(redisPrefix),
     'redisstores-maxsessionttl': str(redisMaxSessionTtl),
@@ -292,6 +312,9 @@ const EXPECTED: Record<string, Record<string, string>> = {
 const PREFIX: Record<string, string> = {
   pwnedPasswordsOptions: 'pwnedpasswords',
   doors: 'throttle-doors',
+  nestjsAdapterOptions: 'nestjs-authmodule',
+  trpcAdapterOptions: 'trpc-createauthcontext',
+  csrfHandout: 'csrf-handout',
   turnstileOptions: 'turnstile',
   argon2idOptions: 'argon2id',
   redisStoresOptions: 'redisstores',
@@ -302,6 +325,7 @@ const PREFIX: Record<string, string> = {
 /** The numbers a description may hold, by row id. */
 const DOES_FACTS: Record<string, readonly string[]> = {
   secret: [`at least ${minSecretBytes} bytes`],
+  previoussecret: [`at least ${minSecretBytes} bytes`],
   'password-policy-minlength': [`below ${minConfigurableLength} is refused`],
   'emailverification-ttl': [`a ${TOKEN_BYTES}-byte link`],
   'emailverification-digits': [`Must be ${minDigits} to ${maxDigits}`],
@@ -360,6 +384,39 @@ describe('configuration reference tables', () => {
       .flatMap(({ rows, prefix }) => rows.map((row) => keys.rowId(row.key, prefix)));
 
     expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+  });
+});
+
+/** The keys `interface AuthConfig` declares, by the TypeScript parser. */
+function authConfigKeys(): string[] {
+  const file = ts.createSourceFile(
+    'config.ts',
+    source('auth/src/core/config.ts'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const found: string[] = [];
+
+  file.forEachChild((node) => {
+    if (ts.isInterfaceDeclaration(node) && node.name.text === 'AuthConfig')
+      for (const member of node.members) found.push(member.name?.getText(file) ?? '');
+  });
+
+  return found;
+}
+
+describe('configuration reference coverage', () => {
+  it('has a row for every key of AuthConfig', () => {
+    const declared = authConfigKeys();
+    // The tables of a group (`session.cookie.name`) are drawn under their first segment.
+    const documented = new Set(
+      tables
+        .filter(({ prefix }) => !prefix)
+        .flatMap(({ rows }) => rows.map((row) => row.key.split('.')[0])),
+    );
+
+    expect(declared).toContain('previousSecret');
+    expect(declared.filter((key) => !documented.has(key))).toEqual([]);
   });
 });
 
