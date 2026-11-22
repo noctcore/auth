@@ -317,11 +317,23 @@ The login lockout. Source: `throttle/rules.ts`, `throttle/throttle.ts`; the reas
 
 **Device cookies.** Holding many device cookies adds no guesses: `perDevice` is also the budget all of an account's devices share.
 
-**Session doors.** `reauthenticate` and `changePassword` spend these same budgets: `perAccountIp` and `perAccount` while the account is unlocked, and under a lock the live session counts as one more device in `perDevice`. Guesses through login and both doors add up. A correct proof while the account is unlocked still counts toward `perAccount` (success returns only the `perAccountIp` slot, as at login), so an app that asks for re-authentication very often can lock its own user and send a lock notice. Under a lock, a stolen session can spend the `perDevice` budget shared by every device of the account, which refuses the owner's device cookie until the lock ends; a password reset clears the lock and ends every session. Second-factor codes have their own budget and do not draw on these.
+**Session doors.** `reauthenticate` and `changePassword` spend these same budgets: `perAccountIp` and `perAccount` while the account is unlocked, and under a lock the live session counts as one more device in `perDevice`. Guesses through login and both doors add up. A correct proof while the account is unlocked still counts toward `perAccount` (success returns only the `perAccountIp` slot, as at login), so an app that asks for re-authentication very often can lock its own user and send a lock notice; with `countSuccesses: false` the correct proof hands its `perAccount` slot back at once, since the caller already holds a session. Under a lock, a stolen session can spend the `perDevice` budget shared by every device of the account, which refuses the owner's device cookie until the lock ends; a password reset clears the lock and ends every session. Second-factor codes have their own budget and do not draw on these.
 
 **`deviceMaxAge`** must be at least a minute shorter than the session store's `epochTtlMs` (the Redis store's `epochTtl`, 90 days by default). A device cookie is revoked only by the user's revocation epoch, and a store that forgets an epoch reads it as 0 again, so a cookie revoked by a sign-out everywhere would verify once more after the lapse. The minute is the clock skew a cookie is allowed: its issue time comes from the server that set it, which may run ahead, so equal values are refused too.
 
 **`revealLocked`.** Unknown addresses lock and answer the same, but the answer tells anyone that the address is locked and when it lifts: an enumeration signal the generic answer does not give. Pair it with a captcha and per-IP rate limits.
+
+#### Lock durations
+
+By default a lock lasts `baseLock`, multiplied for each lock in a row and capped at `maxLock`. `durations` replaces both with a ladder you write out: the first lock in a row lasts the first entry, the next the second, and once the list runs out every further lock lasts the last entry. `['15m', '1h']` locks for 15 minutes, then an hour each time after, until `quietPeriod` passes with no new lock and the ladder starts over. The two-factor plugin's factor locks share the password lockout's backoff, so they climb the same ladder (in their own count). Startup refuses an empty list, an entry that is not a duration or is zero, and `durations` together with `baseLock` or `maxLock`, since one of them would be ignored.
+
+#### Counting successes
+
+By default a correct password spends a slot of `perAccount` like a wrong one: only its own source's slot (`perAccountIp`, or a device's) comes back. A user who signs in many times within the window, from several devices or a script, can lock their own account.
+
+With `countSuccesses: false` the `perAccount` slot comes back too, so only failures count. It comes back when the sign-in completes (its session is issued with `via: 'password'` or `via: 'second-factor'`, every factor proved), not when the password proves right: a correct password that opens a second-factor challenge keeps spending until the factor is proved. At `reauthenticate` and `changePassword` it comes back right after the correct password. A completion hands back at most one slot, and never more slots than correct passwords reserved in the window, however many sign-ins complete at once.
+
+The trade-off: an attacker who also holds the password could sign in between guesses to win budget back. That only matters together with a second factor, and there the slot comes back only once the factor is proved.
 
 #### The permanent tier
 
@@ -352,7 +364,7 @@ Source: `flows/lockout-admin.ts`, `flows/lock-notice.ts`.
 
 For a proof your app checks itself (its own second factor, a PIN), outside login's gate:
 
-- `auth.context.recordFailedProof({ userId | email, meta })` counts a failure in the address's account-wide budget, the one login spends. A lock it sets is carried out like a password lock (the `lockout` mail, the `account.locked` audit row and, in the permanent tier, the end of the sessions and `onPermanentLock`), off the response path, and counts toward the permanent tier. It returns `{ newLock? }`. An address with no account counts the same and nobody is told.
+- `auth.context.recordFailedProof({ userId | email, meta })` counts a failure in the address's account-wide budget, the one login spends. A lock it sets is carried out like a password lock (the `lockout` mail, the `account.locked` audit row and, in the permanent tier, the end of the sessions and `onPermanentLock`), off the response path, and counts toward the permanent tier. It returns `{ newLock? }`. An address with no account counts the same and nobody is told. Pass only the account the request is already acting on (the user of its session or challenge): it locks whatever account it is pointed at, so a target taken from the request body lets anyone lock any account.
 - `auth.context.escalateLock({ userId, meta })`, for a proof with its own budget and lock: call it once for each new lock it sets. With `permanent` on, the lock counts toward the tier in the same count as the password locks, and a permanent lock is carried out the same way. It does nothing while `permanent` is off.
 - `auth.context.throttle.recordFailure` only counts: a lock reached through it sends nothing. Prefer `recordFailedProof`.
 
@@ -468,7 +480,9 @@ Source: `auth/src/http/csrf-adapter.ts`. Background: [CSRF](/auth/learn/csrf/).
 - `emailChange.revertTtl` is shorter than 7 days;
 - a rule under `throttle.lockout` (`perAccountIp`, `perAccount`, `perDevice`) is not an object, or a `limit` under it or `throttle.doors` is not a whole number of at least 1, or its `window` is zero (a door rule also needs a `limit` and a valid `window`; a `null` door rule, and a `null` `throttle.lockout`, keep the defaults);
 - `throttle.lockout.baseLock` or `throttle.lockout.maxLock` is zero;
+- `throttle.lockout.durations` is not a list, is empty, has an entry that is not a duration or is zero, or is set together with `baseLock` or `maxLock`;
 - `throttle.lockout.revealLocked` or `throttle.lockout.permanent.trustedDevices` is not `true` or `false`;
+- `throttle.lockout.countSuccesses` is not `true` or `false`;
 - `throttle.lockout.permanent.afterLocks` is not a whole number of at least 1;
 - `previousSecret` holds a value that is not a string or bytes, is shorter than the minimum for `secret`, or repeats `secret` or another previous secret (an empty string counts as shorter), or is a list with an empty slot;
 - `plugins` is not a list, holds an empty slot or an entry that is not a plugin with an `id`, a plugin's `flows` is not a function or its `requires` is not a list;

@@ -429,6 +429,12 @@ export const lockout: readonly ConfigRow[] = [
     does: 'Cap on a single temporary lock.',
   },
   {
+    key: 'throttle.lockout.durations',
+    type: 'Duration[]',
+    default: 'none',
+    does: 'Your own ladder of lock durations in place of `baseLock` and `maxLock`: lock N lasts entry N, the last repeats. See [Lock durations](#lock-durations).',
+  },
+  {
     key: 'throttle.lockout.quietPeriod',
     type: 'Duration',
     default: "`'24h'`",
@@ -463,6 +469,12 @@ export const lockout: readonly ConfigRow[] = [
     type: 'boolean',
     default: '`false`',
     does: 'Answer `account_locked` from login, with `retryAfterSeconds` for a temporary lock, instead of `invalid_credentials`.',
+  },
+  {
+    key: 'throttle.lockout.countSuccesses',
+    type: 'boolean',
+    default: '`true`',
+    does: 'Whether a correct password spends `perAccount`. `false`: a completed sign-in hands its slot back, so only failures count. See [Counting successes](#counting-successes).',
   },
 ];
 
