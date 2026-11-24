@@ -34,6 +34,8 @@ Generate each key with `openssl rand -base64 32` and keep it with your other sec
 | `issuer` | required | The name the authenticator app shows. |
 | `required` | never | `({ user }) => boolean`: users who must have a factor. Without one they get an enrollment challenge at login, never a session. |
 | `enforcement` | off | `({ user }) => { required, graceEndsAt? }`: a requirement with a grace window, checked on every request; see [Enforcement with a grace period](#enforcement-with-a-grace-period). Pass it or `required`, not both. |
+| `enforcementStanding` | `'live'` | `'at-issue'` (or `{ mode: 'at-issue', version }`): with `enforcement`, a session issued unrestricted skips the per-request reads; see [Standing decided at issue](#standing-decided-at-issue). |
+| `enrollmentWindow` | `'10m'` | How long a pending secret from `enroll` accepts its confirmation code; positive, at most `'24h'`. See [Settings and step-up](#settings-and-step-up). |
 | `stepUpWindow` | `'10m'` | How long a code proved in a session counts for sensitive actions. |
 | `trustedDevices` | `{ ttl: '30d', maxPerUser: 5 }` | `false` turns "remember this device" off (and stops honouring devices trusted before). `ttl` must be at least a minute (the allowed clock skew) shorter than the session store's `epochTtlMs` (the Redis store's `epochTtl`). |
 | `attempts` | 5 per `'15m'` | Code checks per user, from every IP together, before the factor locks. |
@@ -71,6 +73,7 @@ When `methods` is `['enroll']`, the user is one you require a factor of and has 
 - **In the window**, sign-in works as usual and every validated session carries `twoFactor: { state: 'grace', graceEndsAt }` (milliseconds since the epoch). Show a reminder.
 - **After the window**, the user still signs in, but the session is `twoFactor: { state: 'enrollment-only' }`: it reaches only the routes you mark for enrollment. Everything else answers `403` with `two_factor_enrollment_required`. Enrolling is the settings flow above (fresh password proof, `enroll`, `confirmEnrollment`); once the factor is confirmed the standing is gone on the next request.
 - **Checked live.** The standing is computed on every request, never stored in the session, so a policy change or a closing window applies on the next request, without a new sign-in. The policy runs only for users without a confirmed factor (an enrolled user costs one store read), but it runs on each of their requests: cache your tenant rules (the example below expires and bounds its cache), and expect a change to apply once that cache does. `status` asks the policy once per call.
+- **Or decided at issue.** With `enforcementStanding: 'at-issue'` the standing is also computed when a session is issued, and a session issued unrestricted is stamped and validates without any read. See [Standing decided at issue](#standing-decided-at-issue).
 - **Fail closed.** A policy that throws, or answers nothing, reads as required with the window over (enrollment-only), and is logged by the error's name only. An unreadable `graceEndsAt` means no grace.
 - **The sweep.** `auth.twoFactor.sweepUnenrolled({ userIds })` revokes every session of each listed user who is required, past the window and still without a confirmed factor, with reason `two-factor-required` (your `onSessionsRevoked` hook hears it). Each user is read again right before the revocation, so one who enrolled (or whose rule changed) during the sweep keeps their sessions. Users in the window, users with a factor and unknown ids are skipped; a user whose policy throws is skipped and counted in `failed`, since validation already confines that session. Pass any iterable or async iterable, so a large tenant can be paged from your database, and run it from your scheduler.
 
@@ -78,9 +81,29 @@ When `methods` is `['enroll']`, the user is one you require a factor of and has 
 
 With an adapter, mark what an enrollment-only session may reach: `@TwoFactorEnrollment()` on a NestJS route or controller ([NestJS](/auth/build/nestjs/#the-guard-order)), or `meta: { twoFactorEnrollment: true }` on a tRPC procedure ([tRPC](/auth/build/trpc/)). Mark the enrollment routes, `status`, re-authentication and sign out; the marker opens nothing else, so roles and fresh-auth still apply. Public routes and procedures run for anyone, so they ignore the standing: do not hand account data out of one. `status` reports the standing too, as `enforcement` (null when the factor is on or none is required).
 
+### Standing decided at issue
+
+The live check costs a factor read on every request of every user, and a user read and a policy call for each user without a factor. If most of your users are never required, `enforcementStanding: 'at-issue'` (with `enforcement`) keeps that cost off their requests.
+
+**Which sessions skip the read.** A session issued while the user had a confirmed factor, or while your policy answered not required, carries a stamp (the `twoFactorStanding` session attribute) and validates without reading the factor, the user or the policy. Only a stamp of the current `version` at the session's own revocation epoch counts.
+
+**Which sessions are read live.** Every other session, exactly as with `'live'`: one issued in the grace window or enrollment-only (so the window closing, enrolling or the policy lifting applies on the next request), one issued before you turned the option on or under another `version`, and one whose stamp your attribute schema dropped.
+
+**Why a stamp is never stale.** Nothing about the user is read on a stamped session's requests, so every change that could restrict it ends it instead:
+
+- **You require a factor of a user, or change their policy:** call `auth.twoFactor.refreshStanding({ userId })`. It ends the user's sessions (reason `two-factor-standing`; the epoch also voids their trusted devices), and their next sign-in is stamped from the new answer, so a user moved into a grace window signs in again to a grace session. Under `'live'` it does nothing (`revoked: false`), so you can call it either way.
+- **A policy change for many users** (a tenant that starts requiring a factor): pass `enforcementStanding: { mode: 'at-issue', version }` with a new `version`. Sessions stamped under the old one are read live again, and the grace and enrollment-only standings apply on their next request.
+- **An admin resets the factor** (`twoFactor.reset`): under `'at-issue'` it ends the user's sessions.
+- **A sign-in that read the old answer just before a refresh** cannot keep a stamp: the stamp carries the epoch read before the answer, so a session minted after the refresh either loses the core's epoch fence or carries a stamp that does not match it (read live).
+- **A re-issue** (a password change, say) is stamped again from the answer at that moment, never from the stamp it inherits.
+
+A change you neither refresh nor version does not reach a stamped session until it ends; `sweepUnenrolled` still revokes the sessions of required users past their window, so keep running it. A policy whose answer changes with time by itself (required from a date) needs a refresh or a new version at that date. A deleted user's stamped session is not read either: end the sessions when you delete the user.
+
+**Your attribute schema.** With `session.attributes`, let `twoFactorStanding` (a string) through. A schema that drops unknown keys only costs the reads; one that refuses them refuses every sign-in.
+
 ## Settings and step-up
 
-Turning the factor on from the settings page needs a fresh password proof (`session.freshAuthAge`, 10 minutes by default; send the user through `auth.reauthenticate` if it is older). `enroll` returns the base32 `secret` and an `otpauth://` `uri` to show as a QR code. The secret becomes active only when a code from it comes back within 10 minutes.
+Turning the factor on from the settings page needs a fresh password proof (`session.freshAuthAge`, 10 minutes by default; send the user through `auth.reauthenticate` if it is older). `enroll` returns the base32 `secret` and an `otpauth://` `uri` to show as a QR code. The secret becomes active only when a code from it comes back within `enrollmentWindow` (10 minutes by default, at most 24 hours; `expiresAt` follows it). A longer window helps users who set the authenticator up on another device or with help, but confirming still needs a fresh password proof, so past `session.freshAuthAge` send them through `auth.reauthenticate` first. An enrollment challenge (a required user at login) still ends with the challenge, 5 minutes, whatever the window. The window also dates when a factor counts as set up for your own re-issue of a session (a session created after it closed passes): shrinking it while enrollments are pending lets a session created between the new and the old end pass, so turn factors on with `revokeOtherSessions: true` if you shrink it.
 
 <Code code={settingsTs} lang="ts" title="src/routes/settings.ts" />
 
