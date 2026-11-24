@@ -22,8 +22,11 @@ import {
   createAuthContext,
   createAuthMiddlewares,
   CsrfMiddleware,
+  findSecretQueries,
+  inspectPasswordResetInput,
   MAX_TRUSTED_HOPS,
   RateLimitMiddleware,
+  resetInspectionOutput,
   type AuthContextOptions,
   type AuthState,
   type AuthWriter,
@@ -1025,6 +1028,34 @@ describe('subscription revalidation', () => {
 
     expect(logged).toHaveBeenCalledWith('auth-trpc could not revalidate a subscription', {
       error: 'string',
+    });
+  });
+});
+
+describe('the reset inspection schemas', () => {
+  it('keeps the link token out of a query', () => {
+    const t = initTRPC.create();
+
+    const router = t.router({
+      inspect: t.procedure.input(inspectPasswordResetInput).query(() => null),
+    });
+
+    expect(findSecretQueries(router)).toEqual([
+      { path: 'inspect', problem: 'secret_in_query', keys: ['token'] },
+    ]);
+  });
+
+  it('narrows the inspected user to the public fields', () => {
+    const parsed = resetInspectionOutput.parse({
+      user: { id: 'u1', email: EMAIL, emailVerified: true, tenantId: 't1' },
+      expiresAt: 1,
+      secondFactorRequired: true,
+    });
+
+    expect(parsed).toEqual({
+      user: { id: 'u1', email: EMAIL, emailVerified: true },
+      expiresAt: 1,
+      secondFactorRequired: true,
     });
   });
 });

@@ -34,6 +34,8 @@ export const loginInput = z.object({
 });
 export const requestPasswordResetInput = z.object({ email, captchaToken });
 export const verifyPasswordResetCodeInput = z.object({ email, code });
+/** A reset page checking its link on load (`auth.inspectPasswordReset`). A mutation: the token is a secret. */
+export const inspectPasswordResetInput = z.object({ token });
 export const resetPasswordInput = z.object({
   token,
   password,
@@ -97,5 +99,11 @@ export const acceptedOutput = z.object({
 });
 
 export const resetTicketOutput = z.object({ ticket: z.string(), expiresAt: z.number() });
+/** What `auth.inspectPasswordReset` answers for a live link, with the user narrowed to `userOutput`. */
+export const resetInspectionOutput = z.object({
+  user: userOutput,
+  expiresAt: z.number(),
+  secondFactorRequired: z.boolean(),
+});
 export const revokedOutput = z.object({ revoked: z.boolean() });
 export const verificationRequestOutput = z.object({ sent: z.boolean() });
