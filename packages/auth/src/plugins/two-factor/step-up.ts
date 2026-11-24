@@ -83,10 +83,11 @@ export interface VerifyProofInput {
  * prove), `second_factor_required` when it has one. With a proof:
  * `ok({ proved: true })` when it is right, `invalid_second_factor` otherwise,
  * also for a user with no confirmed factor or no user at all (whose codes
- * lock nothing). Every call counts on the per-IP limit. Both answers say
- * whether the account has a factor, and wrong codes lock a real factor:
- * call it only for someone who proved control of the account. It never
- * issues or touches a session.
+ * lock nothing). Every call counts on the per-IP limit. The answer without
+ * a proof says whether the account has a factor, and so does the reason
+ * (`wrong_code`, `no_factor`) of the one with a proof; wrong codes lock a
+ * real factor: call it only for someone who proved control of the account.
+ * It never issues or touches a session.
  */
 export async function verifyProof(
   runtime: Runtime,
