@@ -155,6 +155,7 @@ LockoutOptions [interface]
     readonly permanent?: PermanentLockOptions
     readonly quietPeriod?: Duration
     readonly revealLocked?: boolean
+    readonly sessionProofs?: 'lockout' | 'door'
 LockState [interface]
     readonly locked: boolean
     readonly permanent: boolean
@@ -374,6 +375,7 @@ Throttle [class]
     readonly deviceMaxAgeMs: number
     readonly permanentDevices: boolean
     readonly revealLocked: boolean
+    readonly sessionProofs: 'lockout' | 'door'
     recordFailure(account: string, owner?: string | null): Promise<{ newLock?: NewLock; }>
     refundSuccess(account: string): Promise<void>
     signInCompleted(account: string): Promise<void>

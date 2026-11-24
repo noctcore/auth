@@ -70,7 +70,12 @@ import {
 } from './rules';
 import type { Clock } from '../ports/clock';
 import type { CounterStore, CounterWindow } from '../ports/stores';
-import { assertBoolean, assertList, configMilliseconds } from '../shared/config-checks';
+import {
+  assertBoolean,
+  assertList,
+  assertOneOf,
+  configMilliseconds,
+} from '../shared/config-checks';
 import { AuthConfigError } from '../shared/errors';
 import { LOCKOUT_EXPIRES_AT, toMilliseconds } from '../shared/duration';
 
@@ -97,6 +102,11 @@ export class Throttle {
    * slot back, so only failures count.
    */
   readonly countSuccesses: boolean;
+  /**
+   * What bounds a password proved again from a live session (`sessionProofs`,
+   * default `'lockout'`): login's budgets, or only the door's own limit.
+   */
+  readonly sessionProofs: 'lockout' | 'door';
 
   constructor(
     private readonly counters: CounterStore,
@@ -118,6 +128,7 @@ export class Throttle {
     this.permanentDevices = options.permanent?.trustedDevices ?? true;
     this.revealLocked = options.revealLocked ?? false;
     this.countSuccesses = options.countSuccesses ?? true;
+    this.sessionProofs = options.sessionProofs ?? 'lockout';
     this.lockLadderMs = lockLadder(options);
 
     assertLockoutOptions(options, [
@@ -671,6 +682,7 @@ function assertLockoutOptions(
 
   assertBoolean('throttle.lockout.revealLocked', lockout.revealLocked);
   assertBoolean('throttle.lockout.countSuccesses', lockout.countSuccesses);
+  assertOneOf('throttle.lockout.sessionProofs', lockout.sessionProofs, ['lockout', 'door']);
   assertBoolean('throttle.lockout.permanent.trustedDevices', lockout.permanent?.trustedDevices);
 }
 
