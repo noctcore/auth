@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { refuse } from '../../src';
-import { meta, NEW_PASSWORD, PASSWORD, setup } from './setup';
+import { meta, NEW_PASSWORD, PASSWORD, settled, setup } from './setup';
 
 const EMAIL = 'ada@example.com';
 
@@ -412,5 +412,24 @@ describe('session management', () => {
     }
 
     expect(await t.auth.sessions.list(t.laptop.session)).toHaveLength(2);
+  });
+});
+
+describe('the request meta on mails to an address nobody has proven', () => {
+  it('leaves it off the verification mail and the email change confirmation', async () => {
+    const t = setup();
+    const { session } = await t.signedInUser(EMAIL);
+
+    await t.auth.register({ email: 'grace@example.com', password: PASSWORD, meta: meta() });
+    await settled();
+    await t.auth.requestEmailChange({ session, newEmail: 'new@example.com', meta: meta() });
+
+    const verify = t.mailer.last('verify-email');
+    const confirm = t.mailer.last('email-change-confirm');
+
+    expect(verify?.to).toBe('grace@example.com');
+    expect(confirm?.to).toBe('new@example.com');
+    expect(verify).not.toHaveProperty('meta');
+    expect(confirm).not.toHaveProperty('meta');
   });
 });
