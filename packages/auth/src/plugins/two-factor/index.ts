@@ -19,7 +19,12 @@
  *
  * Guide: Learn, "Second factors"; Build, "Two-factor".
  */
-import { verifyChallenge, type VerifyChallengeInput } from './challenge';
+import {
+  startChallenge,
+  verifyChallenge,
+  type StartChallengeInput,
+  type VerifyChallengeInput,
+} from './challenge';
 import {
   confirmEnrollment,
   enroll,
@@ -45,6 +50,7 @@ export type {
   ChallengeMethod,
   ChallengeProof,
   PassedChallenge,
+  StartChallengeInput,
   VerifyChallengeInput,
 } from './challenge';
 export type {
@@ -134,6 +140,12 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
         enroll: (input: EnrollInput<A>) => enroll(r, input),
         /** Activates the pending secret with a code from it; returns the recovery codes. */
         confirmEnrollment: (input: ConfirmEnrollmentInput<A>) => confirmEnrollment<A>(r, input),
+        /**
+         * The challenge for a sign-in your app authenticated itself (an identity
+         * provider, a magic link of its own): null when no factor is due, so
+         * you issue your own session; else finish it with `verifyChallenge`.
+         */
+        challenge: (input: StartChallengeInput) => startChallenge(r, input),
         /** Finishes a challenged login with a code, a recovery code or a trusted device. */
         verifyChallenge: (input: VerifyChallengeInput) => verifyChallenge<A>(r, input),
         /** Proves the second factor in this session, for the step-up window. */
