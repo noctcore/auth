@@ -38,6 +38,7 @@ import {
 import { CHALLENGE_TTL_MS } from './options';
 import { gateAttempt, type Runtime } from './runtime';
 import { matchTotp } from './totp';
+import { mailMeta } from '../../ports/mail';
 import { NO_SUCH_USER_ID, type AuthUser } from '../../ports/stores';
 import type { StoredTotpFactor } from '../../ports/two-factor';
 import type { RequestMeta } from '../../shared/meta';
@@ -348,5 +349,6 @@ async function announceRecoveryCodeUsed(
     userId,
     remaining,
     at: new Date(runtime.core.clock.now()),
+    ...mailMeta(spent.meta),
   });
 }

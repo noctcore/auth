@@ -12,6 +12,7 @@ import { publicUser } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
 import type { IssuedSession } from '../core/plugin-context';
+import { mailMeta } from '../ports/mail';
 import type { AuthUser, StoredSession } from '../ports/stores';
 import { sha256Hex } from '../crypto/hash';
 import { fail, ok, type AuthResult } from '../shared/errors';
@@ -124,6 +125,7 @@ export async function changePassword<U extends AuthUser, A>(
     to: user.email,
     userId: user.id,
     at: new Date(core.clock.now()),
+    ...mailMeta(meta),
   });
 
   return core.issueSession(user, { via: 'password-change', meta, inherit: session });

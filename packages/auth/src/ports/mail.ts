@@ -13,7 +13,24 @@
  * stays pending in memory.
  *
  * `dedupeKey` is a server-minted nonce per event, safe to use as a queue job id.
+ *
+ * `meta`, on the mails a request on the owner's account sends, says where that
+ * request came from (for "asked from this IP" in a reset or security mail). A
+ * reset mail takes it from the job, so it is there when the job ran on your
+ * queue too. It is left off the mails that go to someone other than the account
+ * the request acted on (`email-change-in-use`, `invitation`), and off any mail a
+ * flow sends without a request.
  */
+import type { RequestMeta } from '../shared/meta';
+
+/** Where the request behind a mail came from. */
+export interface MailRequestMeta {
+  /** The client IP, already resolved through the trusted proxy hops. */
+  readonly ip: string;
+  /** The request's user agent, when the framework passed one. */
+  readonly userAgent?: string;
+}
+
 export type AuthMailEvent =
   | {
       readonly type: 'verify-email';
@@ -24,6 +41,7 @@ export type AuthMailEvent =
       /** Set for code verification. */
       readonly code?: string;
       readonly expiresAt: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   | {
@@ -32,6 +50,7 @@ export type AuthMailEvent =
       readonly userId: string;
       readonly url: string;
       readonly expiresAt: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   | {
@@ -40,6 +59,7 @@ export type AuthMailEvent =
       readonly userId: string;
       readonly code: string;
       readonly expiresAt: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   | {
@@ -47,6 +67,7 @@ export type AuthMailEvent =
       readonly to: string;
       readonly userId: string;
       readonly at: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /** Registration of an address that already has an account: the uniform answer's mail. */
@@ -54,6 +75,7 @@ export type AuthMailEvent =
       readonly type: 'account-exists';
       readonly to: string;
       readonly userId: string;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /**
@@ -67,6 +89,7 @@ export type AuthMailEvent =
       readonly userId: string;
       readonly until: Date;
       readonly permanent?: true;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /** An email change: the code or link that proves the new address, sent to that address. */
@@ -79,6 +102,7 @@ export type AuthMailEvent =
       /** Set for code confirmation. */
       readonly code?: string;
       readonly expiresAt: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /**
@@ -100,6 +124,7 @@ export type AuthMailEvent =
       readonly at: Date;
       readonly revertUrl: string;
       readonly revertExpiresAt: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /** A revert link was used: the address is back, every session ended and the password must be reset. */
@@ -108,6 +133,7 @@ export type AuthMailEvent =
       readonly to: string;
       readonly userId: string;
       readonly at: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /** The two-factor plugin: a second factor was turned on for the account. */
@@ -116,6 +142,7 @@ export type AuthMailEvent =
       readonly to: string;
       readonly userId: string;
       readonly at: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /** The two-factor plugin: the second factor was turned off. */
@@ -124,6 +151,7 @@ export type AuthMailEvent =
       readonly to: string;
       readonly userId: string;
       readonly at: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /**
@@ -137,6 +165,7 @@ export type AuthMailEvent =
       readonly userId: string;
       readonly remaining: number | null;
       readonly at: Date;
+      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /**
@@ -152,6 +181,16 @@ export type AuthMailEvent =
       readonly expiresAt: Date;
       readonly dedupeKey: string;
     };
+
+/** The `meta` of a mail event, from the request's: the IP and the user agent, nothing else. */
+export function mailMeta(meta: RequestMeta | undefined): { readonly meta?: MailRequestMeta } {
+  if (!meta) return {};
+
+  return {
+    meta:
+      meta.userAgent === undefined ? { ip: meta.ip } : { ip: meta.ip, userAgent: meta.userAgent },
+  };
+}
 
 export interface Mailer {
   send(event: AuthMailEvent): Promise<void>;

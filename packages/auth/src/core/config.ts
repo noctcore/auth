@@ -78,7 +78,10 @@ export interface PasswordResetJob {
   readonly email: string;
   /** Server-minted; safe as a queue job id. Same for repeated requests for one address within a window. */
   readonly dedupeKey: string;
+  /** The IP of the request that asked. */
   readonly ip: string;
+  /** The user agent of the request that asked, when the framework passed one. Older jobs lack it. */
+  readonly userAgent?: string;
 }
 
 /** A plugin: adds hooks and flows, never endpoints. `Id` becomes the namespace on the auth object. */

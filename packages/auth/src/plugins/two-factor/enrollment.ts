@@ -20,6 +20,7 @@ import { recordStepUp } from './step-up';
 import { encodeTotpSecret, generateTotpSecret, totpUri } from './totp';
 import type { IssuedSession } from '../../core/plugin-context';
 import { hexDigestsEqual } from '../../crypto/hash';
+import { mailMeta } from '../../ports/mail';
 import type { StoredSession } from '../../ports/stores';
 import { fail, ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
@@ -183,6 +184,7 @@ export async function confirmPending(
       to: user.email,
       userId: user.id,
       at: new Date(now),
+      ...mailMeta(request.meta),
     });
   }
 
