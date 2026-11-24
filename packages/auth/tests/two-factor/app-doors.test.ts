@@ -125,3 +125,73 @@ describe('challenge: a sign-in the app authenticated itself', () => {
     });
   });
 });
+
+describe('verifyProof: a second factor for a user without a session', () => {
+  it('passes a TOTP code once and refuses it replayed', async () => {
+    const t = twoFactorApp();
+    const { userId, secret } = await t.enrolled();
+    const proof = { kind: 'totp', code: t.codeFor(secret) } as const;
+
+    const check = () =>
+      t.auth.twoFactor.verifyProof({ userId, proof, action: 'invite', meta: meta() });
+
+    expect(await check()).toEqual({ ok: true, value: { proved: true } });
+
+    expect(await check()).toMatchObject({
+      ok: false,
+      code: 'invalid_second_factor',
+      reason: 'invite_second_factor_code_replayed',
+    });
+
+    expect(t.audit.events).toContainEqual(
+      expect.objectContaining({
+        type: 'two_factor.verified',
+        data: { method: 'totp', action: 'invite' },
+      }),
+    );
+  });
+
+  it('spends a recovery code once and mails the owner', async () => {
+    const t = twoFactorApp();
+    const { userId, recoveryCodes } = await t.enrolled();
+    const proof = { kind: 'recovery-code', code: recoveryCodes[0] ?? '' } as const;
+
+    const check = () =>
+      t.auth.twoFactor.verifyProof({ userId, proof, action: 'reset', meta: meta() });
+
+    expect(await check()).toEqual({ ok: true, value: { proved: true } });
+    expect(await check()).toMatchObject({ ok: false, code: 'invalid_second_factor' });
+
+    await Promise.resolve();
+    expect(t.mailer.last('recovery-code-used')).toMatchObject({ userId, remaining: 9 });
+  });
+
+  it('asks for a proof only when the user has a confirmed factor', async () => {
+    const t = twoFactorApp();
+    const { userId } = await t.enrolled();
+    const plain = await t.signedIn(OTHER);
+
+    expect(
+      await t.auth.twoFactor.verifyProof({
+        userId: plain.session.userId,
+        action: 'invite',
+        meta: meta(),
+      }),
+    ).toEqual({ ok: true, value: { proved: false } });
+
+    expect(
+      await t.auth.twoFactor.verifyProof({
+        userId: 'no-such-user',
+        action: 'invite',
+        meta: meta(),
+      }),
+    ).toEqual({ ok: true, value: { proved: false } });
+
+    expect(
+      await t.auth.twoFactor.verifyProof({ userId, action: 'invite', meta: meta() }),
+    ).toMatchObject({
+      ok: false,
+      code: 'second_factor_required',
+    });
+  });
+});
