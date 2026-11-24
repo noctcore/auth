@@ -308,6 +308,7 @@ const EXPECTED: Record<string, Record<string, string>> = {
     'prismastores-select': 'none',
     'prismastores-touser': 'the four auth fields',
     'prismastores-createdata': 'none',
+    'prismastores-writewhere': 'none',
   },
 };
 

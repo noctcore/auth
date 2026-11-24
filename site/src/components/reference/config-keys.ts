@@ -728,6 +728,12 @@ export const prismaStoresOptions: readonly ConfigRow[] = [
     default: 'none',
     does: 'Values for your other required columns on sign-up, such as a tenant or a display name.',
   },
+  {
+    key: 'writeWhere',
+    type: 'Record<string, unknown>',
+    default: 'none',
+    does: 'A Prisma `where` a row must also match to take a new password hash, a verified mark or an email change, such as `{ closedAt: null }` for an account your app closed. It is in the same UPDATE, so an account closed after your `beforePasswordReset` hook still refuses the write. Reads, login and an email revert are left alone. See [Accounts your app closed](#accounts-your-app-closed).',
+  },
 ];
 
 export const nestjsAdapterOptions: readonly ConfigRow[] = [

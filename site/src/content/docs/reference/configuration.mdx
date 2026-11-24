@@ -545,3 +545,23 @@ That signal lives on the store `adoptLegacySessions` returns, so pass that resul
 Source: `packages/auth-prisma/src/user-store.ts`, `index.ts`.
 
 <ConfigTable rows={prismaStoresOptions} prefix="prismastores" label="Option" />
+
+#### Accounts your app closed
+
+The store guards its reads and writes with `deletedAt` only. An app that closes an account to new credentials on a column of its own (a member removed from an organisation who keeps the row and the address, say) can refuse such an account in a `beforePasswordReset` hook, but the hook runs before the token is spent and the hash is written, so an account closed in between would still get the new password. `writeWhere` puts the app's condition in the same UPDATE as the write:
+
+```ts
+const { users, tokens } = prismaStores({
+  delegate: prisma.user,
+  tokenDelegate: prisma.authToken,
+  writeWhere: { closedAt: null },
+});
+```
+
+A closed row then refuses `setPasswordHash`, `markEmailVerified` and `changeEmail`, and the flows answer that like any refused write: `resetPassword` answers `invalid_token`, `changePassword` answers `session_expired`, an email change answers as stale. The condition is combined with the store's own through `AND`, so it can narrow a write but never widen it. Startup refuses a `writeWhere` that is not an object.
+
+What it leaves alone:
+
+- **Reads.** Lookups still find the row, so login works for a closed account unless your hooks refuse it (`beforeSessionCreate`, say). Refuse it there too.
+- **An email revert** (the `changeEmail` that also clears the password). It only takes access away, so the owner of the old address can still undo a change on a closed account.
+- **Rehash after login.** It is guarded like any password write, so a closed account keeps its old hash; the login itself is not affected.
