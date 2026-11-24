@@ -10,6 +10,12 @@
  *   re-issued by a password re-entry gets a new id and so no proof: the
  *   password alone can never mint one.
  * - A trusted device skips the login challenge, never a step-up.
+ * - `verifyProof` checks a proof for a user an app flow identified without a
+ *   session (an app-owned reset, an invitation that overwrites an account),
+ *   on the same per-IP limit, factor budget, replay guard and recovery-code
+ *   spend as the challenge, so it is never a faster way to guess codes. With
+ *   a proof, a user without a confirmed factor (or no user) answers exactly
+ *   like a wrong code, after the same work.
  *
  * Guide: Learn, "Second factors".
  */
@@ -60,6 +66,75 @@ export async function requireStepUp<A>(
   if (factor?.confirmed !== true || (await hasStepUp(runtime, session))) return ok();
 
   return fail('second_factor_required', 'step_up_required');
+}
+
+export interface VerifyProofInput {
+  readonly userId: string;
+  /** The code the user typed, or nothing to ask whether one is needed. */
+  readonly proof?: SecondFactorProof;
+  /** What the proof is for, in the audit rows (`two_factor.verified` `data.action`). */
+  readonly action: string;
+  readonly meta: RequestMeta;
+}
+
+/**
+ * Checks a second factor for a user without a session. Without a proof:
+ * `ok({ proved: false })` when the user has no confirmed factor (nothing to
+ * prove), `second_factor_required` when it has one. With a proof:
+ * `ok({ proved: true })` when it is right, `invalid_second_factor` otherwise,
+ * also for a user with no confirmed factor or no user at all. It never issues
+ * or touches a session.
+ */
+export async function verifyProof(
+  runtime: Runtime,
+  input: VerifyProofInput,
+): Promise<AuthResult<{ proved: boolean }>> {
+  const { core, store } = runtime;
+  const { userId, action, meta } = input;
+
+  if (!input.proof) {
+    const factor = await store.findFactor(userId);
+
+    if (factor?.confirmed !== true) return ok({ proved: false });
+
+    return refused(
+      runtime,
+      'two_factor.refused',
+      'second_factor_required',
+      `${action}_second_factor_missing`,
+      userId,
+      meta,
+    );
+  }
+
+  const limited = await limitIp(runtime, meta);
+
+  if (limited) return limited;
+
+  const check = await checkProof(runtime, {
+    userId,
+    account: factorAccount(userId),
+    proof: input.proof,
+    blocked: null,
+    meta,
+  });
+
+  if (!check.ok)
+    return refused(
+      runtime,
+      'two_factor.failed',
+      'invalid_second_factor',
+      `${action}_second_factor_${check.reason}`,
+      userId,
+      meta,
+    );
+
+  await core.emit(
+    { type: 'two_factor.verified', userId, data: { method: check.kind, action } },
+    meta,
+  );
+
+  return ok({ proved: true });
 }
 
 /** Proves the second factor for this session. */

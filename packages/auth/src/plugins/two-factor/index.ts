@@ -37,7 +37,7 @@ import { disable, regenerateRecoveryCodes, revokeTrustedDevices, status } from '
 import { resolveSettings, type TwoFactorOptions, type TwoFactorSettings } from './options';
 import type { SecondFactorProof } from './proofs';
 import { createRuntime, type Context, type Runtime } from './runtime';
-import { requireStepUp, stepUp } from './step-up';
+import { requireStepUp, stepUp, verifyProof, type VerifyProofInput } from './step-up';
 import { TRUSTED_DEVICE_COOKIE } from './trusted-devices';
 import { definePlugin } from '../../core/plugins';
 import { parseCookieHeader, prefixedCookieName } from '../../http/cookie';
@@ -53,6 +53,7 @@ export type {
   StartChallengeInput,
   VerifyChallengeInput,
 } from './challenge';
+export type { VerifyProofInput } from './step-up';
 export type {
   ConfirmedEnrollment,
   ConfirmEnrollmentInput,
@@ -146,6 +147,11 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
          * you issue your own session; else finish it with `verifyChallenge`.
          */
         challenge: (input: StartChallengeInput) => startChallenge(r, input),
+        /**
+         * Checks a second factor for a user your flow identified without a
+         * session; never issues or touches one. The same budget as the challenge.
+         */
+        verifyProof: (input: VerifyProofInput) => verifyProof(r, input),
         /** Finishes a challenged login with a code, a recovery code or a trusted device. */
         verifyChallenge: (input: VerifyChallengeInput) => verifyChallenge<A>(r, input),
         /** Proves the second factor in this session, for the step-up window. */
