@@ -128,7 +128,7 @@ export type {
 export { NO_SUCH_USER_ID } from './ports/stores';
 export { createDeviceToken, verifyDeviceToken } from './throttle/device-token';
 export { DEVICE_CLOCK_SKEW_MS } from './shared/clock-skew';
-export type { AuthMailEvent, Mailer } from './ports/mail';
+export type { AuthMailEvent, Mailer, MailRequestMeta } from './ports/mail';
 export type { AuditSink, AuthEvent, AuthEventType } from './ports/audit';
 export type {
   SecretCipher,
@@ -178,6 +178,7 @@ export {
   type HookInput,
   type HookResult,
   type IssueVia,
+  type PasswordResetRequirements,
   type Refusal,
   type RevocationReason,
   type SessionStanding,
@@ -188,6 +189,7 @@ export type { IssuedSession, IssueOptions, PluginContext } from './core/plugin-c
 export type { LoginInput, LoginOutcome } from './flows/login';
 export type { LockTarget } from './flows/lockout-admin';
 export type { RegisterInput, RegisterOutcome } from './flows/register';
+export type { PasswordResetInspection } from './flows/password-reset';
 export type { VerifiedEmail } from './flows/email-verification';
 export type {
   ChangedEmail,

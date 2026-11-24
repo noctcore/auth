@@ -86,6 +86,12 @@ export interface SessionStanding {
 /** A session `validateRequest` accepted, with its standing on this request. */
 export type ValidatedSession<A> = StoredSession<A> & SessionStanding;
 
+/** What a `passwordResetRequirements` hook says applying a reset will ask for. */
+export interface PasswordResetRequirements {
+  /** `resetPassword` will refuse without a `secondFactor` for this user. */
+  readonly secondFactor?: boolean;
+}
+
 export interface AuthHooks<U extends AuthUser, A> {
   /** Attributes for a session being issued. On a re-issue `inherited` holds the old session's attributes. */
   sessionAttributes: (context: {
@@ -127,6 +133,16 @@ export interface AuthHooks<U extends AuthUser, A> {
   }) => MaybePromise<{ challenge: string; methods: readonly string[] } | null | undefined>;
   /** Whether a reset may be sent to this account. A refusal is silent (the request answers the same). */
   beforePasswordResetRequest: (context: { user: U }) => MaybePromise<HookResult>;
+  /**
+   * What applying a reset of this account will ask for, for a reset page that
+   * checks its link on load (`inspectPasswordReset`). Answer `secondFactor:
+   * true` when your `beforePasswordReset` hook will demand a code for this
+   * user; the two-factor plugin does for a confirmed factor. The answers of
+   * every hook are combined: any `true` wins. Read only: spend nothing here.
+   */
+  passwordResetRequirements: (context: {
+    user: U;
+  }) => MaybePromise<PasswordResetRequirements | undefined | void>;
   /** Before a reset is applied: a second-factor plugin demands its code here. */
   beforePasswordReset: (context: {
     user: U;
@@ -213,6 +229,7 @@ const HOOK_NAMES: readonly HookName[] = [
   'sessionStanding',
   'loginChallenge',
   'beforePasswordResetRequest',
+  'passwordResetRequirements',
   'beforePasswordReset',
   'beforePasswordChange',
   'beforeEmailChange',

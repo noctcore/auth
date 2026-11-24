@@ -22,7 +22,11 @@ import { login, type LoginInput } from './flows/login';
 import { clearLock, inspectLock, type LockTarget } from './flows/lockout-admin';
 import { permanentLockHooks } from './flows/permanent-lock';
 import { changePassword, reauthenticate } from './flows/password-change';
-import { resetPassword, verifyPasswordResetCode } from './flows/password-reset';
+import {
+  inspectPasswordReset,
+  resetPassword,
+  verifyPasswordResetCode,
+} from './flows/password-reset';
 import { processPasswordReset, requestPasswordReset } from './flows/password-reset-request';
 import { register, type RegisterInput } from './flows/register';
 import { resolveSettings } from './flows/resolve-settings';
@@ -332,6 +336,13 @@ export function createAuth<
       requestPasswordReset(core, settings, input),
     verifyPasswordResetCode: (input: { email: string; code: string; meta: RequestMeta }) =>
       verifyPasswordResetCode(core, settings, input),
+    /**
+     * Checks a reset link (a ticket in code mode) without spending it, for a
+     * reset page on load: the account, the expiry and whether `resetPassword`
+     * will ask for a second factor. Counted on the `password-reset` door.
+     */
+    inspectPasswordReset: (input: { token: string; meta: RequestMeta }) =>
+      inspectPasswordReset(core, settings, input),
     resetPassword: (input: {
       token: string;
       password: string;

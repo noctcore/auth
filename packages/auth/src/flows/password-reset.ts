@@ -1,5 +1,5 @@
 /**
- * Completing a password reset.
+ * Completing a password reset, and checking a reset link before it is used.
  *
  * Applying a reset (from a link, or from the ticket a verified code was
  * exchanged for) peeks the token first, so a password that fails the policy
@@ -83,6 +83,66 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
   return ok({ ticket: ticket.token, expiresAt: ticket.expiresAt });
 }
 
+/** A live reset link (or ticket), as `inspectPasswordReset` found it. */
+export interface PasswordResetInspection<U extends AuthUser> {
+  /** The account the link resets. */
+  readonly user: U;
+  /** When the link (or ticket) stops working, in ms since the epoch. */
+  readonly expiresAt: number;
+  /**
+   * `resetPassword` will refuse this reset without a `secondFactor`: show the
+   * code field with the new password. From the `passwordResetRequirements`
+   * hooks (the two-factor plugin answers it for a confirmed factor).
+   */
+  readonly secondFactorRequired: boolean;
+}
+
+/**
+ * Checks a reset link (a ticket in code mode) when the reset page loads,
+ * without spending it and without mailing anything: an unknown, expired or
+ * spent link gets its own page, and an account whose reset will ask for a
+ * second factor gets the code field up front. Counted on the same
+ * `password-reset` door as `resetPassword`, so checking a link gives no more
+ * guesses than applying it. Unknown, expired and spent links answer the same
+ * `invalid_token`.
+ */
+export async function inspectPasswordReset<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  settings: FlowSettings,
+  input: { token: string; meta: RequestMeta },
+): Promise<AuthResult<PasswordResetInspection<U>>> {
+  const { meta } = input;
+  const limited = await core.rateLimit('password-reset', meta.ip, meta);
+
+  if (limited) return limited;
+
+  const peek = await core.tokens.peekLink(resetPurpose(settings), input.token);
+
+  if (peek.status !== 'valid')
+    return inspectFailed(
+      core,
+      peek.status === 'unknown' ? undefined : peek.namedUserId,
+      peek.status,
+      meta,
+    );
+
+  const user = await core.users.findById(peek.userId);
+
+  if (!user) return inspectFailed(core, peek.userId, 'user_missing', meta);
+
+  let secondFactorRequired = false;
+
+  for (const hook of core.hooks.passwordResetRequirements) {
+    const needs = await hook({ user });
+
+    if (needs?.secondFactor === true) secondFactorRequired = true;
+  }
+
+  await core.emit({ type: 'password.reset_inspected', userId: user.id }, meta);
+
+  return ok({ user, expiresAt: peek.expiresAt, secondFactorRequired });
+}
+
 export async function resetPassword<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
@@ -93,9 +153,7 @@ export async function resetPassword<U extends AuthUser, A>(
 
   if (limited) return limited;
 
-  const purpose =
-    settings.reset.kind === 'code' ? PURPOSE.passwordResetTicket : PURPOSE.passwordReset;
-
+  const purpose = resetPurpose(settings);
   const peek = await core.tokens.peekLink(purpose, input.token);
 
   if (peek.status !== 'valid')
@@ -160,6 +218,25 @@ export async function resetPassword<U extends AuthUser, A>(
   });
 
   return ok();
+}
+
+/** What a reset is applied with: the link in link mode, the ticket a code bought in code mode. */
+function resetPurpose(settings: FlowSettings): string {
+  return settings.reset.kind === 'code' ? PURPOSE.passwordResetTicket : PURPOSE.passwordReset;
+}
+
+async function inspectFailed<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  userId: string | undefined,
+  reason: string,
+  meta: RequestMeta,
+): Promise<AuthFailure> {
+  await core.emit(
+    { type: 'password.reset_inspect_failed', ...(userId ? { userId } : {}), reason },
+    meta,
+  );
+
+  return fail('invalid_token', `reset_${reason}`);
 }
 
 async function failed<U extends AuthUser, A>(
