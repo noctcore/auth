@@ -14,7 +14,7 @@ import type {
 } from '@noctcore/auth';
 import type { PrismaUserDelegate } from './delegates';
 import { isValidationError, P2002, prismaCode, withoutPrismaMessage } from './prisma-errors';
-import { copyWriteWhere } from './write-guard';
+import { copyWriteWhere, freshWhere } from './write-guard';
 
 /** Column names on your user model. */
 export interface UserFields {
@@ -112,7 +112,9 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
   private writable(where: Record<string, unknown>): Record<string, unknown> {
     const live = this.live(where);
 
-    return this.writeWhere ? { AND: [live, this.writeWhere] } : live;
+    // A fresh copy per write: an extension that changes this call's `where`
+    // cannot change the next one.
+    return this.writeWhere ? { AND: [live, freshWhere(this.writeWhere)] } : live;
   }
 
   private toUser(row: UserRow): U {
