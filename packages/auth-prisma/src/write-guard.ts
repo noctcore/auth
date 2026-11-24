@@ -2,20 +2,37 @@
  * Checking and copying an app's `writeWhere` when the store is built.
  *
  * Some guards would match every row and quietly guard nothing, so they are
- * refused at boot: an empty guard (`{}`); an `undefined` anywhere inside, which
- * Prisma reads as no filter (`{ orgId: process.env.ORG_ID }` with the variable
- * missing); an empty object anywhere inside, which filters nothing
- * (`{ closedAt: {} }`, `{ AND: [{}] }`); an empty `AND` or `NOT` list, which
- * Prisma reads as true; a `NOT` around a condition that holds `OR: []` (which
- * matches no row, so its negation matches every row, also through an `AND`
- * inside the `NOT`); and a list with an empty slot, which reaches Prisma as
- * `undefined`. Two empty objects narrow and are allowed: `some: {}` and `none: {}` under a to-many relation (at
+ * refused at boot. First by their pieces: an empty guard (`{}`); an
+ * `undefined` anywhere inside, which Prisma reads as no filter
+ * (`{ orgId: process.env.ORG_ID }` with the variable missing); an empty object
+ * anywhere inside, which filters nothing (`{ closedAt: {} }`, `{ AND: [{}] }`);
+ * an empty `AND` or `NOT` list, which Prisma reads as true; and a list with an
+ * empty slot, which reaches Prisma as `undefined`. Two empty objects narrow
+ * and are allowed: `some: {}` and `none: {}` under a to-many relation (at
  * least one related row, no related row). `is: {}` stays refused: on a
  * required relation it holds for every row; write `isNot: null` to ask for a
- * related row. An empty `OR` list matches no row, so it only narrows and is
- * allowed. A Date, a Map or a class instance at the top is not a `where` at
- * all and is refused too. Other guards that match every row (a condition every
- * row meets) are not detected.
+ * related row.
+ *
+ * Then by what the shape says a condition matches (`whereReach`). `OR: []`
+ * and `in: []` match no row; that is carried through `AND`, `OR`, `NOT`,
+ * `not`, and the relation filters `some`, `none`, `is` and `isNot` (and
+ * `notIn: []` matches every row). Any condition, at any depth, that comes out
+ * as matching every row is refused: `{ NOT: { OR: [] } }`,
+ * `{ m: { none: { OR: [] } } }`, `{ p: { isNot: { id: { in: [] } } } }`, an
+ * `OR` with such a branch, and an `OR` that splits one relation and condition
+ * into its two halves (`some` and `none`, or `is` and `isNot`). The two halves
+ * on one key (`{ m: { some: X, none: X } }`) are refused too: they match no
+ * row, and every row under a `NOT`. An empty `OR` alone only narrows and is
+ * allowed.
+ *
+ * The guard does not know the model, so it cannot tell a relation from a
+ * column. A condition every row meets because of the data, a misplaced
+ * relation filter (`{ closedAt: { some: {} } }`) or a typo in a column name is
+ * not caught here: Prisma refuses the first guarded write instead. A to-one
+ * relation filtered by its fields without `is` (`{ profile: { user: { some:
+ * {} } } }`) reads as a column, so its empty `some` is refused; write
+ * `{ profile: { is: { user: { some: {} } } } }`. A Date, a Map or a class
+ * instance at the top is not a `where` at all and is refused too.
  *
  * The guard is copied and deep-frozen, and every write gets a fresh copy of
  * it, so neither the object the app passed nor a Prisma extension that changes
@@ -54,7 +71,7 @@ function refuse(path: string, why: string): never {
 }
 
 /** A deep, frozen copy of plain objects and arrays, refusing what would match every row. */
-function checkedCopy(value: unknown, path: string, role: Role, underNot = false): unknown {
+function checkedCopy(value: unknown, path: string, role: Role): unknown {
   if (value === undefined) refuse(path, 'undefined (Prisma reads it as no filter)');
 
   if (Array.isArray(value)) {
@@ -65,7 +82,7 @@ function checkedCopy(value: unknown, path: string, role: Role, underNot = false)
     for (let i = 0; i < value.length; i += 1) {
       if (!Object.hasOwn(value, i)) refuse(`${path}[${i}]`, 'an empty slot in a list');
 
-      items.push(checkedCopy(value[i], `${path}[${i}]`, role, underNot));
+      items.push(checkedCopy(value[i], `${path}[${i}]`, role));
     }
 
     return Object.freeze(items);
@@ -83,11 +100,6 @@ function checkedCopy(value: unknown, path: string, role: Role, underNot = false)
     if (MATCH_ALL_WHEN_EMPTY.has(key) && Array.isArray(inner) && inner.length === 0)
       refuse(`${path}.${key}`, 'an empty list (Prisma reads it as true)');
 
-  // `OR: []` matches no row, and so does every condition that holds it:
-  // under `NOT`, that condition matches every row.
-  if (role === 'where' && underNot && Array.isArray(value['OR']) && value['OR'].length === 0)
-    refuse(`${path}.OR`, 'an empty list under NOT (Prisma reads NOT of it as true)');
-
   return Object.freeze(
     Object.fromEntries(
       entries.map(([key, inner]) => {
@@ -98,10 +110,7 @@ function checkedCopy(value: unknown, path: string, role: Role, underNot = false)
 
         const innerRole: Role = role === 'where' && !LOGICAL.has(key) ? 'filter' : 'where';
 
-        // NOT of an AND is true when any entry of the AND matches no row.
-        const negated = role === 'where' && (key === 'NOT' || (key === 'AND' && underNot));
-
-        return [key, checkedCopy(inner, at, innerRole, negated)];
+        return [key, checkedCopy(inner, at, innerRole)];
       }),
     ),
   );
@@ -109,6 +118,160 @@ function checkedCopy(value: unknown, path: string, role: Role, underNot = false)
 
 function isEmptyObject(value: unknown): boolean {
   return isPlainObject(value) && Object.keys(value).length === 0;
+}
+
+/**
+ * Which rows a condition can match, as far as its shape tells: `nothing`
+ * (`OR: []`, `in: []`), `all` (the negation of nothing, `notIn: []`), or
+ * `some` (anything the shape cannot settle, which is most conditions).
+ */
+type Reach = 'all' | 'nothing' | 'some';
+
+/** Relation filters that, given the same condition, split the rows between them. */
+const COMPLEMENT: Readonly<Record<string, string>> = { some: 'none', is: 'isNot' };
+
+function negate(reach: Reach): Reach {
+  if (reach === 'all') return 'nothing';
+
+  return reach === 'nothing' ? 'all' : 'some';
+}
+
+/** Every part must hold (the keys of a condition, an `AND` list). An empty one holds for every row. */
+function both(parts: readonly Reach[]): Reach {
+  if (parts.includes('nothing')) return 'nothing';
+
+  return parts.every((part) => part === 'all') ? 'all' : 'some';
+}
+
+/**
+ * One part must hold (an `OR` list). An empty one holds for no row. No part
+ * comes in as `all`: each entry is a condition, refused as soon as it is one.
+ */
+function either(parts: readonly Reach[]): Reach {
+  return parts.every((part) => part === 'nothing') ? 'nothing' : 'some';
+}
+
+/** Refuses a condition that matches every row; passes the others through. */
+function checked(reach: Reach, path: string): Reach {
+  if (reach === 'all') refuse(path, 'a condition that matches every row');
+
+  return reach;
+}
+
+/** A stable text for a condition, to tell when two relation filters ask the same thing. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+
+  if (value instanceof Date) return `Date(${value.toISOString()})`;
+
+  if (!isPlainObject(value)) return String(JSON.stringify(value));
+
+  const keys = Object.keys(value).sort();
+
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+}
+
+/** The conditions of `AND`, `OR` or `NOT`: a list, or one condition written without a list. */
+function conditionsOf(value: unknown, path: string): Reach[] {
+  if (Array.isArray(value)) return value.map((item, i) => whereReach(item, `${path}[${i}]`));
+
+  return [whereReach(value, path)];
+}
+
+/**
+ * An `OR` whose entries include `{ m: { some: X } }` and `{ m: { none: X } }`
+ * (or `is` and `isNot`) for the same relation and condition holds for every row.
+ */
+function splitsTheRows(entries: unknown): boolean {
+  if (!Array.isArray(entries)) return false;
+
+  // The relation filters each entry of one key and one filter asks, by relation and condition.
+  const asked = new Map<string, Set<string>>();
+
+  for (const entry of entries) {
+    const [field, filter] = soleEntry(entry) ?? [];
+    const [op, condition] = soleEntry(filter) ?? [];
+
+    if (field === undefined || op === undefined) continue;
+
+    const id = JSON.stringify([field, canonical(condition)]);
+
+    asked.set(id, (asked.get(id) ?? new Set<string>()).add(op));
+  }
+
+  return [...asked.values()].some((ops) =>
+    Object.entries(COMPLEMENT).some(([op, other]) => ops.has(op) && ops.has(other)),
+  );
+}
+
+/** The one key and value of an object that has exactly one, or undefined. */
+function soleEntry(value: unknown): [string, unknown] | undefined {
+  if (!isPlainObject(value)) return undefined;
+
+  const entries = Object.entries(value);
+
+  return entries.length === 1 ? entries[0] : undefined;
+}
+
+/** Which rows a condition (an object of fields and `AND`, `OR`, `NOT`) can match. */
+function whereReach(value: unknown, path: string): Reach {
+  if (!isPlainObject(value)) return 'some';
+
+  const parts = Object.entries(value).map(([key, inner]): Reach => {
+    const at = `${path}.${key}`;
+
+    if (key === 'AND') return checked(both(conditionsOf(inner, at)), at);
+
+    if (key === 'OR')
+      return checked(splitsTheRows(inner) ? 'all' : either(conditionsOf(inner, at)), at);
+
+    // NOT of a list is "none of them": every entry negated, all of them holding.
+    if (key === 'NOT') return checked(both(conditionsOf(inner, at).map(negate)), at);
+
+    return checked(filterReach(inner, at), at);
+  });
+
+  return checked(both(parts), path);
+}
+
+/** Which rows one field's filter can match. */
+function filterReach(value: unknown, path: string): Reach {
+  if (!isPlainObject(value)) return 'some';
+
+  for (const [op, other] of Object.entries(COMPLEMENT))
+    if (op in value && other in value && canonical(value[op]) === canonical(value[other]))
+      refuse(
+        `${path}.${op}`,
+        `${op} and ${other} of the same condition on one relation (together they match no row, and every row under NOT)`,
+      );
+
+  const parts = Object.entries(value).map(([op, inner]): Reach => {
+    const at = `${path}.${op}`;
+    const empty = isPlainObject(inner) && Object.keys(inner).length === 0;
+
+    switch (op) {
+      case 'in':
+        return Array.isArray(inner) && inner.length === 0 ? 'nothing' : 'some';
+      case 'notIn':
+        return Array.isArray(inner) && inner.length === 0 ? 'all' : 'some';
+      case 'some':
+      case 'is':
+        return !empty && whereReach(inner, at) === 'nothing' ? 'nothing' : 'some';
+      case 'none':
+      case 'isNot':
+        return !empty && whereReach(inner, at) === 'nothing' ? 'all' : 'some';
+      case 'every':
+        whereReach(inner, at);
+
+        return 'some';
+      case 'not':
+        return isPlainObject(inner) ? negate(filterReach(inner, at)) : 'some';
+      default:
+        return 'some';
+    }
+  });
+
+  return both(parts);
 }
 
 /** A fresh, unfrozen copy of a checked guard, for one write. */
@@ -129,5 +292,9 @@ export function copyWriteWhere(writeWhere: unknown): Readonly<Record<string, unk
   if (!isPlainObject(writeWhere))
     throw new AuthConfigError(`${LABEL} must be a plain object, a Prisma where`);
 
-  return checkedCopy(writeWhere, 'writeWhere', 'where') as Readonly<Record<string, unknown>>;
+  const copy = checkedCopy(writeWhere, 'writeWhere', 'where') as Readonly<Record<string, unknown>>;
+
+  whereReach(copy, 'writeWhere');
+
+  return copy;
 }

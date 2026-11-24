@@ -29,6 +29,9 @@ function recording() {
   return { delegate: delegate as never, calls };
 }
 
+/** The refusal for a condition that matches every row, at `path`. */
+const ALL_AT = (path: string) => `a condition that matches every row at ${path},`;
+
 const whereOf = (calls: ReturnType<typeof recording>['calls']) => calls.map((c) => c.args['where']);
 
 describe('PrismaUserStore writeWhere', () => {
@@ -136,6 +139,73 @@ describe('PrismaUserStore writeWhere', () => {
     expect(whereOf(calls)).toEqual([{ AND: [{ id: 'u1', deletedAt: null }, writeWhere] }]);
   });
 
+  it('refuses a condition that matches every row wherever its shape shows it', () => {
+    const { delegate } = recording();
+
+    for (const [writeWhere, at] of [
+      // "Matches no row" carried through an OR, a relation filter and `in: []`.
+      [{ NOT: { OR: [{ OR: [] }] } }, 'writeWhere.NOT'],
+      [{ NOT: { OR: [{ OR: [] }, { closedAt: { in: [] } }] } }, 'writeWhere.NOT'],
+      [{ NOT: { closedAt: { in: [] } } }, 'writeWhere.NOT'],
+      [{ NOT: [{ memberships: { some: { OR: [] } } }] }, 'writeWhere.NOT'],
+      [{ NOT: { profile: { is: { id: { in: [] } } } } }, 'writeWhere.NOT'],
+      [{ memberships: { none: { OR: [] } } }, 'writeWhere.memberships'],
+      [{ profile: { isNot: { OR: [] } } }, 'writeWhere.profile'],
+      [{ closedAt: { notIn: [] } }, 'writeWhere.closedAt'],
+      [{ closedAt: { not: { in: [] } } }, 'writeWhere.closedAt'],
+      // Inside a relation filter too, and a match-all branch makes its OR match all.
+      [{ memberships: { every: { NOT: { OR: [] } } } }, 'writeWhere.memberships.every.NOT'],
+      [{ OR: [{ closedAt: null }, { orgId: { notIn: [] } }] }, 'writeWhere.OR[1].orgId'],
+      // The two halves of one relation and condition, split over an OR.
+      [{ OR: [{ memberships: { some: {} } }, { memberships: { none: {} } }] }, 'writeWhere.OR'],
+      [
+        {
+          OR: [{ profile: { is: { verified: true } } }, { profile: { isNot: { verified: true } } }],
+        },
+        'writeWhere.OR',
+      ],
+      [
+        {
+          OR: [
+            { memberships: { some: { since: { in: [new Date(0)] } } } },
+            { memberships: { none: { since: { in: [new Date(0)] } } } },
+          ],
+        },
+        'writeWhere.OR',
+      ],
+    ] as const)
+      expect(() => new PrismaUserStore({ delegate, writeWhere })).toThrow(ALL_AT(at));
+
+    // `some` and `none` (or `is` and `isNot`) of one condition on one relation: no row, or every row under NOT.
+    for (const writeWhere of [
+      { memberships: { some: {}, none: {} } },
+      { NOT: { memberships: { some: {}, none: {} } } },
+      { profile: { is: { verified: true }, isNot: { verified: true } } },
+    ])
+      expect(() => new PrismaUserStore({ delegate, writeWhere })).toThrow(
+        /(some and none|is and isNot) of the same condition on one relation/u,
+      );
+
+    // What still narrows is left alone.
+    for (const writeWhere of [
+      { memberships: { some: { active: true }, none: { banned: true } } },
+      { OR: [{ memberships: { some: { active: true } } }, { memberships: { none: {} } }] },
+      { OR: [{ closedAt: { in: [] } }, { orgId: 'o1' }] },
+      { NOT: { closedAt: { in: ['2026-01-01'] } } },
+      // NOT of a list is "none of them": one entry that matches nothing leaves the others.
+      { NOT: [{ closedAt: null }, { memberships: { some: { OR: [] } } }] },
+      { memberships: { none: { OR: [{ OR: [] }, { banned: true }] } } },
+      // A to-one relation filtered through `is`, with a to-many filter inside.
+      { profile: { is: { badges: { some: {} } } } },
+      { profile: { is: null }, org: { isNot: null }, orgId: { notIn: ['o2'] } },
+      { OR: { closedAt: null } },
+      // Matches no row: it guards every write shut, which narrows.
+      { closedAt: { not: { notIn: [] } } },
+      { OR: [{ memberships: { some: {} }, closedAt: null }, { memberships: { none: {} } }] },
+    ])
+      expect(() => new PrismaUserStore({ delegate, writeWhere })).not.toThrow();
+  });
+
   it('refuses the empty relation filters that do not narrow, and every match-all it can see', () => {
     const { delegate } = recording();
     // Lists with an empty slot: one at the end, one at the start.
@@ -153,9 +223,11 @@ describe('PrismaUserStore writeWhere', () => {
       // `some` and `none` are relation filters, never conditions of their own.
       [{ some: {} }, 'an empty object at writeWhere.some'],
       [{ AND: [{ none: {} }] }, 'an empty object at writeWhere.AND[0].none'],
-      [{ NOT: { OR: [] } }, 'an empty list under NOT'],
-      [{ NOT: [{ closedAt: null, OR: [] }] }, 'an empty list under NOT'],
-      [{ closedAt: null, NOT: { AND: [{ OR: [] }] } }, 'an empty list under NOT'],
+      // Without `is`, a to-one relation's fields read as a column's filter (fails closed).
+      [{ profile: { badges: { some: {} } } }, 'an empty object at writeWhere.profile.badges.some'],
+      [{ NOT: { OR: [] } }, ALL_AT('writeWhere.NOT')],
+      [{ NOT: [{ closedAt: null, OR: [] }] }, ALL_AT('writeWhere.NOT')],
+      [{ closedAt: null, NOT: { AND: [{ OR: [] }] } }, ALL_AT('writeWhere.NOT')],
       [{ AND: leading }, 'an empty slot in a list at writeWhere.AND[0]'],
       [{ OR: hole }, 'an empty slot in a list at writeWhere.OR[1]'],
     ] as const)
