@@ -151,4 +151,36 @@ describe('A111: learning a refused password through the second-factor challenge'
       expect(right).toBe(wrong);
     }
   });
+
+  it('counts a refused correct password through a trusted device, under a lock, as a device failure', async () => {
+    const { fence, overrides } = fencing();
+    const t = setup(overrides);
+
+    await t.signedInUser(FENCED);
+    const first = await t.auth.login({ email: FENCED, password: PASSWORD, meta: meta() });
+
+    if (!first.ok || first.value.kind !== 'session') throw new Error('expected a session');
+
+    const deviceToken = first.value.session.deviceCookie.value;
+
+    // Lock the account from many addresses.
+    for (let i = 0; i < 11; i += 1)
+      await t.auth.login({ email: FENCED, password: 'not it', meta: meta(`192.0.2.${i}`) });
+
+    fence.on = true;
+
+    const failed = vi.spyOn(t.auth.context.throttle, 'deviceFailed');
+    const succeeded = vi.spyOn(t.auth.context.throttle, 'loginSucceeded');
+
+    const refused = await t.auth.login({
+      email: FENCED,
+      password: PASSWORD,
+      deviceToken,
+      meta: meta(),
+    });
+
+    expect(refused).toMatchObject({ ok: false, code: 'invalid_credentials' });
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(succeeded).not.toHaveBeenCalled();
+  });
 });
