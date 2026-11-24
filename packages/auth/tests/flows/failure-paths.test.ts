@@ -197,10 +197,10 @@ describe('a captcha provider that cannot answer', () => {
 });
 
 describe('session attributes that fail the schema at issue time', () => {
-  it('refuses the session as forbidden and logs it', async () => {
+  it('answers a login as a wrong password, writes the audit row and logs the schema error', async () => {
     const { logger, lines } = recordingLogger();
 
-    const { auth } = setup({
+    const { auth, audit } = setup({
       logger,
       session: {
         attributes: {
@@ -214,16 +214,44 @@ describe('session attributes that fail the schema at issue time', () => {
     await auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });
 
     const result = await auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
+    const wrong = await auth.login({ email: EMAIL, password: 'not it', meta: meta() });
 
     expect(result).toMatchObject({
       ok: false,
-      code: 'forbidden',
+      code: 'invalid_credentials',
       reason: 'invalid_session_attributes',
     });
+
+    expect(wrong).toMatchObject({ ok: false, code: 'invalid_credentials' });
+
+    expect(audit.events).toContainEqual(
+      expect.objectContaining({ type: 'login.failure', reason: 'invalid_session_attributes' }),
+    );
 
     expect(
       lines.some((l) => l.message === 'Session attributes failed the schema at issue time'),
     ).toBe(true);
+  });
+
+  it('refuses another issue path as forbidden', async () => {
+    const { auth } = setup({
+      registration: { revealExisting: true, autoLogin: true },
+      session: {
+        attributes: {
+          parse: () => {
+            throw new Error('bad attributes');
+          },
+        },
+      },
+    } as never);
+
+    const registered = await auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    expect(registered).toMatchObject({
+      ok: false,
+      code: 'forbidden',
+      reason: 'invalid_session_attributes',
+    });
   });
 });
 
