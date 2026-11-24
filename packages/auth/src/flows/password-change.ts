@@ -7,7 +7,7 @@
 import { sendLockNotice } from './lock-notice';
 import { gateRefusal } from './login';
 import { permanentLockRefusal } from './permanent-lock';
-import { revokePasswordTokensAfterWrite, writePasswordHash } from './password-write';
+import { closeAfterWrite, writePasswordHash } from './password-write';
 import { publicUser } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
@@ -116,8 +116,10 @@ export async function changePassword<U extends AuthUser, A>(
 
   // Stricter than the auth guide's "offer it": every session ends, the
   // current one is re-issued, and the change is mailed to the owner.
-  await revokePasswordTokensAfterWrite(core, user.id);
-  await core.revokeAllSessions(user.id, 'password-change');
+  // The sessions end even when the sweep fails; a failure of either is
+  // thrown once the owner has been told (password-write.ts).
+  const closed = await closeAfterWrite(core, user.id, 'password-change');
+
   await core.emit({ type: 'password.changed', userId: user.id }, meta);
 
   core.mail({
@@ -127,6 +129,8 @@ export async function changePassword<U extends AuthUser, A>(
     at: new Date(core.clock.now()),
     ...mailMeta(meta),
   });
+
+  if (closed.failed) throw closed.error;
 
   return core.issueSession(user, { via: 'password-change', meta, inherit: session });
 }
