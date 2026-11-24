@@ -132,11 +132,12 @@ describe('PrismaUserStore writeWhere', () => {
 
           guard['closedAt'] = { not: null };
           (guard['joinedAt'] as Record<string, unknown>)['gte'] = new Date(5);
+          (guard['OR'] as Record<string, unknown>[]).push({ orgId: 'o2' });
 
           return { count: 1 };
         },
       } as never,
-      writeWhere: { closedAt: null, joinedAt: { gte: new Date(0) } },
+      writeWhere: { closedAt: null, joinedAt: { gte: new Date(0) }, OR: [{ orgId: 'o1' }] },
     });
 
     await store.setPasswordHash('u1', 'a');
@@ -147,7 +148,7 @@ describe('PrismaUserStore writeWhere', () => {
     expect(calls[1]).toEqual({
       AND: [
         { id: 'u1', deletedAt: null },
-        { closedAt: null, joinedAt: { gte: new Date(0) } },
+        { closedAt: null, joinedAt: { gte: new Date(0) }, OR: [{ orgId: 'o1' }] },
       ],
     });
   });
