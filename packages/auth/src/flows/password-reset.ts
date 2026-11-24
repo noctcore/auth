@@ -13,11 +13,7 @@
  * the address verified; once the password is written, a failure to lift the
  * lock or mark the address is logged and the reset still answers ok.
  */
-import {
-  afterPasswordWrite,
-  revokePasswordTokensAfterWrite,
-  writePasswordHash,
-} from './password-write';
+import { afterPasswordWrite, closeAfterWrite, writePasswordHash } from './password-write';
 import { PURPOSE, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { mailMeta } from '../ports/mail';
@@ -207,8 +203,9 @@ export async function resetPassword<U extends AuthUser, A>(
 
   if (!written) return failed(core, user.id, 'write_refused', meta);
 
-  await revokePasswordTokensAfterWrite(core, user.id);
-  await core.revokeAllSessions(user.id, 'password-reset');
+  // The sessions end even when the sweep fails; a failure of either is
+  // thrown at the end, once the owner has been told (password-write.ts).
+  const closed = await closeAfterWrite(core, user.id, 'password-reset');
 
   // The password has changed: a failure from here on is logged, not answered.
   await afterPasswordWrite(core, 'lift lockout', user.id, () =>
@@ -230,6 +227,8 @@ export async function resetPassword<U extends AuthUser, A>(
     at: new Date(core.clock.now()),
     ...mailMeta(meta),
   });
+
+  if (closed.failed) throw closed.error;
 
   return ok();
 }
