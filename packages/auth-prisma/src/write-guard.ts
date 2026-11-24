@@ -23,12 +23,16 @@
  * into its two halves (`some` and `none`, or `is` and `isNot`). The two halves
  * on one key (`{ m: { some: X, none: X } }`) are refused too: they match no
  * row, and every row under a `NOT`. An empty `OR` alone only narrows and is
- * allowed. This reading only adds refusals: a value it cannot read (a bigint,
- * a Decimal, bytes, `Prisma.DbNull`) is compared by its type and text, and any
- * failure of its own leaves the guard allowed rather than failing boot.
- * Match-all forms it does not read pass: `notIn: []` beside another operator
- * of the field (`mode`), `hasEvery: []`, and an `OR` split whose entries hold
- * more keys than the one relation.
+ * allowed. This reading is a best-effort extra refusal, not a proof that a
+ * guard narrows: any failure of its own leaves the guard allowed rather than
+ * failing boot, and match-all forms it does not read pass. Among them:
+ * `notIn: []` beside another operator of the field (`mode`), `hasEvery: []`,
+ * and a relation split it does not see. The split check reads only the direct
+ * entries of one `OR` that each hold just that relation, not a nested `OR`
+ * (`{ OR: [{ OR: [{ m: { some: {} } }] }, { m: { none: {} } }] }`), a `NOT`
+ * entry (`{ OR: [{ m: { some: {} } }, { NOT: { m: { some: {} } } }] }`) or a
+ * `NOT` around an `AND` (`{ NOT: { AND: [{ m: { some: {} } }, { m: { none:
+ * {} } }] } }`).
  *
  * The guard does not know the model, so it cannot tell a relation from a
  * column. A condition every row meets because of the data, a misplaced
@@ -166,8 +170,12 @@ function checked(reach: Reach, path: string): Reach {
 /**
  * A stable text for a condition, to tell when two relation filters ask the
  * same thing. Never throws: a guard may hold any value Prisma takes (a
- * bigint, a Decimal, bytes, `Prisma.DbNull`), and a value it cannot read
- * gets a text no other value has, so it never makes two conditions equal.
+ * bigint, a Decimal, bytes, `Prisma.DbNull`). A class instance is its class
+ * name and its text, so two instances of one class with the same text
+ * compare equal (at worst a false refusal, which fails boot loudly), while
+ * `1n` and `1`, or a Buffer and a Uint8Array of the same bytes, compare
+ * different. Only a value it cannot read at all (a function, a symbol) gets
+ * a text no other value has, so it never makes two conditions equal.
  */
 function canonical(value: unknown): string {
   try {
