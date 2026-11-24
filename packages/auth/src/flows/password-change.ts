@@ -116,8 +116,8 @@ export async function changePassword<U extends AuthUser, A>(
 
   // Stricter than the auth guide's "offer it": every session ends, the
   // current one is re-issued, and the change is mailed to the owner.
-  await core.revokeAllSessions(user.id, 'password-change');
   await revokePasswordTokensAfterWrite(core, user.id);
+  await core.revokeAllSessions(user.id, 'password-change');
   await core.emit({ type: 'password.changed', userId: user.id }, meta);
 
   core.mail({
