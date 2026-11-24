@@ -732,7 +732,7 @@ export const prismaStoresOptions: readonly ConfigRow[] = [
     key: 'writeWhere',
     type: 'Record<string, unknown>',
     default: 'none',
-    does: 'A Prisma `where` a row must also match to take a new password hash, a verified mark or an email change, such as `{ closedAt: null }` for an account your app closed. It is in the same UPDATE, so an account closed after your `beforePasswordReset` hook still refuses the write. Reads, login and an email revert are left alone. See [Accounts your app closed](#accounts-your-app-closed).',
+    does: 'A Prisma `where` a row must also match to take a new password hash, a verified mark or an email change, such as `{ closedAt: null }` for an account your app closed. It is in the same UPDATE, so an account closed after your `beforePasswordReset` hook still refuses the write. Reads, login and an email revert are left alone. Startup refuses anything but a plain, non-empty object without `undefined` inside. See [Accounts your app closed](#accounts-your-app-closed).',
   },
 ];
 

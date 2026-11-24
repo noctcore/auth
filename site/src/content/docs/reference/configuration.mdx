@@ -558,10 +558,21 @@ const { users, tokens } = prismaStores({
 });
 ```
 
-A closed row then refuses `setPasswordHash`, `markEmailVerified` and `changeEmail`, and the flows answer that like any refused write: `resetPassword` answers `invalid_token`, `changePassword` answers `session_expired`, an email change answers as stale. The condition is combined with the store's own through `AND`, so it can narrow a write but never widen it. Startup refuses a `writeWhere` that is not an object.
+A closed row then refuses `setPasswordHash`, `markEmailVerified` and `changeEmail`, and the flows answer that like any refused write:
+
+- `resetPassword` answers `invalid_token`, and no reset link of the account is left live;
+- `changePassword` answers `session_expired`;
+- an email change answers as stale;
+- email verification answers `invalid_token`;
+- a reset that would also mark the address verified leaves it unverified;
+- an invitation sign-up (the invitations plugin) still creates the account and signs it in, but unverified, since the store refused the mark;
+- a rehash after login keeps the old hash, and the login is not affected.
+
+The condition is combined with the store's own through `AND`, so it can narrow a write but never widen it.
+
+The store checks and copies `writeWhere` when it is built, and refuses (`AuthConfigError`) anything but a plain, non-empty object, and any `undefined` inside it: Prisma reads an `undefined` filter as no filter, so `{ orgId: process.env.ORG_ID }` with the variable unset would guard nothing. A column name Prisma does not know is not caught there. The first guarded write throws instead, and the store rethrows Prisma's error without its message, which prints the whole call and the new password hash with it. Try one reset in a test environment after you set it.
 
 What it leaves alone:
 
 - **Reads.** Lookups still find the row, so login works for a closed account unless your hooks refuse it (`beforeSessionCreate`, say). Refuse it there too.
 - **An email revert** (the `changeEmail` that also clears the password). It only takes access away, so the owner of the old address can still undo a change on a closed account.
-- **Rehash after login.** It is guarded like any password write, so a closed account keeps its old hash; the login itself is not affected.
