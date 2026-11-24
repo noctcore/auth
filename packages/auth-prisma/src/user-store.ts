@@ -14,7 +14,7 @@ import {
   type WithPasswordHash,
 } from '@noctcore/auth';
 import type { PrismaUserDelegate } from './delegates';
-import { isValidationError, P2002, prismaCode } from './prisma-errors';
+import { isValidationError, P2002, prismaCode, withoutPrismaMessage } from './prisma-errors';
 
 /** Column names on your user model. */
 export interface UserFields {
@@ -57,8 +57,10 @@ export interface PrismaUserStoreOptions<U extends AuthUser> {
    * access away, so a closed account can still be reverted by its owner. A
    * rehash after login is guarded like any password write, so a closed
    * account keeps its old hash. Combined with the store's own conditions
-   * through `AND`, so it can narrow the write but never widen it. Default
-   * none.
+   * through `AND`, so it can narrow the write but never widen it.
+   *
+   * A column name Prisma does not know makes the first guarded write throw,
+   * with Prisma's message (which prints the new hash) left out. Default none.
    */
   readonly writeWhere?: Readonly<Record<string, unknown>>;
 }
@@ -232,21 +234,17 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     // With `expected`, the hash check is part of the same UPDATE: a compare-and-set.
     const guard = options.expected === undefined ? {} : { [this.f.passwordHash]: options.expected };
 
-    const { count } = await this.options.delegate.updateMany({
+    return this.guardedUpdate('password hash', {
       where: this.writable({ [this.f.id]: id, ...guard }),
       data: { [this.f.passwordHash]: passwordHash },
     });
-
-    return count > 0;
   }
 
   async markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean> {
-    const { count } = await this.options.delegate.updateMany({
+    return this.guardedUpdate('verified mark', {
       where: this.writable({ [this.f.id]: id, [this.f.email]: email }),
       data: { [this.f.emailVerified]: true },
     });
-
-    return count > 0;
   }
 
   async changeEmail(
@@ -277,7 +275,21 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     } catch (error) {
       if (prismaCode(error) === P2002) return 'taken';
 
-      throw error;
+      throw withoutPrismaMessage(error, 'email change');
+    }
+  }
+
+  /** One guarded `updateMany`; true when it changed a row. Prisma's message never leaves. */
+  private async guardedUpdate(
+    write: string,
+    args: { where: Record<string, unknown>; data: Record<string, unknown> },
+  ): Promise<boolean> {
+    try {
+      const { count } = await this.options.delegate.updateMany(args);
+
+      return count > 0;
+    } catch (error) {
+      throw withoutPrismaMessage(error, write);
     }
   }
 }
