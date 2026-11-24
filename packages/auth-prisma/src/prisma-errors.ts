@@ -19,3 +19,32 @@ export function prismaCode(error: unknown): string | undefined {
 export function isValidationError(error: unknown): boolean {
   return error instanceof Error && error.name === 'PrismaClientValidationError';
 }
+
+/**
+ * An error the Prisma client threw (a validation error, a known request
+ * error), matched by name.
+ */
+function isPrismaClientError(error: unknown): boolean {
+  return error instanceof Error && error.name.startsWith('PrismaClient');
+}
+
+/**
+ * A Prisma client error from a credential write, rethrown without Prisma's
+ * message. That message prints the whole call, the new password hash in
+ * `data` included, and the core logs the message of a failed rehash. The
+ * Prisma code, when there is one, is kept. Anything else (an outage) is
+ * returned as it is.
+ */
+export function withoutPrismaMessage(error: unknown, write: string): unknown {
+  if (!isPrismaClientError(error)) return error;
+
+  const code = prismaCode(error);
+
+  return Object.assign(
+    new Error(
+      `Prisma user store: Prisma refused the ${write} write${code ? ` (${code})` : ''}; check writeWhere and fields against your schema`,
+    ),
+    { name: 'PrismaUserStoreError' },
+    code ? { code } : {},
+  );
+}
