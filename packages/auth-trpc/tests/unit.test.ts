@@ -1045,15 +1045,18 @@ describe('the reset inspection schemas', () => {
     ]);
   });
 
-  it('narrows the inspected user to the public fields', () => {
+  it('parses an inspection and drops anything extra', () => {
     const parsed = resetInspectionOutput.parse({
-      user: { id: 'u1', email: EMAIL, emailVerified: true, tenantId: 't1' },
+      userId: 'u1',
+      email: EMAIL,
+      tenantId: 't1',
       expiresAt: 1,
       secondFactorRequired: true,
     });
 
     expect(parsed).toEqual({
-      user: { id: 'u1', email: EMAIL, emailVerified: true },
+      userId: 'u1',
+      email: EMAIL,
       expiresAt: 1,
       secondFactorRequired: true,
     });

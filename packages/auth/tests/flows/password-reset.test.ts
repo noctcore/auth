@@ -300,14 +300,23 @@ describe('inspecting a reset link', () => {
     expect(first).toEqual({
       ok: true,
       value: {
-        user: expect.objectContaining({ id: session.userId, email: EMAIL }),
+        userId: session.userId,
+        email: EMAIL,
         expiresAt: t.clock.now() + 60 * 60_000,
         secondFactorRequired: false,
       },
     });
 
     expect(second).toEqual(first);
-    expect(first.ok && first.value.user).not.toHaveProperty('passwordHash');
+
+    // Only the id and the address: the link holder never sees the rest of the user.
+    expect(first.ok && Object.keys(first.value).sort()).toEqual([
+      'email',
+      'expiresAt',
+      'secondFactorRequired',
+      'userId',
+    ]);
+
     expect(t.audit.types().filter((type) => type === 'password.reset_inspected')).toHaveLength(2);
 
     expect((await t.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() })).ok).toBe(
