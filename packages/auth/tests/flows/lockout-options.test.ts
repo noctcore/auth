@@ -479,3 +479,45 @@ describe('explicit account_locked answer', () => {
     expect(!login.ok && toPublicError(login).code).toBe('account_locked');
   });
 });
+
+describe('sessionProofs', () => {
+  it("defaults to 'lockout'", () => {
+    expect(setup().auth.context.throttle.sessionProofs).toBe('lockout');
+  });
+
+  it("refuses anything but 'lockout' or 'door'", () => {
+    for (const value of ['Door', 'off', true])
+      expect(() => setup({ throttle: { lockout: { sessionProofs: value as never } } })).toThrow(
+        "throttle.lockout.sessionProofs must be 'lockout' or 'door'",
+      );
+  });
+
+  it("with 'door', lets a session's correct password through a permanent lock that keeps trusted devices", async () => {
+    const app = await registered({ sessionProofs: 'door', permanent: { afterLocks: 1 } });
+    const login = await signIn(app);
+
+    if (!login.ok || login.value.kind !== 'session') throw new Error('sign-in failed');
+
+    const session = login.value.session.session;
+
+    await lockOnce(app);
+    app.clock.advance(60 * MIN);
+    await lockOnce(app);
+
+    expect((await app.auth.lockout.inspect({ email: EMAIL })).permanent).toBe(true);
+
+    // The lock ended the sessions; one from the owner's device comes back.
+    const device = await signIn(app, { deviceToken: login.value.session.deviceCookie.value });
+
+    if (!device.ok || device.value.kind !== 'session') throw new Error('device sign-in failed');
+
+    const reauthenticated = await app.auth.reauthenticate({
+      session: device.value.session.session,
+      password: PASSWORD,
+      meta: meta(),
+    });
+
+    expect(session.userId).toBe(device.value.session.session.userId);
+    expect(reauthenticated.ok).toBe(true);
+  });
+});
