@@ -14,11 +14,17 @@
  *
  * `dedupeKey` is a server-minted nonce per event, safe to use as a queue job id.
  *
- * `meta`, on the mails a request on the owner's account sends, says where that
- * request came from (for "asked from this IP" in a reset or security mail). A
- * reset mail takes it from the job, so it is there when the job ran on your
- * queue too. It is left off the mails that go to someone other than the account
- * the request acted on (`email-change-in-use`, `invitation`), and off any mail a
+ * `meta` says where the request behind a mail came from (for "asked from this
+ * IP" in a reset or security mail). Only mails to an address the account has
+ * already proven carry it: `password-reset`, `password-reset-code`,
+ * `password-changed`, `lockout`, `email-changed` (to the old address),
+ * `email-change-reverted`, `two-factor-enabled`, `two-factor-disabled`,
+ * `recovery-code-used`, and `account-exists`, which goes to the owner of the
+ * address and carries the IP and user agent of whoever tried to sign up with
+ * it. A reset mail takes it from the job, so it is there when the job ran on
+ * your queue too. Mails to an address nobody has proven yet (`verify-email`,
+ * `email-change-confirm`) and mails to someone other than the account
+ * (`email-change-in-use`, `invitation`) never carry it, and nor does a mail a
  * flow sends without a request.
  */
 import type { RequestMeta } from '../shared/meta';
@@ -41,7 +47,6 @@ export type AuthMailEvent =
       /** Set for code verification. */
       readonly code?: string;
       readonly expiresAt: Date;
-      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   | {
@@ -102,7 +107,6 @@ export type AuthMailEvent =
       /** Set for code confirmation. */
       readonly code?: string;
       readonly expiresAt: Date;
-      readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
   /**

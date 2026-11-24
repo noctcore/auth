@@ -22,7 +22,6 @@ import type { AuthCore } from '../core/auth-core';
 import type { IssuedSession } from '../core/plugin-context';
 import type { AuthUser, StoredSession } from '../ports/stores';
 import { fail, ok, type AuthResult } from '../shared/errors';
-import { mailMeta } from '../ports/mail';
 import type { RequestMeta } from '../shared/meta';
 import type { TokenRedemption } from '../tokens/one-time-tokens';
 
@@ -59,7 +58,6 @@ export async function sendVerification<U extends AuthUser, A>(
       userId: user.id,
       code,
       expiresAt: new Date(expiresAt),
-      ...mailMeta(meta),
     });
   } else {
     const url = settings.urls.verifyEmail;
@@ -79,7 +77,6 @@ export async function sendVerification<U extends AuthUser, A>(
       userId: user.id,
       url: url(token),
       expiresAt: new Date(expiresAt),
-      ...mailMeta(meta),
     });
   }
 
