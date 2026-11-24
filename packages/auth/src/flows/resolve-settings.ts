@@ -87,6 +87,10 @@ export function resolveSettings<U extends AuthUser, A, P extends readonly AuthPl
       revertEmailChange: config.urls?.revertEmailChange,
     },
     freshAuthAgeMs: configMilliseconds('session.freshAuthAge', config.session?.freshAuthAge, '10m'),
+    requireFreshAuth: {
+      revokeSession: config.session?.requireFreshAuth?.revokeSession ?? true,
+      revokeOtherSessions: config.session?.requireFreshAuth?.revokeOtherSessions ?? true,
+    },
   };
 
   assertSafeSettings(settings);
@@ -114,6 +118,7 @@ function assertOptionTypes<U extends AuthUser, A, P extends readonly AuthPlugin[
   assertOneOf('passwordReset.kind', config.passwordReset?.kind, ['link', 'code']);
   assertOneOf('emailChange.kind', config.emailChange?.kind, ['code', 'link']);
   assertFunction('passwordReset.enqueue', config.passwordReset?.enqueue);
+  assertFreshAuthDoors(config.session?.requireFreshAuth);
 
   for (const key of [
     'verifyEmail',
@@ -122,6 +127,24 @@ function assertOptionTypes<U extends AuthUser, A, P extends readonly AuthPlugin[
     'revertEmailChange',
   ] as const)
     assertFunction(`urls.${key}`, config.urls?.[key]);
+}
+
+/**
+ * `session.requireFreshAuth: false` would read as "no option given" and keep
+ * every check on without a word, so only an object (or nothing) is accepted.
+ */
+function assertFreshAuthDoors(value: unknown): void {
+  if (value === undefined || value === null) return;
+
+  if (typeof value !== 'object' || Array.isArray(value))
+    throw new AuthConfigError(
+      'session.requireFreshAuth must be an object such as { revokeSession: false }',
+    );
+
+  const doors = value as Record<string, unknown>;
+
+  assertBoolean('session.requireFreshAuth.revokeSession', doors['revokeSession']);
+  assertBoolean('session.requireFreshAuth.revokeOtherSessions', doors['revokeOtherSessions']);
 }
 
 function assertSafeSettings(settings: FlowSettings): void {

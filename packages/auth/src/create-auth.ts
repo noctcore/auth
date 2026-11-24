@@ -413,9 +413,9 @@ export function createAuth<
       /**
        * Revokes the caller's session with this `handle` (from `list`) and
        * answers its store id (`sessionId`, the id `onSessionsRevoked` reports).
-       * Another device's session needs fresh authentication. A handle that
-       * names no session of the caller, another user's included, answers
-       * `{ revoked: false }`.
+       * Another device's session needs fresh authentication unless
+       * `session.requireFreshAuth.revokeSession` is false. A handle that names
+       * no session of the caller, another user's included, answers `{ revoked: false }`.
        */
       revoke: (input: { session: StoredSession<A>; handle: string; meta: RequestMeta }) =>
         revokeSession(core, settings, input),
