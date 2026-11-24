@@ -87,6 +87,48 @@ describe('PrismaTokenStore errors', () => {
 describe('PrismaUserStore errors', () => {
   const email = 'ada@example.com' as NormalizedEmail;
 
+  it("keeps Prisma's message, which prints the new hash, out of a failed sign-up insert", async () => {
+    const hash = 'argon2id$secret-sign-up-hash';
+
+    const printing = (name: string, code?: string) =>
+      Object.assign(new Error(`Invalid invocation: data: { passwordHash: "${hash}" }`), {
+        name,
+        ...(code ? { code } : {}),
+      });
+
+    // A known error from the bulk insert, and a validation error from create
+    // after the bulk insert was refused as invalid.
+    const bulk = new PrismaUserStore({
+      delegate: delegate({
+        createManyAndReturn: async () => {
+          throw printing('PrismaClientKnownRequestError', 'P2000');
+        },
+      }),
+    });
+
+    const single = new PrismaUserStore({
+      delegate: delegate({
+        createManyAndReturn: async () => {
+          throw printing('PrismaClientValidationError');
+        },
+        create: async () => {
+          throw printing('PrismaClientValidationError');
+        },
+      }),
+    });
+
+    for (const store of [bulk, single]) {
+      const error: unknown = await store
+        .create({ email, passwordHash: hash })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ name: 'PrismaUserStoreError' });
+      expect((error as Error).message).toContain('insert');
+      expect(`${(error as Error).message} ${String((error as Error).stack)}`).not.toContain(hash);
+      expect(JSON.stringify(error)).not.toContain(hash);
+    }
+  });
+
   it('answers null for a taken address and rethrows anything else', async () => {
     const taken = new PrismaUserStore({
       delegate: delegate({
@@ -190,7 +232,7 @@ describe('PrismaUserStore errors', () => {
       'Prisma user store: the skipped insert was refused, so sign-up uses create from now on',
     ]);
 
-    // Any other error from the bulk insert is an outage, not a refusal.
+    // Any other error from the bulk insert is not a refusal.
     const named = Object.assign(new Error('down'), { name: 'PrismaClientKnownRequestError' });
 
     const down = new PrismaUserStore({
@@ -204,8 +246,11 @@ describe('PrismaUserStore errors', () => {
       }),
     });
 
-    await expect(down.create({ email, passwordHash: 'x' })).rejects.toBe(named);
-    await expect(down.create({ email, passwordHash: 'x' })).rejects.toBe(named);
+    // Rethrown (without Prisma's message), and never turned into a fallback to create.
+    for (let i = 0; i < 2; i++)
+      await expect(down.create({ email, passwordHash: 'x' })).rejects.toMatchObject({
+        name: 'PrismaUserStoreError',
+      });
   });
 
   it('answers taken for an email change to a taken address and rethrows anything else', async () => {
