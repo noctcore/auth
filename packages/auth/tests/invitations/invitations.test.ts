@@ -1003,6 +1003,39 @@ describe('invitations accept without a session', () => {
 });
 
 describe('invitations register', () => {
+  it('goes on unverified, accepted and signed in when the verified mark throws', async () => {
+    const errors: { message: string; context?: Record<string, unknown> }[] = [];
+
+    const logger = {
+      warn: () => undefined,
+      error: (message: string, context?: Record<string, unknown>) =>
+        void errors.push({ message, ...(context ? { context } : {}) }),
+    };
+
+    const t = invitationApp({}, { logger });
+    const inviter = await t.user({ canInvite: true });
+    const { token } = await t.invite(inviter, 'new@example.com');
+
+    // A store error at the mark (a misspelled write guard column, an outage).
+    vi.spyOn(t.stores.users, 'markEmailVerified').mockRejectedValueOnce(new Error('store down'));
+
+    const result = await t.auth.invitations.register({ token, password: PASSWORD, meta: meta() });
+
+    expect(result.ok).toBe(true);
+
+    expect(t.onAccept.mock.lastCall?.[0]).toMatchObject({
+      created: true,
+      user: { emailVerified: false },
+    });
+
+    expect(errors).toEqual([
+      {
+        message: 'Marking an invited address verified failed',
+        context: { userId: expect.any(String) as unknown, error: 'store down' },
+      },
+    ]);
+  });
+
   it('goes on unverified when the store refuses the verified mark', async () => {
     const afterRegister = vi.fn((_context: { user: { emailVerified: boolean } }) => undefined);
     const t = invitationApp({}, { hooks: { afterRegister } });
