@@ -1,8 +1,10 @@
 /**
  * Flows that prove the current password of a signed-in user: re-authenticating
- * (a step-up before a sensitive action) and changing the password. Each
- * attempt spends login's lockout budget, so guesses through login and both
- * doors add up (see `proveCurrentPassword`).
+ * (a step-up before a sensitive action) and changing the password. By default
+ * each attempt spends login's lockout budget, so guesses through login and
+ * both doors add up (see `proveCurrentPassword`); with
+ * `throttle.lockout.sessionProofs: 'door'` only the door's own limit counts,
+ * so a stolen session cannot lock the owner out of sign-in (`proveAtDoor`).
  */
 import { sendLockNotice } from './lock-notice';
 import { gateRefusal } from './login';
@@ -13,7 +15,7 @@ import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
 import type { IssuedSession } from '../core/plugin-context';
 import { mailMeta } from '../ports/mail';
-import type { AuthUser, StoredSession } from '../ports/stores';
+import type { AuthUser, StoredSession, WithPasswordHash } from '../ports/stores';
 import { sha256Hex } from '../crypto/hash';
 import { fail, ok, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
@@ -147,7 +149,8 @@ export async function changePassword<U extends AuthUser, A>(
  * than a stolen device cookie would at login. Refusals answer like login's
  * (`invalid_credentials`, or `account_locked` with `revealLocked`) after the
  * same password verify, so a spent budget and a wrong password take the same
- * work. The per-door rate limit still applies first.
+ * work. The per-door rate limit still applies first. With
+ * `sessionProofs: 'door'` the lockout is left out entirely (`proveAtDoor`).
  */
 async function proveCurrentPassword<U extends AuthUser, A>(
   core: AuthCore<U, A>,
@@ -168,6 +171,9 @@ async function proveCurrentPassword<U extends AuthUser, A>(
 
   if (!credential) return fail('session_expired', 'user_missing');
   if (!credential.passwordHash) return fail('password_not_set', 'password_not_set');
+
+  if (core.throttle.sessionProofs === 'door')
+    return proveAtDoor(core, credential, credential.passwordHash, password, meta, door);
 
   const account = accountKey(credential.email);
   const deviceId = sessionDeviceId(session.id);
@@ -202,6 +208,30 @@ async function proveCurrentPassword<U extends AuthUser, A>(
   // here is not a step toward one: with `countSuccesses` false its slot comes
   // back now. A device slot was handed back above, and owed nothing.
   if (!gate.viaDevice) await core.throttle.refundSuccess(account);
+
+  return ok(publicUser(credential));
+}
+
+/**
+ * `sessionProofs: 'door'`: the door's per-user limit (checked by the caller)
+ * is the only budget. No lockout counter is read or written, so a wrong
+ * password cannot lock the owner out of sign-in or climb the permanent tier,
+ * and a temporary lock does not refuse a correct one. The verify is the same
+ * work either way.
+ */
+async function proveAtDoor<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  credential: WithPasswordHash<U>,
+  hash: string,
+  password: string,
+  meta: RequestMeta,
+  door: 'password-change' | 'reauthenticate',
+): Promise<AuthResult<U>> {
+  if (!(await core.verifyPassword(hash, password))) {
+    await emitChangeFailed(core, credential.id, `wrong_password:${door}`, meta);
+
+    return fail('invalid_credentials', 'wrong_password');
+  }
 
   return ok(publicUser(credential));
 }

@@ -77,6 +77,30 @@ export interface LockoutOptions {
    * factor, and there the slot comes back only once the factor is proved.
    */
   readonly countSuccesses?: boolean;
+  /**
+   * What bounds the current password proved again from a live session, at
+   * `reauthenticate` and `changePassword`.
+   *
+   * Default `'lockout'`: each attempt spends login's budgets (`perAccountIp`
+   * and `perAccount`, or the session's device slot under a lock), so a wrong
+   * one can lock the account, send the lock mail and count toward the
+   * permanent tier, and a correct one under a lock needs a free device slot.
+   *
+   * `'door'`: only the door's own per-user rate limit (`throttle.doors`,
+   * `password-change` and `reauthenticate`, 5 per 5 min each by default)
+   * bounds the attempts. A wrong password writes `password.change_failed`
+   * and touches no lockout counter, sends no lock mail and adds nothing
+   * toward the permanent tier; a temporary lock does not refuse a correct
+   * password. The permanent tier refuses these doors as before (only with
+   * `permanent.trustedDevices: false`).
+   *
+   * Trade-off: a stolen session can no longer lock its owner out of sign-in
+   * by guessing here, but it guesses at the door's rate instead of
+   * login's, and those guesses never lock anything. Keep the door limits
+   * tight (the defaults allow 1440 guesses a day per door), and remember a
+   * correct guess here still needs the live session.
+   */
+  readonly sessionProofs?: 'lockout' | 'door';
 }
 
 export interface PermanentLockOptions {
