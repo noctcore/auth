@@ -15,6 +15,11 @@
  *   code work as a wrong code, and every refusal answers `invalid_second_factor`.
  * - The session is minted by the core's `issueSession` (via `second-factor`),
  *   which runs the app's hooks and the epoch fence.
+ * - An app that authenticated the user itself (an identity provider's
+ *   callback, a magic link of its own) starts the same challenge with
+ *   `startChallenge`: the same decision, the same token and the same finish,
+ *   behind the plugin's per-IP limit, so it is never a way around the factor
+ *   and never a faster way to guess codes (they are counted at the verify).
  *
  * Guide: Learn, "Second factors"; Build, "Two-factor".
  */
@@ -99,6 +104,63 @@ export async function loginChallenge(
   if (runtime.settings.trustedDevices) methods.push('trusted-device');
 
   return { challenge: token, methods };
+}
+
+export interface StartChallengeInput {
+  /** The user the app authenticated itself. */
+  readonly userId: string;
+  readonly rememberMe?: boolean;
+  /**
+   * The user's revocation epoch, read (`context.sessions.readEpoch`) before
+   * your own credential check, so a revocation during it voids the session
+   * the challenge would mint. Default: read now.
+   */
+  readonly epoch?: number;
+  readonly meta: RequestMeta;
+}
+
+/**
+ * The challenge for a sign-in the app authenticated itself: null when the
+ * user has no confirmed factor and none is required (issue your own session),
+ * else `{ challenge, methods }` to finish with `verifyChallenge`, exactly as
+ * after a password. An unknown user answers like one without a factor.
+ */
+export async function startChallenge(
+  runtime: Runtime,
+  input: StartChallengeInput,
+): Promise<AuthResult<{ challenge: string; methods: readonly ChallengeMethod[] } | null>> {
+  const { core } = runtime;
+  const { meta } = input;
+  const limited = await limitIp(runtime, meta);
+
+  if (limited) return limited;
+
+  const user = await core.users.findById(input.userId);
+
+  // No user: nothing to challenge, and nothing a session could be issued for.
+  if (!user) return ok(null);
+
+  const epoch = input.epoch ?? (await core.sessions.readEpoch(user.id));
+
+  const challenge = await loginChallenge(runtime, {
+    user,
+    rememberMe: input.rememberMe ?? false,
+    epoch,
+    meta,
+  });
+
+  if (!challenge) return ok(null);
+
+  await core.emit(
+    {
+      type: 'login.challenge',
+      userId: user.id,
+      data: { methods: challenge.methods.join(','), via: 'app' },
+    },
+    meta,
+  );
+
+  return ok(challenge);
 }
 
 type Proved =
