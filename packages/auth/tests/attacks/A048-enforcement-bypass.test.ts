@@ -410,4 +410,43 @@ describe('A048: getting a session past the second factor through another flow', 
       reason: 'reissue_without_session:app-password-change',
     });
   });
+
+  it("fences an app's re-issue at the epoch of the session it read, and carries the store's copy", async () => {
+    const app = appReissue();
+    const revokeDuring = { on: false };
+
+    const t = twoFactorApp(
+      {},
+      {
+        plugins: [app.plugin],
+        hooks: {
+          // A revoke-all that lands between the core's read and the mint.
+          beforeSessionCreate: async ({ user, via }) => {
+            if (revokeDuring.on && via === 'app-password-change') await app.revokeAll(user.id);
+          },
+        },
+      },
+    );
+
+    const { session } = await t.signedIn();
+    const user = await t.stores.users.findById(session.userId);
+
+    if (!user) throw new Error('user');
+
+    // A caller's object that claims more than the store holds.
+    const claimed = { ...session, rememberMe: true, persistentCookie: true };
+    const carried = await app.reissue(user, claimed);
+
+    if (!carried.ok) throw new Error(carried.reason);
+
+    expect(carried.value.session.rememberMe).toBe(false);
+    expect(carried.value.session.persistentCookie).toBe(false);
+
+    revokeDuring.on = true;
+
+    expect(await app.reissue(user, carried.value.session as Session)).toMatchObject({
+      ok: false,
+      reason: 'epoch_fence',
+    });
+  });
 });

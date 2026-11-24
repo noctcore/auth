@@ -352,21 +352,23 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
    * an app's own via with an `inherit` needs that object or a session the
    * store still holds live for this user. The sign-in vias name none (the
    * plugin's enrollment passes a session it has just revoked, for its shape).
+   * `read`: it was read from the store here, not confirmed by the flow.
    */
   async #reissueOf(
     user: U,
     options: IssueOptions<A>,
-  ): Promise<AuthResult<StoredSession<A> | null>> {
+  ): Promise<AuthResult<{ readonly session: StoredSession<A>; readonly read: boolean } | null>> {
     const { via, inherit } = options;
 
     if (SIGN_IN_VIAS.has(via) || (!REISSUE_VIAS.has(via) && inherit === undefined)) return ok(null);
 
-    if (this.#takeConfirmed(inherit, user.id)) return ok(inherit ?? null);
+    if (inherit && this.#takeConfirmed(inherit, user.id))
+      return ok({ session: inherit, read: false });
 
     if (!REISSUE_VIAS.has(via) && inherit) {
       const live = await this.#manager.findActive(inherit.id);
 
-      if (live?.userId === user.id) return ok(live);
+      if (live?.userId === user.id) return ok({ session: live, read: true });
     }
 
     await this.#loginFailure(user, `reissue_without_session:${via}`, options);
@@ -453,15 +455,24 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     // this user: hooks (a second factor's enforcement, say) let re-issues
     // through on the strength of that, so a call that only claims the label,
     // or hands over a revoked, expired or another user's session, is refused.
-    const reissueOf = await this.#reissueOf(user, options);
+    const replaced = await this.#reissueOf(user, options);
 
-    if (!reissueOf.ok) return reissueOf;
+    if (!replaced.ok) return replaced;
 
-    const admitted = await this.#admit(
-      user,
-      options,
-      reissueOf.value ? { reissueOf: reissueOf.value } : {},
-    );
+    const reissueOf = replaced.value?.session;
+
+    // What carries over comes from the store's copy, not the caller's object.
+    // One read here, not confirmed before the flow ended anything, also fences
+    // the new session at its epoch: a revoke-all or a reset that lands before
+    // the mint ends it too.
+    if (reissueOf)
+      options = {
+        ...options,
+        inherit: reissueOf,
+        ...(replaced.value?.read && options.epoch === undefined ? { epoch: reissueOf.epoch } : {}),
+      };
+
+    const admitted = await this.#admit(user, options, reissueOf ? { reissueOf } : {});
 
     if (!admitted.ok) return admitted;
 
