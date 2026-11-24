@@ -117,11 +117,16 @@ The reset never touches the factor: the next login is still challenged ([A044](h
 The core mints sessions in one place, `issueSession`, and runs the plugin's hook on every call. For any user with a confirmed factor (or one the app requires a factor of) the hook refuses the session unless it comes from:
 
 - the plugin's own challenge;
-- one of the core's re-issues: after a password change, a re-authentication, an email verification, a confirmed email change or "sign out other sessions".
+- one of the core's re-issues: after a password change, a re-authentication, an email verification, a confirmed email change or "sign out other sessions";
+- a re-issue under your own `via` whose `inherit` is a live session of that user that has proved the factor (below).
 
 **A re-issue needs a live session.** It goes through only with a session the core itself read from the store just before the flow revoked anything: live (not revoked, not expired or idle, on the current epoch) and the same user's. A revoked, expired, hand-built or copied session object is refused.
 
+**Your own re-issues need a session that proved the factor.** An app that still runs some of these flows itself issues the replacement under its own `via`, with the caller's session as `inherit`. The core checks that the session is live and the same user's (or takes the object `confirmLiveSession` returned before the flow ended sessions), else the issue is refused as `session_expired`. The plugin then lets it through only when that session descends from a proof of the factor: it began after the factor's enrollment window closed (so it passed this check when it was issued), or it holds a step-up of its own that is still open. A session that began before the factor existed, or inside its enrollment window, proved nothing at its start: ask for a step-up first. Without `inherit` your via is refused as before.
+
 **Everything else is refused.** A plain password login and sign-up with auto-login are refused ([A048](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A048-enforcement-bypass.test.ts)), and so is any other `via` a plugin or app code names. A user the app requires a factor of who has none yet gets an enrollment challenge instead of a session.
+
+**Your refusals come before the challenge.** After a correct password, the core runs the `beforeSessionCreate` hooks (with `beforeChallenge: true`) before the plugin's challenge is handed out. An account your hook refuses (a removed member, an account fenced from this surface) gets `invalid_credentials`, like a wrong password, and no challenge that would say the password was right ([A111](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A111-learning-a-refused-password-through-the-challenge.test.ts)).
 
 **Trusted code is trusted.** What the check cannot judge is code that claims the factor was checked: plugins and callers of `auth.context` are trusted code, and one that issues with the plugin's own label, `second-factor`, gets a session.
 
@@ -215,7 +220,7 @@ The guide's MFA page asks for RFC 6238 codes from a 160-bit random secret, a con
 | [A045](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A045-disable-without-proof.test.ts) | Turning two-factor off without a second-factor proof | `plugins/two-factor/management.ts`, `plugins/two-factor/step-up.ts` |
 | [A046](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A046-enrollment-wrong-or-stale-code.test.ts) | Confirming an enrollment with a wrong or stale code | `plugins/two-factor/enrollment.ts`, `core/auth-core.ts` |
 | [A047](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A047-second-factor-timing.test.ts) | Telling a wrong code from an unknown challenge or a missing factor by timing | `plugins/two-factor/challenge.ts`, `plugins/two-factor/proofs.ts` |
-| [A048](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A048-enforcement-bypass.test.ts) | Getting a session past the second factor through another flow | `plugins/two-factor/hooks.ts`, `plugins/two-factor/challenge.ts`, `core/auth-core.ts` |
+| [A048](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A048-enforcement-bypass.test.ts) | Getting a session past the second factor through another flow, an app's own re-issue included | `plugins/two-factor/hooks.ts`, `plugins/two-factor/challenge.ts`, `core/auth-core.ts` |
 | [A049](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A049-step-up-staleness.test.ts) | Acting on a stale or borrowed second-factor proof | `plugins/two-factor/step-up.ts`, `plugins/two-factor/challenge.ts`, `core/auth-core.ts` |
 | [A050](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A050-second-factor-enumeration.test.ts) | Learning account state from second-factor answers | `flows/login.ts`, `plugins/two-factor/challenge.ts`, `plugins/two-factor/proofs.ts` |
 | [A052](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A052-email-change-without-second-factor.test.ts) | Changing the email of a two-factor account without the factor | `plugins/two-factor/hooks.ts`, `plugins/two-factor/step-up.ts`, `flows/email-change.ts` |
@@ -225,6 +230,7 @@ The guide's MFA page asks for RFC 6238 codes from a 160-bit random secret, a con
 | [A095](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A095-reusing-an-imported-recovery-code.test.ts) | Reusing an imported recovery code | `plugins/two-factor/proofs.ts`, `plugins/two-factor/recovery-codes.ts`, `ports/two-factor.ts` |
 | [A098](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A098-racing-two-imported-recovery-codes.test.ts) | Racing two logins with two imported recovery codes to leave a dead set | `plugins/two-factor/proofs.ts`, `plugins/two-factor/challenge.ts` |
 | [A108](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A108-climbing-past-the-permanent-tier-on-second-factor-codes.test.ts) | Never reaching the permanent lockout tier while guessing codes with the password in hand | `plugins/two-factor/runtime.ts`, `core/auth-core.ts`, `throttle/throttle.ts` |
+| [A111](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A111-learning-a-refused-password-through-the-challenge.test.ts) | Learning that a refused account's password is right from its second-factor challenge | `flows/login.ts`, `core/auth-core.ts`, `plugins/two-factor/hooks.ts` |
 
 </div>
 
