@@ -6,19 +6,23 @@
 // without reading the factor or the policy. If the stamp outlived a change,
 // a user who must now enroll would keep a full session: an app that required
 // a factor of them, an admin who reset their factor, a sign-in that read the
-// policy just before a refresh, a session minted under another configuration,
-// or a re-issue that copied the stamp along.
+// policy just before a refresh, a session minted under another configuration
+// or kept through a rollback to 'live', a re-issue that copied the stamp
+// along, or a stamp an app hook or a legacy store supplied.
 //
-// Stopped by: plugins/two-factor/enforcement.ts (only a stamp of the current
-//   version at the session's own epoch skips; the stamp carries the epoch read
-//   before the answer; `refreshStanding` ends the user's sessions; the stamp is
-//   recomputed on every issue), plugins/two-factor/management.ts (`reset` ends
-//   the sessions under `'at-issue'`), session/session-manager.ts (the epoch
-//   fence on the mint).
+// Stopped by: plugins/two-factor/enforcement.ts (the stamp is a keyed hash of
+//   the user, the version, the epoch read before the answer and the issue
+//   time, verified on read and checked live after `maxAge`; `refreshStanding`
+//   ends the user's sessions in either mode; `stampIsOurs` refuses a stamp
+//   another hook supplied; the stamp is recomputed on every issue),
+//   plugins/two-factor/management.ts (`reset` ends the sessions with
+//   `enforcement`), session/session-manager.ts (the epoch fence on the mint).
 // Learn: Second factors (/auth/learn/second-factors/)
 import { describe, expect, it } from 'vitest';
 
 import { definePlugin, type AuthUser, type PluginContext } from '../../src';
+import { sha256Hex } from '../../src/crypto/hash';
+import { generateToken } from '../../src/crypto/random';
 import type { TwoFactorPolicy } from '../../src/plugins/two-factor';
 import { EMAIL, meta, PASSWORD, standingApp as app, twoFactorApp } from '../two-factor/setup';
 
@@ -81,6 +85,39 @@ describe('A113: changes that could restrict a stamped session end it', () => {
     if (!changed.ok) throw new Error(changed.reason);
 
     expect((await t.validate(changed.value.token)).standing).toEqual({ state: 'enrollment-only' });
+  });
+
+  it("restamps an app's own re-issue at the same epoch from the answer now", async () => {
+    let context: PluginContext<AuthUser, Record<string, never>> | undefined;
+
+    const appSessions = definePlugin({
+      id: 'appSessions',
+      flows: (c) => {
+        context = c as unknown as PluginContext<AuthUser, Record<string, never>>;
+
+        return {};
+      },
+    });
+
+    const t = app('at-issue', { required: false }, { plugins: [appSessions] });
+    const { session } = await t.signedIn();
+    const user = await t.stores.users.findById(session.userId);
+
+    if (!user || !context) throw new Error('setup');
+
+    // A change the app did not refresh; its own re-issue keeps the epoch.
+    t.policy.current = { required: true };
+
+    const reissued = await context.issueSession(user, {
+      via: 'app-renew',
+      meta: meta(),
+      inherit: session,
+    });
+
+    if (!reissued.ok) throw new Error(reissued.reason);
+
+    expect(reissued.value.session.epoch).toBe(session.epoch);
+    expect((await t.validate(reissued.value.token)).standing).toEqual({ state: 'enrollment-only' });
   });
 
   it('leaves the sweep as the backstop for a policy changed without a refresh', async () => {
@@ -225,5 +262,100 @@ describe('A113: sessions minted under another configuration are read live', () =
     expect(await back.sessionOf(stamped.value.session.token)).toMatchObject({
       twoFactor: { state: 'enrollment-only' },
     });
+  });
+});
+
+describe('A113: a stamp from a spell under another mode', () => {
+  it("does not come back after a rollback to 'live' and forward again", async () => {
+    const first = app('at-issue');
+    const { token, session } = await first.signedIn();
+    const shared = { stores: first.stores, clock: first.clock } as object;
+
+    expect((await first.validate(token)).reads.policy).toBe(0);
+
+    // Rolled back to 'live': the admin requires a factor and refreshes.
+    const rolledBack = twoFactorApp(
+      { ...({ store: first.store } as object), enforcement: () => ({ required: true }) },
+      shared,
+    );
+
+    expect(await rolledBack.auth.twoFactor.refreshStanding({ userId: session.userId })).toEqual({
+      ok: true,
+      value: { revoked: true },
+    });
+
+    // Forward to 'at-issue' again, same version: the old stamp is gone with its session.
+    const forward = twoFactorApp(
+      {
+        ...({ store: first.store } as object),
+        enforcement: () => ({ required: true }),
+        enforcementStanding: 'at-issue',
+      },
+      shared,
+    );
+
+    expect(await forward.sessionOf(token)).toBeNull();
+  });
+});
+
+describe('A113: a stamp the plugin did not make', () => {
+  it('refuses a session whose stamp an app hook supplied, for a required user', async () => {
+    const donor = app('at-issue');
+    const { session: stamped } = await donor.signedIn('grace@example.com');
+    const borrowed = (stamped.attributes as Record<string, unknown>)['twoFactorStanding'];
+
+    expect(borrowed).toMatch(/^\d+\.[0-9a-f]{64}$/u);
+
+    const t = app('at-issue', { required: true }, {
+      hooks: { sessionAttributes: () => ({ twoFactorStanding: borrowed }) },
+    } as never);
+
+    await t.auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    const login = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    expect(login).toMatchObject({ ok: false });
+    expect(login.ok ? null : login.reason).toBe('two_factor_standing_replaced');
+  });
+
+  it('reads live a session whose stamp was copied from another user or epoch', async () => {
+    const t = app('at-issue');
+    const donor = await t.signedIn('grace@example.com');
+    const stamp = (donor.session.attributes as Record<string, unknown>)['twoFactorStanding'];
+
+    expect(stamp).toMatch(/^\d+\.[0-9a-f]{64}$/u);
+
+    t.policy.current = { required: true };
+
+    const victim = await t.signedIn();
+
+    // The donor's sessions end: its epoch moves on.
+    await t.auth.context.revokeAllSessions(donor.session.userId, 'admin');
+
+    const donorEpoch = await t.auth.context.sessions.readEpoch(donor.session.userId);
+
+    /** Stores a session record as a legacy store or a copy would hand it over. */
+    async function planted(record: typeof victim.session) {
+      const token = generateToken();
+
+      await t.stores.sessions.create({ ...record, id: sha256Hex(token) }, 3600_000);
+
+      return token;
+    }
+
+    // Another user's session with the donor's stamp.
+    const otherUser = await planted({
+      ...victim.session,
+      attributes: { twoFactorStanding: stamp } as never,
+    });
+
+    // The donor's own session at its new epoch, with the stamp of the old one.
+    const otherEpoch = await planted({ ...donor.session, epoch: donorEpoch });
+
+    for (const token of [otherUser, otherEpoch])
+      expect(await t.validate(token)).toMatchObject({
+        ok: true,
+        standing: { state: 'enrollment-only' },
+      });
   });
 });

@@ -24,7 +24,7 @@ import type { StoredSession } from '../../ports/stores';
 import { fail, ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
 
-/** The revocation reason of a reset under `enforcementStanding: 'at-issue'`. */
+/** The revocation reason of a reset of a confirmed factor with `enforcement`. */
 export const TWO_FACTOR_RESET_REVOCATION = 'two-factor-reset';
 
 export interface TwoFactorStatus {
@@ -116,9 +116,12 @@ export async function disable<A>(
  * it, the recovery codes and every trusted device, so the next login gets no
  * challenge (or an enrollment one, when a factor is required). The user's
  * step-up proofs end with their sessions; revoke those
- * (`context.revokeAllSessions`) if the reset is for a takeover. Every reset
- * is audited (`two_factor.reset`, `data.actor` when named); a confirmed
- * factor's owner is mailed (`two-factor-disabled` with `reset: true`).
+ * (`context.revokeAllSessions`) if the reset is for a takeover. With
+ * `enforcement`, resetting a confirmed factor ends them itself (reason
+ * `two-factor-reset`), so no session stamped for the factor outlives it.
+ * Every reset is audited (`two_factor.reset`, `data.actor` when named); a
+ * confirmed factor's owner is mailed (`two-factor-disabled` with
+ * `reset: true`).
  */
 export async function reset(
   runtime: Runtime,
@@ -134,9 +137,10 @@ export async function reset(
   await store.replaceRecoveryCodes(userId, []);
   await store.deleteTrustedDevices(userId);
 
-  // Under `'at-issue'` a session stamped for the factor would skip the
-  // standing the user now has: end it (enforcement.ts).
-  if (factor.confirmed && runtime.settings.standingStamp !== null)
+  // With `enforcement`, a session stamped for the factor (now, or during a
+  // spell under `'at-issue'`) would skip the standing the user now has: end
+  // it (enforcement.ts).
+  if (factor.confirmed && runtime.settings.enforcement !== null)
     await core.revokeAllSessions(userId, TWO_FACTOR_RESET_REVOCATION);
 
   await core.emit(

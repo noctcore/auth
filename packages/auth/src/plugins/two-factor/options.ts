@@ -85,20 +85,33 @@ export interface TwoFactorOptions {
    * on every validated request, as above. `'at-issue'`: also when the
    * session is issued, and a session issued unrestricted (a confirmed
    * factor, or no factor required) is stamped so (the `twoFactorStanding`
-   * session attribute) and validates without any read; every other session
-   * is read live, so enrolling or the policy lifting still frees it on the
-   * next request. Nothing the plugin cannot see can reach a stamped session,
-   * so after you require a factor of a user (or change their policy), call
-   * `twoFactor.refreshStanding({ userId })`: it ends the user's sessions,
-   * and their next sign-in is stamped from the new answer. For a change to
-   * many users at once, pass `{ mode: 'at-issue', version }` with a new
-   * `version`: sessions stamped under another version are read live again.
-   * With a session attribute schema, let `twoFactorStanding` through (a
-   * schema that drops it only costs the reads; one that refuses unknown keys
-   * refuses every sign-in). Needs `enforcement`.
+   * session attribute, a keyed hash bound to the user, the version, the
+   * revocation epoch and the issue time) and validates without any read
+   * until the stamp is `maxAge` old; every other session is read live, so
+   * enrolling or the policy lifting still frees it on the next request.
+   * Nothing the plugin cannot see can reach a stamped session, so after you
+   * require a factor of a user (or change their policy), call
+   * `twoFactor.refreshStanding({ userId })`: it ends the user's sessions (in
+   * either mode, so a stamp from a spell under `'at-issue'` cannot come back
+   * after a rollback), and their next sign-in is stamped from the new
+   * answer. For a change to many users at once, pass a new `version`.
+   * With a session attribute schema, let `twoFactorStanding` (a string)
+   * through: `createAuth` refuses a schema that refuses it. Needs
+   * `enforcement`.
    */
   readonly enforcementStanding?:
-    'live' | 'at-issue' | { readonly mode: 'at-issue'; readonly version: string };
+    | 'live'
+    | 'at-issue'
+    | {
+        readonly mode: 'at-issue';
+        /** Change it to send every older stamp back to live reads. Default `'1'`. */
+        readonly version?: string;
+        /**
+         * How long after its issue a stamp counts; an older stamped session is
+         * read live. Positive, at most 30 days. Default 1 day.
+         */
+        readonly maxAge?: Duration;
+      };
   /** How long a second-factor proof counts for sensitive actions, per session. Default 10 min. */
   readonly stepUpWindow?: Duration;
   /**
@@ -156,8 +169,8 @@ export interface TwoFactorSettings {
   readonly required: (context: { readonly user: AuthUser }) => boolean | Promise<boolean>;
   /** The enforcement policy, or null when `enforcement` is not configured. */
   readonly enforcement: TwoFactorEnforcement | null;
-  /** The stamp of a session issued unrestricted under `'at-issue'`; null when the standing is read live. */
-  readonly standingStamp: string | null;
+  /** `'at-issue'`: the stamp's version and how long it counts; null when the standing is read live. */
+  readonly standing: { readonly version: string; readonly maxAgeMs: number } | null;
   readonly stepUpWindowMs: number;
   readonly enrollmentWindowMs: number;
   readonly trustedDevices: { readonly ttlMs: number; readonly maxPerUser: number } | null;
@@ -215,7 +228,7 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
     issuer: options.issuer,
     required: options.required ?? never,
     enforcement: options.enforcement ?? null,
-    standingStamp: resolveStandingStamp(options),
+    standing: resolveStanding(options),
     stepUpWindowMs,
     enrollmentWindowMs,
     trustedDevices: resolveTrustedDevices(options.trustedDevices),
@@ -227,31 +240,43 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
 
 /** The default `version` of `'at-issue'`. */
 const FIRST_STANDING_VERSION = '1';
+/** The longest `maxAge` of a stamp: the longest a session lives by default. */
+const MAX_STANDING_AGE_MS = 30 * 24 * 3600_000;
 
-function resolveStandingStamp(options: TwoFactorOptions): string | null {
+const STANDING_SHAPE =
+  "twoFactor: enforcementStanding must be 'live', 'at-issue' or { mode: 'at-issue', version?, maxAge? }";
+
+function resolveStanding(options: TwoFactorOptions): TwoFactorSettings['standing'] {
   const option = options.enforcementStanding;
 
   if (!isSet(option) || option === 'live') return null;
 
-  let version: string;
+  // Read as unknown: env files and loose configs hand over anything.
+  const shape = (option === 'at-issue' ? { mode: 'at-issue' } : option) as {
+    readonly mode?: unknown;
+    readonly version?: unknown;
+    readonly maxAge?: unknown;
+  };
 
-  if (option === 'at-issue') version = FIRST_STANDING_VERSION;
-  else if (
-    typeof option === 'object' &&
-    (option as { mode?: unknown }).mode === 'at-issue' &&
-    typeof option.version === 'string' &&
-    option.version.length > 0
-  )
-    version = option.version;
-  else
+  if (typeof shape !== 'object' || shape.mode !== 'at-issue')
+    throw new AuthConfigError(STANDING_SHAPE);
+
+  const version = shape.version ?? FIRST_STANDING_VERSION;
+
+  if (typeof version !== 'string' || version.length === 0)
+    throw new AuthConfigError(STANDING_SHAPE);
+
+  const maxAgeMs = configMilliseconds('twoFactor: enforcementStanding.maxAge', shape.maxAge, '1d');
+
+  if (maxAgeMs <= 0 || maxAgeMs > MAX_STANDING_AGE_MS)
     throw new AuthConfigError(
-      "twoFactor: enforcementStanding must be 'live', 'at-issue' or { mode: 'at-issue', version }",
+      'twoFactor: enforcementStanding.maxAge must be positive and at most 30 days',
     );
 
   if (!isSet(options.enforcement))
     throw new AuthConfigError('twoFactor: enforcementStanding needs enforcement');
 
-  return `unrestricted:${version}`;
+  return { version, maxAgeMs };
 }
 
 function resolveImported(
