@@ -38,11 +38,13 @@ createAuthMiddlewares
 csrfTokenOutput
 describeProcedures
 findSecretQueries
+inspectPasswordResetInput
 loginInput
 loginOutput
 reauthenticateInput
 registerInput
 requestPasswordResetInput
+resetInspectionOutput
 resetPasswordInput
 resetTicketOutput
 revokeSessionInput
@@ -137,6 +139,7 @@ FetchContextInput [interface]
     readonly resHeaders: { append(name: string, value: string): void; /** Present on a real `Headers`; used so a header is set once, not appended. */ set?(name: string, value: string): void; }
 findSecretQueries [function]: (router: AnyRouter, options?: { allow?: readonly string[]; }) => SecretQueryFinding[]
 FreshAuthMiddleware [const]: (maxAge?: Duration) => NestTrpcMiddlewareClass
+inspectPasswordResetInput [const]: z.ZodObject<{ token: z.ZodString; }, z.core.$strip>
 loginInput [const]: z.ZodObject<{ email: z.ZodString; password: z.ZodString; rememberMe: z.ZodExactOptional<z.ZodBoolean>; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 loginOutput [const]: z.ZodDiscriminatedUnion<[z.ZodObject<{ kind: z.ZodLiteral<"session">; csrfToken: z.ZodString; }, z.core.$strip>, z.ZodObject<{ kind: z.ZodLiteral<"challenge">; challenge: z.ZodString; methods: z.ZodReadonly<z.ZodArray<z.ZodString>>; }, z.core.$strip>], "kind">
 MAX_TRUSTED_HOPS [const]: 16
@@ -174,6 +177,7 @@ RateLimitMiddleware [const]: (name: string, rule?: TrpcRateLimitRule) => NestTrp
 reauthenticateInput [const]: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
 registerInput [const]: z.ZodObject<{ email: z.ZodString; password: z.ZodString; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 requestPasswordResetInput [const]: z.ZodObject<{ email: z.ZodString; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
+resetInspectionOutput [const]: z.ZodObject<{ user: z.ZodObject<{ id: z.ZodString; email: z.ZodString; emailVerified: z.ZodBoolean; }, z.core.$strip>; expiresAt: z.ZodNumber; secondFactorRequired: z.ZodBoolean; }, z.core.$strip>
 resetPasswordInput [const]: z.ZodObject<{ token: z.ZodString; password: z.ZodString; secondFactor: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 resetTicketOutput [const]: z.ZodObject<{ ticket: z.ZodString; expiresAt: z.ZodNumber; }, z.core.$strip>
 revokedOutput [const]: z.ZodObject<{ revoked: z.ZodBoolean; }, z.core.$strip>
