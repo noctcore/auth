@@ -346,6 +346,47 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return inherit.userId === userId;
   }
 
+  /** The attributes of an issue, once every `beforeSessionCreate` hook let it through. */
+  async #admit(
+    user: U,
+    options: IssueOptions<A>,
+    stage: { readonly beforeChallenge?: true },
+  ): Promise<AuthResult<A>> {
+    const resolved = await resolveSessionAttributes(
+      { hooks: this.hooks, schema: this.#deps.attributeSchema, logger: this.logger },
+      user,
+      options,
+    );
+
+    if (!resolved.ok) return resolved;
+
+    const refusal = await firstRefusal(this.hooks.beforeSessionCreate, {
+      user,
+      via: options.via,
+      attributes: resolved.value,
+      meta: options.meta,
+      ...stage,
+    });
+
+    if (!refusal) return resolved;
+
+    await this.#loginFailure(user, refusal.reason, options);
+
+    return fail(refusal.code, refusal.reason);
+  }
+
+  /**
+   * After a correct password, before a second-factor challenge is handed out:
+   * the `beforeSessionCreate` hooks for the password sign-in, with
+   * `beforeChallenge: true`, so an account a hook refuses never learns that
+   * its password was right. Null when every hook lets it through.
+   */
+  async refuseBeforeChallenge(user: U, options: IssueOptions<A>): Promise<AuthFailure | null> {
+    const admitted = await this.#admit(user, options, { beforeChallenge: true });
+
+    return admitted.ok ? null : admitted;
+  }
+
   async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
     // A re-issue names the session it replaces, and that session was read live
     // from the store, for this user, by `confirmLiveSession` before the flow
@@ -358,28 +399,11 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       return fail('session_expired', `reissue_without_session:${options.via}`);
     }
 
-    const resolved = await resolveSessionAttributes(
-      { hooks: this.hooks, schema: this.#deps.attributeSchema, logger: this.logger },
-      user,
-      options,
-    );
+    const admitted = await this.#admit(user, options, {});
 
-    if (!resolved.ok) return resolved;
+    if (!admitted.ok) return admitted;
 
-    const attributes = resolved.value;
-
-    const refusal = await firstRefusal(this.hooks.beforeSessionCreate, {
-      user,
-      via: options.via,
-      attributes,
-      meta: options.meta,
-    });
-
-    if (refusal) {
-      await this.#loginFailure(user, refusal.reason, options);
-
-      return fail(refusal.code, refusal.reason);
-    }
+    const attributes = admitted.value;
 
     // Every factor is proved and nothing refused: a completed sign-in. Before
     // the mint, so a store that fails here leaves no session behind.
