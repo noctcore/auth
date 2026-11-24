@@ -177,7 +177,7 @@ RateLimitMiddleware [const]: (name: string, rule?: TrpcRateLimitRule) => NestTrp
 reauthenticateInput [const]: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
 registerInput [const]: z.ZodObject<{ email: z.ZodString; password: z.ZodString; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 requestPasswordResetInput [const]: z.ZodObject<{ email: z.ZodString; captchaToken: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
-resetInspectionOutput [const]: z.ZodObject<{ user: z.ZodObject<{ id: z.ZodString; email: z.ZodString; emailVerified: z.ZodBoolean; }, z.core.$strip>; expiresAt: z.ZodNumber; secondFactorRequired: z.ZodBoolean; }, z.core.$strip>
+resetInspectionOutput [const]: z.ZodObject<{ userId: z.ZodString; email: z.ZodString; expiresAt: z.ZodNumber; secondFactorRequired: z.ZodBoolean; }, z.core.$strip>
 resetPasswordInput [const]: z.ZodObject<{ token: z.ZodString; password: z.ZodString; secondFactor: z.ZodExactOptional<z.ZodString>; }, z.core.$strip>
 resetTicketOutput [const]: z.ZodObject<{ ticket: z.ZodString; expiresAt: z.ZodNumber; }, z.core.$strip>
 revokedOutput [const]: z.ZodObject<{ revoked: z.ZodBoolean; }, z.core.$strip>
