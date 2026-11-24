@@ -388,6 +388,14 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       options,
     );
 
+    // After a correct password, the app's broken schema must not answer
+    // differently from a wrong password: the operator has the log line.
+    if (!resolved.ok && options.via === 'password') {
+      await this.#loginFailure(user, resolved.reason, options);
+
+      return fail('invalid_credentials', resolved.reason);
+    }
+
     if (!resolved.ok) return resolved;
 
     const refusal = await firstRefusal(this.hooks.beforeSessionCreate, {
