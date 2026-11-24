@@ -51,18 +51,13 @@ describe('PrismaUserStore writeWhere', () => {
 
   it('cannot widen a write, even naming the store’s own columns', async () => {
     const { delegate, calls } = recording();
-    const store = new PrismaUserStore({ delegate, writeWhere: { id: 'u2', deletedAt: undefined } });
+    const widening = { id: 'u2', deletedAt: { not: null } };
+    const store = new PrismaUserStore({ delegate, writeWhere: widening });
 
     await store.setPasswordHash('u1', 'hash');
 
-    expect(whereOf(calls)).toEqual([
-      {
-        AND: [
-          { id: 'u1', deletedAt: null },
-          { id: 'u2', deletedAt: undefined },
-        ],
-      },
-    ]);
+    // Both sides must hold: the row must be u1 AND u2, live AND deleted, so nothing matches.
+    expect(whereOf(calls)).toEqual([{ AND: [{ id: 'u1', deletedAt: null }, widening] }]);
   });
 
   it('leaves reads and an email revert alone', async () => {
@@ -90,12 +85,105 @@ describe('PrismaUserStore writeWhere', () => {
     expect(whereOf(calls)).toEqual([{ id: 'u1', deletedAt: null }]);
   });
 
-  it('refuses a guard that is not a where object', () => {
+  it('refuses a guard that is not a plain where object', () => {
     const { delegate } = recording();
 
-    for (const writeWhere of ['closedAt', null, [CLOSED], 1])
+    class Guard {
+      closedAt = null;
+    }
+
+    for (const writeWhere of ['closedAt', null, [CLOSED], 1, new Date(), new Map(), new Guard()])
       expect(() => new PrismaUserStore({ delegate, writeWhere: writeWhere as never })).toThrow(
         AuthConfigError,
       );
+  });
+
+  it('refuses a guard that would guard nothing: empty, or undefined anywhere inside', () => {
+    const { delegate } = recording();
+    const env: Record<string, string | undefined> = {};
+
+    for (const writeWhere of [
+      {},
+      { orgId: env['ORG_ID'] },
+      { closedAt: null, orgId: undefined },
+      { org: { is: { id: undefined } } },
+      { OR: [{ closedAt: null }, { orgId: undefined }] },
+    ])
+      expect(() => new PrismaUserStore({ delegate, writeWhere })).toThrow(AuthConfigError);
+  });
+
+  it('copies the guard, so changing the object afterwards changes nothing', async () => {
+    const { delegate, calls } = recording();
+    const since = new Date(0);
+    const guard: Record<string, unknown> = { closedAt: null, joinedAt: { gte: since } };
+    const store = new PrismaUserStore({ delegate, writeWhere: guard });
+
+    guard['closedAt'] = { not: null };
+    (guard['joinedAt'] as Record<string, unknown>)['gte'] = new Date(1);
+    since.setTime(2);
+
+    await store.setPasswordHash('u1', 'hash');
+
+    expect(whereOf(calls)).toEqual([
+      {
+        AND: [
+          { id: 'u1', deletedAt: null },
+          { closedAt: null, joinedAt: { gte: new Date(0) } },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps Prisma's message, which prints the new hash, out of a failed credential write", async () => {
+    const hash = 'argon2id$secret-new-hash';
+
+    const refusal = Object.assign(
+      new Error(
+        `Invalid updateMany() invocation: data: { passwordHash: "${hash}" }, Unknown argument closedAtt`,
+      ),
+      { name: 'PrismaClientValidationError' },
+    );
+
+    const known = Object.assign(new Error(`Value too long for ${hash}`), {
+      name: 'PrismaClientKnownRequestError',
+      code: 'P2000',
+    });
+
+    for (const failure of [refusal, known]) {
+      const store = new PrismaUserStore({
+        delegate: { updateMany: async () => Promise.reject(failure) } as never,
+        writeWhere: { closedAtt: null },
+      });
+
+      for (const write of [
+        () => store.setPasswordHash('u1', hash),
+        () => store.markEmailVerified('u1', EMAIL),
+        () => store.changeEmail('u1', { from: EMAIL, to: NEW }),
+      ]) {
+        const error: unknown = await write().catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toMatchObject({ name: 'PrismaUserStoreError' });
+        expect(JSON.stringify(error)).not.toContain(hash);
+        expect((error as Error).message).not.toContain(hash);
+        expect(String((error as Error).stack)).not.toContain(hash);
+        expect((error as Error).cause).toBeUndefined();
+      }
+    }
+
+    // The code survives for a caller that reads it; an outage is passed on untouched.
+    const coded = new PrismaUserStore({
+      delegate: { updateMany: async () => Promise.reject(known) } as never,
+    });
+
+    await expect(coded.setPasswordHash('u1', hash)).rejects.toMatchObject({ code: 'P2000' });
+
+    const outage = new Error('connection refused');
+
+    const down = new PrismaUserStore({
+      delegate: { updateMany: async () => Promise.reject(outage) } as never,
+    });
+
+    await expect(down.setPasswordHash('u1', hash)).rejects.toBe(outage);
   });
 });
