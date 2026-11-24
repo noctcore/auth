@@ -146,7 +146,7 @@ The `session` key takes the session options and three more keys, `cookie`, `fres
 
 **`touchInterval`**: last-active is written at most once a minute instead of on every request.
 
-**`attributes`**: the schema makes a corrupt or old record refused, not trusted.
+**`attributes`**: the schema makes a corrupt or old record refused, not trusted. Attributes that fail it when a session is issued are logged ('Session attributes failed the schema at issue time') and refused: as `invalid_credentials` with a `login.failure` row after a correct password, so a caller cannot tell it from a wrong password, and as `forbidden` on every other path (reason `invalid_session_attributes` on both).
 
 ### Evictions at the cap
 
