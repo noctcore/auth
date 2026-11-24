@@ -99,7 +99,7 @@ The library defends against: guessing passwords and codes (through login, and th
 | Holding responses up through a slow or hung mailer | Every mail handed to the mailer without waiting; at-most-once delivery, failures logged | A023 |
 | The locked-account oracle | Unknown addresses lock too; a lock answers like a wrong password unless the app opts into `revealLocked` | A005 |
 | Replaying a revoked session | The epoch fence | A006 |
-| Reusing a password reset token | Atomic single-use consume, expiry checked after it | A007 |
+| Reusing a password reset token, or one that outlives a failed password write | Atomic single-use consume, expiry checked after it; every reset token voided before a reset or a change writes the hash, and once more after | A007 |
 | Cross-site request forgery | Origin allowlist, `Sec-Fetch-Site`, signed double-submit token, `SameSite=Lax` | A008 |
 | Forging or hoarding trusted-device cookies | HMAC over user, epoch and issue time; shared device budget | A009 |
 | A stolen session cookie outliving a password change | Every session revoked after the new hash is written | A010 |

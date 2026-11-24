@@ -11,12 +11,31 @@ export async function forgotPassword(auth: AppAuth, input: { email: string; meta
   return { status: 'check-your-email' as const };
 }
 
+/**
+ * The reset page POSTs the token from the URL fragment as it loads: a dead
+ * link gets its own page, and a reset that will ask for a second factor shows
+ * the code field before the user types a new password. Nothing is spent.
+ */
+export async function checkResetLink(auth: AppAuth, input: { token: string; meta: RequestMeta }) {
+  const result = await auth.inspectPasswordReset(input);
+
+  // Unknown, expired and spent links answer the same `invalid_token`.
+  if (!result.ok) return { error: toPublicError(result) };
+
+  return {
+    status: 'live' as const,
+    expiresAt: result.value.expiresAt,
+    secondFactorRequired: result.value.secondFactorRequired,
+  };
+}
+
 /** The reset page POSTs the token it read from the URL fragment. */
 export async function setNewPassword(
   auth: AppAuth,
   input: { token: string; password: string; meta: RequestMeta },
 ) {
-  // Peek, check the password, run the hooks, hash, consume, write.
+  // Peek, check the password, run the hooks, hash, consume, void every
+  // other reset token, write.
   // A refused password leaves the link unspent.
   const result = await auth.resetPassword(input);
 

@@ -76,7 +76,7 @@ Turning the factor on from the settings page needs a fresh password proof (`sess
 
 An email change revert never removes a factor: it cannot tell the owner's from one an intruder enrolled. An owner who cannot pass a factor the intruder enrolled needs support: support verifies the owner outside the account (the old mailbox alone proves nothing: the intruder may read it too), then deletes the factor and its recovery codes through the two-factor store (`deleteFactor(userId)` and `replaceRecoveryCodes(userId, [])`) and has the owner reset the password. See [Email change](/auth/build/email-change/).
 
-Other flows: `status(session)` (on, pending, required, recovery codes left), `regenerateRecoveryCodes`, `disable`, and `revokeTrustedDevices`. Password changes, resets and email change requests of a user with a factor take the code in `secondFactor` (six digits are read as a TOTP code, anything else as a recovery code); a password change or an email change request can skip it when the session holds a step-up.
+Other flows: `status(session)` (on, pending, required, recovery codes left), `regenerateRecoveryCodes`, `disable`, and `revokeTrustedDevices`. Password changes, resets and email change requests of a user with a factor take the code in `secondFactor` (six digits are read as a TOTP code, anything else as a recovery code); a password change or an email change request can skip it when the session holds a step-up. A reset page can learn before the user types anything whether the reset will ask for the code: `auth.inspectPasswordReset` answers `secondFactorRequired: true` for an account with a confirmed factor.
 
 ## Moving existing TOTP users over
 

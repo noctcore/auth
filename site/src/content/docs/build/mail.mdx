@@ -57,6 +57,12 @@ Timeouts and drops are counted on your `metrics` as `auth_background_task`, with
 
 `dedupeKey` is a server-minted nonce, unique per event and safe to use as a job id, so a retried enqueue stores one job.
 
+### Where the request came from
+
+Every mail a request on the owner's account sends carries an optional `meta`: `{ ip, userAgent? }`, the client IP (after trust-proxy resolution) and the user agent when your framework passed one. Use it for "asked from this IP" in a reset, lockout or security mail. A reset mail takes it from the reset job, so it is there when the job runs on your queue, far from the request. `email-change-in-use` and `invitation` never carry it: they go to someone other than the account the request acted on, and the requester's IP is not theirs to see. A mailer that ignores `meta` keeps working.
+
+`meta` is personal data. If your queue stores the event, it stores the IP and user agent too: keep the retention of the mail queue in line with what your privacy policy says about them.
+
 ## A queue interface
 
 The samples use the two calls every job queue has in some form. Map them onto BullMQ, pg-boss, Graphile Worker, SQS or whatever you run.
@@ -79,7 +85,7 @@ The queue holds the raw `AuthMailEvent`: `send` renders nothing. Your worker tak
 
 ## Password reset jobs
 
-A reset request answers the same for every address and does none of the per-account work on the response path. It builds a `PasswordResetJob` (`email`, `ip` and a `dedupeKey`); the lookup, the per-account mail limit and the mail happen when that job runs, in `auth.jobs.processPasswordReset(job)`.
+A reset request answers the same for every address and does none of the per-account work on the response path. It builds a `PasswordResetJob` (`email`, `ip`, `userAgent` when the request had one, and a `dedupeKey`); the lookup, the per-account mail limit and the mail happen when that job runs, in `auth.jobs.processPasswordReset(job)`.
 
 Without `passwordReset.enqueue` the job runs detached in the same process. That keeps the response time independent of the address but loses the job if the process dies. With `enqueue`, the job goes on your queue and your worker runs it:
 
@@ -88,5 +94,6 @@ Without `passwordReset.enqueue` the job runs detached in the same process. That 
 Spread `mailConfig(queues)` into your `createAuth` config, and register `handlePasswordResetJob` as the handler of the reset queue.
 
 - The job's `dedupeKey` is the same for every request for one address within a minute, so a burst of requests stores one job and sends one mail.
-- `processPasswordReset` writes `password.reset_request_ignored` to the audit trail when it sends nothing (unknown address, a hook refused, the per-account limit of 3 mails an hour), so the reason is recorded even though the client was answered long before.
+- `processPasswordReset` writes `password.reset_request_ignored` to the audit trail when it sends nothing (unknown address, a hook refused, the per-account limit of 3 mails an hour), so the reason is recorded even though the client was answered long before. When it sends a link or code it writes `password.reset_issued` with the user and `data.kind` (`link` or `code`), after the token is stored and before the mail is handed over. Both rows carry the request's IP and user agent from the job.
+- A job queued by an older version has no `userAgent`; it runs the same, and its mail's `meta` holds only the IP.
 - The job carries the address in plain text. Treat the reset queue's storage like the mail queue's.
