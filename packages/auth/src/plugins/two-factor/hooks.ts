@@ -8,10 +8,12 @@
  *   (`second-factor`) or a re-issue of a session the user already holds
  *   (password change, re-authentication, sign out of other devices, email
  *   verified, email changed; the core refuses those labels unless the call passes that user's
- *   session as `inherit`). An app's own via passes only with a live
- *   `inherit` of the user (`reissueOf`) that `provedFactor` accepts, a best
- *   effort with known gaps (see there). So no flow that issues a session, sign-up with
- *   `autoLogin` included, gets past the factor. Before a login challenge
+ *   session as `inherit`). So sign-up with `autoLogin`, a plugin's sign-in
+ *   and a plain password issue never get past the factor. An app's own via
+ *   passes with a live `inherit` of the user (`reissueOf`) created after the
+ *   factor's enrollment window closed, or holding an open step-up
+ *   (`provedFactor`): a best effort with known gaps (see there), so turn the
+ *   factor on with `revokeOtherSessions: true`. Before a login challenge
  *   (`beforeChallenge`) it refuses nothing: the challenge is the factor. Plugins are trusted code: one
  *   that issues with `via: 'second-factor'` claims to have checked the factor.
  * - `beforePasswordReset`: a reset of an account with a factor needs a code or

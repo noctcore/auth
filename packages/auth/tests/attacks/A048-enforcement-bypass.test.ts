@@ -7,9 +7,10 @@
 // who has none must not hand that user a session at all.
 //
 // An app that runs a re-issue of its own (a password change, "sign out
-// everywhere else") must get its user's session back, but only for a session
-// that already proved the factor: never for a session it names without
-// holding, nor for one that began before the factor existed.
+// everywhere else") must get its user's session back, but never for a session
+// it names without holding, nor for one that began before the factor's
+// enrollment window closed and holds no open step-up. That check is a best
+// effort, not a proof of descent (see `provedFactor`).
 //
 // Stopped by: plugins/two-factor/hooks.ts (`beforeSessionCreate` refuses every session for a
 //   user with a confirmed or required factor, unless it is the plugin's own, a re-issue of
@@ -304,7 +305,7 @@ describe('A048: getting a session past the second factor through another flow', 
     expect(late).toMatchObject({ ok: false, reason: 'session_not_active' });
   });
 
-  it("lets an app's re-issue through only for a live session that proved the factor", async () => {
+  it("lets an app's re-issue through only for a live session past the enrollment window or with a step-up", async () => {
     const app = appReissue();
     const t = twoFactorApp({}, { plugins: [app.plugin] });
     const { session, secret, userId } = await t.enrolled();
