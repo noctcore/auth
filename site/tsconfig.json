@@ -2,7 +2,10 @@
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
     "types": ["bun"],
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    // Bun reads this file for the tests in scripts/, and the NestJS guide's
+    // controller they load uses Nest's legacy decorators.
+    "experimentalDecorators": true
   },
   "include": [".astro/types.d.ts", "**/*"],
   "exclude": ["dist", "snippets", "typedoc"]

@@ -8,7 +8,7 @@ export function signedInDevices(auth: AppAuth, current: Session) {
   return auth.sessions.list(current);
 }
 
-/** Signs out one device. Another device needs a fresh password proof. */
+/** Signs out one device. Another device needs a fresh password proof by default. */
 export async function signOutDevice(
   auth: AppAuth,
   input: { current: Session; handle: string; meta: RequestMeta },

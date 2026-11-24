@@ -117,7 +117,7 @@ export function createAppRouter(auth: AppAuth) {
       .query(({ ctx }) => auth.sessions.list(ctx.session)),
 
     // Signs out one device by the handle the list showed. Another device needs
-    // a fresh password proof; a handle that names none of the caller's
+    // a fresh password proof by default; a handle that names none of the caller's
     // sessions answers { revoked: false }. Revoking the current one? Use logout.
     revokeSession: protectedProcedure
       .input(revokeSessionInput)
@@ -131,7 +131,8 @@ export function createAppRouter(auth: AppAuth) {
 
         if (!result.ok) throw toTRPCError(result);
 
-        return result.value;
+        // result.value.sessionId is the store key: keep it on the server.
+        return { revoked: result.value.revoked };
       }),
 
     // Re-entering the password rotates the session: setSession writes the new

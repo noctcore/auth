@@ -33,8 +33,8 @@ export class AccountController {
   }
 
   // Signs out one device by the handle the list showed. Another device needs a
-  // fresh password proof; a handle that names none of the caller's sessions
-  // answers { revoked: false }.
+  // fresh password proof by default; a handle that names none of the caller's
+  // sessions answers { revoked: false }.
   @Post('sessions/revoke')
   async revokeSession(
     @Body() body: { handle: string },
@@ -45,7 +45,8 @@ export class AccountController {
 
     if (!result.ok) throw new HttpException({ error: toPublicError(result) }, 403);
 
-    return result.value;
+    // result.value.sessionId is the store key: keep it on the server.
+    return { revoked: result.value.revoked };
   }
 
   // Proving the password again rotates the session.
