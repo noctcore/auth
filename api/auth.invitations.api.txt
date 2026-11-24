@@ -105,7 +105,7 @@ AuthHooks [interface]<U extends AuthUser, A>
     beforePasswordChange: (context: { user: U; session: StoredSession<A>; secondFactor: string | undefined; meta: RequestMeta; }) => MaybePromise<HookResult>
     beforePasswordReset: (context: { user: U; secondFactor: string | undefined; meta: RequestMeta; }) => MaybePromise<HookResult>
     beforePasswordResetRequest: (context: { user: U; }) => MaybePromise<HookResult>
-    beforeSessionCreate: (context: { user: U; via: IssueVia; attributes: A; meta: RequestMeta; /** Set when this runs before a second-factor challenge, not before a session. */ beforeChallenge?: true; }) => MaybePromise<HookResult>
+    beforeSessionCreate: (context: { user: U; via: IssueVia; attributes: A; meta: RequestMeta; /** * The live session this issue replaces, as the core read it from the * store for this user: set for the core's re-issues, and for an app's own * via whose `inherit` is a live session of this user (an issue whose * `inherit` is not is refused before the hooks, as `session_expired`). */ reissueOf?: StoredSession<A>; /** Set when this runs before a second-factor challenge, not before a session. */ beforeChallenge?: true; }) => MaybePromise<HookResult>
     loginChallenge: (context: { user: U; rememberMe: boolean; epoch: number; meta: RequestMeta; }) => MaybePromise<{ challenge: string; methods: readonly string[]; } | null | undefined>
     onPermanentLock: (context: { userId: string; email: string; meta: RequestMeta; }) => MaybePromise<void>
     onSessionValidate: (context: { session: StoredSession<A>; meta: RequestMeta | undefined; }) => MaybePromise<HookResult>
@@ -252,6 +252,7 @@ PermanentLockOptions [interface]
     readonly trustedDevices?: boolean
 PluginContext [interface]<U extends AuthUser, A>
     checkCaptcha(door: CaptchaDoor, token: string | undefined, meta: RequestMeta): Promise<AuthFailure | null>
+    confirmLiveSession(session: StoredSession<A>): Promise<StoredSession<A> | null>
     emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>
     escalateLock(input: { readonly userId: string; readonly meta: RequestMeta; }): Promise<{ newLock?: NewLock; }>
     findCredentialByEmail(email: NormalizedEmail): Promise<WithPasswordHash<U> | null>

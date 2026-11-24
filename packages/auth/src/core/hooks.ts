@@ -111,6 +111,13 @@ export interface AuthHooks<U extends AuthUser, A> {
     via: IssueVia;
     attributes: A;
     meta: RequestMeta;
+    /**
+     * The live session this issue replaces, as the core read it from the
+     * store for this user: set for the core's re-issues, and for an app's own
+     * via whose `inherit` is a live session of this user (an issue whose
+     * `inherit` is not is refused before the hooks, as `session_expired`).
+     */
+    reissueOf?: StoredSession<A>;
     /** Set when this runs before a second-factor challenge, not before a session. */
     beforeChallenge?: true;
   }) => MaybePromise<HookResult>;

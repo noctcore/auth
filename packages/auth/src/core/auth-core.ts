@@ -346,11 +346,39 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return inherit.userId === userId;
   }
 
+  /**
+   * The live session an issue replaces, or null when it names none. A
+   * re-issue via of the core needs the object `confirmLiveSession` returned;
+   * an app's own via with an `inherit` needs that object or a session the
+   * store still holds live for this user. The sign-in vias name none (the
+   * plugin's enrollment passes a session it has just revoked, for its shape).
+   */
+  async #reissueOf(
+    user: U,
+    options: IssueOptions<A>,
+  ): Promise<AuthResult<StoredSession<A> | null>> {
+    const { via, inherit } = options;
+
+    if (SIGN_IN_VIAS.has(via) || (!REISSUE_VIAS.has(via) && inherit === undefined)) return ok(null);
+
+    if (this.#takeConfirmed(inherit, user.id)) return ok(inherit ?? null);
+
+    if (!REISSUE_VIAS.has(via) && inherit) {
+      const live = await this.#manager.findActive(inherit.id);
+
+      if (live?.userId === user.id) return ok(live);
+    }
+
+    await this.#loginFailure(user, `reissue_without_session:${via}`, options);
+
+    return fail('session_expired', `reissue_without_session:${via}`);
+  }
+
   /** The attributes of an issue, once every `beforeSessionCreate` hook let it through. */
   async #admit(
     user: U,
     options: IssueOptions<A>,
-    stage: { readonly beforeChallenge?: true },
+    stage: { readonly reissueOf?: StoredSession<A>; readonly beforeChallenge?: true },
   ): Promise<AuthResult<A>> {
     const resolved = await resolveSessionAttributes(
       { hooks: this.hooks, schema: this.#deps.attributeSchema, logger: this.logger },
@@ -388,18 +416,19 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   }
 
   async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
-    // A re-issue names the session it replaces, and that session was read live
-    // from the store, for this user, by `confirmLiveSession` before the flow
-    // revoked anything: hooks (a second factor's enforcement, say) let
-    // re-issues through on the strength of that, so a call that only claims the
-    // label, or hands over a revoked, expired or hand-built session, is refused.
-    if (REISSUE_VIAS.has(options.via) && !this.#takeConfirmed(options.inherit, user.id)) {
-      await this.#loginFailure(user, `reissue_without_session:${options.via}`, options);
+    // A re-issue names the session it replaces, read live from the store for
+    // this user: hooks (a second factor's enforcement, say) let re-issues
+    // through on the strength of that, so a call that only claims the label,
+    // or hands over a revoked, expired or another user's session, is refused.
+    const reissueOf = await this.#reissueOf(user, options);
 
-      return fail('session_expired', `reissue_without_session:${options.via}`);
-    }
+    if (!reissueOf.ok) return reissueOf;
 
-    const admitted = await this.#admit(user, options, {});
+    const admitted = await this.#admit(
+      user,
+      options,
+      reissueOf.value ? { reissueOf: reissueOf.value } : {},
+    );
 
     if (!admitted.ok) return admitted;
 
