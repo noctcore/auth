@@ -68,6 +68,8 @@ describe('A058: learning whether an address has an account through the email cha
     expect(mails).toHaveLength(1);
     expect(mails[0]).toMatchObject({ type: 'email-change-in-use', to: 'ada@example.com' });
     expect(JSON.stringify(mails)).not.toMatch(/"code"|"url"/u);
+    // Nor where the request came from: the requester is another account.
+    expect(mails[0]).not.toHaveProperty('meta');
     // An invitation mail carries no user id, so narrow before reading it.
     const first = mails[0];
 
