@@ -1,6 +1,6 @@
 {
   "name": "@noctcore/auth-nestjs",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "NestJS module for @noctcore/auth: a closed-by-default session guard, CSRF middleware, decorators and trust-proxy setup.",
   "license": "MIT",
   "type": "module",
@@ -53,7 +53,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
-    "@noctcore/auth": "0.9.0"
+    "@noctcore/auth": "0.10.0"
   },
   "devDependencies": {
     "@nestjs/common": "12.5.0",
