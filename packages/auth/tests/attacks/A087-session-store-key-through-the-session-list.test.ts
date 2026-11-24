@@ -11,7 +11,9 @@
 //
 // Stopped by: flows/session-management.ts (the list shows only the public
 //   handle; revoke resolves a handle among the caller's own live sessions
-//   only and answers the same for every handle it does not find),
+//   only and answers the same for every handle it does not find; the
+//   `sessionId` revoke answers for a session it ended is the store key, for
+//   the server only, and auth-trpc's `revokedOutput` strips it),
 //   core/auth-core.ts (`sessionHandle`: an HMAC of the store key under a key
 //   derived from the server secret, so a handle cannot be computed from a
 //   leaked store key without the secret), create-auth.ts (the handle key is
@@ -93,7 +95,7 @@ describe('A087: reading a session store key through the session list', () => {
       meta: meta(),
     });
 
-    expect(revoked).toEqual({ ok: true, value: { revoked: true } });
+    expect(revoked).toEqual({ ok: true, value: { revoked: true, sessionId: t.phone.session.id } });
     expect(await t.sessionOf(t.phone.token)).toBeNull();
   });
 

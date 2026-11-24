@@ -60,6 +60,13 @@ export async function listSessions<U extends AuthUser, A>(
 }
 
 /**
+ * What `sessions.revoke` answers: the store id of the session it ended (the
+ * id `onSessionsRevoked` reports), or `revoked: false` with no id.
+ */
+export type RevokeSessionOutcome =
+  { readonly revoked: true; readonly sessionId: string } | { readonly revoked: false };
+
+/**
  * Revokes the caller's session that `handle` names. Another device's session
  * needs fresh authentication. A handle that names none of the caller's live
  * sessions (garbage, stale, or another user's) answers `{ revoked: false }`,
@@ -70,7 +77,7 @@ export async function revokeSession<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
   input: { session: StoredSession<A>; handle: string; meta: RequestMeta },
-): Promise<AuthResult<{ revoked: boolean }>> {
+): Promise<AuthResult<RevokeSessionOutcome>> {
   const userId = input.session.userId;
 
   // Another device's session is high privilege: freshness is read from the
@@ -99,7 +106,9 @@ export async function revokeSession<U extends AuthUser, A>(
     await core.notifyRevoked(userId, ids, 'revoke-one');
   }
 
-  return ok({ revoked: ids.length > 0 });
+  const [sessionId] = ids;
+
+  return ok(sessionId === undefined ? { revoked: false } : { revoked: true, sessionId });
 }
 
 /** Signs out every other device (needs fresh authentication): revokes all sessions and re-issues the caller's. */

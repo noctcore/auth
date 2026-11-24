@@ -106,6 +106,8 @@ describe.each(['fetch', 'node'] as const)('tRPC on the %s adapter', (transport) 
     expect(oversized.data?.code).toBe('BAD_REQUEST');
     await expect(phone.client.me.query()).resolves.toMatchObject({ id: env.userId });
 
+    // The procedure returns the flow's whole answer; the output schema strips
+    // its `sessionId`, the store key.
     await expect(
       laptop.client.revokeSession.mutate({ handle: other?.handle ?? '' }),
     ).resolves.toEqual({ revoked: true });

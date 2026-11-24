@@ -213,7 +213,7 @@ describe('session management', () => {
       meta: meta(),
     });
 
-    expect(revoked).toEqual({ ok: true, value: { revoked: true } });
+    expect(revoked).toEqual({ ok: true, value: { revoked: true, sessionId: t.phone.session.id } });
     expect(await t.sessionOf(t.phone.token)).toBeNull();
 
     const self = await t.auth.sessions.revoke({
@@ -222,7 +222,10 @@ describe('session management', () => {
       meta: meta(),
     });
 
-    expect(self).toEqual({ ok: true, value: { revoked: true } });
+    expect(self).toEqual({
+      ok: true,
+      value: { revoked: true, sessionId: renewed.value.session.id },
+    });
   });
 
   it('reads freshness for revoking a device from the live session, not the object passed', async () => {
@@ -380,7 +383,7 @@ describe('session management', () => {
       meta: meta(),
     });
 
-    expect(result).toEqual({ ok: true, value: { revoked: true } });
+    expect(result).toEqual({ ok: true, value: { revoked: true, sessionId: t.phone.session.id } });
     expect(heard).toEqual([{ sessionIds: [t.phone.session.id], sessionHandles: [phone?.handle] }]);
     expect(t.auth.sessions.handle(t.phone.session.id)).toBe(phone?.handle);
   });
@@ -431,5 +434,52 @@ describe('the request meta on mails to an address nobody has proven', () => {
     expect(confirm?.to).toBe('new@example.com');
     expect(verify).not.toHaveProperty('meta');
     expect(confirm).not.toHaveProperty('meta');
+  });
+});
+
+describe('sessions.revoke answer', () => {
+  it('names the ended session by the id onSessionsRevoked reports', async () => {
+    const heard: string[][] = [];
+
+    const t = await twoDevices({
+      hooks: { onSessionsRevoked: ({ sessionIds }) => void heard.push([...sessionIds]) },
+    });
+
+    const other = await t.auth.sessions.revoke({
+      session: t.laptop.session,
+      handle: t.auth.sessions.handle(t.phone.session.id),
+      meta: meta(),
+    });
+
+    const self = await t.auth.sessions.revoke({
+      session: t.laptop.session,
+      handle: t.auth.sessions.handle(t.laptop.session.id),
+      meta: meta(),
+    });
+
+    if (!other.ok || !other.value.revoked || !self.ok || !self.value.revoked)
+      throw new Error('revoke failed');
+
+    expect(heard).toEqual([[other.value.sessionId], [self.value.sessionId]]);
+
+    expect([other.value.sessionId, self.value.sessionId]).toEqual([
+      t.phone.session.id,
+      t.laptop.session.id,
+    ]);
+  });
+
+  it('answers revoked false without an id for a handle that names no session of the caller', async () => {
+    const t = await twoDevices();
+    const eve = await t.signedInUser('eve@example.com', '192.0.2.99');
+
+    for (const handle of ['nope', t.phone.session.id, t.auth.sessions.handle(eve.session.id)]) {
+      const result = await t.auth.sessions.revoke({
+        session: t.laptop.session,
+        handle,
+        meta: meta(),
+      });
+
+      expect(result).toEqual({ ok: true, value: { revoked: false } });
+    }
   });
 });

@@ -381,7 +381,8 @@ describe('session handles', () => {
 
     const revoked = await laptop.send('POST', '/api/sessions/revoke', { handle: other?.handle });
 
-    expect(revoked).toMatchObject({ status: 201, body: { revoked: true } });
+    expect(revoked).toMatchObject({ status: 201 });
+    expect(revoked.body).toEqual({ revoked: true });
     expect((await phone.send('GET', '/api/me')).status).toBe(401);
   });
 

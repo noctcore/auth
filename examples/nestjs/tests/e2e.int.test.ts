@@ -81,6 +81,25 @@ describe.skipIf(!databaseUrl || !redisUrl)('NestJS example end to end', () => {
     expect(browser.cookies.get('session')).not.toBe(before);
     expect((await browser.send('GET', '/account/me')).status).toBe(200);
 
+    // Signing out another device answers `revoked` only, never the session's store key.
+    const phone = new Browser(app);
+
+    await phone.send('GET', '/auth/session');
+    expect((await phone.send('POST', '/auth/login', { email, password })).status).toBe(201);
+
+    const both = (await browser.send('GET', '/account/sessions')).body['sessions'] as {
+      handle: string;
+      current: boolean;
+    }[];
+
+    const ended = await browser.send('POST', '/account/sessions/revoke', {
+      handle: both.find((s) => !s.current)?.handle,
+    });
+
+    expect(ended).toMatchObject({ status: 201 });
+    expect(ended.body).toEqual({ revoked: true });
+    expect((await phone.send('GET', '/account/me')).status).toBe(401);
+
     expect((await browser.send('POST', '/auth/logout')).status).toBe(201);
     expect((await browser.send('GET', '/account/me')).status).toBe(401);
   });

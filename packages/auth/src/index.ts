@@ -196,4 +196,4 @@ export type {
   EmailChangeRequested,
   RequestEmailChangeInput,
 } from './flows/email-change';
-export type { SessionSummary } from './flows/session-management';
+export type { RevokeSessionOutcome, SessionSummary } from './flows/session-management';
