@@ -24,6 +24,9 @@ import type { StoredSession } from '../../ports/stores';
 import { fail, ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
 
+/** The revocation reason of a reset under `enforcementStanding: 'at-issue'`. */
+export const TWO_FACTOR_RESET_REVOCATION = 'two-factor-reset';
+
 export interface TwoFactorStatus {
   /** A confirmed factor guards this user's logins. */
   readonly enabled: boolean;
@@ -130,6 +133,11 @@ export async function reset(
   await store.deleteFactor(userId);
   await store.replaceRecoveryCodes(userId, []);
   await store.deleteTrustedDevices(userId);
+
+  // Under `'at-issue'` a session stamped for the factor would skip the
+  // standing the user now has: end it (enforcement.ts).
+  if (factor.confirmed && runtime.settings.standingStamp !== null)
+    await core.revokeAllSessions(userId, TWO_FACTOR_RESET_REVOCATION);
 
   await core.emit(
     {

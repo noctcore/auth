@@ -32,13 +32,16 @@
  *   (enforcement.ts). With `enforcement`, `beforeSessionCreate` refuses only
  *   for a confirmed factor: a required user without one signs in, and the
  *   standing confines the session.
+ * - `sessionAttributes` (only with `enforcementStanding: 'at-issue'`): the
+ *   stamp of a session issued unrestricted, which then skips the
+ *   `sessionStanding` reads (enforcement.ts).
  * - `onSessionsRevoked`: a password change, a reset, revoke-all and the like
  *   also delete the trusted devices (they are already void by the epoch).
  *
  * Guide: Learn, "Second factors".
  */
 import { loginChallenge } from './challenge';
-import { sessionStanding } from './enforcement';
+import { sessionStanding, standingAtIssue } from './enforcement';
 import { checkProof, parseProof } from './proofs';
 import { factorAccount, limitIp, type Runtime } from './runtime';
 import { hasStepUp } from './step-up';
@@ -62,9 +65,11 @@ const KEEPS_TRUSTED_DEVICES: ReadonlySet<string> = new Set(['logout', 'revoke-on
 
 export function twoFactorHooks(
   runtime: () => Runtime,
-  options: { readonly enforced: boolean },
+  options: { readonly enforced: boolean; readonly standingStamp: string | null },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): HookInput<AuthUser, any> {
+  const { standingStamp } = options;
+
   return {
     loginChallenge: (context) => loginChallenge(runtime(), context),
     beforeSessionCreate: ({ user, via, reissueOf, beforeChallenge }) =>
@@ -74,6 +79,10 @@ export function twoFactorHooks(
     ...(options.enforced
       ? { sessionStanding: ({ session }) => sessionStanding(runtime(), session) }
       : {}),
+    // Only with `enforcementStanding: 'at-issue'`: the stamp of an unrestricted issue.
+    ...(standingStamp === null
+      ? {}
+      : { sessionAttributes: ({ user }) => standingAtIssue(runtime(), user, standingStamp) }),
     passwordResetRequirements: async ({ user }) => ({
       secondFactor: (await runtime().store.findFactor(user.id))?.confirmed === true,
     }),

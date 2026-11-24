@@ -31,7 +31,7 @@ import {
   type ConfirmEnrollmentInput,
   type EnrollInput,
 } from './enrollment';
-import { sweepUnenrolled, type SweepInput } from './enforcement';
+import { refreshStanding, sweepUnenrolled, type SweepInput } from './enforcement';
 import { twoFactorHooks } from './hooks';
 import {
   disable,
@@ -131,7 +131,10 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
 
   return definePlugin({
     id: 'twoFactor',
-    hooks: twoFactorHooks(runtime, { enforced: settings.enforcement !== null }),
+    hooks: twoFactorHooks(runtime, {
+      enforced: settings.enforcement !== null,
+      standingStamp: settings.standingStamp,
+    }),
     flows: (context) => {
       if (bound) throw new AuthConfigError('twoFactor: one plugin instance per createAuth');
 
@@ -190,6 +193,12 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
          * (reason `two-factor-required`). Call it from your scheduler.
          */
         sweepUnenrolled: (input: SweepInput) => sweepUnenrolled(r, input),
+        /**
+         * With `enforcementStanding: 'at-issue'`: ends the user's sessions after
+         * you require a factor of them or change their policy, so the next
+         * sign-in is stamped from the new answer. A no-op when read live.
+         */
+        refreshStanding: (input: { userId: string }) => refreshStanding(r, input),
         /** The name of the trusted-device cookie (`__Host-two-factor-device` when secure). */
         trustedDeviceCookieName: cookieName,
         /** Reads the trusted-device token out of a `Cookie` header. */
