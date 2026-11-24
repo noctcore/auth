@@ -120,6 +120,55 @@ describe('PrismaUserStore writeWhere', () => {
     expect(() => new PrismaUserStore({ delegate, writeWhere: { OR: [] } })).not.toThrow();
   });
 
+  it('allows the empty relation filters that narrow: some and none', async () => {
+    const { delegate, calls } = recording();
+
+    const writeWhere = {
+      memberships: { some: {} },
+      bans: { none: {} },
+      OR: [{ teams: { some: {}, none: { archived: true } } }],
+    };
+
+    const store = new PrismaUserStore({ delegate, writeWhere });
+
+    await store.setPasswordHash('u1', 'hash');
+
+    expect(whereOf(calls)).toEqual([{ AND: [{ id: 'u1', deletedAt: null }, writeWhere] }]);
+  });
+
+  it('refuses the empty relation filters that do not narrow, and every match-all it can see', () => {
+    const { delegate } = recording();
+    // Lists with an empty slot: one at the end, one at the start.
+    const hole = [{ closedAt: null }];
+    const leading: unknown[] = [];
+
+    hole.length = 2;
+    leading[1] = { closedAt: null };
+
+    for (const [writeWhere, message] of [
+      // Every related row meets an empty condition, and so does a row with none.
+      [{ memberships: { every: {} } }, 'an empty object at writeWhere.memberships.every'],
+      // A required relation always has its row; `isNot: null` says what is meant.
+      [{ org: { is: {} } }, 'an empty object at writeWhere.org.is'],
+      // `some` and `none` are relation filters, never conditions of their own.
+      [{ some: {} }, 'an empty object at writeWhere.some'],
+      [{ AND: [{ none: {} }] }, 'an empty object at writeWhere.AND[0].none'],
+      [{ NOT: { OR: [] } }, 'an empty list under NOT'],
+      [{ NOT: [{ closedAt: null, OR: [] }] }, 'an empty list under NOT'],
+      [{ closedAt: null, NOT: { AND: [{ OR: [] }] } }, 'an empty list under NOT'],
+      [{ AND: leading }, 'an empty slot in a list at writeWhere.AND[0]'],
+      [{ OR: hole }, 'an empty slot in a list at writeWhere.OR[1]'],
+    ] as const)
+      expect(() => new PrismaUserStore({ delegate, writeWhere })).toThrow(message);
+
+    // `OR: []` outside a NOT, or inside an OR under it, still only narrows.
+    for (const writeWhere of [
+      { NOT: { closedAt: { not: null } }, OR: [] },
+      { NOT: { OR: [{ OR: [] }, { closedAt: { not: null } }] } },
+    ])
+      expect(() => new PrismaUserStore({ delegate, writeWhere })).not.toThrow();
+  });
+
   it("hands every write a fresh copy, so changing one call's where changes nothing later", async () => {
     const calls: Record<string, unknown>[] = [];
 
