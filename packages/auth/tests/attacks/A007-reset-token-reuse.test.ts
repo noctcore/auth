@@ -2,8 +2,8 @@
 //
 // A reset link or ticket is replayed after use, used after it expired, raced from
 // two tabs, or a raw code is presented where only the ticket it buys is accepted.
-// Or a reset link, code or ticket outlives a password write that failed or crashed
-// halfway, and sets the password again later.
+// Or a reset link, code or ticket outlives a password write that failed, crashed,
+// was refused or was followed by a failure to end the sessions, and sets the password again later.
 //
 // Stopped by: tokens/one-time-tokens.ts (atomic single-use consume, expiry checked after the
 //   consume, purpose-bound tokens), flows/password-reset.ts, flows/password-write.ts (every
