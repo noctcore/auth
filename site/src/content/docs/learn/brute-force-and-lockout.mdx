@@ -97,7 +97,7 @@ Two limits of this are worth knowing. First, the shared device budget can be spe
 
 An app that would rather bound these doors only by their own per-user limits sets `throttle.lockout.sessionProofs: 'door'`. Then a stolen session cannot lock the owner out of sign-in by guessing passwords at these two doors, nor climb the permanent tier there, and a temporary lock does not refuse the owner's correct password; in exchange those guesses run at the doors' own rate, each door on its own key, and never lock anything. Wrong second-factor codes at a step-up are another budget: they still lock the factor and count toward the permanent tier ([A002](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A002-victim-lockout.test.ts), [Configuration](/auth/reference/configuration/#session-proofs-out-of-the-lockout)).
 
-Only the password proofs share login's budgets. A second-factor code has its own separate budget (see the two-factor plugin), and the other doors (password reset, email change, email verification) use only their own rate limits.
+Only the password proofs share login's budgets, and with `sessionProofs: 'door'` not even those: then each door's own limit is their only budget. A second-factor code has its own separate budget (see the two-factor plugin), and the other doors (password reset, email change, email verification) use only their own rate limits.
 
 ### Your own proofs
 
