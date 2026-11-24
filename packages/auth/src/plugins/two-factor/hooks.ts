@@ -14,6 +14,9 @@
  * - `beforePasswordReset`: a reset of an account with a factor needs a code or
  *   a recovery code before the password is written, so a stolen mailbox alone
  *   cannot take the account. The factor survives the reset.
+ * - `passwordResetRequirements`: says so ahead of time, for a reset page that
+ *   checks its link on load (`inspectPasswordReset`), so it can show the code
+ *   field before the user types a new password.
  * - `beforePasswordChange`: the current password is not enough with a factor
  *   on; it needs a step-up in this session or a code with the request.
  * - `beforeEmailChange`: the same for an email change request, on top of the
@@ -63,6 +66,9 @@ export function twoFactorHooks(
     ...(options.enforced
       ? { sessionStanding: ({ session }) => sessionStanding(runtime(), session) }
       : {}),
+    passwordResetRequirements: async ({ user }) => ({
+      secondFactor: (await runtime().store.findFactor(user.id))?.confirmed === true,
+    }),
     beforePasswordReset: ({ user, secondFactor, meta }) =>
       demandProof(runtime(), user, secondFactor, meta, 'reset'),
     beforePasswordChange: ({ user, session, secondFactor, meta }) =>

@@ -36,6 +36,10 @@ export type AuthEventType =
   | 'password.reset_request_ignored'
   /** A reset link or code was stored for the account, and its mail is handed over next; `data.kind` is `link` or `code`. */
   | 'password.reset_issued'
+  /** A reset page checked a live link or ticket without spending it (`inspectPasswordReset`). */
+  | 'password.reset_inspected'
+  /** The link or ticket a reset page checked is unknown, expired or spent; nothing was spent. */
+  | 'password.reset_inspect_failed'
   | 'password.reset_code_verified'
   | 'password.reset_code_failed'
   | 'password.reset'

@@ -38,6 +38,8 @@ export type TokenRedemption =
       readonly status: 'valid';
       readonly userId: string;
       readonly data: Readonly<Record<string, string>>;
+      /** When the token stops working, in ms since the epoch. */
+      readonly expiresAt: number;
     }
   | {
       readonly status: 'expired' | 'consumed' | 'exhausted' | 'mismatch';
@@ -113,7 +115,12 @@ export class OneTimeTokens {
     if (consumed.expiresAt <= this.clock.now())
       return { status: 'expired', namedUserId: consumed.userId };
 
-    return { status: 'valid', userId: consumed.userId, data: consumed.data };
+    return {
+      status: 'valid',
+      userId: consumed.userId,
+      data: consumed.data,
+      expiresAt: consumed.expiresAt,
+    };
   }
 
   async issueCode(
@@ -200,7 +207,7 @@ export class OneTimeTokens {
 
     if (!consumed) return { status: 'consumed', namedUserId: userId };
 
-    return { status: 'valid', userId, data: consumed.data };
+    return { status: 'valid', userId, data: consumed.data, expiresAt: consumed.expiresAt };
   }
 
   /**
