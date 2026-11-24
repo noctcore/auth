@@ -1,11 +1,12 @@
 // What the flows do when a dependency fails: an audit sink, a mailer, a hook
 // or a captcha provider that throws or cannot answer, a store write that is
 // refused, and the startup checks on a config that is missing a piece.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createAuth, type AuthConfig, type AuthPlugin } from '../../src';
 import type { Logger } from '../../src/ports/logger';
 import type { AuthUser } from '../../src/ports/stores';
+import type { NormalizedEmail } from '../../src/shared/email';
 import { manualClock, memoryStores, plainHasher, recordingMailer } from '../../src/testing';
 import { meta, NEW_PASSWORD, PASSWORD, SECRET, settled, setup } from './setup';
 
@@ -311,5 +312,70 @@ describe('createAuth startup checks', () => {
 
     expect(!short.ok && short.code).toBe('weak_password');
     expect(changed.ok).toBe(true);
+  });
+});
+
+describe('a store that fails after a reset wrote the password', () => {
+  /** The step and error of each `Step after a password write failed` line. */
+  const stepFailures = (lines: ReturnType<typeof recordingLogger>['lines']) =>
+    lines
+      .filter((l) => l.level === 'error' && l.message === 'Step after a password write failed')
+      .map((l) => ({ step: l.context?.['step'], error: l.context?.['error'] }));
+
+  async function resetLink(app: ReturnType<typeof setup>) {
+    await app.auth.requestPasswordReset({ email: EMAIL, meta: meta() });
+    await settled();
+
+    return (app.mailer.last('password-reset')?.url ?? '').split('#')[1] ?? '';
+  }
+
+  const hashOf = async (app: ReturnType<typeof setup>) =>
+    (await app.stores.users.findCredentialByEmail(EMAIL as NormalizedEmail))?.passwordHash;
+
+  it('answers ok, logs the lock it could not lift and keeps the lock', async () => {
+    const { logger, lines } = recordingLogger();
+    const app = setup({ logger });
+
+    await app.signedInUser(EMAIL);
+
+    for (let i = 0; i < 20; i++)
+      await app.auth.login({ email: EMAIL, password: 'wrong guess', meta: meta(`192.0.2.${i}`) });
+
+    expect((await app.auth.lockout.inspect({ email: EMAIL })).locked).toBe(true);
+
+    const token = await resetLink(app);
+    const before = await hashOf(app);
+
+    vi.spyOn(app.stores.counters, 'reset').mockRejectedValue(new Error('redis down'));
+
+    const reset = await app.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() });
+
+    vi.restoreAllMocks();
+
+    expect(reset.ok).toBe(true);
+    expect(await hashOf(app)).not.toBe(before);
+
+    expect(stepFailures(lines)).toContainEqual({ step: 'lift lockout', error: 'redis down' });
+
+    // Fail closed: the lock it could not lift is still there.
+    expect((await app.auth.lockout.inspect({ email: EMAIL })).locked).toBe(true);
+  });
+
+  it('answers ok and logs an address it could not mark verified', async () => {
+    const { logger, lines } = recordingLogger();
+    const app = setup({ logger });
+
+    await app.auth.register({ email: EMAIL, password: PASSWORD, meta: meta() });
+    await settled();
+
+    const token = await resetLink(app);
+
+    vi.spyOn(app.stores.users, 'markEmailVerified').mockRejectedValueOnce(new Error('db down'));
+
+    const reset = await app.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() });
+
+    expect(reset.ok).toBe(true);
+
+    expect(stepFailures(lines)).toContainEqual({ step: 'mark email verified', error: 'db down' });
   });
 });
