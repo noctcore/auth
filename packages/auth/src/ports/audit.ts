@@ -34,6 +34,8 @@ export type AuthEventType =
   | 'email.revert_lockout_cleared'
   | 'password.reset_requested'
   | 'password.reset_request_ignored'
+  /** A reset link or code was stored for the account, and its mail is handed over next; `data.kind` is `link` or `code`. */
+  | 'password.reset_issued'
   | 'password.reset_code_verified'
   | 'password.reset_code_failed'
   | 'password.reset'

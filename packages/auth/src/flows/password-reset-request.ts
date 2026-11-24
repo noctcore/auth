@@ -139,6 +139,8 @@ async function mailResetCode<U extends AuthUser, A>(
     settings.reset.digits,
   );
 
+  await issued(core, user.id, 'code', meta);
+
   core.mail({
     type: 'password-reset-code',
     to: user.email,
@@ -165,6 +167,8 @@ async function mailResetLink<U extends AuthUser, A>(
     settings.reset.ttlMs,
   );
 
+  await issued(core, user.id, 'link', meta);
+
   core.mail({
     type: 'password-reset',
     to: user.email,
@@ -175,3 +179,16 @@ async function mailResetLink<U extends AuthUser, A>(
   });
 }
 
+/**
+ * The audit row for a reset that was sent: the link or code is stored, the
+ * mail is about to be handed over. Awaited first, so the row exists before the
+ * mail can arrive (a mail dropped or lost after the hand-over still has it).
+ */
+async function issued<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  userId: string,
+  kind: 'link' | 'code',
+  meta: RequestMeta,
+): Promise<void> {
+  await core.emit({ type: 'password.reset_issued', userId, data: { kind } }, meta);
+}
