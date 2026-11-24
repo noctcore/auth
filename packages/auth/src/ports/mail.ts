@@ -154,12 +154,16 @@ export type AuthMailEvent =
       readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
-  /** The two-factor plugin: the second factor was turned off. */
+  /**
+   * The two-factor plugin: the second factor was turned off. `reset` is set
+   * when an admin reset it (`twoFactor.reset`), not the owner.
+   */
   | {
       readonly type: 'two-factor-disabled';
       readonly to: string;
       readonly userId: string;
       readonly at: Date;
+      readonly reset?: true;
       readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }

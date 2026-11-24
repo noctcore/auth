@@ -33,7 +33,13 @@ import {
 } from './enrollment';
 import { sweepUnenrolled, type SweepInput } from './enforcement';
 import { twoFactorHooks } from './hooks';
-import { disable, regenerateRecoveryCodes, revokeTrustedDevices, status } from './management';
+import {
+  disable,
+  regenerateRecoveryCodes,
+  reset,
+  revokeTrustedDevices,
+  status,
+} from './management';
 import { resolveSettings, type TwoFactorOptions, type TwoFactorSettings } from './options';
 import type { SecondFactorProof } from './proofs';
 import { createRuntime, type Context, type Runtime } from './runtime';
@@ -152,6 +158,11 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
          * session; never issues or touches one. The same budget as the challenge.
          */
         verifyProof: (input: VerifyProofInput) => verifyProof(r, input),
+        /**
+         * An admin's reset of another user's factor, codes and trusted devices.
+         * Call it only after your own checks; revoking the sessions stays yours.
+         */
+        reset: (input: { userId: string; actor?: string; meta: RequestMeta }) => reset(r, input),
         /** Finishes a challenged login with a code, a recovery code or a trusted device. */
         verifyChallenge: (input: VerifyChallengeInput) => verifyChallenge<A>(r, input),
         /** Proves the second factor in this session, for the step-up window. */

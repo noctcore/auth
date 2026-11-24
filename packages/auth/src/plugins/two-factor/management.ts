@@ -7,8 +7,10 @@
  * done with the password alone, so a stolen password (or a reset done from a
  * stolen mailbox) cannot be turned into an account without a second factor.
  * A factor the app requires cannot be turned off at all. There is no "I lost
- * everything" path in the library: the recovery codes are the way back, and
- * past them the app's own support process decides.
+ * everything" path for the user: the recovery codes are the way back, and
+ * past them the app's own support process decides, and ends with `reset`, an
+ * admin action that never runs on the user's word alone: your code calls it
+ * after its own checks. It is audited and mailed like a disable.
  *
  * Guide: Learn, "Second factors"; Build, "Two-factor".
  */
@@ -104,6 +106,53 @@ export async function disable<A>(
   });
 
   return ok({ disabled: true });
+}
+
+/**
+ * An admin's reset of another user's factor (pending or confirmed): deletes
+ * it, the recovery codes and every trusted device, so the next login gets no
+ * challenge (or an enrollment one, when a factor is required). The user's
+ * step-up proofs end with their sessions; revoke those
+ * (`context.revokeAllSessions`) if the reset is for a takeover. Every reset
+ * is audited (`two_factor.reset`, `data.actor` when named); a confirmed
+ * factor's owner is mailed (`two-factor-disabled` with `reset: true`).
+ */
+export async function reset(
+  runtime: Runtime,
+  input: { userId: string; actor?: string; meta: RequestMeta },
+): Promise<AuthResult<{ reset: boolean }>> {
+  const { core, store } = runtime;
+  const { userId, meta } = input;
+  const factor = await store.findFactor(userId);
+
+  if (!factor) return ok({ reset: false });
+
+  await store.deleteFactor(userId);
+  await store.replaceRecoveryCodes(userId, []);
+  await store.deleteTrustedDevices(userId);
+
+  await core.emit(
+    {
+      type: 'two_factor.reset',
+      userId,
+      data: { confirmed: factor.confirmed, ...(input.actor ? { actor: input.actor } : {}) },
+    },
+    meta,
+  );
+
+  const user = factor.confirmed ? await core.users.findById(userId) : null;
+
+  if (user)
+    core.mail({
+      type: 'two-factor-disabled',
+      to: user.email,
+      userId,
+      at: new Date(core.clock.now()),
+      reset: true,
+      ...mailMeta(meta),
+    });
+
+  return ok({ reset: true });
 }
 
 /** A new set of recovery codes (every old one dies): needs a step-up. Show them once. */

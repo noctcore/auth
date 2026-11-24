@@ -195,3 +195,127 @@ describe('verifyProof: a second factor for a user without a session', () => {
     });
   });
 });
+
+describe("reset: an admin resets another user's factor", () => {
+  it('removes the factor, the codes and the devices, audits and mails it', async () => {
+    const t = twoFactorApp();
+    const { userId, secret } = await t.enrolled();
+    const { challenge } = await t.challenged();
+
+    const trusted = await t.auth.twoFactor.verifyChallenge({
+      challenge,
+      proof: { kind: 'totp', code: t.codeFor(secret) },
+      rememberDevice: true,
+      meta: meta(),
+    });
+
+    if (!trusted.ok) throw new Error(trusted.reason);
+
+    const session = trusted.value.session.session;
+
+    expect(await t.auth.twoFactor.reset({ userId, actor: 'admin-7', meta: meta() })).toEqual({
+      ok: true,
+      value: { reset: true },
+    });
+
+    expect(t.audit.events).toContainEqual(
+      expect.objectContaining({
+        type: 'two_factor.reset',
+        userId,
+        data: { confirmed: true, actor: 'admin-7' },
+      }),
+    );
+
+    expect(t.mailer.last('two-factor-disabled')).toMatchObject({ userId, reset: true });
+
+    const login = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    expect(login.ok && login.value.kind).toBe('session');
+
+    expect(await t.auth.twoFactor.status(session)).toMatchObject({
+      ok: true,
+      value: { enabled: false, pending: false, recoveryCodesRemaining: 0 },
+    });
+
+    expect(await t.store.findTrustedDevice(userId, 'x')).toBeNull();
+    expect(await t.store.countRecoveryCodes(userId)).toBe(0);
+  });
+
+  it('answers reset false and mails nothing for a user with nothing to reset', async () => {
+    const t = twoFactorApp();
+    const { session } = await t.signedIn();
+
+    expect(await t.auth.twoFactor.reset({ userId: session.userId, meta: meta() })).toEqual({
+      ok: true,
+      value: { reset: false },
+    });
+
+    expect(t.mailer.last('two-factor-disabled')).toBeUndefined();
+    expect(t.audit.events.some((e) => e.type === 'two_factor.reset')).toBe(false);
+  });
+
+  it('resets a pending factor without mailing the owner', async () => {
+    const t = twoFactorApp();
+    const { session } = await t.signedIn();
+    const started = await t.auth.twoFactor.enroll({ session, meta: meta() });
+
+    if (!started.ok) throw new Error(started.reason);
+
+    expect(await t.auth.twoFactor.reset({ userId: session.userId, meta: meta() })).toEqual({
+      ok: true,
+      value: { reset: true },
+    });
+
+    expect(t.audit.events).toContainEqual(
+      expect.objectContaining({
+        type: 'two_factor.reset',
+        userId: session.userId,
+        data: { confirmed: false },
+      }),
+    );
+
+    expect(await t.store.findFactor(session.userId)).toBeNull();
+    expect(t.mailer.last('two-factor-disabled')).toBeUndefined();
+  });
+
+  it('voids a trusted device from before the reset at a later challenge', async () => {
+    const t = twoFactorApp();
+    const { userId, secret } = await t.enrolled();
+    const { challenge } = await t.challenged();
+
+    const trusted = await t.auth.twoFactor.verifyChallenge({
+      challenge,
+      proof: { kind: 'totp', code: t.codeFor(secret) },
+      rememberDevice: true,
+      meta: meta(),
+    });
+
+    if (!trusted.ok || !trusted.value.trustedDevice) throw new Error('expected a device');
+
+    await t.auth.twoFactor.reset({ userId, meta: meta() });
+
+    // Enrolled again from the session it had: the old device faces the new factor.
+    const session = trusted.value.session.session;
+    const started = await t.auth.twoFactor.enroll({ session, meta: meta() });
+
+    if (!started.ok) throw new Error(started.reason);
+
+    const confirmed = await t.auth.twoFactor.confirmEnrollment({
+      session,
+      code: t.codeFor(started.value.secret),
+      meta: meta(),
+    });
+
+    if (!confirmed.ok) throw new Error(confirmed.reason);
+
+    const next = await t.challenged();
+
+    const done = await t.auth.twoFactor.verifyChallenge({
+      challenge: next.challenge,
+      proof: { kind: 'trusted-device', token: trusted.value.trustedDevice.token },
+      meta: meta(),
+    });
+
+    expect(done).toMatchObject({ ok: false, code: 'invalid_second_factor' });
+  });
+});
