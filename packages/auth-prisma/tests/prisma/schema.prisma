@@ -14,6 +14,8 @@ model User {
   emailVerified Boolean   @default(false)
   passwordHash  String?
   deletedAt     DateTime?
+  // Only for the tests of `writeWhere`: an account the app closed.
+  closedAt      DateTime?
   displayName   String    @default("")
   profile       Profile?
 }
