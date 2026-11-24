@@ -66,7 +66,7 @@ The reasons:
 | Topic                                          | Auth guide                     | Package                                                                                |
 | ---------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------- |
 | Sessions after a password change               | ask the user                   | always revoke all, re-issue the current one, mail the owner                            |
-| Granular session revocation                    | requires identity verification | revoking another device, or every other device, requires fresh authentication (10 min) |
+| Granular session revocation                    | requires identity verification | revoking another device, or every other device, requires fresh authentication (10 min) by default (`session.requireFreshAuth`) |
 | Action-specific sessions for sensitive actions | recommended                    | fresh-auth window on the session plus `reauthenticate`; second factors through hooks   |
 | Session token                                  | id plus separate hashed secret | random token; the store key is its SHA-256                                             |
 | Activity refresh                               | e.g. hourly or daily           | at most once a minute, update-only-if-exists                                           |
