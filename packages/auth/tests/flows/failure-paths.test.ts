@@ -115,6 +115,42 @@ describe('a failing audit sink, mailer or hook', () => {
   });
 });
 
+describe('a metrics port that throws', () => {
+  it('logs it and still finishes a password change, the mail included', async () => {
+    const { logger, lines } = recordingLogger();
+
+    const app = setup({
+      logger,
+      metrics: {
+        count: () => {
+          throw new Error('statsd down');
+        },
+      },
+    });
+
+    const { session } = await app.signedInUser(EMAIL);
+
+    const changed = await app.auth.changePassword({
+      session,
+      currentPassword: PASSWORD,
+      newPassword: NEW_PASSWORD,
+      meta: meta(),
+    });
+
+    await settled();
+
+    expect(changed.ok).toBe(true);
+    expect(app.mailer.last('password-changed')?.to).toBe(EMAIL);
+    expect(app.audit.types()).toContain('password.changed');
+
+    expect(lines).toContainEqual({
+      level: 'error',
+      message: 'Metrics port failed',
+      context: { name: 'auth_event', error: 'statsd down' },
+    });
+  });
+});
+
 describe('a captcha provider that cannot answer', () => {
   it('answers captcha_unavailable, never a pass', async () => {
     const { auth } = setup({ captcha: { verify: async () => 'unavailable' } });

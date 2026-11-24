@@ -37,6 +37,7 @@ import {
   revokeOtherSessions,
   revokeSession,
 } from './flows/session-management';
+import { guardedMetrics } from './core/guarded-metrics';
 import { requireFreshAuth, validateRequest } from './flows/session-validation';
 import {
   deviceCookieName,
@@ -208,7 +209,9 @@ export function createAuth<
   const clock = config.clock ?? systemClock;
   const random = config.random ?? cryptoRandom;
   const logger = config.logger ?? silentLogger;
-  const metrics = config.metrics ?? noopMetrics;
+  const appMetrics = config.metrics ?? noopMetrics;
+  // A port that throws is logged, never thrown into a flow (guarded-metrics.ts).
+  const metrics = guardedMetrics(appMetrics, logger);
   const background = new BackgroundTasks(logger, metrics, config.background);
 
   const emails = resolveEmailNormalizer(config.email?.normalize, (message, details) =>
