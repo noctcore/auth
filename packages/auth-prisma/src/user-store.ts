@@ -4,17 +4,17 @@
  * An app's own `writeWhere` goes in the same `where`, so an account the app
  * closed between a hook's check and the write still refuses the write.
  */
-import {
-  AuthConfigError,
-  type AuthUser,
-  type EmailChangeResult,
-  type Logger,
-  type NormalizedEmail,
-  type UserStore,
-  type WithPasswordHash,
+import type {
+  AuthUser,
+  EmailChangeResult,
+  Logger,
+  NormalizedEmail,
+  UserStore,
+  WithPasswordHash,
 } from '@noctcore/auth';
 import type { PrismaUserDelegate } from './delegates';
 import { isValidationError, P2002, prismaCode, withoutPrismaMessage } from './prisma-errors';
+import { copyWriteWhere } from './write-guard';
 
 /** Column names on your user model. */
 export interface UserFields {
@@ -59,8 +59,11 @@ export interface PrismaUserStoreOptions<U extends AuthUser> {
    * account keeps its old hash. Combined with the store's own conditions
    * through `AND`, so it can narrow the write but never widen it.
    *
-   * A column name Prisma does not know makes the first guarded write throw,
-   * with Prisma's message (which prints the new hash) left out. Default none.
+   * Checked and copied when the store is built: it must be a plain, non-empty
+   * object with no `undefined` anywhere inside (Prisma reads `undefined` as no
+   * filter, so the guard would guard nothing). A column name Prisma does not
+   * know is not caught there: the first guarded write throws, with Prisma's
+   * message (which prints the new hash) left out. Default none.
    */
   readonly writeWhere?: Readonly<Record<string, unknown>>;
 }
@@ -75,17 +78,13 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
   /** False once Prisma refused the bulk insert (SQLite, nested `createData`). */
   private bulkInsert = true;
   private readonly selectUser: Record<string, true>;
+  /** The app's `writeWhere`, checked and copied at construction. */
+  private readonly writeWhere: Readonly<Record<string, unknown>> | undefined;
 
   constructor(private readonly options: PrismaUserStoreOptions<U>) {
     const fields = options.fields ?? {};
-    const { writeWhere } = options;
 
-    // A mistyped guard would only fail at the first write, or not at all.
-    if (
-      writeWhere !== undefined &&
-      (typeof writeWhere !== 'object' || writeWhere === null || Array.isArray(writeWhere))
-    )
-      throw new AuthConfigError('PrismaUserStore writeWhere must be a Prisma where object');
+    this.writeWhere = copyWriteWhere(options.writeWhere);
 
     this.f = {
       id: fields.id ?? 'id',
@@ -112,9 +111,8 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
   /** `live`, narrowed by the app's `writeWhere` for a credential write. */
   private writable(where: Record<string, unknown>): Record<string, unknown> {
     const live = this.live(where);
-    const { writeWhere } = this.options;
 
-    return writeWhere ? { AND: [live, writeWhere] } : live;
+    return this.writeWhere ? { AND: [live, this.writeWhere] } : live;
   }
 
   private toUser(row: UserRow): U {
