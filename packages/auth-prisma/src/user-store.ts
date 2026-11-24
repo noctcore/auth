@@ -198,7 +198,7 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
 
         return row ? this.toUser(row) : null;
       } catch (error) {
-        if (!isValidationError(error)) throw error;
+        if (!isValidationError(error)) throw withoutPrismaMessage(error, 'insert');
 
         this.bulkInsert = false;
 
@@ -220,7 +220,7 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     } catch (error) {
       if (prismaCode(error) === P2002) return null;
 
-      throw error;
+      throw withoutPrismaMessage(error, 'insert');
     }
   }
 

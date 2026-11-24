@@ -29,9 +29,10 @@ function isPrismaClientError(error: unknown): boolean {
 }
 
 /**
- * A Prisma client error from a credential write, rethrown without Prisma's
- * message. That message prints the whole call, the new password hash in
- * `data` included, and the core logs the message of a failed rehash. The
+ * A Prisma client error from a write that carries a password hash (a
+ * credential write, a sign-up's insert), rethrown without Prisma's message.
+ * That message prints the whole call, the hash in `data` included, and the
+ * core logs the message of a failed rehash. The
  * Prisma code, when there is one, is kept. Anything else (an outage) is
  * returned as it is.
  */
@@ -42,7 +43,7 @@ export function withoutPrismaMessage(error: unknown, write: string): unknown {
 
   return Object.assign(
     new Error(
-      `Prisma user store: Prisma refused the ${write} write${code ? ` (${code})` : ''}; check writeWhere and fields against your schema`,
+      `Prisma user store: Prisma refused the ${write} write${code ? ` (${code})` : ''}; check writeWhere, fields and createData against your schema`,
     ),
     { name: 'PrismaUserStoreError' },
     code ? { code } : {},
