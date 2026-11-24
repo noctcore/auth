@@ -134,7 +134,7 @@ Source: `password/policy.ts`, `password/breach.ts`, `create-auth.ts`. Why these 
 
 ## Session
 
-The `session` key takes the session options and two more keys, `cookie` and `freshAuthAge`. Source: `session/session-types.ts`, `session/session-manager.ts`, `flows/resolve-settings.ts`. Why these defaults: [Sessions and expiry](/auth/learn/sessions-and-expiry/).
+The `session` key takes the session options and three more keys, `cookie`, `freshAuthAge` and `requireFreshAuth`. Source: `session/session-types.ts`, `session/session-manager.ts`, `flows/resolve-settings.ts`. Why these defaults: [Sessions and expiry](/auth/learn/sessions-and-expiry/).
 
 <ConfigTable rows={session} />
 
@@ -158,11 +158,23 @@ The oldest sessions beyond `session.maxPerUser` are evicted after the new one is
 
 ### Fresh authentication
 
-`session.freshAuthAge` is how recent a credential proof must be to revoke another session or every other session, so a stolen session cannot sign the owner out.
+`session.freshAuthAge` is how recent a credential proof must be at the doors that ask for one: revoking another session or every other session (so a stolen session cannot sign the owner out), asking for an email change, and the two-factor plugin's enrollment, management and step-up.
 
 - The library's own doors (revoking devices, second-factor enrollment, step-up) read it from the live session in the store.
 - Your own routes can ask for it with `auth.requireFreshAuth(session)`, which checks the object you pass, so pass the session `validateRequest` just returned.
 - Plugins have `context.requireFreshLiveSession(session)`, which re-reads it.
+
+`session.requireFreshAuth` turns the check off at one or both session management doors, for an app where "sign out that device" and "sign out everywhere else" are plain self-service actions behind a live session:
+
+```ts
+session: { requireFreshAuth: { revokeSession: false, revokeOtherSessions: false } }
+```
+
+- `revokeSession: false`: `sessions.revoke` ends another device's session without a recent proof.
+- `revokeOtherSessions: false`: `sessions.revokeOthers` signs out every other device without one. The re-issued session keeps the old proof time, so it is no fresher than the one it replaces.
+- Both default to `true`. With `false` the door still needs a live session of the same user and answers `session_expired` otherwise; only the age check is skipped.
+- `freshAuthAge` and every other door (the email change, two-factor enrollment and management, step-up, your own `requireFreshAuth` calls) are unchanged. Raising `freshAuthAge` instead would turn the check off at all of them.
+- The trade: whoever holds a stolen session can then sign the owner's other devices out without knowing the password. It gains no access by that, and the owner who spots a strange device can end it at once.
 
 ### Session cookie
 
@@ -481,6 +493,7 @@ Source: `auth/src/http/csrf-adapter.ts`. Background: [CSRF](/auth/learn/csrf/).
 - `throttle.lockout.deviceMaxAge`, or the two-factor plugin's `trustedDevices.ttl`, plus a minute of clock skew is longer than the session store's `epochTtlMs`, or the store declares `epochTtlMs` or `maxSessionTtlMs` as anything but a positive number;
 - `email.normalize` is an unknown name, or a custom normaliser fails its startup test;
 - `registration.revealExisting`, `registration.autoLogin` or `passwordReset.markEmailVerified` is not `true` or `false`;
+- `session.requireFreshAuth` is not an object (`false` would otherwise read as "nothing set" and keep both checks on), or `revokeSession` or `revokeOtherSessions` under it is not `true` or `false`;
 - `registration.autoLogin` is set without `revealExisting`;
 - `emailVerification.kind`, `passwordReset.kind` or `emailChange.kind` is not `'code'` or `'link'` (a typo such as `'Link'` used to read as the other kind);
 - a `urls` entry or `passwordReset.enqueue` is not a function, or link verification, link reset or link email change is chosen without its `urls` function;
