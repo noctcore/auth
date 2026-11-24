@@ -437,6 +437,38 @@ describe('a store that fails after a reset wrote the password', () => {
     }
   });
 
+  it('logs a close that fails after a write that threw, and still throws the write error', async () => {
+    const { logger, lines } = recordingLogger();
+    const app = setup({ logger });
+    const laptop = await app.signedInUser(EMAIL);
+    const write = app.stores.users.setPasswordHash.bind(app.stores.users);
+
+    vi.spyOn(app.stores.users, 'setPasswordHash').mockImplementationOnce(async (...args) => {
+      await write(...args);
+
+      throw new Error('connection reset');
+    });
+
+    vi.spyOn(app.stores.sessions, 'bumpEpoch').mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(
+      app.auth.changePassword({
+        session: laptop.session,
+        currentPassword: PASSWORD,
+        newPassword: NEW_PASSWORD,
+        meta: meta(),
+      }),
+    ).rejects.toThrow('connection reset');
+
+    vi.restoreAllMocks();
+
+    expect(lines).toContainEqual({
+      level: 'error',
+      message: 'Closing after a password write that threw failed',
+      context: { userId: laptop.session.userId, error: 'redis down' },
+    });
+  });
+
   it('ends every session when the write commits and still throws, in a reset and in a change', async () => {
     for (const flow of ['reset', 'change'] as const) {
       const app = setup();
