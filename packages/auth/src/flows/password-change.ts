@@ -115,7 +115,20 @@ export async function changePassword<U extends AuthUser, A>(
   }
 
   // Every reset link and ticket dies before the write (password-write.ts).
-  const written = await writePasswordHash(core, user.id, hashed.value);
+  let written: boolean;
+
+  try {
+    written = await writePasswordHash(core, user.id, hashed.value, 'password-change');
+  } catch (error) {
+    // The password may or may not have changed (a write can commit and still
+    // throw; every session, this one included, was ended in case it did).
+    await core.emit(
+      { type: 'password.change_failed', userId: user.id, reason: 'write_failed' },
+      meta,
+    );
+
+    throw error;
+  }
 
   if (!written) return fail('session_expired', 'user_missing');
 

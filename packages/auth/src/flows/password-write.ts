@@ -28,15 +28,32 @@ import type { RevocationReason } from '../core/hooks';
 import type { AuthUser } from '../ports/stores';
 import { describeError } from '../shared/describe-error';
 
-/** Voids every password purpose, then writes the hash. False when the store refused the write. */
+/**
+ * Voids every password purpose, then writes the hash. False when the store
+ * refused the write.
+ *
+ * A write that throws may still have committed (the connection dropped after
+ * the commit), so the password may have changed. The sessions are then ended
+ * as after any write (`closeAfterWrite`, which never throws) before the error
+ * is rethrown: ending them when the write did not land costs a sign-in, while
+ * keeping them when it did would keep an intruder in. A sweep that throws
+ * before the write leaves nothing written, and is rethrown as it is.
+ */
 export async function writePasswordHash<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   userId: string,
   hash: string,
+  reason: RevocationReason,
 ): Promise<boolean> {
   await core.tokens.revokeAll(userId, PASSWORD_PURPOSES);
 
-  return core.users.setPasswordHash(userId, hash);
+  try {
+    return await core.users.setPasswordHash(userId, hash);
+  } catch (error) {
+    await closeAfterWrite(core, userId, reason);
+
+    throw error;
+  }
 }
 
 /** What closing after a write left to rethrow: nothing, or its first failure. */

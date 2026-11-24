@@ -401,6 +401,59 @@ describe('a store that fails after a reset wrote the password', () => {
     }
   });
 
+  it('ends every session when the write commits and still throws, in a reset and in a change', async () => {
+    for (const flow of ['reset', 'change'] as const) {
+      const app = setup();
+      const laptop = await app.signedInUser(EMAIL);
+      const phone = await app.signedInUser(EMAIL, '198.51.100.2');
+      const before = await hashOf(app);
+      const write = app.stores.users.setPasswordHash.bind(app.stores.users);
+
+      // The connection drops after the commit: the hash is saved, the call throws.
+      const commitThenThrow = async (...args: Parameters<typeof write>) => {
+        await write(...args);
+
+        throw new Error('connection reset');
+      };
+
+      const run =
+        flow === 'reset'
+          ? async () => {
+              const token = await resetLink(app);
+
+              vi.spyOn(app.stores.users, 'setPasswordHash').mockImplementationOnce(commitThenThrow);
+
+              return app.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() });
+            }
+          : () => {
+              vi.spyOn(app.stores.users, 'setPasswordHash').mockImplementationOnce(commitThenThrow);
+
+              return app.auth.changePassword({
+                session: laptop.session,
+                currentPassword: PASSWORD,
+                newPassword: NEW_PASSWORD,
+                meta: meta(),
+              });
+            };
+
+      await expect(run()).rejects.toThrow('connection reset');
+      vi.restoreAllMocks();
+
+      // The password did change, so no session from before it may live on.
+      expect(await hashOf(app)).not.toBe(before);
+      expect(await app.sessionOf(laptop.token)).toBeNull();
+      expect(await app.sessionOf(phone.token)).toBeNull();
+
+      const type = flow === 'reset' ? 'password.reset_failed' : 'password.change_failed';
+
+      expect(app.audit.events.filter((e) => e.type === type).map((e) => e.reason)).toEqual([
+        'write_failed',
+      ]);
+
+      expect(app.audit.types()).toContain('sessions.revoked');
+    }
+  });
+
   it('answers ok, logs the lock it could not lift and keeps the lock', async () => {
     const { logger, lines } = recordingLogger();
     const app = setup({ logger });
