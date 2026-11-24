@@ -165,7 +165,6 @@ export async function requestEmailChange<U extends AuthUser, A>(
       userId: user.id,
       ...issued.secret,
       expiresAt: new Date(issued.expiresAt),
-      ...mailMeta(meta),
     });
   }
 
