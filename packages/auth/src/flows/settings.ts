@@ -63,6 +63,11 @@ export interface FlowSettings {
     readonly revertEmailChange: ((token: string) => string) | undefined;
   };
   readonly freshAuthAgeMs: number;
+  /** Which session management doors check `freshAuthAgeMs`. */
+  readonly requireFreshAuth: {
+    readonly revokeSession: boolean;
+    readonly revokeOtherSessions: boolean;
+  };
 }
 
 /** The user without its hash: what hooks and callers are given. */

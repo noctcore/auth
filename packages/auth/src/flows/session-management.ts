@@ -4,8 +4,10 @@
  *
  * Session management is a high-privilege action (the auth guide's advice):
  * revoking another device's session, or every other session, needs a fresh
- * credential proof, so a stolen session cannot keep signing the owner out.
- * Signing out of the current device, or everywhere including it, needs none.
+ * credential proof by default, so a stolen session cannot keep signing the
+ * owner out. An app may turn either check off (`session.requireFreshAuth`);
+ * the door then still needs a live session of the same user. Signing out of
+ * the current device, or everywhere including it, needs none.
  * Signing out of other devices or everywhere also voids a pending email change.
  *
  * A client only ever sees a session's public handle (`AuthCore.sessionHandle`),
@@ -68,10 +70,11 @@ export type RevokeSessionOutcome =
 
 /**
  * Revokes the caller's session that `handle` names. Another device's session
- * needs fresh authentication. A handle that names none of the caller's live
- * sessions (garbage, stale, or another user's) answers `{ revoked: false }`,
- * the same as a session that is already gone, so revoke cannot be used to
- * learn whether a handle belongs to anyone.
+ * needs fresh authentication unless `session.requireFreshAuth.revokeSession`
+ * is false. A handle that names none of the caller's live sessions (garbage,
+ * stale, or another user's) answers `{ revoked: false }`, the same as a
+ * session that is already gone, so revoke cannot be used to learn whether a
+ * handle belongs to anyone.
  */
 export async function revokeSession<U extends AuthUser, A>(
   core: AuthCore<U, A>,
@@ -80,14 +83,16 @@ export async function revokeSession<U extends AuthUser, A>(
 ): Promise<AuthResult<RevokeSessionOutcome>> {
   const userId = input.session.userId;
 
-  // Another device's session is high privilege: freshness is read from the
-  // live copy of the caller's session, not from the object passed in. The
-  // check comes before any lookup, so a stale session gets the same refusal
-  // for every handle that is not its own.
+  // Another device's session is high privilege: liveness and freshness are
+  // read from the live copy of the caller's session, not from the object
+  // passed in. The check comes before any lookup, so a refused session gets
+  // the same refusal for every handle that is not its own.
   if (!core.matchesSessionHandle(input.session.id, input.handle)) {
-    const fresh = await core.requireFreshLiveSession(input.session);
+    const live = settings.requireFreshAuth.revokeSession
+      ? await core.requireFreshLiveSession(input.session)
+      : await core.requireLiveSession(input.session);
 
-    if (!fresh.ok) return fresh;
+    if (!live.ok) return live;
   }
 
   // Only the caller's own sessions are searched: a handle is never resolved
@@ -111,7 +116,11 @@ export async function revokeSession<U extends AuthUser, A>(
   return ok(sessionId === undefined ? { revoked: false } : { revoked: true, sessionId });
 }
 
-/** Signs out every other device (needs fresh authentication): revokes all sessions and re-issues the caller's. */
+/**
+ * Signs out every other device: revokes all sessions and re-issues the
+ * caller's. Needs fresh authentication unless
+ * `session.requireFreshAuth.revokeOtherSessions` is false.
+ */
 export async function revokeOtherSessions<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
@@ -124,9 +133,11 @@ export async function revokeOtherSessions<U extends AuthUser, A>(
   // High privilege, like revoking one device: a stolen session must not be
   // able to sign the owner out everywhere. Freshness is read from the live
   // copy, not from the object the caller passed in.
-  const fresh = requireFreshAuth(core, settings, live);
+  if (settings.requireFreshAuth.revokeOtherSessions) {
+    const fresh = requireFreshAuth(core, settings, live);
 
-  if (!fresh.ok) return fresh;
+    if (!fresh.ok) return fresh;
+  }
 
   const user = await core.users.findById(live.userId);
 

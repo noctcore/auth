@@ -437,6 +437,170 @@ describe('the request meta on mails to an address nobody has proven', () => {
   });
 });
 
+describe('session.requireFreshAuth', () => {
+  const HOUR = 60 * 60_000;
+
+  /**
+   * Moves the clock an hour past sign-in in quarter-hour steps, using each
+   * session on the way so none of them goes idle (30 min by default).
+   */
+  async function anHourLater(t: Awaited<ReturnType<typeof twoDevices>>, ...tokens: string[]) {
+    for (let step = 0; step < 4; step++) {
+      t.clock.advance(HOUR / 4);
+
+      for (const token of [t.laptop.token, t.phone.token, ...tokens])
+        await t.auth.validateRequest({ token });
+    }
+  }
+
+  const doorsOff = { session: { requireFreshAuth: { revokeSession: false } } };
+  const othersOff = { session: { requireFreshAuth: { revokeOtherSessions: false } } };
+
+  it('asks for fresh authentication at both doors by default', async () => {
+    const t = await twoDevices();
+
+    await anHourLater(t);
+
+    const one = await t.auth.sessions.revoke({
+      session: t.laptop.session,
+      handle: t.auth.sessions.handle(t.phone.session.id),
+      meta: meta(),
+    });
+
+    const others = await t.auth.sessions.revokeOthers({ session: t.laptop.session, meta: meta() });
+
+    expect(!one.ok && one.code).toBe('fresh_auth_required');
+    expect(!others.ok && others.code).toBe('fresh_auth_required');
+    expect(await t.sessionOf(t.phone.token)).not.toBeNull();
+  });
+
+  it('with revokeSession false, lets a session an hour past its sign-in revoke another device', async () => {
+    const t = await twoDevices(doorsOff);
+
+    await anHourLater(t);
+
+    const result = await t.auth.sessions.revoke({
+      session: t.laptop.session,
+      handle: t.auth.sessions.handle(t.phone.session.id),
+      meta: meta(),
+    });
+
+    expect(result).toEqual({ ok: true, value: { revoked: true, sessionId: t.phone.session.id } });
+    expect(await t.sessionOf(t.phone.token)).toBeNull();
+
+    // The other door keeps its check.
+    const others = await t.auth.sessions.revokeOthers({ session: t.laptop.session, meta: meta() });
+
+    expect(!others.ok && others.code).toBe('fresh_auth_required');
+  });
+
+  it('with revokeSession false, still refuses a dead or relabelled session as session_expired', async () => {
+    const t = await twoDevices(doorsOff);
+    const eve = await t.signedInUser('eve@example.com', '192.0.2.99');
+    const handle = t.auth.sessions.handle(t.phone.session.id);
+
+    await anHourLater(t, eve.token);
+
+    const relabelled = await t.auth.sessions.revoke({
+      session: { ...eve.session, userId: t.laptop.session.userId },
+      handle,
+      meta: meta(),
+    });
+
+    expect(!relabelled.ok && relabelled.code).toBe('session_expired');
+
+    await t.auth.logout({ token: t.laptop.token, meta: meta() });
+
+    const dead = await t.auth.sessions.revoke({ session: t.laptop.session, handle, meta: meta() });
+
+    expect(!dead.ok && dead.code).toBe('session_expired');
+    expect(await t.sessionOf(t.phone.token)).not.toBeNull();
+  });
+
+  it('with revokeOtherSessions false, lets a stale session sign out the others and keep a new session', async () => {
+    const t = await twoDevices(othersOff);
+
+    await anHourLater(t);
+
+    const result = await t.auth.sessions.revokeOthers({ session: t.laptop.session, meta: meta() });
+
+    if (!result.ok) throw new Error(result.reason);
+
+    expect(await t.sessionOf(t.phone.token)).toBeNull();
+    expect(await t.sessionOf(t.laptop.token)).toBeNull();
+    expect(await t.sessionOf(result.value.token)).not.toBeNull();
+    // The new session keeps the old credential proof: it is no fresher than before.
+    expect(result.value.session.authenticatedAt).toBe(t.laptop.session.authenticatedAt);
+
+    // The other door keeps its check: the new session's proof is an hour old.
+    const signedIn = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    if (!signedIn.ok || signedIn.value.kind !== 'session') throw new Error('login failed');
+
+    const one = await t.auth.sessions.revoke({
+      session: result.value.session,
+      handle: t.auth.sessions.handle(signedIn.value.session.session.id),
+      meta: meta(),
+    });
+
+    expect(!one.ok && one.code).toBe('fresh_auth_required');
+  });
+
+  it('with revokeOtherSessions false, still refuses a revoked or relabelled session as session_expired', async () => {
+    const t = await twoDevices(othersOff);
+    const eve = await t.signedInUser('eve@example.com', '192.0.2.99');
+
+    await anHourLater(t, eve.token);
+
+    const relabelled = await t.auth.sessions.revokeOthers({
+      session: { ...eve.session, userId: t.laptop.session.userId },
+      meta: meta(),
+    });
+
+    expect(!relabelled.ok && relabelled.code).toBe('session_expired');
+
+    await t.auth.logout({ token: t.laptop.token, meta: meta() });
+
+    const dead = await t.auth.sessions.revokeOthers({ session: t.laptop.session, meta: meta() });
+
+    expect(!dead.ok && dead.code).toBe('session_expired');
+    expect(await t.sessionOf(t.phone.token)).not.toBeNull();
+  });
+
+  it('leaves the email change door checking freshness with both options off', async () => {
+    const t = setup({
+      session: { requireFreshAuth: { revokeSession: false, revokeOtherSessions: false } },
+    });
+
+    const { session } = await t.signedInUser();
+
+    t.clock.advance(20 * 60_000);
+
+    const result = await t.auth.requestEmailChange({
+      session,
+      newEmail: 'ada.new@example.com',
+      meta: meta(),
+    });
+
+    expect(!result.ok && result.code).toBe('fresh_auth_required');
+  });
+
+  it('refuses a value that is not an object of booleans at startup', () => {
+    for (const requireFreshAuth of [false, 'false', ['revokeSession']])
+      expect(() => setup({ session: { requireFreshAuth } } as never)).toThrow(
+        'session.requireFreshAuth must be an object',
+      );
+
+    expect(() =>
+      setup({ session: { requireFreshAuth: { revokeSession: 'false' } } } as never),
+    ).toThrow('session.requireFreshAuth.revokeSession must be true or false');
+
+    expect(() =>
+      setup({ session: { requireFreshAuth: { revokeOtherSessions: 0 } } } as never),
+    ).toThrow('session.requireFreshAuth.revokeOtherSessions must be true or false');
+  });
+});
+
 describe('sessions.revoke answer', () => {
   it('names the ended session by the id onSessionsRevoked reports', async () => {
     const heard: string[][] = [];

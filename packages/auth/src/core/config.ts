@@ -114,6 +114,18 @@ export interface AuthConfig<U extends AuthUser, A, P extends readonly AuthPlugin
     readonly cookie?: SessionCookieConfig;
     /** How recent a credential proof must be for sensitive actions. Default 10 min. */
     readonly freshAuthAge?: Duration;
+    /**
+     * Which session management doors ask for a credential proof inside
+     * `freshAuthAge`. Both default to true. False skips only the age check:
+     * the door still needs a live session of the same user, and every other
+     * door (email change, two-factor management) still checks freshness.
+     */
+    readonly requireFreshAuth?: {
+      /** Revoking another device's session with `sessions.revoke`. Default true. */
+      readonly revokeSession?: boolean;
+      /** Signing out every other device with `sessions.revokeOthers`. Default true. */
+      readonly revokeOtherSessions?: boolean;
+    };
   };
   /**
    * Server secret, at least 32 bytes. Separate keys are derived from it for

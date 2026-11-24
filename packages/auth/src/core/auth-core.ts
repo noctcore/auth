@@ -166,15 +166,23 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
       : fail('fresh_auth_required', 'stale_authentication');
   }
 
-  async requireFreshLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>> {
+  /** The live copy of the session (not idle, current epoch) if it is still the same user's; `session_expired` otherwise. */
+  async requireLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>> {
     const live = await this.#manager.findActive(session.id);
 
-    if (!live || live.userId !== session.userId)
-      return fail('session_expired', 'session_not_active');
+    return live && live.userId === session.userId
+      ? ok(live)
+      : fail('session_expired', 'session_not_active');
+  }
 
-    const fresh = this.requireFreshAuth(live);
+  async requireFreshLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>> {
+    const live = await this.requireLiveSession(session);
 
-    return fresh.ok ? ok(live) : fresh;
+    if (!live.ok) return live;
+
+    const fresh = this.requireFreshAuth(live.value);
+
+    return fresh.ok ? live : fresh;
   }
 
   async emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void> {

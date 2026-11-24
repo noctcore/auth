@@ -311,6 +311,29 @@ describe('managing the factor', () => {
   });
 });
 
+describe('session.requireFreshAuth', () => {
+  it('leaves the two-factor doors checking freshness with both session options off', async () => {
+    const t = twoFactorApp(
+      {},
+      { session: { requireFreshAuth: { revokeSession: false, revokeOtherSessions: false } } },
+    );
+
+    const plain = await t.signedIn('grace@example.com');
+    const { secret } = await t.enrolled();
+    const session = (await t.passed(secret)).session;
+
+    t.clock.advance(20 * 60_000);
+
+    const started = await t.auth.twoFactor.enroll({ session: plain.session, meta: meta() });
+
+    expect(!started.ok && started.code).toBe('fresh_auth_required');
+
+    expect(await t.auth.twoFactor.regenerateRecoveryCodes({ session, meta: meta() })).toMatchObject(
+      { ok: false, code: 'fresh_auth_required' },
+    );
+  });
+});
+
 describe('the core flows with a factor on', () => {
   it('changes the password with a step-up in the session', async () => {
     const t = twoFactorApp();
