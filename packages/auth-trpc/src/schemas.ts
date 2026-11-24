@@ -99,9 +99,10 @@ export const acceptedOutput = z.object({
 });
 
 export const resetTicketOutput = z.object({ ticket: z.string(), expiresAt: z.number() });
-/** What `auth.inspectPasswordReset` answers for a live link, with the user narrowed to `userOutput`. */
+/** What `auth.inspectPasswordReset` answers for a live link. */
 export const resetInspectionOutput = z.object({
-  user: userOutput,
+  userId: z.string(),
+  email: z.string(),
   expiresAt: z.number(),
   secondFactorRequired: z.boolean(),
 });

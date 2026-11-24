@@ -83,10 +83,16 @@ export async function verifyPasswordResetCode<U extends AuthUser, A>(
   return ok({ ticket: ticket.token, expiresAt: ticket.expiresAt });
 }
 
-/** A live reset link (or ticket), as `inspectPasswordReset` found it. */
-export interface PasswordResetInspection<U extends AuthUser> {
+/**
+ * A live reset link (or ticket), as `inspectPasswordReset` found it. Anyone
+ * holding the link sees it, so it names the account by id and address only,
+ * never the rest of your user type.
+ */
+export interface PasswordResetInspection {
   /** The account the link resets. */
-  readonly user: U;
+  readonly userId: string;
+  /** Its address, for "choose a new password for ada@example.com". */
+  readonly email: string;
   /** When the link (or ticket) stops working, in ms since the epoch. */
   readonly expiresAt: number;
   /**
@@ -110,7 +116,7 @@ export async function inspectPasswordReset<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
   input: { token: string; meta: RequestMeta },
-): Promise<AuthResult<PasswordResetInspection<U>>> {
+): Promise<AuthResult<PasswordResetInspection>> {
   const { meta } = input;
   const limited = await core.rateLimit('password-reset', meta.ip, meta);
 
@@ -143,7 +149,12 @@ export async function inspectPasswordReset<U extends AuthUser, A>(
 
   await core.emit({ type: 'password.reset_inspected', userId: user.id }, meta);
 
-  return ok({ user, expiresAt: peek.expiresAt, secondFactorRequired });
+  return ok({
+    userId: user.id,
+    email: user.email,
+    expiresAt: peek.expiresAt,
+    secondFactorRequired,
+  });
 }
 
 export async function resetPassword<U extends AuthUser, A>(
