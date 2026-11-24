@@ -202,10 +202,12 @@ export async function resetPassword<U extends AuthUser, A>(
   let written: boolean;
 
   try {
-    written = await writePasswordHash(core, user.id, hashed);
+    written = await writePasswordHash(core, user.id, hashed, 'password-reset');
   } catch (error) {
-    // The sweep or the write threw: the link is spent, the password is the
-    // old one. The failure is on the audit trail before it is thrown.
+    // The sweep or the write threw: the link is spent, and the password may
+    // or may not have changed (a write can commit and still throw; the
+    // sessions were ended in case it did). The failure is on the audit trail
+    // before it is thrown.
     await failed(core, user.id, 'write_failed', meta);
 
     throw error;
