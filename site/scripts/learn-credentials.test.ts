@@ -70,6 +70,7 @@ const verificationTtl = /config\.emailVerification\?\.ttl,\s*verificationKind ==
 const ticketTtl = read(SETTINGS, /ticketTtl,\s*'(\w+)'/u);
 
 const resetMail = DEFAULT_DOOR_LIMITS['password-reset-mail'];
+const resetDoor = DEFAULT_DOOR_LIMITS['password-reset'];
 const resetAddress = DEFAULT_DOOR_LIMITS['password-reset-code-address'];
 const verificationMail = DEFAULT_DOOR_LIMITS['email-verification-request'];
 const addressMinutes = inUnit(resetAddress.window, MINUTE);
@@ -90,6 +91,7 @@ const PAGES: Record<string, readonly string[]> = {
   ],
   'password-reset': [
     `the per-account mail limit (${resetMail.limit} an hour)`,
+    `(${resetDoor.limit} a ${resetDoor.window === '1m' ? 'minute' : resetDoor.window} per IP by default)`,
     `A reset link is ${TOKEN_BYTES} random bytes`,
     `the mail carries ${passwordReset.digits} digits instead`,
     `a ticket valid for ${inUnit(passwordReset.ticketTtl, MINUTE)} minutes`,
