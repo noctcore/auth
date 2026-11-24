@@ -114,6 +114,20 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return hmacSha256Hex(deriveKey(this.#deps.pluginKeys[0], purpose), message);
   }
 
+  parseSessionAttributes(
+    value: unknown,
+  ): { readonly ok: true; readonly value: unknown } | { readonly ok: false } {
+    const schema = this.#deps.attributeSchema;
+
+    if (!schema) return { ok: true, value };
+
+    try {
+      return { ok: true, value: schema.parse(value) };
+    } catch {
+      return { ok: false };
+    }
+  }
+
   keyedHashes(purpose: string, message: string): readonly [string, ...string[]] {
     const [current, ...previous] = this.#deps.pluginKeys;
 

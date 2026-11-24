@@ -120,6 +120,15 @@ export interface PluginContext<U extends AuthUser, A> {
    */
   keyedHashes(purpose: string, message: string): readonly [string, ...string[]];
   /**
+   * Runs `value` through the app's session attribute schema
+   * (`session.attributes`), for a plugin's startup check of the attributes it
+   * adds: what the schema returned, or `ok: false` when it threw. The value
+   * itself without a schema. Nothing is logged.
+   */
+  parseSessionAttributes(
+    value: unknown,
+  ): { readonly ok: true; readonly value: unknown } | { readonly ok: false };
+  /**
    * The public handle of the session stored under `sessionId`: an HMAC of the
    * store key under a key derived from the server secret, as unpadded
    * base64url. `sessions.list` shows it, `sessions.revoke` takes it and
