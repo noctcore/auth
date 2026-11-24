@@ -23,7 +23,12 @@
  * into its two halves (`some` and `none`, or `is` and `isNot`). The two halves
  * on one key (`{ m: { some: X, none: X } }`) are refused too: they match no
  * row, and every row under a `NOT`. An empty `OR` alone only narrows and is
- * allowed.
+ * allowed. This reading only adds refusals: a value it cannot read (a bigint,
+ * a Decimal, bytes, `Prisma.DbNull`) is compared by its type and text, and any
+ * failure of its own leaves the guard allowed rather than failing boot.
+ * Match-all forms it does not read pass: `notIn: []` beside another operator
+ * of the field (`mode`), `hasEvery: []`, and an `OR` split whose entries hold
+ * more keys than the one relation.
  *
  * The guard does not know the model, so it cannot tell a relation from a
  * column. A condition every row meets because of the data, a misplaced
@@ -158,17 +163,54 @@ function checked(reach: Reach, path: string): Reach {
   return reach;
 }
 
-/** A stable text for a condition, to tell when two relation filters ask the same thing. */
+/**
+ * A stable text for a condition, to tell when two relation filters ask the
+ * same thing. Never throws: a guard may hold any value Prisma takes (a
+ * bigint, a Decimal, bytes, `Prisma.DbNull`), and a value it cannot read
+ * gets a text no other value has, so it never makes two conditions equal.
+ */
 function canonical(value: unknown): string {
+  try {
+    return canonicalOf(value);
+  } catch {
+    unreadable += 1;
+
+    return `unreadable#${unreadable}`;
+  }
+}
+
+let unreadable = 0;
+
+function canonicalOf(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
 
-  if (value instanceof Date) return `Date(${value.toISOString()})`;
+  if (typeof value === 'bigint') return `${value}n`;
 
-  if (!isPlainObject(value)) return String(JSON.stringify(value));
+  if (value === null || ['string', 'number', 'boolean'].includes(typeof value))
+    return String(JSON.stringify(value));
 
-  const keys = Object.keys(value).sort();
+  if (value instanceof Date) return `Date(${value.getTime()})`;
 
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  if (ArrayBuffer.isView(value))
+    return `${value.constructor.name}(${Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength)).join(' ')})`;
+
+  if (isPlainObject(value)) {
+    const keys = Object.keys(value).sort();
+
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  }
+
+  // A class instance (a Decimal, `Prisma.DbNull` or `JsonNull`): its class and
+  // its text, so two nulls of different kinds, or two amounts, differ.
+  if (typeof value === 'object') {
+    const { constructor } = value as { constructor?: { name?: string } };
+    const text = (value as { toString: () => string }).toString();
+
+    return `${constructor?.name ?? 'Object'}(${text})`;
+  }
+
+  // A function, a symbol or undefined: nothing a condition could be equal to.
+  throw new TypeError('not a value');
 }
 
 /** The conditions of `AND`, `OR` or `NOT`: a list, or one condition written without a list. */
@@ -294,7 +336,14 @@ export function copyWriteWhere(writeWhere: unknown): Readonly<Record<string, unk
 
   const copy = checkedCopy(writeWhere, 'writeWhere', 'where') as Readonly<Record<string, unknown>>;
 
-  whereReach(copy, 'writeWhere');
+  // The shape analysis only adds refusals. A value it cannot read is no
+  // reason to refuse the guard: anything but its own refusal means "cannot
+  // judge", and the guard is kept.
+  try {
+    whereReach(copy, 'writeWhere');
+  } catch (error) {
+    if (error instanceof AuthConfigError) throw error;
+  }
 
   return copy;
 }
