@@ -28,7 +28,7 @@ By default addresses are trimmed and their ASCII letters lowercased; an address 
 
 ## Sessions
 
-- Revoking another device, or every other device, needs fresh authentication, so a stolen session cannot sign the owner out. Every door that asks for it (revoking devices, enrolling a second factor, a step-up check) reads it from the live session in the store, not from the session object it was handed.
+- Revoking another device, or every other device, needs fresh authentication by default, so a stolen session cannot sign the owner out (an app may turn that off per door with `session.requireFreshAuth`). Every door that asks for it (revoking devices, enrolling a second factor, a step-up check) reads it from the live session in the store, not from the session object it was handed.
 - Plugins and `auth.context` see sessions without a way to mint one; every session goes through one internal seam.
 - A login rehash is a compare-and-set, so it can never bring back a password changed meanwhile.
 

@@ -175,6 +175,7 @@ session: { requireFreshAuth: { revokeSession: false, revokeOtherSessions: false 
 - Both default to `true`. With `false` the door still needs a live session of the same user and answers `session_expired` otherwise; only the age check is skipped.
 - `freshAuthAge` and every other door (the email change, two-factor enrollment and management, step-up, your own `requireFreshAuth` calls) are unchanged. Raising `freshAuthAge` instead would turn the check off at all of them.
 - The trade: whoever holds a stolen session can then sign the owner's other devices out without knowing the password. It gains no access by that, and the owner who spots a strange device can end it at once.
+- With `revokeOtherSessions: false`, a stolen session that is old but still live can call `revokeOthers` again and again, so each time the owner signs back in they are signed out. Signing out the strange device in return does not settle it while the attacker keeps a session. The owner's way out is `changePassword` (or a reset), which revokes every session, the attacker's included, and asks for the current password, which the attacker does not have. Point users to it from your devices page.
 
 ### Session cookie
 
