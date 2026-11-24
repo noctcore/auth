@@ -220,7 +220,9 @@ async function proveCurrentPassword<U extends AuthUser, A>(
  * is the only budget. No lockout counter is read or written, so a wrong
  * password cannot lock the owner out of sign-in or climb the permanent tier,
  * and a temporary lock does not refuse a correct one. The verify is the same
- * work either way.
+ * work either way. Nothing tells the owner: with no lock there is no lock
+ * mail, and a wrong guess is only the `password.change_failed` event, which
+ * an app watches if it wants to alert anyone.
  */
 async function proveAtDoor<U extends AuthUser, A>(
   core: AuthCore<U, A>,
