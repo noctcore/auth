@@ -108,8 +108,48 @@ describe('PrismaUserStore writeWhere', () => {
       { closedAt: null, orgId: undefined },
       { org: { is: { id: undefined } } },
       { OR: [{ closedAt: null }, { orgId: undefined }] },
+      { AND: [] },
+      { NOT: [] },
+      { closedAt: {} },
+      { AND: [{}] },
+      { closedAt: null, org: { is: {} } },
     ])
       expect(() => new PrismaUserStore({ delegate, writeWhere })).toThrow(AuthConfigError);
+
+    // An empty OR matches no row: it only narrows, so it is allowed.
+    expect(() => new PrismaUserStore({ delegate, writeWhere: { OR: [] } })).not.toThrow();
+  });
+
+  it("hands every write a fresh copy, so changing one call's where changes nothing later", async () => {
+    const calls: Record<string, unknown>[] = [];
+
+    const store = new PrismaUserStore({
+      delegate: {
+        updateMany: async (args: { where: { AND: Record<string, unknown>[] } }) => {
+          calls.push(structuredClone(args.where));
+          // An extension rewriting the guard of this one call.
+          const guard = args.where.AND[1] as Record<string, unknown>;
+
+          guard['closedAt'] = { not: null };
+          (guard['joinedAt'] as Record<string, unknown>)['gte'] = new Date(5);
+
+          return { count: 1 };
+        },
+      } as never,
+      writeWhere: { closedAt: null, joinedAt: { gte: new Date(0) } },
+    });
+
+    await store.setPasswordHash('u1', 'a');
+    await store.setPasswordHash('u1', 'b');
+
+    expect(calls[1]).toEqual(calls[0]);
+
+    expect(calls[1]).toEqual({
+      AND: [
+        { id: 'u1', deletedAt: null },
+        { closedAt: null, joinedAt: { gte: new Date(0) } },
+      ],
+    });
   });
 
   it('copies the guard, so changing the object afterwards changes nothing', async () => {
