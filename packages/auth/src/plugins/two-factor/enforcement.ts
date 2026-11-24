@@ -18,16 +18,19 @@
  *   grace window, for the app's scheduler.
  * - With `enforcementStanding: 'at-issue'` the standing is also decided when
  *   a session is issued, and a session issued unrestricted is stamped
- *   (`twoFactorStanding`) and skips every read. Only a stamp of the current
- *   version, at the session's own epoch, skips, so a session from before the
- *   option, or from another version, is read live. Whatever could restrict a
- *   stamped session ends it instead, so the stamp is never stale:
- *   `refreshStanding` (the app's policy change) and `reset` (the factor gone)
- *   revoke the user's sessions. The stamp carries the epoch read before the
- *   answer, so a sign-in that read the old answer and mints after such a
- *   revocation gets a stamp that does not match its session (read live) or
- *   loses the core's epoch fence. Enrolling or a lifted policy only ever
- *   frees a session, and unstamped sessions are read live.
+ *   (`twoFactorStanding`) and skips every read. The stamp is a keyed hash of
+ *   the user, the version, the revocation epoch read before the answer and
+ *   the issue time, so only this server can make one, and only a stamp of
+ *   the current version, for the session's own user and epoch, younger than
+ *   `maxAge`, skips. Whatever could restrict a stamped session ends it
+ *   instead: `refreshStanding` (the app's policy change) and `reset` (the
+ *   factor gone) revoke the user's sessions whenever `enforcement` is on, in
+ *   either mode, so a stamp from an earlier spell under `'at-issue'` cannot
+ *   come back. A sign-in that read the old answer and mints after such a
+ *   revocation gets a stamp of the old epoch (read live) or loses the core's
+ *   epoch fence. A stamp another hook put on a new session is refused
+ *   (`stampIsOurs`). Enrolling or a lifted policy only ever frees a session,
+ *   and unstamped sessions are read live.
  *
  * Guide: Build, "Two-factor" (enforcement with a grace period).
  */
@@ -35,13 +38,14 @@ import type { TwoFactorEnforcement, TwoFactorPolicy } from './options';
 import type { Runtime } from './runtime';
 import type { SessionStanding, TwoFactorStanding } from '../../core/hooks';
 import type { AuthUser, StoredSession } from '../../ports/stores';
+import { hexDigestsEqual } from '../../crypto/hash';
 import { ok, type AuthResult } from '../../shared/errors';
 
 /** The session attribute that carries the `'at-issue'` stamp. */
 export const STANDING_ATTRIBUTE = 'twoFactorStanding';
 
 /** The revocation reason of `refreshStanding`. */
-export const STANDING_REVOCATION = 'two-factor-standing';
+export const TWO_FACTOR_STANDING_REVOCATION = 'two-factor-standing';
 
 /** The revocation reason the sweep reports to `onSessionsRevoked`. */
 export const TWO_FACTOR_REQUIRED_REVOCATION = 'two-factor-required';
@@ -127,25 +131,53 @@ export async function assessUser(runtime: Runtime, user: AuthUser): Promise<Asse
   return { required: policy.required, standing: standingFrom(policy, runtime.core.clock.now()) };
 }
 
-/**
- * The stamp of an unrestricted issue: the version and the user's revocation
- * epoch read before the answer was. A session minted at any other epoch (a
- * revocation landed between that read and the mint) does not match it.
- */
-const stampAt = (stamp: string, epoch: number): string => `${stamp}:${epoch}`;
+/** The key purpose of the stamp's keyed hash. */
+const STANDING_PURPOSE = 'two-factor-standing';
 
-/** Whether the session carries the current `'at-issue'` stamp of an unrestricted issue, at its own epoch. */
+/** A stamp as stored: the issue time, a dot, and the keyed hash. */
+const STAMP_SHAPE = /^(\d{1,16})\.([0-9a-f]{64})$/u;
+
+type StandingSettings = NonNullable<Runtime['settings']['standing']>;
+
+/** What the stamp's keyed hash covers: an unrestricted issue of this user, version, epoch and time. */
+const stampMessage = (userId: string, version: string, epoch: number, issuedAt: number): string =>
+  `unrestricted:${userId}:${version}:${epoch}:${issuedAt}`;
+
+/**
+ * Whether the session carries a stamp of the current version, issued for its
+ * own user at its own epoch, less than `maxAge` ago, and keyed by this
+ * server's secret (any key of a rotation). Anything else, a stamp an app hook
+ * or a legacy store copied in included, is read live.
+ */
 function stampedUnrestricted(runtime: Runtime, session: StoredSession<unknown>): boolean {
-  const stamp = runtime.settings.standingStamp;
+  const { standing } = runtime.settings;
   const attributes = session.attributes;
 
-  return (
-    stamp !== null &&
-    typeof attributes === 'object' &&
-    attributes !== null &&
-    (attributes as Record<string, unknown>)[STANDING_ATTRIBUTE] === stampAt(stamp, session.epoch)
-  );
+  if (standing === null || typeof attributes !== 'object' || attributes === null) return false;
+
+  const value = (attributes as Record<string, unknown>)[STANDING_ATTRIBUTE];
+  const parts = typeof value === 'string' ? STAMP_SHAPE.exec(value) : null;
+
+  if (!parts) return false;
+
+  const issuedAt = Number(parts[1]);
+  const now = runtime.core.clock.now();
+
+  if (!(issuedAt <= now && now - issuedAt < standing.maxAgeMs)) return false;
+
+  const message = stampMessage(session.userId, standing.version, session.epoch, issuedAt);
+
+  return runtime.core
+    .keyedHashes(STANDING_PURPOSE, message)
+    .some((expected) => hexDigestsEqual(expected, String(parts[2])));
 }
+
+/**
+ * The stamp each issue computed, by the user object the core hands to both
+ * hooks of one issue, so `beforeSessionCreate` can refuse a session whose
+ * attribute some other hook replaced.
+ */
+const computedStamps = new WeakMap<AuthUser, string | undefined>();
 
 /**
  * The `sessionAttributes` hook under `'at-issue'`: the stamp when the user
@@ -156,33 +188,60 @@ function stampedUnrestricted(runtime: Runtime, session: StoredSession<unknown>):
 export async function standingAtIssue(
   runtime: Runtime,
   user: AuthUser,
-  standingStamp: string,
+  standing: StandingSettings,
 ): Promise<Record<string, string | undefined>> {
   // The epoch first: an answer read after it cannot predate a revocation
   // that a session minted at this epoch would survive.
-  const stamp = stampAt(standingStamp, await runtime.core.sessions.readEpoch(user.id));
+  const epoch = await runtime.core.sessions.readEpoch(user.id);
+  const unrestricted = await issuedUnrestricted(runtime, user);
+  const issuedAt = runtime.core.clock.now();
 
-  if ((await runtime.store.findFactor(user.id))?.confirmed === true)
-    return { [STANDING_ATTRIBUTE]: stamp };
+  const stamp = unrestricted
+    ? `${issuedAt}.${runtime.core.keyedHash(STANDING_PURPOSE, stampMessage(user.id, standing.version, epoch, issuedAt))}`
+    : undefined;
 
-  const { standing } = await assessUser(runtime, user);
+  computedStamps.set(user, stamp);
 
-  return { [STANDING_ATTRIBUTE]: standing ? undefined : stamp };
+  return { [STANDING_ATTRIBUTE]: stamp };
+}
+
+async function issuedUnrestricted(runtime: Runtime, user: AuthUser): Promise<boolean> {
+  if ((await runtime.store.findFactor(user.id))?.confirmed === true) return true;
+
+  return (await assessUser(runtime, user)).standing === null;
 }
 
 /**
- * Under `'at-issue'`, ends every session of the user, so their next sign-in
- * is stamped from the policy's answer now; call it after requiring a factor
- * of the user or changing their policy. A no-op (`revoked: false`) when the
- * standing is read live, which needs nothing.
+ * The `beforeSessionCreate` check under `'at-issue'`: the session's
+ * `twoFactorStanding` is the plugin's own, or absent (a schema that drops
+ * it only costs reads). A value another hook put there is refused, so no
+ * hook of the app's (one that spreads `inherited`, say) can carry a stamp
+ * past the plugin's answer.
+ */
+export function stampIsOurs(user: AuthUser, attributes: unknown): boolean {
+  const value =
+    typeof attributes === 'object' && attributes !== null
+      ? (attributes as Record<string, unknown>)[STANDING_ATTRIBUTE]
+      : undefined;
+
+  return value === undefined || value === computedStamps.get(user);
+}
+
+/**
+ * Ends every session of the user, so their next sign-in is stamped from the
+ * policy's answer now; call it after requiring a factor of the user or
+ * changing their policy. It revokes under `'live'` too: a stamp issued during
+ * an earlier spell under `'at-issue'` (a rollback, a rolling deploy) would
+ * otherwise count again when the option comes back. A no-op
+ * (`revoked: false`) only without `enforcement`.
  */
 export async function refreshStanding(
   runtime: Runtime,
   input: { readonly userId: string },
 ): Promise<AuthResult<{ revoked: boolean }>> {
-  if (runtime.settings.standingStamp === null) return ok({ revoked: false });
+  if (runtime.settings.enforcement === null) return ok({ revoked: false });
 
-  await runtime.core.revokeAllSessions(input.userId, STANDING_REVOCATION);
+  await runtime.core.revokeAllSessions(input.userId, TWO_FACTOR_STANDING_REVOCATION);
 
   return ok({ revoked: true });
 }

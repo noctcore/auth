@@ -41,8 +41,9 @@
  * Guide: Learn, "Second factors".
  */
 import { loginChallenge } from './challenge';
-import { sessionStanding, standingAtIssue } from './enforcement';
+import { sessionStanding, stampIsOurs, standingAtIssue } from './enforcement';
 import { checkProof, parseProof } from './proofs';
+import type { TwoFactorSettings } from './options';
 import { factorAccount, limitIp, type Runtime } from './runtime';
 import { hasStepUp } from './step-up';
 import { refuse, type HookInput, type HookResult, type IssueVia } from '../../core/hooks';
@@ -65,24 +66,28 @@ const KEEPS_TRUSTED_DEVICES: ReadonlySet<string> = new Set(['logout', 'revoke-on
 
 export function twoFactorHooks(
   runtime: () => Runtime,
-  options: { readonly enforced: boolean; readonly standingStamp: string | null },
+  options: { readonly enforced: boolean; readonly standing: TwoFactorSettings['standing'] },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): HookInput<AuthUser, any> {
-  const { standingStamp } = options;
+  const { standing } = options;
 
   return {
     loginChallenge: (context) => loginChallenge(runtime(), context),
-    beforeSessionCreate: ({ user, via, reissueOf, beforeChallenge }) =>
+    beforeSessionCreate: ({ user, via, attributes, reissueOf, beforeChallenge }) => {
+      if (standing !== null && !stampIsOurs(user, attributes))
+        return standingNotOurs(runtime(), user);
+
       // Before the challenge the factor is still to come: the challenge is it.
-      beforeChallenge ? undefined : enforce(runtime(), user, via, reissueOf),
+      return beforeChallenge ? undefined : enforce(runtime(), user, via, reissueOf);
+    },
     // Only with `enforcement`: without it, validation reads nothing extra.
     ...(options.enforced
       ? { sessionStanding: ({ session }) => sessionStanding(runtime(), session) }
       : {}),
     // Only with `enforcementStanding: 'at-issue'`: the stamp of an unrestricted issue.
-    ...(standingStamp === null
+    ...(standing === null
       ? {}
-      : { sessionAttributes: ({ user }) => standingAtIssue(runtime(), user, standingStamp) }),
+      : { sessionAttributes: ({ user }) => standingAtIssue(runtime(), user, standing) }),
     passwordResetRequirements: async ({ user }) => ({
       secondFactor: (await runtime().store.findFactor(user.id))?.confirmed === true,
     }),
@@ -96,6 +101,16 @@ export function twoFactorHooks(
       if (!KEEPS_TRUSTED_DEVICES.has(reason)) await runtime().store.deleteTrustedDevices(userId);
     },
   };
+}
+
+/** A session whose `twoFactorStanding` another hook replaced: refused, and logged for the operator. */
+function standingNotOurs(runtime: Runtime, user: AuthUser): HookResult {
+  runtime.core.logger.error(
+    'twoFactor: a sessionAttributes hook replaced twoFactorStanding; the session is refused',
+    { userId: user.id },
+  );
+
+  return refuse('two_factor_standing_replaced', 'forbidden');
 }
 
 async function enforce(

@@ -233,18 +233,22 @@ export async function importLegacyCodes(
 export function standingApp(
   standing: TwoFactorOptions['enforcementStanding'],
   initial: TwoFactorPolicy = { required: false },
+  overrides: Parameters<typeof setup>[0] = {},
 ) {
   const policy = { current: initial };
   const reads = { factor: 0, user: 0, policy: 0 };
 
-  const t = twoFactorApp({
-    enforcement: () => {
-      reads.policy++;
+  const t = twoFactorApp(
+    {
+      enforcement: () => {
+        reads.policy++;
 
-      return policy.current;
+        return policy.current;
+      },
+      ...(standing === undefined ? {} : { enforcementStanding: standing }),
     },
-    ...(standing === undefined ? {} : { enforcementStanding: standing }),
-  });
+    overrides,
+  );
 
   const findFactor = t.store.findFactor.bind(t.store);
   const findById = t.stores.users.findById.bind(t.stores.users);

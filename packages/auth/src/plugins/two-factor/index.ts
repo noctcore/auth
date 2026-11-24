@@ -31,7 +31,12 @@ import {
   type ConfirmEnrollmentInput,
   type EnrollInput,
 } from './enrollment';
-import { refreshStanding, sweepUnenrolled, type SweepInput } from './enforcement';
+import {
+  refreshStanding,
+  STANDING_ATTRIBUTE,
+  sweepUnenrolled,
+  type SweepInput,
+} from './enforcement';
 import { twoFactorHooks } from './hooks';
 import {
   disable,
@@ -67,7 +72,8 @@ export type {
   Enrollment,
 } from './enrollment';
 export type { SweepInput, SweepResult } from './enforcement';
-export { TWO_FACTOR_REQUIRED_REVOCATION } from './enforcement';
+export { TWO_FACTOR_REQUIRED_REVOCATION, TWO_FACTOR_STANDING_REVOCATION } from './enforcement';
+export { TWO_FACTOR_RESET_REVOCATION } from './management';
 export type { TwoFactorStatus } from './management';
 export type {
   AttemptRule,
@@ -114,6 +120,32 @@ function assertEpochOutlivesTrustedDevices(
 }
 
 /**
+ * Under `'at-issue'`, a session attribute schema that refuses
+ * `twoFactorStanding` would refuse every sign-in: fail at startup instead.
+ * Checked only when the schema accepts `{}`, since a schema with required
+ * keys of its own cannot be probed with the stamp alone.
+ */
+function assertSchemaKeepsStanding(settings: TwoFactorSettings, context: Context): void {
+  if (settings.standing === null || !context.parseSessionAttributes({}).ok) return;
+
+  const sample = { [STANDING_ATTRIBUTE]: `0.${'0'.repeat(64)}` };
+
+  const parsed = context.parseSessionAttributes(sample);
+
+  if (!parsed.ok)
+    throw new AuthConfigError(
+      `twoFactor: enforcementStanding 'at-issue' stamps the ${STANDING_ATTRIBUTE} session attribute, and your session.attributes schema refuses it: allow it as an optional string`,
+    );
+
+  const kept = (parsed.value as Record<string, unknown> | null)?.[STANDING_ATTRIBUTE];
+
+  if (kept !== sample[STANDING_ATTRIBUTE])
+    context.logger.warn(
+      "twoFactor: the session.attributes schema drops twoFactorStanding, so enforcementStanding 'at-issue' saves no reads",
+    );
+}
+
+/**
  * The two-factor plugin. `A` is the app's session attribute type, so the
  * sessions the flows return are typed like the core's.
  */
@@ -133,12 +165,13 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
     id: 'twoFactor',
     hooks: twoFactorHooks(runtime, {
       enforced: settings.enforcement !== null,
-      standingStamp: settings.standingStamp,
+      standing: settings.standing,
     }),
     flows: (context) => {
       if (bound) throw new AuthConfigError('twoFactor: one plugin instance per createAuth');
 
       assertEpochOutlivesTrustedDevices(settings, context.sessions.epochTtlMs);
+      assertSchemaKeepsStanding(settings, context as Context);
 
       const r = createRuntime(context as Context, options.store, options.cipher, settings);
       const cookieName = prefixedCookieName(context.cookie, TRUSTED_DEVICE_COOKIE);
@@ -194,9 +227,10 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
          */
         sweepUnenrolled: (input: SweepInput) => sweepUnenrolled(r, input),
         /**
-         * With `enforcementStanding: 'at-issue'`: ends the user's sessions after
-         * you require a factor of them or change their policy, so the next
-         * sign-in is stamped from the new answer. A no-op when read live.
+         * With `enforcement`: ends the user's sessions after you require a
+         * factor of them or change their policy, so the next sign-in is
+         * stamped from the new answer (under `'live'` too, so a stamp from an
+         * earlier spell under `'at-issue'` cannot come back).
          */
         refreshStanding: (input: { userId: string }) => refreshStanding(r, input),
         /** The name of the trusted-device cookie (`__Host-two-factor-device` when secure). */
