@@ -95,6 +95,8 @@ Under a lock the doors are not simply refused, because that would let anyone who
 
 Two limits of this are worth knowing. First, the shared device budget can be spent by someone who both locks the account through login and holds a stolen session: the doors then draw on the budget every device of the account shares, so the owner's own device cookie can be refused at sign-in and at step-up until the lock ends. A stolen device cookie carries the same risk. A password reset clears the lock and ends every session, which closes it. Second, a correct proof at either door while the account is unlocked still counts toward the account-wide budget: success returns only the per (account, IP) slot, as it does at login. An app that asks its users to re-authenticate very often can lock its own user and send a lock notice.
 
+An app that would rather bound these doors only by their own per-user limits sets `throttle.lockout.sessionProofs: 'door'`. Then a stolen session cannot lock the owner out of sign-in by guessing here, nor climb the permanent tier, and a temporary lock does not refuse the owner's correct password; in exchange those guesses run at the door's rate and never lock anything ([A002](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A002-victim-lockout.test.ts), [Configuration](/auth/reference/configuration/#session-proofs-out-of-the-lockout)).
+
 Only the password proofs share login's budgets. A second-factor code has its own separate budget (see the two-factor plugin), and the other doors (password reset, email change, email verification) use only their own rate limits.
 
 ### Your own proofs

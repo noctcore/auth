@@ -104,6 +104,7 @@ const lockFactor = num(THROTTLE, /this\.baseLockMs \* (\d+) \*\* Math\.min/u);
 const permanentDevices = read(THROTTLE, /options\.permanent\?\.trustedDevices \?\? (\w+);/u);
 const revealLocked = read(THROTTLE, /options\.revealLocked \?\? (\w+);/u);
 const countSuccesses = read(THROTTLE, /options\.countSuccesses \?\? (\w+);/u);
+const sessionProofs = read(THROTTLE, /options\.sessionProofs \?\? '(\w+)';/u);
 const minAfterLocks = num(THROTTLE, /afterLocks < (\d+)\)/u);
 
 const turnstileTimeout = num('auth/src/http/turnstile.ts', /options\.timeoutMs \?\? (\d+);/u);
@@ -234,6 +235,7 @@ const EXPECTED: Record<string, Record<string, string>> = {
     'throttle-lockout-permanent-trusteddevices': lit(permanentDevices),
     'throttle-lockout-reveallocked': lit(revealLocked),
     'throttle-lockout-countsuccesses': lit(countSuccesses),
+    'throttle-lockout-sessionproofs': str(sessionProofs),
   },
   doors: Object.fromEntries(
     Object.entries(DEFAULT_DOOR_LIMITS).map(([door, r]) => [

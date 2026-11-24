@@ -476,6 +476,12 @@ export const lockout: readonly ConfigRow[] = [
     default: '`true`',
     does: 'Whether a correct password spends `perAccount`. `false`: a completed sign-in hands its slot back, so only failures count. See [Counting successes](#counting-successes).',
   },
+  {
+    key: 'throttle.lockout.sessionProofs',
+    type: "'lockout' | 'door'",
+    default: "`'lockout'`",
+    does: "What bounds the password proved again at `reauthenticate` and `changePassword`: login's budgets, or (`'door'`) only each door's own limit, so a stolen session cannot lock the owner out. See [Session proofs out of the lockout](#session-proofs-out-of-the-lockout).",
+  },
 ];
 
 /** `throttle.doors`: the key is the door, `does` is what the limit is keyed by. */
