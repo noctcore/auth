@@ -482,6 +482,7 @@ PluginContext [interface]<U extends AuthUser, A>
     normalizeEmail(input: unknown): NormalizedEmail | null
     notifyRevoked(userId: string, sessionIds: readonly string[], reason: RevocationReason, options?: { scope?: string; }): Promise<void>
     parseEmail(input: unknown): AuthResult<NormalizedEmail>
+    parseSessionAttributes(value: unknown): { readonly ok: true; readonly value: unknown; } | { readonly ok: false; }
     rateLimit(door: Door, key: string, meta: RequestMeta | undefined): Promise<AuthFailure | null>
     readonly clock: Clock
     readonly cookie: SessionCookieConfig
