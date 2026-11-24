@@ -116,6 +116,8 @@ describe('changePassword', () => {
     }
 
     expect(t.mailer.last('lockout')?.to).toBe(EMAIL);
+    // Where the guesses came from, for the owner's notice.
+    expect(t.mailer.last('lockout')?.meta).toEqual({ ip: meta().ip, userAgent: 'vitest' });
 
     const login = await t.auth.login({
       email: EMAIL,
