@@ -61,6 +61,12 @@ export interface IssueOptions<A> {
    * `revoke-others`, `email-verified`, `email-changed`) are for the core's own flows: they
    * require an `inherit` the core itself read live from the store, for the
    * same user, before the flow revoked anything, and refuse every other value.
+   * With any other via of your own, `inherit` must be a session the store
+   * still holds live for this user (or the object `confirmLiveSession`
+   * returned, when the flow revokes sessions before it issues), or the issue
+   * is refused as `session_expired`. The `beforeSessionCreate` hooks then see
+   * it as `reissueOf`: the two-factor plugin lets such a re-issue through
+   * when the session it replaces has proved the factor.
    */
   readonly inherit?: StoredSession<A>;
   /** When the credential was proved. Default now; a re-issue that proved nothing passes the old value. */
@@ -165,6 +171,15 @@ export interface PluginContext<U extends AuthUser, A> {
    * needs fresh authentication, so a hand-built or stale object cannot claim it.
    */
   requireFreshLiveSession(session: StoredSession<A>): Promise<AuthResult<StoredSession<A>>>;
+  /**
+   * Re-reads the session from the store: the stored copy if it is live
+   * (unexpired, not idle, current epoch) and still the same user's, null
+   * otherwise. A flow of yours that ends sessions and then re-issues the
+   * caller's calls this BEFORE it ends anything and passes the result as
+   * `inherit`: that object, once, stands for the live session even after the
+   * flow ended it.
+   */
+  confirmLiveSession(session: StoredSession<A>): Promise<StoredSession<A> | null>;
   /** Emits an audit event (and counts it). Never throws. */
   emit(event: AuthEvent, meta: RequestMeta | undefined): Promise<void>;
   /**

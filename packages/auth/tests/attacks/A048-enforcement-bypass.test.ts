@@ -6,11 +6,18 @@
 // the factor is a way around it, and an app that requires a factor of a user
 // who has none must not hand that user a session at all.
 //
+// An app that runs a re-issue of its own (a password change, "sign out
+// everywhere else") must get its user's session back, but only for a session
+// that already proved the factor: never for a session it names without
+// holding, nor for one that began before the factor existed.
+//
 // Stopped by: plugins/two-factor/hooks.ts (`beforeSessionCreate` refuses every session for a
-//   user with a confirmed or required factor, unless it is the plugin's own or a re-issue of
-//   a session the user already holds), core/auth-core.ts (`issueSession` is the only mint
-//   and always runs the hook), plugins/two-factor/challenge.ts (a required user without a
-//   factor gets an enrollment challenge, not a session).
+//   user with a confirmed or required factor, unless it is the plugin's own, a re-issue of
+//   a session the user already holds, or an app's re-issue of a live session that descends
+//   from a proof of the factor: `provedFactor`), core/auth-core.ts (`issueSession` is the
+//   only mint and always runs the hook; an app via's `inherit` must be live for the user, and
+//   reaches the hooks as `reissueOf`), plugins/two-factor/challenge.ts (a required user
+//   without a factor gets an enrollment challenge, not a session).
 // Learn: Second factors (/auth/learn/second-factors/)
 import { describe, expect, it } from 'vitest';
 
@@ -19,6 +26,7 @@ import {
   type AuthResult,
   type AuthUser,
   type IssuedSession,
+  type PluginContext,
   type StoredSession,
 } from '../../src';
 import { EMAIL, meta, NEW_PASSWORD, PASSWORD, twoFactorApp } from '../two-factor/setup';
@@ -40,6 +48,40 @@ function magicLink() {
 
   return { plugin, signIn: (user: AuthUser) => issue?.(user) };
 }
+
+/** A plugin of the app's that re-issues the caller's session under its own via. */
+function appReissue() {
+  let context: PluginContext<AuthUser, Record<string, never>> | undefined;
+
+  const plugin = definePlugin({
+    id: 'appSessions',
+    flows: (c) => {
+      context = c as unknown as PluginContext<AuthUser, Record<string, never>>;
+
+      return {};
+    },
+  });
+
+  const ready = () => {
+    if (!context) throw new Error('not built');
+
+    return context;
+  };
+
+  return {
+    plugin,
+    reissue: (user: AuthUser, inherit?: Session) =>
+      ready().issueSession(user, {
+        via: 'app-password-change',
+        meta: meta(),
+        ...(inherit ? { inherit } : {}),
+      }),
+    confirm: (session: Session) => ready().confirmLiveSession(session),
+    revokeAll: (userId: string) => ready().revokeAllSessions(userId, 'app-password-change'),
+  };
+}
+
+const MINUTE = 60_000;
 
 describe('A048: getting a session past the second factor through another flow', () => {
   it('gives a required user without a factor an enrollment challenge, never a session', async () => {
@@ -260,5 +302,112 @@ describe('A048: getting a session past the second factor through another flow', 
     });
 
     expect(late).toMatchObject({ ok: false, reason: 'session_not_active' });
+  });
+
+  it("lets an app's re-issue through only for a live session that proved the factor", async () => {
+    const app = appReissue();
+    const t = twoFactorApp({}, { plugins: [app.plugin] });
+    const { session, secret, userId } = await t.enrolled();
+    const user = await t.stores.users.findById(userId);
+
+    if (!user) throw new Error('user');
+
+    // The session that confirmed the factor holds the step-up from the confirmation.
+    const fresh = await app.reissue(user, session);
+
+    expect(fresh.ok).toBe(true);
+
+    if (!fresh.ok) throw new Error(fresh.reason);
+
+    // The new session began inside the enrollment window and holds no step-up of its own.
+    expect(await app.reissue(user, fresh.value.session as Session)).toMatchObject({
+      ok: false,
+      code: 'second_factor_required',
+      reason: 'second_factor_required:app-password-change',
+    });
+
+    // The confirming session began before the factor existed: once its step-up lapses, it is refused.
+    t.clock.advance(11 * MINUTE);
+
+    expect(await app.reissue(user, session)).toMatchObject({
+      ok: false,
+      code: 'second_factor_required',
+    });
+
+    // A session the challenge issued after the enrollment window passes for good.
+    const proved = (await t.passed(secret)).session as Session;
+
+    t.clock.advance(11 * MINUTE);
+
+    expect((await app.reissue(user, proved)).ok).toBe(true);
+  });
+
+  it("refuses an app's re-issue that does not name a live session of that user", async () => {
+    const app = appReissue();
+    const t = twoFactorApp({}, { plugins: [app.plugin] });
+    const { session, userId } = await t.enrolled();
+    const other = await t.signedIn('grace@example.com');
+    const user = await t.stores.users.findById(userId);
+
+    if (!user) throw new Error('user');
+
+    expect(await app.reissue(user)).toMatchObject({
+      ok: false,
+      code: 'second_factor_required',
+      reason: 'second_factor_required:app-password-change',
+    });
+
+    const forged = { ...session, id: 'f'.repeat(64) };
+
+    await t.auth.context.sessions.revoke(userId, [session.id]);
+
+    for (const inherit of [session, other.session, forged])
+      expect(await app.reissue(user, inherit)).toMatchObject({
+        ok: false,
+        code: 'session_expired',
+        reason: 'reissue_without_session:app-password-change',
+      });
+  });
+
+  it("lets an app's flow that ends every session re-issue the one it confirmed first, once", async () => {
+    const app = appReissue();
+    const t = twoFactorApp({}, { plugins: [app.plugin] });
+    const { session, userId } = await t.enrolled();
+    const user = await t.stores.users.findById(userId);
+
+    if (!user) throw new Error('user');
+
+    const live = await app.confirm(session);
+
+    if (!live) throw new Error('live');
+
+    await app.revokeAll(userId);
+
+    expect((await app.reissue(user, live)).ok).toBe(true);
+
+    // Spent by that issue, and no longer live in the store.
+    expect(await app.reissue(user, live)).toMatchObject({
+      ok: false,
+      code: 'session_expired',
+    });
+  });
+
+  it("refuses an app's re-issue of a dead session for a user without a factor too", async () => {
+    const app = appReissue();
+    const t = twoFactorApp({}, { plugins: [app.plugin] });
+    const { session } = await t.signedIn();
+    const user = await t.stores.users.findById(session.userId);
+
+    if (!user) throw new Error('user');
+
+    expect((await app.reissue(user, session)).ok).toBe(true);
+
+    await t.auth.context.sessions.revoke(session.userId, [session.id]);
+
+    expect(await app.reissue(user, session)).toMatchObject({
+      ok: false,
+      code: 'session_expired',
+      reason: 'reissue_without_session:app-password-change',
+    });
   });
 });

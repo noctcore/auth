@@ -8,7 +8,9 @@
  *   (`second-factor`) or a re-issue of a session the user already holds
  *   (password change, re-authentication, sign out of other devices, email
  *   verified, email changed; the core refuses those labels unless the call passes that user's
- *   session as `inherit`). So no flow that issues a session, sign-up with
+ *   session as `inherit`). An app's own via passes only with a live
+ *   `inherit` of the user (`reissueOf`) whose session descends from a proof
+ *   of the factor (`provedFactor`). So no flow that issues a session, sign-up with
  *   `autoLogin` included, gets past the factor. Before a login challenge
  *   (`beforeChallenge`) it refuses nothing: the challenge is the factor. Plugins are trusted code: one
  *   that issues with `via: 'second-factor'` claims to have checked the factor.
@@ -35,11 +37,13 @@
  */
 import { loginChallenge } from './challenge';
 import { sessionStanding } from './enforcement';
+import { ENROLLMENT_TTL_MS } from './options';
 import { checkProof, parseProof } from './proofs';
 import { factorAccount, limitIp, type Runtime } from './runtime';
 import { hasStepUp } from './step-up';
 import { refuse, type HookInput, type HookResult, type IssueVia } from '../../core/hooks';
 import type { AuthUser, StoredSession } from '../../ports/stores';
+import type { StoredTotpFactor } from '../../ports/two-factor';
 import type { RequestMeta } from '../../shared/meta';
 
 /** Re-issues of a session the user already holds, and the plugin's own issue. */
@@ -62,9 +66,9 @@ export function twoFactorHooks(
 ): HookInput<AuthUser, any> {
   return {
     loginChallenge: (context) => loginChallenge(runtime(), context),
-    beforeSessionCreate: ({ user, via, beforeChallenge }) =>
+    beforeSessionCreate: ({ user, via, reissueOf, beforeChallenge }) =>
       // Before the challenge the factor is still to come: the challenge is it.
-      beforeChallenge ? undefined : enforce(runtime(), user, via),
+      beforeChallenge ? undefined : enforce(runtime(), user, via, reissueOf),
     // Only with `enforcement`: without it, validation reads nothing extra.
     ...(options.enforced
       ? { sessionStanding: ({ session }) => sessionStanding(runtime(), session) }
@@ -84,12 +88,20 @@ export function twoFactorHooks(
   };
 }
 
-async function enforce(runtime: Runtime, user: AuthUser, via: IssueVia): Promise<HookResult> {
+async function enforce(
+  runtime: Runtime,
+  user: AuthUser,
+  via: IssueVia,
+  reissueOf: StoredSession<unknown> | undefined,
+): Promise<HookResult> {
   if (PASSES_ENFORCEMENT.has(via)) return undefined;
 
   const factor = await runtime.store.findFactor(user.id);
 
-  if (factor?.confirmed === true) return refusedWithoutFactor(via);
+  if (factor?.confirmed === true)
+    return reissueOf && (await provedFactor(runtime, reissueOf, factor))
+      ? undefined
+      : refusedWithoutFactor(via);
 
   // With `enforcement`, a required user without a factor still gets a
   // session: validation confines it (grace, then enrollment-only).
@@ -97,6 +109,24 @@ async function enforce(runtime: Runtime, user: AuthUser, via: IssueVia): Promise
     return refusedWithoutFactor(via);
 
   return undefined;
+}
+
+/**
+ * Whether the live session an app's own re-issue replaces descends from a
+ * proof of this factor. A session the store created after the factor was
+ * confirmed (its enrollment window had closed) passed this enforcement when
+ * it was issued: through the challenge, or as a re-issue of a session that
+ * had. One created earlier proved nothing, so it passes only with a step-up
+ * of its own still open.
+ */
+async function provedFactor(
+  runtime: Runtime,
+  session: StoredSession<unknown>,
+  factor: StoredTotpFactor,
+): Promise<boolean> {
+  if (session.createdAt >= factor.createdAt + ENROLLMENT_TTL_MS) return true;
+
+  return hasStepUp(runtime, session);
 }
 
 const refusedWithoutFactor = (via: IssueVia): HookResult =>
