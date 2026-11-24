@@ -135,6 +135,9 @@ export async function inspectPasswordReset<U extends AuthUser, A>(
   for (const hook of core.hooks.passwordResetRequirements) {
     const needs = await hook({ user });
 
+    if (needs && 'refuse' in needs)
+      return inspectFailed(core, user.id, needs.reason, meta, needs.code);
+
     if (needs?.secondFactor === true) secondFactorRequired = true;
   }
 
@@ -230,13 +233,14 @@ async function inspectFailed<U extends AuthUser, A>(
   userId: string | undefined,
   reason: string,
   meta: RequestMeta,
+  code: AuthErrorCode = 'invalid_token',
 ): Promise<AuthFailure> {
   await core.emit(
     { type: 'password.reset_inspect_failed', ...(userId ? { userId } : {}), reason },
     meta,
   );
 
-  return fail('invalid_token', `reset_${reason}`);
+  return fail(code, `reset_${reason}`);
 }
 
 async function failed<U extends AuthUser, A>(

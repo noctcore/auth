@@ -90,5 +90,8 @@ export function lockoutHooks(tokens: OneTimeTokens): HookInput<AuthUser, any> {
       (await locked(user.id)) ? refuse('email_revert_lockout') : undefined,
     beforePasswordReset: async ({ user }) =>
       (await locked(user.id)) ? refuse('email_revert_lockout', 'invalid_token') : undefined,
+    // A reset page's link check answers what the reset would: a dead link.
+    passwordResetRequirements: async ({ user }) =>
+      (await locked(user.id)) ? refuse('email_revert_lockout', 'invalid_token') : undefined,
   };
 }

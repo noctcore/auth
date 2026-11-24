@@ -134,15 +134,19 @@ export interface AuthHooks<U extends AuthUser, A> {
   /** Whether a reset may be sent to this account. A refusal is silent (the request answers the same). */
   beforePasswordResetRequest: (context: { user: U }) => MaybePromise<HookResult>;
   /**
-   * What applying a reset of this account will ask for, for a reset page that
-   * checks its link on load (`inspectPasswordReset`). Answer `secondFactor:
-   * true` when your `beforePasswordReset` hook will demand a code for this
-   * user; the two-factor plugin does for a confirmed factor. The answers of
-   * every hook are combined: any `true` wins. Read only: spend nothing here.
+   * What applying a reset of this account will ask for, or that it will be
+   * refused, for a reset page that checks its link on load
+   * (`inspectPasswordReset`). Answer `secondFactor: true` when your
+   * `beforePasswordReset` hook will demand a code for this user (the
+   * two-factor plugin does for a confirmed factor), and return the same
+   * `refuse(...)` your `beforePasswordReset` would for an account it always
+   * refuses (one your app closed), so the check answers what the reset
+   * would. Any `true` wins; the first refusal answers the check. Read only:
+   * spend nothing here.
    */
   passwordResetRequirements: (context: {
     user: U;
-  }) => MaybePromise<PasswordResetRequirements | undefined | void>;
+  }) => MaybePromise<PasswordResetRequirements | Refusal | undefined | void>;
   /** Before a reset is applied: a second-factor plugin demands its code here. */
   beforePasswordReset: (context: {
     user: U;
