@@ -196,8 +196,8 @@ export async function resetPassword<U extends AuthUser, A>(
 
   if (!written) return failed(core, user.id, 'write_refused', meta);
 
-  await core.revokeAllSessions(user.id, 'password-reset');
   await revokePasswordTokensAfterWrite(core, user.id);
+  await core.revokeAllSessions(user.id, 'password-reset');
 
   // The password has changed: a failure from here on is logged, not answered.
   await afterPasswordWrite(core, 'lift lockout', user.id, () =>
