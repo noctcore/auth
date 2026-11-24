@@ -65,6 +65,15 @@ export function factorAccount(userId: string): string {
 }
 
 /**
+ * The lock key of a proof for a user with no confirmed factor
+ * (`verifyProof`): such a proof can never pass, so its attempts are kept
+ * apart from the user's factor key and lock nothing a later factor uses.
+ */
+export function unguardedAccount(userId: string): string {
+  return sha256Hex(`two-factor-unguarded:${userId}`);
+}
+
+/**
  * Checks the factor's lock and reserves one attempt (`throttle.gateFactor`).
  * A new lock counts toward the permanent lockout tier of the user's account
  * (`escalateLock`, which does nothing while the tier is off), so a guesser

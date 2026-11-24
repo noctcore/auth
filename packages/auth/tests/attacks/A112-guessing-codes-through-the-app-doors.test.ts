@@ -6,18 +6,29 @@
 // identified without a session. If either had a budget of its own, a guesser
 // could spread codes across them and the login challenge; if a wrong code
 // answered differently from a user with no factor, or from no user at all,
-// the proof door would tell who has one.
+// the proof door would tell who has one. And since such a user can never
+// pass, junk codes for it must not lock its account or climb the permanent
+// lockout tier (only an admin clears that), or anyone could lock any account.
+//
+// What "alike" means: the same answer code and the same two-factor store
+// calls. The lock key differs: a user with a confirmed factor is counted on
+// its factor key, so five wrong codes lock it (`factor_locked` in the reason,
+// a lock mail to the owner with the permanent tier); a user without one is
+// counted on a key of its own that names no account. The reason strings
+// already differed (`wrong_code`, `no_factor`): show the code, not the reason.
 //
 // Stopped by: plugins/two-factor/step-up.ts (`verifyProof` checks through
-//   `checkProof`, on the factor's own lock key and the plugin's per-IP limit, and
-//   answers a user without a confirmed factor, given a proof, as a wrong code after
-//   the same store calls), plugins/two-factor/challenge.ts (`startChallenge` only
+//   `checkProof` and the plugin's per-IP limit, on the factor's own lock key for a
+//   user with a confirmed factor and on `unguardedAccount` with no user named for
+//   any other, so it answers like a wrong code after the same store calls and
+//   locks nothing), plugins/two-factor/runtime.ts (`unguardedAccount`),
+//   plugins/two-factor/challenge.ts (`startChallenge` only
 //   makes the login's challenge, behind the per-IP limit; codes are counted at the
 //   verify), plugins/two-factor/proofs.ts (`checkProof`).
 // Learn: Second factors (/auth/learn/second-factors/)
 import { describe, expect, it } from 'vitest';
 
-import { meta, recordTwoFactorCalls, twoFactorApp } from '../two-factor/setup';
+import { EMAIL, meta, PASSWORD, recordTwoFactorCalls, twoFactorApp } from '../two-factor/setup';
 
 const WRONG = { kind: 'totp', code: '000000' } as const;
 
@@ -75,6 +86,42 @@ describe('A112: guessing codes through the app doors', () => {
     expect(wrong.code).toBe('invalid_second_factor');
     expect(factorless).toEqual(wrong);
     expect(nobody).toEqual(wrong);
+  });
+
+  it('lets no junk codes for a user without a factor lock it or climb the permanent tier', async () => {
+    const t = twoFactorApp({}, { throttle: { lockout: { permanent: { afterLocks: 1 } } } });
+    const { session } = await t.signedIn();
+    const userId = session.userId;
+
+    // Six junk codes: one lock's worth, and with `afterLocks: 1` the lock
+    // that would have been permanent.
+    for (let i = 0; i < 6; i++)
+      await t.auth.twoFactor.verifyProof({
+        userId,
+        proof: WRONG,
+        action: 'x',
+        meta: meta(`198.51.100.${i}`),
+      });
+
+    expect((await t.auth.lockout.inspect({ email: EMAIL })).locked).toBe(false);
+    expect(t.mailer.sent.filter((m) => m.type === 'lockout')).toEqual([]);
+
+    // The user can still turn a factor on: its key was never locked.
+    const started = await t.auth.twoFactor.enroll({ session, meta: meta() });
+
+    if (!started.ok) throw new Error(started.reason);
+
+    const confirmed = await t.auth.twoFactor.confirmEnrollment({
+      session,
+      code: t.codeFor(started.value.secret),
+      meta: meta(),
+    });
+
+    expect(confirmed.ok).toBe(true);
+
+    const login = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    expect(login.ok && login.value.kind).toBe('challenge');
   });
 
   it('puts the proof door and the challenge door behind the plugin per-IP limit', async () => {
