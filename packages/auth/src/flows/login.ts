@@ -16,9 +16,12 @@
  *    change that lands during the login invalidates the session it mints;
  * 3. a second-factor plugin can turn the login into a challenge, carrying the
  *    epoch along, and finish it through `issueSession` later; the
- *    `beforeSessionCreate` hooks run before the challenge is handed out, so
- *    an account they refuse never learns its password was right;
- * 4. a locked account still pays for the password verify, and the lock notice
+ *    `beforeSessionCreate` hooks run before any challenge is made, so an
+ *    account they refuse never learns its password was right;
+ * 4. the correct password is credited to the throttle (and rehashed) only
+ *    once no hook refused the account: a refusal counts as a wrong password,
+ *    so the lockout's next answer cannot tell the two apart;
+ * 5. a locked account still pays for the password verify, and the lock notice
  *    (audit row and owner mail) runs off the response path.
  *
  * Every issued session carries a trusted-device cookie (`session.deviceCookie`),
@@ -118,29 +121,34 @@ export async function login<U extends AuthUser, A>(
     return fail('invalid_credentials', reason);
   }
 
-  await core.throttle.loginSucceeded(account, meta.ip, gate.viaDevice ? deviceId : null);
-
-  if (credential.passwordHash && core.hasher.needsRehash(credential.passwordHash)) {
-    await rehash(core, credential.id, credential.passwordHash, input.password, meta);
-  }
-
   const user = publicUser(credential);
+  const issue = { via: 'password', meta, rememberMe, epoch } as const;
+
+  // Only once no hook refuses the account does the correct password count as
+  // one: before that, a refusal must leave the throttle exactly as a wrong
+  // password does, or the lockout's next answer would tell the two apart.
+  const credit = async (): Promise<void> => {
+    await core.throttle.loginSucceeded(account, meta.ip, gate.viaDevice ? deviceId : null);
+
+    if (credential.passwordHash && core.hasher.needsRehash(credential.passwordHash))
+      await rehash(core, credential.id, credential.passwordHash, input.password, meta);
+  };
+
+  // With a challenge plugin, the hooks refuse before any challenge hook runs:
+  // a refused account never sees a challenge that says the password was
+  // right, and no challenge is written for it.
+  if (core.hooks.loginChallenge.length > 0) {
+    const refused = await core.refuseBeforeChallenge(user, issue);
+
+    if (refused) return refusedAsWrong(core, credential, account, gate, refused, meta);
+  }
 
   for (const hook of core.hooks.loginChallenge) {
     const challenge = await hook({ user, rememberMe, epoch, meta });
 
     if (!challenge) continue;
 
-    // The app's refusals first: an account a hook refuses gets the answer a
-    // wrong password gets, not a challenge that says the password was right.
-    const refused = await core.refuseBeforeChallenge(user, {
-      via: 'password',
-      meta,
-      rememberMe,
-      epoch,
-    });
-
-    if (refused) return refused;
+    await credit();
 
     // No device cookie yet: it comes with the session, after every factor.
     const methods = challenge.methods.join(',');
@@ -150,13 +158,36 @@ export async function login<U extends AuthUser, A>(
     return ok({ kind: 'challenge', challenge: challenge.challenge, methods: challenge.methods });
   }
 
-  const issued = await core.issueSession(user, { via: 'password', meta, rememberMe, epoch });
+  const issued = await core.issueAfterPassword(user, issue, credit);
 
-  if (!issued.ok) return issued;
+  if (!issued.ok)
+    return issued.credited ? issued : refusedAsWrong(core, credential, account, gate, issued, meta);
 
   await core.emit({ type: 'login.success', userId: user.id }, meta);
 
   return ok({ kind: 'session', session: issued.value });
+}
+
+/**
+ * A correct password a hook refused, counted as a wrong one: the attempt the
+ * gate reserved stays spent and a device token's shared failures grow, as
+ * after a wrong password. The hook's refusal is the answer.
+ */
+async function refusedAsWrong<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  credential: NonNullable<Credential>,
+  account: string,
+  gate: Extract<LoginGate, { allowed: true }>,
+  refusal: AuthFailure,
+  meta: RequestMeta,
+): Promise<AuthFailure> {
+  if (gate.viaDevice) {
+    const { newLock } = await core.throttle.deviceFailed(account, credential.id);
+
+    notifyLock(core, credential, newLock, meta);
+  }
+
+  return refusal;
 }
 
 /** The audit row of a refused login; the user id only when the address belongs to an account. */
