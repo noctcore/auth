@@ -117,6 +117,7 @@ describe('A017: replaying secrets from a leaked store', () => {
       status: 'valid',
       userId: 'u1',
       data: { email: 'a@example.com' },
+      expiresAt: clock.now() + 60_000,
     });
 
     expect(await tokens.redeemLink('verify', token)).toEqual({ status: 'unknown' });

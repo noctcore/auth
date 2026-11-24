@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { refuse, type PasswordResetJob } from '../../src';
 import { meta, NEW_PASSWORD, settled, setup } from './setup';
+import { twoFactorApp } from '../two-factor/setup';
 
 const EMAIL = 'ada@example.com';
 const tokenOf = (url: string | undefined) => (url ?? '').split('#')[1] ?? '';
@@ -207,9 +208,10 @@ describe('the issued reset event', () => {
     for (let i = 0; i < 4; i++) await requestAndDrain(limited);
 
     expect(issued(t)).toEqual([]);
-    expect(t.audit.types().filter((type) => type === 'password.reset_request_ignored')).toHaveLength(
-      2,
-    );
+
+    expect(
+      t.audit.types().filter((type) => type === 'password.reset_request_ignored'),
+    ).toHaveLength(2);
 
     expect(issued(limited)).toHaveLength(3);
     expect(limited.mailer.sent.filter((m) => m.type === 'password-reset')).toHaveLength(3);
@@ -221,6 +223,7 @@ describe('the request meta on the reset mail', () => {
     const t = queued();
 
     await t.signedInUser(EMAIL);
+
     await t.auth.requestPasswordReset({
       email: EMAIL,
       meta: { ip: '198.51.100.9', userAgent: 'Firefox/140' },
@@ -277,5 +280,153 @@ describe('the request meta on the reset mail', () => {
       ip: '192.0.2.44',
       userAgent: 'vitest',
     });
+  });
+});
+
+describe('inspecting a reset link', () => {
+  async function linkFor(t: Queued) {
+    await requestAndDrain(t);
+
+    return tokenOf(t.mailer.last('password-reset')?.url);
+  }
+
+  it('answers a live link twice without spending it, and the reset still works', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+    const token = await linkFor(t);
+    const first = await t.auth.inspectPasswordReset({ token, meta: meta() });
+    const second = await t.auth.inspectPasswordReset({ token, meta: meta() });
+
+    expect(first).toEqual({
+      ok: true,
+      value: {
+        user: expect.objectContaining({ id: session.userId, email: EMAIL }),
+        expiresAt: t.clock.now() + 60 * 60_000,
+        secondFactorRequired: false,
+      },
+    });
+
+    expect(second).toEqual(first);
+    expect(first.ok && first.value.user).not.toHaveProperty('passwordHash');
+    expect(t.audit.types().filter((type) => type === 'password.reset_inspected')).toHaveLength(2);
+
+    expect((await t.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() })).ok).toBe(
+      true,
+    );
+  });
+
+  it('answers unknown, expired and spent links the same, naming no account for an unknown one', async () => {
+    const t = queued();
+
+    await t.signedInUser(EMAIL);
+
+    const spent = await linkFor(t);
+
+    await t.auth.resetPassword({ token: spent, password: NEW_PASSWORD, meta: meta() });
+
+    const expired = await linkFor(t);
+
+    t.clock.advance(60 * 60_000);
+
+    const before = t.audit.events.length;
+    const unknown = await t.auth.inspectPasswordReset({ token: 'x'.repeat(43), meta: meta() });
+    const unknownEvents = t.audit.events.slice(before);
+
+    const answers = await Promise.all(
+      [spent, expired].map((token) => t.auth.inspectPasswordReset({ token, meta: meta() })),
+    );
+
+    for (const answer of [unknown, ...answers])
+      expect(!answer.ok && answer.code).toBe('invalid_token');
+
+    expect(unknownEvents).toEqual([
+      expect.objectContaining({ type: 'password.reset_inspect_failed', reason: 'unknown' }),
+    ]);
+
+    expect(unknownEvents[0]).not.toHaveProperty('userId');
+    expect(t.mailer.sent.filter((m) => m.type === 'password-reset')).toHaveLength(2);
+  });
+
+  it('counts inspections and resets on the same door', async () => {
+    const t = queued({ throttle: { doors: { 'password-reset': { limit: 3, window: '1m' } } } });
+
+    await t.signedInUser(EMAIL);
+    const token = await linkFor(t);
+
+    await t.auth.inspectPasswordReset({ token, meta: meta() });
+    await t.auth.inspectPasswordReset({ token, meta: meta() });
+
+    expect((await t.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() })).ok).toBe(
+      true,
+    );
+
+    const fourth = await t.auth.inspectPasswordReset({ token, meta: meta() });
+
+    expect(!fourth.ok && fourth.code).toBe('rate_limited');
+  });
+
+  it('answers a ticket in code mode, and refuses the raw code', async () => {
+    const t = queued({ passwordReset: { kind: 'code' } });
+
+    await t.signedInUser(EMAIL);
+    await requestAndDrain(t);
+
+    const code = t.mailer.last('password-reset-code')?.code ?? '';
+    const raw = await t.auth.inspectPasswordReset({ token: code, meta: meta() });
+    const ticket = await t.auth.verifyPasswordResetCode({ email: EMAIL, code, meta: meta() });
+
+    if (!ticket.ok) throw new Error(ticket.reason);
+
+    const inspected = await t.auth.inspectPasswordReset({
+      token: ticket.value.ticket,
+      meta: meta(),
+    });
+
+    expect(!raw.ok && raw.code).toBe('invalid_token');
+    expect(inspected.ok && inspected.value.expiresAt).toBe(ticket.value.expiresAt);
+  });
+
+  it('runs no beforePasswordReset hook, and takes the requirement from the requirement hooks', async () => {
+    const beforePasswordReset = vi.fn(() => undefined);
+
+    const t = queued({
+      hooks: {
+        beforePasswordReset,
+        passwordResetRequirements: [
+          () => ({ secondFactor: false }),
+          () => ({ secondFactor: true }),
+        ],
+      },
+    });
+
+    await t.signedInUser(EMAIL);
+
+    const inspected = await t.auth.inspectPasswordReset({ token: await linkFor(t), meta: meta() });
+
+    expect(inspected.ok && inspected.value.secondFactorRequired).toBe(true);
+    expect(beforePasswordReset).not.toHaveBeenCalled();
+  });
+
+  it('says a second factor is required for an account with a confirmed factor', async () => {
+    const t = twoFactorApp();
+
+    await t.enrolled();
+    await t.auth.requestPasswordReset({ email: EMAIL, meta: meta() });
+    await settled();
+
+    const token = tokenOf(t.mailer.last('password-reset')?.url);
+    const inspected = await t.auth.inspectPasswordReset({ token, meta: meta() });
+
+    await t.signedIn('grace@example.com');
+    await t.auth.requestPasswordReset({ email: 'grace@example.com', meta: meta() });
+    await settled();
+
+    const plain = await t.auth.inspectPasswordReset({
+      token: tokenOf(t.mailer.last('password-reset')?.url),
+      meta: meta(),
+    });
+
+    expect(inspected.ok && inspected.value.secondFactorRequired).toBe(true);
+    expect(plain.ok && plain.value.secondFactorRequired).toBe(false);
   });
 });
