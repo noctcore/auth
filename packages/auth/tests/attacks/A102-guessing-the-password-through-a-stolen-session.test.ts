@@ -10,7 +10,9 @@
 // Stopped by: flows/password-change.ts (both doors reserve an attempt in
 //   login's budgets before the verify: per (account, IP) and account-wide,
 //   and under a lock the trusted devices' shared budget, the live session
-//   standing in for a device), throttle/throttle.ts (`gateLogin`).
+//   standing in for a device), throttle/throttle.ts (`gateLogin`). Not with
+//   `throttle.lockout.sessionProofs: 'door'` (opt-in): then each door's own
+//   limit is the only budget, and the guesses never lock anything (A002).
 // Learn: Brute force and lockout (/auth/learn/brute-force-and-lockout/)
 import { describe, expect, it } from 'vitest';
 
