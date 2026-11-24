@@ -199,7 +199,17 @@ export async function resetPassword<U extends AuthUser, A>(
     return failed(core, user.id, `lost_race_${redeemed.status}`, meta);
 
   // Every reset link and ticket dies before the write (password-write.ts).
-  const written = await writePasswordHash(core, user.id, hashed);
+  let written: boolean;
+
+  try {
+    written = await writePasswordHash(core, user.id, hashed);
+  } catch (error) {
+    // The sweep or the write threw: the link is spent, the password is the
+    // old one. The failure is on the audit trail before it is thrown.
+    await failed(core, user.id, 'write_failed', meta);
+
+    throw error;
+  }
 
   if (!written) return failed(core, user.id, 'write_refused', meta);
 

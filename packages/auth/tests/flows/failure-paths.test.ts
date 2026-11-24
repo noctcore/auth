@@ -368,6 +368,39 @@ describe('a store that fails after a reset wrote the password', () => {
   const hashOf = async (app: ReturnType<typeof setup>) =>
     (await app.stores.users.findCredentialByEmail(EMAIL as NormalizedEmail))?.passwordHash;
 
+  it('writes password.reset_failed before it throws when the sweep or the write throws', async () => {
+    for (const fail of ['sweep', 'write'] as const) {
+      const app = setup();
+      const { session } = await app.signedInUser(EMAIL);
+      const token = await resetLink(app);
+      const before = await hashOf(app);
+
+      if (fail === 'sweep')
+        vi.spyOn(app.stores.tokens, 'deleteByUser').mockRejectedValueOnce(new Error('redis down'));
+      else
+        vi.spyOn(app.stores.users, 'setPasswordHash').mockRejectedValueOnce(new Error('db down'));
+
+      await expect(
+        app.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() }),
+      ).rejects.toThrow(fail === 'sweep' ? 'redis down' : 'db down');
+
+      vi.restoreAllMocks();
+
+      expect(await hashOf(app)).toBe(before);
+
+      expect(
+        app.audit.events
+          .filter((e) => e.type === 'password.reset_failed')
+          .map((e) => [e.userId, e.reason]),
+      ).toEqual([[session.userId, 'write_failed']]);
+
+      // The link was spent before the write: it does not work again.
+      const again = await app.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() });
+
+      expect(!again.ok && again.code).toBe('invalid_token');
+    }
+  });
+
   it('answers ok, logs the lock it could not lift and keeps the lock', async () => {
     const { logger, lines } = recordingLogger();
     const app = setup({ logger });
