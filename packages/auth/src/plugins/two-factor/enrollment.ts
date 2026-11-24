@@ -6,14 +6,16 @@
  *   the app requires a factor of (the password was just proved).
  * - The secret is generated here (160 bits), encrypted by the app's cipher,
  *   shown once, and stays PENDING: it guards nothing until a code from it is
- *   confirmed, within 10 minutes, by a compare-and-set on that very secret.
+ *   confirmed within `enrollmentWindow` (10 minutes by default), by a
+ *   compare-and-set on that very secret. An enrollment challenge still ends
+ *   with the challenge (5 minutes), whatever the window.
  * - Confirming spends the code's time step, so the code that confirmed the
  *   factor cannot also pass the next challenge, and issues the recovery codes.
  * - The owner is mailed; the app may also end every other session.
  *
  * Guide: Learn, "Second factors"; Build, "Two-factor".
  */
-import { CHALLENGE_PURPOSE, ENROLLMENT_TTL_MS } from './options';
+import { CHALLENGE_PURPOSE } from './options';
 import { issueRecoveryCodes, totpStep } from './proofs';
 import { clientTag, factorAccount, gateAttempt, limitIp, refused, type Runtime } from './runtime';
 import { recordStepUp } from './step-up';
@@ -99,7 +101,7 @@ export async function enroll<A>(
   return ok({
     secret: encodeTotpSecret(secret),
     uri: totpUri(runtime.settings.issuer, user.email, secret),
-    expiresAt: now + ENROLLMENT_TTL_MS,
+    expiresAt: now + runtime.settings.enrollmentWindowMs,
   });
 }
 
@@ -157,7 +159,9 @@ export async function confirmPending(
   const now = core.clock.now();
 
   const pending =
-    factor !== null && !factor.confirmed && factor.createdAt + ENROLLMENT_TTL_MS > now
+    factor !== null &&
+    !factor.confirmed &&
+    factor.createdAt + runtime.settings.enrollmentWindowMs > now
       ? factor
       : null;
 

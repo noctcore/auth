@@ -83,6 +83,15 @@ export interface TwoFactorOptions {
   /** How long a second-factor proof counts for sensitive actions, per session. Default 10 min. */
   readonly stepUpWindow?: Duration;
   /**
+   * How long a pending secret from `enroll` accepts its confirmation code
+   * (`Enrollment.expiresAt`). Positive, at most 24 h. Default 10 min. It also
+   * dates when a factor counts as set up for an app's own re-issue of a
+   * session (a session created after the window closed passes), so shrinking
+   * it while enrollments are pending lets a session created between the new
+   * and the old end pass; turn factors on with `revokeOtherSessions: true`.
+   */
+  readonly enrollmentWindow?: Duration;
+  /**
    * "Remember this device": a device that passed the challenge skips it on
    * later logins (never the password, never a step-up). Default 30 days, 5
    * devices per user. `false` turns it off.
@@ -129,6 +138,7 @@ export interface TwoFactorSettings {
   /** The enforcement policy, or null when `enforcement` is not configured. */
   readonly enforcement: TwoFactorEnforcement | null;
   readonly stepUpWindowMs: number;
+  readonly enrollmentWindowMs: number;
   readonly trustedDevices: { readonly ttlMs: number; readonly maxPerUser: number } | null;
   readonly attempts: AttemptRule;
   readonly perIp: AttemptRule;
@@ -141,8 +151,8 @@ export const CHALLENGE_PURPOSE = 'two-factor-challenge';
 export const CHALLENGE_TTL_MS = 5 * 60_000;
 /** Codes one challenge accepts before it is spent. */
 export const CHALLENGE_MAX_ATTEMPTS = 5;
-/** How long an enrollment waits for its confirmation code. */
-export const ENROLLMENT_TTL_MS = 10 * 60_000;
+/** The longest `enrollmentWindow`: a pending secret is a half-finished setup, not a standing one. */
+export const MAX_ENROLLMENT_WINDOW_MS = 24 * 3600_000;
 
 const never = (): boolean => false;
 
@@ -171,11 +181,21 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
 
   if (stepUpWindowMs <= 0) throw new AuthConfigError('twoFactor: stepUpWindow must be positive');
 
+  const enrollmentWindowMs = configMilliseconds(
+    'twoFactor: enrollmentWindow',
+    options.enrollmentWindow,
+    '10m',
+  );
+
+  if (enrollmentWindowMs <= 0 || enrollmentWindowMs > MAX_ENROLLMENT_WINDOW_MS)
+    throw new AuthConfigError('twoFactor: enrollmentWindow must be positive and at most 24 hours');
+
   return {
     issuer: options.issuer,
     required: options.required ?? never,
     enforcement: options.enforcement ?? null,
     stepUpWindowMs,
+    enrollmentWindowMs,
     trustedDevices: resolveTrustedDevices(options.trustedDevices),
     attempts: resolveRule('attempts', options.attempts ?? { limit: 5, window: '15m' }),
     perIp: resolveRule('perIp', options.perIp ?? { limit: 10, window: '1m' }),
