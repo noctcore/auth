@@ -7,14 +7,22 @@
 // whoever holds the password of a refused account would see a challenge, and
 // so learn the password is right, before the app refused at the session.
 //
+// The throttle must not tell either: if a refused right password were
+// credited as a success, it would clear the per-address counter that a wrong
+// one leaves, and with `revealLocked` the next answer would differ.
+//
 // Stopped by: flows/login.ts (the `beforeSessionCreate` hooks run, with
-//   `beforeChallenge: true`, before a challenge is handed out), core/auth-core.ts
-//   (`refuseBeforeChallenge`), plugins/two-factor/hooks.ts (its enforcement refuses
-//   nothing before the challenge: the challenge is the factor).
+//   `beforeChallenge: true`, before any challenge is made; the password is
+//   credited to the throttle only once no hook refused, and a refusal counts as a
+//   wrong password), core/auth-core.ts (`refuseBeforeChallenge`, and
+//   `issueAfterPassword` crediting only after the hooks), plugins/two-factor/hooks.ts
+//   (its enforcement refuses nothing before the challenge: the challenge is the factor).
 // Learn: Second factors (/auth/learn/second-factors/)
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { refuse } from '../../src';
+import { setup } from '../flows/setup';
+import { recordTwoFactorCalls } from '../two-factor/setup';
 import { EMAIL, meta, PASSWORD, twoFactorApp } from '../two-factor/setup';
 
 const FENCED = 'fenced@example.com';
@@ -57,6 +65,25 @@ describe('A111: learning a refused password through the second-factor challenge'
     });
   });
 
+  it('makes no challenge and reads no factor for a refused account', async () => {
+    const { fence, overrides } = fencing();
+    const t = twoFactorApp({}, overrides);
+
+    await t.enrolled(FENCED);
+    fence.on = true;
+
+    const calls: string[] = [];
+
+    recordTwoFactorCalls(t.store, calls);
+
+    const tokens = vi.spyOn(t.stores.tokens, 'put');
+
+    await t.auth.login({ email: FENCED, password: PASSWORD, meta: meta() });
+
+    expect(calls).toEqual([]);
+    expect(tokens).not.toHaveBeenCalled();
+  });
+
   it('gives an account the hook accepts its challenge as before', async () => {
     const { fence, overrides } = fencing();
     const t = twoFactorApp({}, overrides);
@@ -84,5 +111,44 @@ describe('A111: learning a refused password through the second-factor challenge'
       code: 'invalid_credentials',
       reason: 'fenced_from_portal',
     });
+  });
+
+  // 4 wrong from one address, 4 from another, the candidate from the second,
+  // then one more wrong from it: a right candidate must leave the same answer
+  // as a wrong one.
+  async function lastAnswer(withFactor: boolean, candidate: string) {
+    const { fence, overrides } = fencing();
+    const options = { ...overrides, throttle: { lockout: { revealLocked: true } } };
+    const t = withFactor ? twoFactorApp({}, options) : setup(options);
+
+    if (withFactor) await (t as ReturnType<typeof twoFactorApp>).enrolled(FENCED);
+    else await t.signedInUser(FENCED);
+
+    fence.on = true;
+
+    const attempt = (password: string, ip: string) =>
+      t.auth.login({ email: FENCED, password, meta: meta(ip) });
+
+    for (let i = 0; i < 4; i += 1) await attempt('not it', '198.51.100.2');
+
+    for (let i = 0; i < 4; i += 1) await attempt('not it', '198.51.100.1');
+
+    const answer = await attempt(candidate, '198.51.100.1');
+
+    expect(answer).toMatchObject({ ok: false });
+
+    const last = await attempt('not it', '198.51.100.1');
+
+    return last.ok ? 'ok' : last.code;
+  }
+
+  it('leaves the lockout where a wrong password leaves it, with revealLocked', async () => {
+    for (const withFactor of [true, false]) {
+      const wrong = await lastAnswer(withFactor, 'not it');
+      const right = await lastAnswer(withFactor, PASSWORD);
+
+      expect(wrong).toBe('invalid_credentials');
+      expect(right).toBe(wrong);
+    }
   });
 });

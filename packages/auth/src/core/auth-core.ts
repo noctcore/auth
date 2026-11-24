@@ -404,10 +404,11 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
   }
 
   /**
-   * After a correct password, before a second-factor challenge is handed out:
-   * the `beforeSessionCreate` hooks for the password sign-in, with
+   * After a correct password, before any challenge hook runs: the
+   * `beforeSessionCreate` hooks for the password sign-in, with
    * `beforeChallenge: true`, so an account a hook refuses never learns that
-   * its password was right. Null when every hook lets it through.
+   * its password was right and no challenge is written for it. Null when
+   * every hook lets it through.
    */
   async refuseBeforeChallenge(user: U, options: IssueOptions<A>): Promise<AuthFailure | null> {
     const admitted = await this.#admit(user, options, { beforeChallenge: true });
@@ -415,7 +416,39 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     return admitted.ok ? null : admitted;
   }
 
-  async issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
+  issueSession(user: U, options: IssueOptions<A>): Promise<AuthResult<IssuedSession<A>>> {
+    return this.#issue(user, options, undefined);
+  }
+
+  /**
+   * The password login's issue: `credit` (the throttle's success, a rehash)
+   * runs once every hook let the session through, before it is minted. A
+   * failure says whether it ran, so a refusal before it can be counted as a
+   * wrong password.
+   */
+  async issueAfterPassword(
+    user: U,
+    options: IssueOptions<A>,
+    credit: () => Promise<void>,
+  ): Promise<
+    | { readonly ok: true; readonly value: IssuedSession<A> }
+    | (AuthFailure & { readonly credited: boolean })
+  > {
+    let credited = false;
+
+    const issued = await this.#issue(user, options, async () => {
+      credited = true;
+      await credit();
+    });
+
+    return issued.ok ? issued : { ...issued, credited };
+  }
+
+  async #issue(
+    user: U,
+    options: IssueOptions<A>,
+    onAdmitted: (() => Promise<void>) | undefined,
+  ): Promise<AuthResult<IssuedSession<A>>> {
     // A re-issue names the session it replaces, read live from the store for
     // this user: hooks (a second factor's enforcement, say) let re-issues
     // through on the strength of that, so a call that only claims the label,
@@ -433,6 +466,8 @@ export class AuthCore<U extends AuthUser, A> implements PluginContext<U, A> {
     if (!admitted.ok) return admitted;
 
     const attributes = admitted.value;
+
+    if (onAdmitted) await onAdmitted();
 
     // Every factor is proved and nothing refused: a completed sign-in. Before
     // the mint, so a store that fails here leaves no session behind.

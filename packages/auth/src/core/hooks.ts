@@ -100,11 +100,14 @@ export interface AuthHooks<U extends AuthUser, A> {
     inherited: A | undefined;
   }) => MaybePromise<Partial<A>>;
   /**
-   * Last check before any session is minted, on every path. It also runs
-   * after a correct password, before a second-factor challenge is handed out
-   * (`via: 'password'`, `beforeChallenge: true`), so an account it refuses
-   * gets `invalid_credentials` and never learns its password was right; the
-   * session itself comes later (`via: 'second-factor'`), and this runs again.
+   * Last check before any session is minted, on every path. With a
+   * second-factor plugin it also runs after a correct password, before any
+   * challenge is made (`via: 'password'`, `beforeChallenge: true`, with the
+   * `sessionAttributes` hooks run for it too), so an account it refuses gets
+   * `invalid_credentials`, counted as a wrong password, and never learns its
+   * password was right. The session itself comes later (`via:
+   * 'second-factor'`, or `'password'` when no challenge is due), and this runs
+   * again.
    */
   beforeSessionCreate: (context: {
     user: U;
@@ -118,7 +121,7 @@ export interface AuthHooks<U extends AuthUser, A> {
      * `inherit` is not is refused before the hooks, as `session_expired`).
      */
     reissueOf?: StoredSession<A>;
-    /** Set when this runs before a second-factor challenge, not before a session. */
+    /** Set when this runs after a correct password, before any second-factor challenge, not before a session. */
     beforeChallenge?: true;
   }) => MaybePromise<HookResult>;
   /** Runs on every validated request; a refusal revokes the session. Keep it cheap. */
