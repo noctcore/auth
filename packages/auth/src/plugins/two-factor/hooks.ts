@@ -9,7 +9,8 @@
  *   (password change, re-authentication, sign out of other devices, email
  *   verified, email changed; the core refuses those labels unless the call passes that user's
  *   session as `inherit`). So no flow that issues a session, sign-up with
- *   `autoLogin` included, gets past the factor. Plugins are trusted code: one
+ *   `autoLogin` included, gets past the factor. Before a login challenge
+ *   (`beforeChallenge`) it refuses nothing: the challenge is the factor. Plugins are trusted code: one
  *   that issues with `via: 'second-factor'` claims to have checked the factor.
  * - `beforePasswordReset`: a reset of an account with a factor needs a code or
  *   a recovery code before the password is written, so a stolen mailbox alone
@@ -61,7 +62,9 @@ export function twoFactorHooks(
 ): HookInput<AuthUser, any> {
   return {
     loginChallenge: (context) => loginChallenge(runtime(), context),
-    beforeSessionCreate: ({ user, via }) => enforce(runtime(), user, via),
+    beforeSessionCreate: ({ user, via, beforeChallenge }) =>
+      // Before the challenge the factor is still to come: the challenge is it.
+      beforeChallenge ? undefined : enforce(runtime(), user, via),
     // Only with `enforcement`: without it, validation reads nothing extra.
     ...(options.enforced
       ? { sessionStanding: ({ session }) => sessionStanding(runtime(), session) }

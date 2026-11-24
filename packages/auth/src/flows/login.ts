@@ -15,7 +15,9 @@
  * 2. the revocation epoch is read BEFORE the password hash, so a password
  *    change that lands during the login invalidates the session it mints;
  * 3. a second-factor plugin can turn the login into a challenge, carrying the
- *    epoch along, and finish it through `issueSession` later;
+ *    epoch along, and finish it through `issueSession` later; the
+ *    `beforeSessionCreate` hooks run before the challenge is handed out, so
+ *    an account they refuse never learns its password was right;
  * 4. a locked account still pays for the password verify, and the lock notice
  *    (audit row and owner mail) runs off the response path.
  *
@@ -128,6 +130,17 @@ export async function login<U extends AuthUser, A>(
     const challenge = await hook({ user, rememberMe, epoch, meta });
 
     if (!challenge) continue;
+
+    // The app's refusals first: an account a hook refuses gets the answer a
+    // wrong password gets, not a challenge that says the password was right.
+    const refused = await core.refuseBeforeChallenge(user, {
+      via: 'password',
+      meta,
+      rememberMe,
+      epoch,
+    });
+
+    if (refused) return refused;
 
     // No device cookie yet: it comes with the session, after every factor.
     const methods = challenge.methods.join(',');

@@ -299,8 +299,9 @@ describe('imported recovery codes', () => {
       { importedRecoveryCodes: legacyScheme },
       {
         hooks: {
-          beforeSessionCreate: () =>
-            refuseNow
+          // At the session, after the code passed (not before the challenge).
+          beforeSessionCreate: ({ via }) =>
+            refuseNow && via === 'second-factor'
               ? { refuse: true as const, code: 'forbidden' as const, reason: 'app_says_no' }
               : undefined,
         },

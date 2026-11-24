@@ -77,7 +77,10 @@ describe('plugins', () => {
       mailer: recordingMailer(),
       clock,
       plugins: [toyTwoFactor()],
-      hooks: { beforeSessionCreate: ({ via }) => void created.push(via) },
+      hooks: {
+        beforeSessionCreate: ({ via, beforeChallenge }) =>
+          void created.push(beforeChallenge ? `${via} (before the challenge)` : via),
+      },
     });
 
     await auth.register({ email: 'ada@example.com', password: PASSWORD, meta: meta() });
@@ -95,7 +98,13 @@ describe('plugins', () => {
     const done = await auth.twoFactor.verify({ challenge: login2.value.challenge, code: '424242' });
 
     expect(done.ok).toBe(true);
-    expect(created).toEqual(['second-factor']);
+
+    // Before each challenge, then once for the session.
+    expect(created).toEqual([
+      'password (before the challenge)',
+      'password (before the challenge)',
+      'second-factor',
+    ]);
   });
 
   it('refuses the second-factor session when the password changed during the challenge (epoch carried along)', async () => {

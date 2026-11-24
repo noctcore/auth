@@ -1,0 +1,88 @@
+// A111: learning that a refused account's password is right from its
+// second-factor challenge.
+//
+// An app refuses some accounts at sign-in (a removed member, an account
+// fenced from this surface) in `beforeSessionCreate`, and every such refusal
+// reads like a wrong password. If the second factor's challenge came first,
+// whoever holds the password of a refused account would see a challenge, and
+// so learn the password is right, before the app refused at the session.
+//
+// Stopped by: flows/login.ts (the `beforeSessionCreate` hooks run, with
+//   `beforeChallenge: true`, before a challenge is handed out), core/auth-core.ts
+//   (`refuseBeforeChallenge`), plugins/two-factor/hooks.ts (its enforcement refuses
+//   nothing before the challenge: the challenge is the factor).
+// Learn: Second factors (/auth/learn/second-factors/)
+import { describe, expect, it } from 'vitest';
+
+import { refuse } from '../../src';
+import { EMAIL, meta, PASSWORD, twoFactorApp } from '../two-factor/setup';
+
+const FENCED = 'fenced@example.com';
+
+/** An app that refuses one account at sign-in once it is fenced, with the default code. */
+function fencing() {
+  const fence = { on: false };
+
+  return {
+    fence,
+    overrides: {
+      hooks: {
+        beforeSessionCreate: ({ user }: { user: { email: string } }) =>
+          fence.on && user.email === FENCED ? refuse('fenced_from_portal') : undefined,
+      },
+    },
+  };
+}
+
+describe('A111: learning a refused password through the second-factor challenge', () => {
+  it('answers a refused account with a factor as a wrong password, with no challenge', async () => {
+    const { fence, overrides } = fencing();
+    const t = twoFactorApp({}, overrides);
+
+    await t.enrolled(FENCED);
+    fence.on = true;
+
+    const right = await t.auth.login({ email: FENCED, password: PASSWORD, meta: meta() });
+    const wrong = await t.auth.login({ email: FENCED, password: 'not it', meta: meta() });
+
+    expect(right).toMatchObject({ ok: false, code: 'invalid_credentials' });
+    expect(wrong).toMatchObject({ ok: false, code: 'invalid_credentials' });
+    expect(t.audit.events.some((e) => e.type === 'login.challenge')).toBe(false);
+
+    const failures = t.audit.events.filter((e) => e.type === 'login.failure');
+
+    expect(failures.at(-2)).toMatchObject({
+      reason: 'fenced_from_portal',
+      data: { via: 'password' },
+    });
+  });
+
+  it('gives an account the hook accepts its challenge as before', async () => {
+    const { fence, overrides } = fencing();
+    const t = twoFactorApp({}, overrides);
+
+    await t.enrolled(EMAIL);
+    fence.on = true;
+
+    const login = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    expect(login.ok && login.value.kind).toBe('challenge');
+  });
+
+  it('refuses before an enrollment challenge too, for a required user without a factor', async () => {
+    const { fence, overrides } = fencing();
+    const t = twoFactorApp({ required: () => true }, overrides);
+
+    fence.on = true;
+
+    await t.auth.register({ email: FENCED, password: PASSWORD, meta: meta() });
+
+    const login = await t.auth.login({ email: FENCED, password: PASSWORD, meta: meta() });
+
+    expect(login).toMatchObject({
+      ok: false,
+      code: 'invalid_credentials',
+      reason: 'fenced_from_portal',
+    });
+  });
+});
