@@ -59,11 +59,12 @@ export interface PrismaUserStoreOptions<U extends AuthUser> {
    * account keeps its old hash. Combined with the store's own conditions
    * through `AND`, so it can narrow the write but never widen it.
    *
-   * Checked and copied when the store is built: it must be a plain, non-empty
-   * object with no `undefined` anywhere inside (Prisma reads `undefined` as no
-   * filter, so the guard would guard nothing). A column name Prisma does not
-   * know is not caught there: the first guarded write throws, with Prisma's
-   * message (which prints the new hash) left out. Default none.
+   * Checked, copied and frozen when the store is built (see write-guard.ts
+   * for what is refused: an empty object or an `undefined` anywhere inside, an
+   * empty `AND` or `NOT` list), and copied again for each write. A column
+   * name Prisma does not know is not caught there: the first guarded write
+   * throws, with Prisma's message (which prints the new hash) left out.
+   * Default none.
    */
   readonly writeWhere?: Readonly<Record<string, unknown>>;
 }
