@@ -139,9 +139,12 @@ export async function registerByInvitation<A>(
   // An account appeared for the address between the lookup and here: the invitation is spent.
   if (!created) return refused(r, 'email_in_use', 'email_in_use', null, meta);
 
-  await r.core.users.markEmailVerified(created.id, email);
+  // The invitation proved the address, but the store may refuse the mark (an
+  // app's write guard, such as the Prisma store's `writeWhere`): then the
+  // account goes on unverified, as the store holds it, never as verified.
+  const verified = await r.core.users.markEmailVerified(created.id, email);
 
-  const user: AuthUser = { ...created, emailVerified: true };
+  const user: AuthUser = { ...created, emailVerified: verified };
 
   for (const hook of r.core.hooks.afterRegister) await hook({ user, meta });
 
