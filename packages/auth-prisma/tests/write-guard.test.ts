@@ -3,6 +3,7 @@
 // stays out of reads and of an email revert.
 import { describe, expect, it } from 'vitest';
 import { AuthConfigError, type NormalizedEmail } from '@noctcore/auth';
+import { DbNull, Decimal, JsonNull } from '@prisma/client/runtime/client';
 import { PrismaUserStore } from '../src';
 
 const EMAIL = 'ada@example.com' as NormalizedEmail;
@@ -204,6 +205,44 @@ describe('PrismaUserStore writeWhere', () => {
       { OR: [{ memberships: { some: {} }, closedAt: null }, { memberships: { none: {} } }] },
     ])
       expect(() => new PrismaUserStore({ delegate, writeWhere })).not.toThrow();
+  });
+
+  it('boots a guard that holds bigints, Decimals, Dates, bytes or Prisma nulls', () => {
+    const { delegate } = recording();
+
+    // Narrowing guards whose values JSON cannot write: the analysis must read them, not throw.
+    for (const writeWhere of [
+      { OR: [{ orgId: { equals: 1n } }, { teamId: { equals: 2n } }] },
+      { OR: [{ orgId: { in: [1n, 2n] } }, { ownerId: null }] },
+      { memberships: { some: { orgId: 1n }, none: { orgId: 2n } } },
+      { memberships: { some: { credit: new Decimal('1.5') }, none: { credit: new Decimal('2') } } },
+      { memberships: { some: { since: new Date(0) }, none: { since: new Date(1) } } },
+      { memberships: { some: { key: new Uint8Array([1]) }, none: { key: new Uint8Array([2]) } } },
+      { memberships: { some: { data: DbNull }, none: { data: JsonNull } } },
+      { OR: [{ at: { equals: new Date(Number.NaN) } }, { ownerId: null }] },
+    ])
+      expect(() => new PrismaUserStore({ delegate, writeWhere })).not.toThrow();
+
+    // The same values on both halves are still the same condition.
+    for (const value of [1n, new Decimal('1.5'), new Date(0), new Uint8Array([1, 2]), DbNull])
+      expect(
+        () =>
+          new PrismaUserStore({
+            delegate,
+            writeWhere: { memberships: { some: { v: value }, none: { v: value } } },
+          }),
+      ).toThrow('some and none of the same condition on one relation');
+
+    // A value it cannot read at all never makes two conditions equal.
+    const read = () => 'never';
+
+    expect(
+      () =>
+        new PrismaUserStore({
+          delegate,
+          writeWhere: { memberships: { some: { v: read }, none: { v: read } } } as never,
+        }),
+    ).not.toThrow();
   });
 
   it('refuses the empty relation filters that do not narrow, and every match-all it can see', () => {
