@@ -15,17 +15,18 @@
  * `dedupeKey` is a server-minted nonce per event, safe to use as a queue job id.
  *
  * `meta` says where the request behind a mail came from (for "asked from this
- * IP" in a reset or security mail). Only mails to an address the account has
- * already proven carry it: `password-reset`, `password-reset-code`,
- * `password-changed`, `lockout`, `email-changed` (to the old address),
- * `email-change-reverted`, `two-factor-enabled`, `two-factor-disabled`,
- * `recovery-code-used`, and `account-exists`, which goes to the owner of the
- * address and carries the IP and user agent of whoever tried to sign up with
- * it. A reset mail takes it from the job, so it is there when the job ran on
- * your queue too. Mails to an address nobody has proven yet (`verify-email`,
- * `email-change-confirm`) and mails to someone other than the account
- * (`email-change-in-use`, `invitation`) never carry it, and nor does a mail a
- * flow sends without a request.
+ * IP" in a reset or security mail). It is set on these mails only, each sent
+ * to the address an account already holds: `password-reset`,
+ * `password-reset-code`, `password-changed`, `lockout`, `email-changed` (to
+ * the old address), `email-change-reverted`, `two-factor-enabled`,
+ * `two-factor-disabled`, `recovery-code-used` and `account-exists`. On
+ * `account-exists` it is the IP and user agent of whoever tried to sign up
+ * with the holder's address, not the holder's own. A reset mail takes it from
+ * the job, so it is there when the job ran on your queue too. It is never set
+ * on a mail that a request sends to an address it names itself
+ * (`verify-email` after a sign-up, `email-change-confirm` to the new address),
+ * on a mail to someone other than the account (`email-change-in-use`,
+ * `invitation`), or on a mail a flow sends without a request.
  */
 import type { RequestMeta } from '../shared/meta';
 
@@ -75,7 +76,11 @@ export type AuthMailEvent =
       readonly meta?: MailRequestMeta;
       readonly dedupeKey: string;
     }
-  /** Registration of an address that already has an account: the uniform answer's mail. */
+  /**
+   * Registration of an address that already has an account: the uniform
+   * answer's mail, to that account. `meta` is the sign-up request's, so the
+   * holder sees where the attempt came from.
+   */
   | {
       readonly type: 'account-exists';
       readonly to: string;
