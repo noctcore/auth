@@ -333,7 +333,9 @@ By default (`sessionProofs: 'lockout'`) a password proved again from a live sess
 
 With `sessionProofs: 'door'` the lockout is left out of those two doors. Each door's own per-user limit (`throttle.doors`: `password-change` and `reauthenticate`, 5 per `'5m'` by default) is the only budget. A wrong password writes `password.change_failed` and touches no lockout counter: no lock, no lock mail, nothing toward the permanent tier. A temporary lock does not refuse a correct password from a live session. The permanent tier still refuses these doors exactly as it does by default, which is only with `permanent.trustedDevices: false` (with trusted devices on, a session from a device sign-in may prove its password under a permanent lock in either mode).
 
-The trade-off: guesses from a stolen session are bounded by the door's rate instead of login's, and they never lock anything, so they can go on all day (the defaults allow 1440 a day per door). A correct guess still needs the live session, and the session ends when the password changes or is reset. Keep the door limits as tight as your users allow.
+The trade-off: guesses from a stolen session are bounded by the doors' rate instead of login's, and they never lock anything, so they can go on all day. Each door counts on its own key, so the defaults allow 1440 a day per door, 2880 across both. A correct guess still needs the live session, and the session ends when the password changes or is reset. Keep the door limits as tight as your users allow.
+
+`'door'` covers passwords only. Wrong second-factor codes at a step-up (`twoFactor.stepUp`) are not covered: they still count in the factor's budget, the one login's challenge uses, so a stolen session can still lock the factor, and each factor lock counts toward the permanent tier.
 
 #### Counting successes
 
@@ -355,7 +357,7 @@ The trade-off: an attacker who also holds the password could sign in between gue
 The permanent tier is a denial of service anyone can trigger on purpose. Pair it with a captcha and per-IP rate limits.
 </Aside>
 
-**`trustedDevices: true`** (the default): the lock deletes the account's sessions but keeps its device cookies, so the owner can still sign in from a known device with the usual device budgets. A session from such a sign-in may reauthenticate and change the password, but no session may change the email. Other ways in still mint a session in this mode, each needing a correct password or your SSO: an app's SSO through `issueSession`, a two-factor challenge started before the lock, and a login racing the revocation. The default mode adds no read per request.
+**`trustedDevices: true`** (the default): the lock deletes the account's sessions but keeps its device cookies, so the owner can still sign in from a known device with the usual device budgets. A session from such a sign-in may reauthenticate and change the password, but no session may change the email. With `sessionProofs: 'door'` those two doors give a session the door's rate of password guesses instead of the `perDevice` budget it shares with every device of the account. Other ways in still mint a session in this mode, each needing a correct password or your SSO: an app's SSO through `issueSession`, a two-factor challenge started before the lock, and a login racing the revocation. The default mode adds no read per request.
 
 **`trustedDevices: false`**: the lock bumps the revocation epoch (every session and device cookie ends) and refuses every session door (issuing a session by any path, validating one, reauthentication, password change, email change, email verification) until an admin clears it. Because validation checks the lock, a session the background revocation failed to end is refused, and revoked, on its next request.
 
