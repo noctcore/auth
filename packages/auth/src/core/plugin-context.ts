@@ -65,8 +65,11 @@ export interface IssueOptions<A> {
    * still holds live for this user (or the object `confirmLiveSession`
    * returned, when the flow revokes sessions before it issues), or the issue
    * is refused as `session_expired`. The `beforeSessionCreate` hooks then see
-   * it as `reissueOf`: the two-factor plugin lets such a re-issue through
-   * when the session it replaces has proved the factor.
+   * it as `reissueOf`. The two-factor plugin lets such a re-issue through
+   * when the session it replaces was created after the factor's enrollment
+   * window closed, or holds an open step-up: a best effort with known gaps
+   * (see `provedFactor` in the plugin), so turn the factor on with
+   * `revokeOtherSessions: true`.
    */
   readonly inherit?: StoredSession<A>;
   /** When the credential was proved. Default now; a re-issue that proved nothing passes the old value. */
