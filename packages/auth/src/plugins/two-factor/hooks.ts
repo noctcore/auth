@@ -39,7 +39,6 @@
  */
 import { loginChallenge } from './challenge';
 import { sessionStanding } from './enforcement';
-import { ENROLLMENT_TTL_MS } from './options';
 import { checkProof, parseProof } from './proofs';
 import { factorAccount, limitIp, type Runtime } from './runtime';
 import { hasStepUp } from './step-up';
@@ -131,7 +130,7 @@ async function provedFactor(
   session: StoredSession<unknown>,
   factor: StoredTotpFactor,
 ): Promise<boolean> {
-  if (session.createdAt >= factor.createdAt + ENROLLMENT_TTL_MS) return true;
+  if (session.createdAt >= factor.createdAt + runtime.settings.enrollmentWindowMs) return true;
 
   return hasStepUp(runtime, session);
 }
