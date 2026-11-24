@@ -7,7 +7,8 @@
 import { sendLockNotice } from './lock-notice';
 import { gateRefusal } from './login';
 import { permanentLockRefusal } from './permanent-lock';
-import { PASSWORD_PURPOSES, publicUser } from './settings';
+import { revokePasswordTokensAfterWrite, writePasswordHash } from './password-write';
+import { publicUser } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
 import type { IssuedSession } from '../core/plugin-context';
@@ -107,14 +108,15 @@ export async function changePassword<U extends AuthUser, A>(
     return fail(refusal.code, refusal.reason);
   }
 
-  const written = await core.users.setPasswordHash(user.id, hashed.value);
+  // Every reset link and ticket dies before the write (password-write.ts).
+  const written = await writePasswordHash(core, user.id, hashed.value);
 
   if (!written) return fail('session_expired', 'user_missing');
 
   // Stricter than the auth guide's "offer it": every session ends, the
   // current one is re-issued, and the change is mailed to the owner.
   await core.revokeAllSessions(user.id, 'password-change');
-  await core.tokens.revokeAll(user.id, PASSWORD_PURPOSES);
+  await revokePasswordTokensAfterWrite(core, user.id);
   await core.emit({ type: 'password.changed', userId: user.id }, meta);
 
   core.mail({

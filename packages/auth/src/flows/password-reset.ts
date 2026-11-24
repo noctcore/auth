@@ -7,11 +7,18 @@
  * the hooks, so a refused password spends nothing a hook asked for), runs the
  * hooks and only then hashes (so a refusal costs no hash, like a dead link),
  * then consumes it atomically, so of two
- * concurrent resets exactly one writes. A completed reset revokes every
- * session, voids every outstanding reset token, lifts the lockout (the mailbox
- * was proved) and, by default, marks the address verified.
+ * concurrent resets exactly one writes. Every outstanding reset token is voided
+ * before the write (password-write.ts). A completed reset revokes every
+ * session, lifts the lockout (the mailbox was proved) and, by default, marks
+ * the address verified; once the password is written, a failure to lift the
+ * lock or mark the address is logged and the reset still answers ok.
  */
-import { PURPOSE, PASSWORD_PURPOSES, type FlowSettings } from './settings';
+import {
+  afterPasswordWrite,
+  revokePasswordTokensAfterWrite,
+  writePasswordHash,
+} from './password-write';
+import { PURPOSE, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
 import type { NormalizedEmail } from '../shared/email';
@@ -122,16 +129,23 @@ export async function resetPassword<U extends AuthUser, A>(
   if (redeemed.status !== 'valid')
     return failed(core, user.id, `lost_race_${redeemed.status}`, meta);
 
-  const written = await core.users.setPasswordHash(user.id, hashed);
+  // Every reset link and ticket dies before the write (password-write.ts).
+  const written = await writePasswordHash(core, user.id, hashed);
 
   if (!written) return failed(core, user.id, 'write_refused', meta);
 
   await core.revokeAllSessions(user.id, 'password-reset');
-  await core.tokens.revokeAll(user.id, PASSWORD_PURPOSES);
-  await core.throttle.clearAccount(accountKey(user.email));
+  await revokePasswordTokensAfterWrite(core, user.id);
+
+  // The password has changed: a failure from here on is logged, not answered.
+  await afterPasswordWrite(core, 'lift lockout', user.id, () =>
+    core.throttle.clearAccount(accountKey(user.email)),
+  );
 
   if (settings.reset.markEmailVerified && !user.emailVerified) {
-    await core.users.markEmailVerified(user.id, user.email as NormalizedEmail);
+    await afterPasswordWrite(core, 'mark email verified', user.id, () =>
+      core.users.markEmailVerified(user.id, user.email as NormalizedEmail),
+    );
   }
 
   await core.emit({ type: 'password.reset', userId: user.id }, meta);
