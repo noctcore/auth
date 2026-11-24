@@ -18,7 +18,8 @@ import challengeTs from '../../../../snippets/learn/second-factor-challenge.ts?r
   </Fragment>
   <Fragment slot="rule">
     Codes that work once, guesses counted per account before any comparison, recovery codes kept
-    like passwords, and one seam that refuses every session the factor did not let through.
+    like passwords, and one seam that refuses every session the factor did not let through (an
+    app's own re-issues pass it on a best-effort check).
   </Fragment>
   <Fragment slot="where">
     The two-factor plugin, `@noctcore/auth/two-factor`, with its hook on `issueSession`.
@@ -126,7 +127,7 @@ The core mints sessions in one place, `issueSession`, and runs the plugin's hook
 
 **Everything else is refused.** A plain password login and sign-up with auto-login are refused ([A048](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A048-enforcement-bypass.test.ts)), and so is any other `via` a plugin or app code names. A user the app requires a factor of who has none yet gets an enrollment challenge instead of a session.
 
-**Your refusals come before the challenge.** After a correct password, the core runs the `beforeSessionCreate` hooks (with `beforeChallenge: true`) before any challenge is made. An account your hook refuses (a removed member, an account fenced from this surface) gets `invalid_credentials`, like a wrong password, with no challenge that would say the password was right, and the refusal counts as a wrong password in the lockout, so its next answer cannot tell them apart either ([A111](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A111-learning-a-refused-password-through-the-challenge.test.ts)). What still differs is the work your own hooks do.
+**Your refusals come before the challenge.** After a correct password, the core runs the `beforeSessionCreate` hooks (with `beforeChallenge: true`) before any challenge is made. An account your hook refuses (a removed member, an account fenced from this surface) gets `invalid_credentials`, like a wrong password, with no challenge that would say the password was right, and the refusal counts as a wrong password in the lockout, so its next answer cannot tell them apart either ([A111](https://github.com/noctcore/auth/blob/main/packages/auth/tests/attacks/A111-learning-a-refused-password-through-the-challenge.test.ts)). What still differs is the work the hooks do: your own, and the core's (the email revert lockout's token read, and the permanent lockout's read when trusted devices are off).
 
 **Trusted code is trusted.** What the check cannot judge is code that claims the factor was checked: plugins and callers of `auth.context` are trusted code, and one that issues with the plugin's own label, `second-factor`, gets a session.
 
