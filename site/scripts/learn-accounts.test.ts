@@ -69,7 +69,8 @@ const trustedTtl = read(FACTOR_OPTIONS, /option\?\.ttl,\s*'(\w+)'/u);
 const trustedMax = num(FACTOR_OPTIONS, /option\?\.maxPerUser \?\? (\d+);/u);
 const challengeTtlMs = lifetime(FACTOR_OPTIONS, 'CHALLENGE_TTL_MS');
 const challengeCodes = num(FACTOR_OPTIONS, /export const CHALLENGE_MAX_ATTEMPTS = (\d+);/u);
-const enrollmentTtlMs = lifetime(FACTOR_OPTIONS, 'ENROLLMENT_TTL_MS');
+const enrollmentWindow = read(FACTOR_OPTIONS, /options\.enrollmentWindow,\s*'(\w+)'/u);
+const enrollmentMaxMs = lifetime(FACTOR_OPTIONS, 'MAX_ENROLLMENT_WINDOW_MS');
 
 const RECOVERY = 'auth/src/plugins/two-factor/recovery-codes.ts';
 const recoveryCount = num(RECOVERY, /export const RECOVERY_CODE_COUNT = (\d+);/u);
@@ -133,7 +134,7 @@ const PAGES: Record<string, readonly string[]> = {
     `${factorAttempts.limit} per ${inUnit(factorAttempts.window, MINUTE)} minutes`,
     `(${baseLockMinutes} minutes, then ${baseLockMinutes * lockFactor}, then ${baseLockMinutes * lockFactor ** 2}, at most an hour)`,
     `${challengeCodes} codes`,
-    `within ${enrollmentTtlMs / MINUTE} minutes`,
+    `(${inUnit(enrollmentWindow, MINUTE)} minutes by default, configurable up to ${enrollmentMaxMs / HOUR} hours)`,
     `Ten codes of ${recoveryBits} bits each`,
     `about 2^${guessesExponent} guesses per hit`,
     `(${inUnit(stepUpWindow, MINUTE)} minutes by default)`,
