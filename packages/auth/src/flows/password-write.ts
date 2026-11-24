@@ -50,7 +50,15 @@ export async function writePasswordHash<U extends AuthUser, A>(
   try {
     return await core.users.setPasswordHash(userId, hash);
   } catch (error) {
-    await closeAfterWrite(core, userId, reason);
+    const closed = await closeAfterWrite(core, userId, reason);
+
+    // The write's error is the one thrown; this one would be lost with it,
+    // and it means sessions may still be alive while the hash may be new.
+    if (closed.failed)
+      core.logger.error('Closing after a password write that threw failed', {
+        userId,
+        error: describeError(closed.error),
+      });
 
     throw error;
   }
