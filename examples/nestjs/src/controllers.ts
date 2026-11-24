@@ -116,7 +116,8 @@ export class AccountController {
 
     if (!result.ok) throw refusal(result);
 
-    return result.value;
+    // `result.value.sessionId` is the store key: server-side only.
+    return { revoked: result.value.revoked };
   }
 
   /** Proves the password again: a new session (rotation) with a fresh credential proof. */

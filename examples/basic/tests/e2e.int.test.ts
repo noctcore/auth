@@ -182,6 +182,24 @@ describe.skipIf(!databaseUrl || !redisUrl)('example app end to end', () => {
 
     expect(unknown).toMatchObject({ status: 200, json: { revoked: false } });
 
+    // Signing out another device answers `revoked` only, never the session's store key.
+    const phone = new Browser(base, origin, '203.0.113.12');
+
+    await phone.request('GET', '/api/csrf');
+    expect((await phone.request('POST', '/api/login', { email, password })).status).toBe(200);
+
+    const both = (await browser.request('GET', '/api/sessions')).json['sessions'] as {
+      handle: string;
+      current: boolean;
+    }[];
+
+    const ended = await browser.request('POST', '/api/sessions/revoke', {
+      handle: both.find((s) => !s.current)?.handle,
+    });
+
+    expect(ended).toEqual({ status: 200, json: { revoked: true } });
+    expect((await phone.request('GET', '/api/me')).status).toBe(401);
+
     expect((await browser.request('POST', '/api/logout')).status).toBe(200);
     expect(browser.cookies.has('session')).toBe(false);
 

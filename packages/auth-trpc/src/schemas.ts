@@ -106,5 +106,10 @@ export const resetInspectionOutput = z.object({
   expiresAt: z.number(),
   secondFactorRequired: z.boolean(),
 });
+/**
+ * What `sessions.revoke` answers, for the client: `revoked` only. The
+ * `sessionId` the flow also answers is the session's store key, so the
+ * output schema strips it even if a procedure returns the whole value.
+ */
 export const revokedOutput = z.object({ revoked: z.boolean() });
 export const verificationRequestOutput = z.object({ sent: z.boolean() });

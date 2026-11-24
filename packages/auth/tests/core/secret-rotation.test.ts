@@ -104,7 +104,7 @@ describe('previousSecret', () => {
       meta,
     });
 
-    expect(revoked).toEqual({ ok: true, value: { revoked: true } });
+    expect(revoked).toEqual({ ok: true, value: { revoked: true, sessionId: issued.session.id } });
   });
 
   it('refuses every old value after a rotation without it, as before', async () => {

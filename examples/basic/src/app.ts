@@ -339,7 +339,8 @@ export function createApp(options: AppOptions) {
 
         if (!result.ok) return failure(res, result);
 
-        return send(res, 200, result.value);
+        // `result.value.sessionId` is the store key: server-side only.
+        return send(res, 200, { revoked: result.value.revoked });
       }
 
       case 'POST /api/logout': {

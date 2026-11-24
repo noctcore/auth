@@ -168,7 +168,8 @@ export class AccountController {
 
     if (!result.ok) failure(result, 403);
 
-    return result.value;
+    // `result.value.sessionId` is the store key: server-side only.
+    return { revoked: result.value.revoked };
   }
 
   @Post('echo')
