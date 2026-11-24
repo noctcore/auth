@@ -83,7 +83,10 @@ export interface VerifyProofInput {
  * prove), `second_factor_required` when it has one. With a proof:
  * `ok({ proved: true })` when it is right, `invalid_second_factor` otherwise,
  * also for a user with no confirmed factor or no user at all (whose codes
- * lock nothing). It never issues or touches a session.
+ * lock nothing). Every call counts on the per-IP limit. Both answers say
+ * whether the account has a factor, and wrong codes lock a real factor:
+ * call it only for someone who proved control of the account. It never
+ * issues or touches a session.
  */
 export async function verifyProof(
   runtime: Runtime,
@@ -91,28 +94,19 @@ export async function verifyProof(
 ): Promise<AuthResult<{ proved: boolean }>> {
   const { core, store } = runtime;
   const { userId, action, meta } = input;
-
-  if (!input.proof) {
-    const factor = await store.findFactor(userId);
-
-    if (factor?.confirmed !== true) return ok({ proved: false });
-
-    return refused(
-      runtime,
-      'two_factor.refused',
-      'second_factor_required',
-      `${action}_second_factor_missing`,
-      userId,
-      meta,
-    );
-  }
-
   const limited = await limitIp(runtime, meta);
 
   if (limited) return limited;
 
   const factor = await store.findFactor(userId);
   const guarded = factor?.confirmed === true;
+
+  // No audit row here: every call would write one, and the answer is the
+  // whole outcome (nothing was tried).
+  if (!input.proof)
+    return guarded
+      ? fail('second_factor_required', `${action}_second_factor_missing`)
+      : ok({ proved: false });
 
   // A user with no confirmed factor can never pass, so a guess for it is
   // counted on a key of its own and names no account: junk codes neither

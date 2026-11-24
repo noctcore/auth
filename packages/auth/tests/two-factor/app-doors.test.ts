@@ -194,6 +194,17 @@ describe('verifyProof: a second factor for a user without a session', () => {
       code: 'second_factor_required',
     });
   });
+
+  it('writes no audit row for the question without a proof', async () => {
+    const t = twoFactorApp();
+    const { userId } = await t.enrolled();
+    const before = t.audit.events.length;
+
+    await t.auth.twoFactor.verifyProof({ userId, action: 'invite', meta: meta() });
+    await t.auth.twoFactor.verifyProof({ userId: 'no-such-user', action: 'invite', meta: meta() });
+
+    expect(t.audit.events.slice(before)).toEqual([]);
+  });
 });
 
 describe("reset: an admin resets another user's factor", () => {

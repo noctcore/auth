@@ -130,11 +130,15 @@ describe('A112: guessing codes through the app doors', () => {
     const ip = '198.51.100.20';
 
     await t.auth.twoFactor.challenge({ userId, meta: meta(ip) });
-    await t.auth.twoFactor.verifyProof({ userId, proof: WRONG, action: 'x', meta: meta(ip) });
+    await t.auth.twoFactor.verifyProof({ userId, action: 'x', meta: meta(ip) });
     await t.auth.twoFactor.verifyProof({ userId, proof: WRONG, action: 'x', meta: meta(ip) });
 
     expect(
       await t.auth.twoFactor.verifyProof({ userId, proof: WRONG, action: 'x', meta: meta(ip) }),
+    ).toMatchObject({ ok: false, code: 'rate_limited' });
+
+    expect(
+      await t.auth.twoFactor.verifyProof({ userId, action: 'x', meta: meta(ip) }),
     ).toMatchObject({ ok: false, code: 'rate_limited' });
 
     expect(await t.auth.twoFactor.challenge({ userId, meta: meta(ip) })).toMatchObject({
