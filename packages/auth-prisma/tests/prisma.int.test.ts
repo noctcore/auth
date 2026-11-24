@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   createAuth,
   type AuthUser,
+  type Logger,
   type NormalizedEmail,
   type PasswordResetJob,
 } from '@noctcore/auth';
@@ -10,6 +11,7 @@ import {
   invitationStoreConformance,
   memoryStores,
   plainHasher,
+  recordingAudit,
   recordingMailer,
   membershipStoreConformance,
   runConformance,
@@ -315,28 +317,38 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
     const PASSWORD = 'correct horse battery';
     const users = new PrismaUserStore({ delegate: prisma.user, writeWhere: { closedAt: null } });
 
-    /** An app on the guarded store, with a reset queue drained by hand. */
-    function app(closeInHook = false) {
+    /** An app on a guarded store, with a reset queue drained by hand. */
+    function app(
+      options: {
+        closeInHook?: boolean;
+        store?: PrismaUserStore;
+        hasherVersion?: number;
+        logger?: Logger;
+      } = {},
+    ) {
       const memory = memoryStores();
       const mailer = recordingMailer();
+      const audit = recordingAudit();
       const jobs: PasswordResetJob[] = [];
 
       const auth = createAuth({
         stores: {
-          users,
+          users: options.store ?? users,
           tokens: new PrismaTokenStore(prisma.authToken),
           sessions: memory.sessions,
           counters: memory.counters,
         },
-        password: { hasher: plainHasher(), breachCheck: false },
+        password: { hasher: plainHasher(options.hasherVersion), breachCheck: false },
         secret: 'test-secret-that-is-at-least-32-bytes-long',
         urls: { resetPassword: (token) => `https://app.example/reset#${token}` },
         mailer,
+        audit,
+        ...(options.logger ? { logger: options.logger } : {}),
         passwordReset: { enqueue: async (job) => void jobs.push(job) },
         hooks: {
           // The hook passes the account, then the app closes it before the write.
           beforePasswordReset: async ({ user }) => {
-            if (closeInHook)
+            if (options.closeInHook === true)
               await prisma.user.update({ where: { id: user.id }, data: { closedAt: new Date() } });
           },
         },
@@ -350,7 +362,7 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
         return (mailer.last('password-reset')?.url ?? '').split('#')[1] ?? '';
       }
 
-      return { auth, resetLink };
+      return { auth, audit, resetLink };
     }
 
     async function account() {
@@ -395,7 +407,7 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
 
     it('refuses it when the account is closed after the hook passed it', async () => {
       const { email, id, hash } = await account();
-      const { auth, resetLink } = app(true);
+      const { auth, resetLink } = app({ closeInHook: true });
       const token = await resetLink(email);
 
       const reset = await auth.resetPassword({
@@ -433,6 +445,60 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
       const { id } = await account();
 
       expect(await users.setPasswordHash(id, 'plain$v1$new')).toBe(true);
+    });
+
+    it('leaves the hash of a closed account alone at a rehash, and the login goes through', async () => {
+      const { email, id, hash } = await account();
+
+      await close(id);
+
+      // A newer hasher: the login proves the password and asks for a rehash.
+      const { auth, audit } = app({ hasherVersion: 2 });
+      const login = await auth.login({ email, password: PASSWORD, meta: { ip: '203.0.113.7' } });
+
+      expect(login.ok).toBe(true);
+      expect(audit.types()).not.toContain('password.rehashed');
+      expect((await prisma.user.findUniqueOrThrow({ where: { id } })).passwordHash).toBe(hash);
+    });
+
+    describe('with a column Prisma does not know', () => {
+      const typo = new PrismaUserStore({ delegate: prisma.user, writeWhere: { closedAtt: null } });
+
+      it("throws at the write without Prisma's message, which would print the hash", async () => {
+        const { id } = await account();
+        const secret = `plain$v9$${uniqueId('hash')}`;
+        const error: unknown = await typo.setPasswordHash(id, secret).catch((e: unknown) => e);
+
+        expect(error).toMatchObject({ name: 'PrismaUserStoreError' });
+        expect((error as Error).message).toContain('password hash');
+
+        expect(`${(error as Error).message} ${String((error as Error).stack)}`).not.toContain(
+          secret,
+        );
+
+        expect(JSON.stringify(error)).not.toContain(secret);
+      });
+
+      it('logs a failed rehash without the new hash, and the login goes through', async () => {
+        const { email, id } = await account();
+        const lines: string[] = [];
+
+        const logger: Logger = {
+          warn: (message, context) => void lines.push(`${message} ${JSON.stringify(context)}`),
+          error: (message, context) => void lines.push(`${message} ${JSON.stringify(context)}`),
+        };
+
+        const { auth } = app({ store: typo, hasherVersion: 2, logger });
+        const login = await auth.login({ email, password: PASSWORD, meta: { ip: '203.0.113.7' } });
+
+        expect(login.ok).toBe(true);
+        expect(lines.some((line) => line.startsWith('Password rehash failed'))).toBe(true);
+        expect(lines.join('\n')).not.toMatch(/plain\$v2\$/u);
+
+        expect((await prisma.user.findUniqueOrThrow({ where: { id } })).passwordHash).toMatch(
+          /^plain\$v1\$/u,
+        );
+      });
     });
   });
 });
