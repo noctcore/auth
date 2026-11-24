@@ -1,8 +1,16 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { AuthUser, NormalizedEmail } from '@noctcore/auth';
+import {
+  createAuth,
+  type AuthUser,
+  type NormalizedEmail,
+  type PasswordResetJob,
+} from '@noctcore/auth';
 import {
   invitationStoreConformance,
+  memoryStores,
+  plainHasher,
+  recordingMailer,
   membershipStoreConformance,
   runConformance,
   tokenStoreConformance,
@@ -300,6 +308,131 @@ describe.skipIf(!url)('prisma stores on postgres', () => {
 
     expect((await tokens.findByUser('email-verification', userId))?.data).toEqual({
       email: 'a@example.com',
+    });
+  });
+
+  describe('writeWhere: credential writes to an account the app closed', () => {
+    const PASSWORD = 'correct horse battery';
+    const users = new PrismaUserStore({ delegate: prisma.user, writeWhere: { closedAt: null } });
+
+    /** An app on the guarded store, with a reset queue drained by hand. */
+    function app(closeInHook = false) {
+      const memory = memoryStores();
+      const mailer = recordingMailer();
+      const jobs: PasswordResetJob[] = [];
+
+      const auth = createAuth({
+        stores: {
+          users,
+          tokens: new PrismaTokenStore(prisma.authToken),
+          sessions: memory.sessions,
+          counters: memory.counters,
+        },
+        password: { hasher: plainHasher(), breachCheck: false },
+        secret: 'test-secret-that-is-at-least-32-bytes-long',
+        urls: { resetPassword: (token) => `https://app.example/reset#${token}` },
+        mailer,
+        passwordReset: { enqueue: async (job) => void jobs.push(job) },
+        hooks: {
+          // The hook passes the account, then the app closes it before the write.
+          beforePasswordReset: async ({ user }) => {
+            if (closeInHook)
+              await prisma.user.update({ where: { id: user.id }, data: { closedAt: new Date() } });
+          },
+        },
+      });
+
+      async function resetLink(email: string) {
+        await auth.requestPasswordReset({ email, meta: { ip: '203.0.113.7' } });
+
+        while (jobs.length) await auth.jobs.processPasswordReset(jobs.shift() as PasswordResetJob);
+
+        return (mailer.last('password-reset')?.url ?? '').split('#')[1] ?? '';
+      }
+
+      return { auth, resetLink };
+    }
+
+    async function account() {
+      const email = `${uniqueId('closed')}@example.com`;
+
+      const registered = await app().auth.register({
+        email,
+        password: PASSWORD,
+        meta: { ip: '203.0.113.7' },
+      });
+
+      if (!registered.ok) throw new Error(registered.reason);
+
+      const row = await prisma.user.findUniqueOrThrow({ where: { email } });
+
+      return { email, id: row.id, hash: row.passwordHash };
+    }
+
+    const close = (id: string) =>
+      prisma.user.update({ where: { id }, data: { closedAt: new Date() } });
+
+    it('refuses the reset of a closed account and leaves the hash and the reads alone', async () => {
+      const { email, id, hash } = await account();
+      const { auth, resetLink } = app();
+      const token = await resetLink(email);
+
+      await close(id);
+
+      const reset = await auth.resetPassword({
+        token,
+        password: 'another long passphrase',
+        meta: { ip: '203.0.113.7' },
+      });
+
+      expect(!reset.ok && reset.code).toBe('invalid_token');
+      expect((await prisma.user.findUniqueOrThrow({ where: { id } })).passwordHash).toBe(hash);
+
+      // Reads still find the row: the guard is for writes only.
+      expect(await users.findCredentialByEmail(email as NormalizedEmail)).toMatchObject({ id });
+      expect(await users.findById(id)).toMatchObject({ id });
+    });
+
+    it('refuses it when the account is closed after the hook passed it', async () => {
+      const { email, id, hash } = await account();
+      const { auth, resetLink } = app(true);
+      const token = await resetLink(email);
+
+      const reset = await auth.resetPassword({
+        token,
+        password: 'another long passphrase',
+        meta: { ip: '203.0.113.7' },
+      });
+
+      expect(!reset.ok && reset.code).toBe('invalid_token');
+      expect((await prisma.user.findUniqueOrThrow({ where: { id } })).passwordHash).toBe(hash);
+    });
+
+    it('refuses the verified mark and an email change, and still lets a revert through', async () => {
+      const { email, id } = await account();
+      const to = `${uniqueId('moved')}@example.com` as NormalizedEmail;
+
+      await close(id);
+
+      expect(await users.markEmailVerified(id, email as NormalizedEmail)).toBe(false);
+      expect(await users.changeEmail(id, { from: email as NormalizedEmail, to })).toBe('stale');
+
+      // Moved behind the store's back, then reverted: a revert only takes access away.
+      await prisma.user.update({ where: { id }, data: { email: to } });
+
+      expect(
+        await users.changeEmail(id, {
+          from: to,
+          to: email as NormalizedEmail,
+          clearPassword: true,
+        }),
+      ).toBe('changed');
+    });
+
+    it('writes to an open account as before', async () => {
+      const { id } = await account();
+
+      expect(await users.setPasswordHash(id, 'plain$v1$new')).toBe(true);
     });
   });
 });
