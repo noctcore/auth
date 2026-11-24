@@ -4,7 +4,10 @@
  * each attempt spends login's lockout budget, so guesses through login and
  * both doors add up (see `proveCurrentPassword`); with
  * `throttle.lockout.sessionProofs: 'door'` only the door's own limit counts,
- * so a stolen session cannot lock the owner out of sign-in (`proveAtDoor`).
+ * so a stolen session cannot lock the owner out of sign-in by guessing
+ * passwords at these two doors (`proveAtDoor`). Wrong second-factor codes at a
+ * step-up are another budget: they still lock the factor and count toward the
+ * permanent tier.
  */
 import { sendLockNotice } from './lock-notice';
 import { gateRefusal } from './login';

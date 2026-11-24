@@ -95,10 +95,14 @@ export interface LockoutOptions {
    * `permanent.trustedDevices: false`).
    *
    * Trade-off: a stolen session can no longer lock its owner out of sign-in
-   * by guessing here, but it guesses at the door's rate instead of
-   * login's, and those guesses never lock anything. Keep the door limits
-   * tight (the defaults allow 1440 guesses a day per door), and remember a
-   * correct guess here still needs the live session.
+   * by guessing passwords at these two doors, but it guesses at the doors'
+   * rate instead of login's, and those guesses never lock anything. Each
+   * door has its own key, so the defaults allow 1440 guesses a day per door,
+   * 2880 across both: keep the door limits tight, and remember a correct
+   * guess here still needs the live session. Wrong second-factor codes at a
+   * step-up (`twoFactor.stepUp`) are not covered: they count in the factor's
+   * budget, the one login's challenge uses, so a stolen session can still
+   * lock the factor, and each factor lock counts toward the permanent tier.
    */
   readonly sessionProofs?: 'lockout' | 'door';
 }
