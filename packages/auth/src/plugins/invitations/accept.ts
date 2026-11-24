@@ -25,6 +25,7 @@ import type { IssuedSession } from '../../core/plugin-context';
 import { isTokenShape } from '../../crypto/random';
 import type { StoredInvitation } from '../../ports/invitations';
 import type { AuthUser, StoredSession } from '../../ports/stores';
+import { describeError } from '../../shared/describe-error';
 import type { NormalizedEmail } from '../../shared/email';
 import { ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
@@ -140,9 +141,11 @@ export async function registerByInvitation<A>(
   if (!created) return refused(r, 'email_in_use', 'email_in_use', null, meta);
 
   // The invitation proved the address, but the store may refuse the mark (an
-  // app's write guard, such as the Prisma store's `writeWhere`): then the
-  // account goes on unverified, as the store holds it, never as verified.
-  const verified = await r.core.users.markEmailVerified(created.id, email);
+  // app's write guard, such as the Prisma store's `writeWhere`) or fail at it:
+  // then the account goes on unverified, as the store holds it, never as
+  // verified. A failure is logged, not thrown: the invitation is spent and the
+  // account exists, so the membership and the session must still follow.
+  const verified = await markVerified(r, created.id, email);
 
   const user: AuthUser = { ...created, emailVerified: verified };
 
@@ -154,6 +157,20 @@ export async function registerByInvitation<A>(
   const issued = await r.core.issueSession(user, { via: 'invitation', meta });
 
   return issued.ok ? ok({ invitation: view(spent.value), session: issued.value }) : issued;
+}
+
+/** The verified mark after an invitation sign-up: false when the store refuses or fails it. */
+async function markVerified(r: Runtime, userId: string, email: NormalizedEmail): Promise<boolean> {
+  try {
+    return await r.core.users.markEmailVerified(userId, email);
+  } catch (error) {
+    r.core.logger.error('Marking an invited address verified failed', {
+      userId,
+      error: describeError(error),
+    });
+
+    return false;
+  }
 }
 
 /**
