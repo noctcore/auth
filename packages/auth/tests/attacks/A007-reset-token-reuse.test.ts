@@ -12,6 +12,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { cryptoRandom } from '../../src/crypto/random';
+import type { Logger } from '../../src';
 import { manualClock, MemoryTokenStore, type ManualClock } from '../../src/testing';
 import { OneTimeTokens } from '../../src/tokens/one-time-tokens';
 import { codeFor, EMAIL, linkFor, meta, NEW_PASSWORD, PASSWORD, queued } from './support';
@@ -20,6 +21,18 @@ const secret = new TextEncoder().encode('server-secret-server-secret-0000');
 let clock: ManualClock;
 let store: MemoryTokenStore;
 let tokens: OneTimeTokens;
+
+/** A logger that keeps its warnings, to see a retried sweep. */
+function recordingLogger() {
+  const lines: { level: 'warn' | 'error'; message: string }[] = [];
+
+  const logger: Logger = {
+    warn: (message) => void lines.push({ level: 'warn', message }),
+    error: (message) => void lines.push({ level: 'error', message }),
+  };
+
+  return { logger, lines };
+}
 
 beforeEach(() => {
   clock = manualClock();
@@ -177,5 +190,106 @@ describe('A007: a reset token outliving a failed password write', () => {
 
     expect(minted).not.toBe('');
     expect(!replay.ok && replay.code).toBe('invalid_token');
+  });
+
+  it('leaves no live reset code when the store refuses the write after a ticket', async () => {
+    const t = queued({ passwordReset: { kind: 'code' } });
+
+    await t.signedInUser(EMAIL);
+
+    const verified = await t.auth.verifyPasswordResetCode({
+      email: EMAIL,
+      code: await codeFor(t),
+      meta: meta(),
+    });
+
+    if (!verified.ok) throw new Error('code refused');
+
+    // A second reset asked for meanwhile: its code is waiting in the mailbox.
+    const pending = await codeFor(t);
+
+    vi.spyOn(t.stores.users, 'setPasswordHash').mockResolvedValueOnce(false);
+
+    const refused = await t.auth.resetPassword({
+      token: verified.value.ticket,
+      password: NEW_PASSWORD,
+      meta: meta(),
+    });
+
+    expect(!refused.ok && refused.code).toBe('invalid_token');
+
+    const later = await t.auth.verifyPasswordResetCode({
+      email: EMAIL,
+      code: pending,
+      meta: meta(),
+    });
+
+    expect(!later.ok && later.code).toBe('invalid_token');
+  });
+
+  describe.each(['resetPassword', 'changePassword'] as const)('%s', (flow) => {
+    /** An app whose session store fails once the flow runs. */
+    async function app() {
+      const { logger, lines } = recordingLogger();
+      const t = queued({ logger });
+
+      const { session } = await t.signedInUser(EMAIL);
+      const link = await linkFor(t);
+
+      const run = () => {
+        vi.spyOn(t.stores.sessions, 'bumpEpoch').mockRejectedValueOnce(new Error('sessions down'));
+
+        return flow === 'resetPassword'
+          ? t.auth.resetPassword({ token: link, password: NEW_PASSWORD, meta: meta() })
+          : t.auth.changePassword({
+              session,
+              currentPassword: PASSWORD,
+              newPassword: NEW_PASSWORD,
+              meta: meta(),
+            });
+      };
+
+      return { t, run, lines };
+    }
+
+    it('voids a link minted while the write ran, even when ending the sessions throws', async () => {
+      const { t, run } = await app();
+      const write = t.stores.users.setPasswordHash.bind(t.stores.users);
+      let minted = '';
+
+      vi.spyOn(t.stores.users, 'setPasswordHash').mockImplementationOnce(async (...args) => {
+        minted = await linkFor(t);
+
+        return write(...args);
+      });
+
+      await expect(run()).rejects.toThrow('sessions down');
+
+      const replay = await t.auth.resetPassword({
+        token: minted,
+        password: 'a passphrase from the link',
+        meta: meta(),
+      });
+
+      expect(minted).not.toBe('');
+      expect(!replay.ok && replay.code).toBe('invalid_token');
+    });
+
+    it('tries the sweep after the write again, and throws when it fails twice', async () => {
+      const { t, run, lines } = await app();
+      const sweep = vi.spyOn(t.stores.tokens, 'deleteByUser');
+      const write = t.stores.users.setPasswordHash.bind(t.stores.users);
+
+      // The sweep before the write runs; both sweeps after it fail.
+      vi.spyOn(t.stores.users, 'setPasswordHash').mockImplementationOnce(async (...args) => {
+        sweep.mockRejectedValue(new Error('tokens down'));
+
+        return write(...args);
+      });
+
+      await expect(run()).rejects.toThrow('tokens down');
+      expect(sweep).toHaveBeenCalledTimes(3);
+      expect(lines.some((l) => l.level === 'warn' && /trying again/u.test(l.message))).toBe(true);
+    });
   });
 });
