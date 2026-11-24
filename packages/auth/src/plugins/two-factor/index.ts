@@ -156,6 +156,7 @@ export function twoFactor<A = Record<string, never>>(options: TwoFactorOptions) 
         /**
          * Checks a second factor for a user your flow identified without a
          * session; never issues or touches one. The same budget as the challenge.
+         * Call it only for someone who proved control of the account.
          */
         verifyProof: (input: VerifyProofInput) => verifyProof(r, input),
         /**
