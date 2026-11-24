@@ -11,7 +11,9 @@
 // lockout tier (only an admin clears that), or anyone could lock any account.
 //
 // What "alike" means: the same answer code and the same two-factor store
-// calls. The lock key differs: a user with a confirmed factor is counted on
+// calls, by method (not by argument: a user without a factor reads its own
+// id and then an id no store issues, and on the recovery-code path consumes
+// under that id). The lock key differs: a user with a confirmed factor is counted on
 // its factor key, so five wrong codes lock it (`factor_locked` in the reason,
 // a lock mail to the owner with the permanent tier); a user without one is
 // counted on a key of its own that names no account. The reason strings
