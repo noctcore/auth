@@ -228,16 +228,21 @@ describe('A007: a reset token outliving a failed password write', () => {
   });
 
   describe.each(['resetPassword', 'changePassword'] as const)('%s', (flow) => {
-    /** An app whose session store fails once the flow runs. */
-    async function app() {
+    const event = flow === 'resetPassword' ? 'password.reset' : 'password.changed';
+
+    /** An app with a signed-in user and a pending reset link; `failSessions` breaks the revocation. */
+    async function app(options: { failSessions?: boolean } = {}) {
       const { logger, lines } = recordingLogger();
       const t = queued({ logger });
 
-      const { session } = await t.signedInUser(EMAIL);
+      const { session, token } = await t.signedInUser(EMAIL);
       const link = await linkFor(t);
 
       const run = () => {
-        vi.spyOn(t.stores.sessions, 'bumpEpoch').mockRejectedValueOnce(new Error('sessions down'));
+        if (options.failSessions === true)
+          vi.spyOn(t.stores.sessions, 'bumpEpoch').mockRejectedValueOnce(
+            new Error('sessions down'),
+          );
 
         return flow === 'resetPassword'
           ? t.auth.resetPassword({ token: link, password: NEW_PASSWORD, meta: meta() })
@@ -249,11 +254,17 @@ describe('A007: a reset token outliving a failed password write', () => {
             });
       };
 
-      return { t, run, lines };
+      /** The owner was told about the write: the audit event and the mail. */
+      const told = () => ({
+        event: t.audit.types().includes(event),
+        mail: t.mailer.sent.some((m) => m.type === 'password-changed'),
+      });
+
+      return { t, run, lines, token, told };
     }
 
     it('voids a link minted while the write ran, even when ending the sessions throws', async () => {
-      const { t, run } = await app();
+      const { t, run, told } = await app({ failSessions: true });
       const write = t.stores.users.setPasswordHash.bind(t.stores.users);
       let minted = '';
 
@@ -273,10 +284,12 @@ describe('A007: a reset token outliving a failed password write', () => {
 
       expect(minted).not.toBe('');
       expect(!replay.ok && replay.code).toBe('invalid_token');
+      // The password did change, so the owner is told before the error is thrown.
+      expect(told()).toEqual({ event: true, mail: true });
     });
 
-    it('tries the sweep after the write again, and throws when it fails twice', async () => {
-      const { t, run, lines } = await app();
+    it('ends every session and tells the owner even when the sweep after the write fails twice', async () => {
+      const { t, run, lines, token, told } = await app();
       const sweep = vi.spyOn(t.stores.tokens, 'deleteByUser');
       const write = t.stores.users.setPasswordHash.bind(t.stores.users);
 
@@ -287,9 +300,14 @@ describe('A007: a reset token outliving a failed password write', () => {
         return write(...args);
       });
 
+      expect(await t.sessionOf(token)).not.toBeNull();
+
       await expect(run()).rejects.toThrow('tokens down');
       expect(sweep).toHaveBeenCalledTimes(3);
       expect(lines.some((l) => l.level === 'warn' && /trying again/u.test(l.message))).toBe(true);
+      // The epoch moved: the old session is fenced out, an intruder's included.
+      expect(await t.sessionOf(token)).toBeNull();
+      expect(told()).toEqual({ event: true, mail: true });
     });
   });
 });
