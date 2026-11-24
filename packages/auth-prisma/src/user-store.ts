@@ -1,14 +1,17 @@
 /**
  * The `UserStore` on a Prisma model. Guarded writes put the guard in the
  * `where` of one `updateMany`, so a compare-and-set is a single statement.
+ * An app's own `writeWhere` goes in the same `where`, so an account the app
+ * closed between a hook's check and the write still refuses the write.
  */
-import type {
-  AuthUser,
-  EmailChangeResult,
-  Logger,
-  NormalizedEmail,
-  UserStore,
-  WithPasswordHash,
+import {
+  AuthConfigError,
+  type AuthUser,
+  type EmailChangeResult,
+  type Logger,
+  type NormalizedEmail,
+  type UserStore,
+  type WithPasswordHash,
 } from '@noctcore/auth';
 import type { PrismaUserDelegate } from './delegates';
 import { isValidationError, P2002, prismaCode } from './prisma-errors';
@@ -39,6 +42,25 @@ export interface PrismaUserStoreOptions<U extends AuthUser> {
    * the logger you give `createAuth`. Default: silent.
    */
   readonly logger?: Pick<Logger, 'warn'>;
+  /**
+   * A Prisma `where` that a row must also match to take a credential write:
+   * a new password hash (`setPasswordHash`), a verified address
+   * (`markEmailVerified`) and an email change (`changeEmail`). For an app that
+   * closes accounts on a column of its own, such as `{ closedAt: null }`: the
+   * condition is part of the same UPDATE, so an account closed after your
+   * `beforePasswordReset` hook ran still refuses the new password, and the
+   * flow answers it as a refused write (`invalid_token` from a reset).
+   *
+   * Reads are left alone: lookups and login still find the row, so refuse a
+   * closed account at sign-in in your own hooks. An email revert (the
+   * `changeEmail` that also clears the password) is not guarded: it only takes
+   * access away, so a closed account can still be reverted by its owner. A
+   * rehash after login is guarded like any password write, so a closed
+   * account keeps its old hash. Combined with the store's own conditions
+   * through `AND`, so it can narrow the write but never widen it. Default
+   * none.
+   */
+  readonly writeWhere?: Readonly<Record<string, unknown>>;
 }
 
 /** A user row as selected: the mapped auth columns plus your `select`. */
@@ -54,6 +76,14 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
 
   constructor(private readonly options: PrismaUserStoreOptions<U>) {
     const fields = options.fields ?? {};
+    const { writeWhere } = options;
+
+    // A mistyped guard would only fail at the first write, or not at all.
+    if (
+      writeWhere !== undefined &&
+      (typeof writeWhere !== 'object' || writeWhere === null || Array.isArray(writeWhere))
+    )
+      throw new AuthConfigError('PrismaUserStore writeWhere must be a Prisma where object');
 
     this.f = {
       id: fields.id ?? 'id',
@@ -75,6 +105,14 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
 
   private live(where: Record<string, unknown>): Record<string, unknown> {
     return this.f.deletedAt ? { ...where, [this.f.deletedAt]: null } : where;
+  }
+
+  /** `live`, narrowed by the app's `writeWhere` for a credential write. */
+  private writable(where: Record<string, unknown>): Record<string, unknown> {
+    const live = this.live(where);
+    const { writeWhere } = this.options;
+
+    return writeWhere ? { AND: [live, writeWhere] } : live;
   }
 
   private toUser(row: UserRow): U {
@@ -195,7 +233,7 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     const guard = options.expected === undefined ? {} : { [this.f.passwordHash]: options.expected };
 
     const { count } = await this.options.delegate.updateMany({
-      where: this.live({ [this.f.id]: id, ...guard }),
+      where: this.writable({ [this.f.id]: id, ...guard }),
       data: { [this.f.passwordHash]: passwordHash },
     });
 
@@ -204,7 +242,7 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
 
   async markEmailVerified(id: string, email: NormalizedEmail): Promise<boolean> {
     const { count } = await this.options.delegate.updateMany({
-      where: this.live({ [this.f.id]: id, [this.f.email]: email }),
+      where: this.writable({ [this.f.id]: id, [this.f.email]: email }),
       data: { [this.f.emailVerified]: true },
     });
 
@@ -220,10 +258,14 @@ export class PrismaUserStore<U extends AuthUser = AuthUser> implements UserStore
     },
   ): Promise<EmailChangeResult> {
     // The old address is in the WHERE of the same UPDATE (a compare-and-set),
-    // and the unique index on the email column refuses a taken address.
+    // and the unique index on the email column refuses a taken address. A
+    // revert (`clearPassword`) only takes access away, so `writeWhere` does
+    // not hold it back.
+    const where = { [this.f.id]: id, [this.f.email]: change.from };
+
     try {
       const { count } = await this.options.delegate.updateMany({
-        where: this.live({ [this.f.id]: id, [this.f.email]: change.from }),
+        where: change.clearPassword ? this.live(where) : this.writable(where),
         data: {
           [this.f.email]: change.to,
           [this.f.emailVerified]: true,

@@ -111,6 +111,7 @@ PrismaUserStore [class]<U extends AuthUser = AuthUser>
     private readonly selectWithHash
     private toUser
     private withHash
+    private writable
     setPasswordHash(id: string, passwordHash: string, options?: { readonly expected?: string | null; }): Promise<boolean>
 PrismaUserStoreOptions [interface]<U extends AuthUser>
     readonly createData?: (input: { email: NormalizedEmail; }) => Record<string, unknown>
@@ -119,6 +120,7 @@ PrismaUserStoreOptions [interface]<U extends AuthUser>
     readonly logger?: Pick<Logger, 'warn'>
     readonly select?: Readonly<Record<string, true>>
     readonly toUser?: (row: Record<string, unknown>) => U
+    readonly writeWhere?: Readonly<Record<string, unknown>>
 UserFields [interface]
     readonly deletedAt?: string | null
     readonly email?: string
