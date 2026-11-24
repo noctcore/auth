@@ -219,7 +219,7 @@ Sign-in answers an unknown email and a wrong password with the same error, and s
 
 The package exports a Zod input and output for every auth flow. The outputs are plain objects that strip every key they do not name: `userOutput` sends `id`, `email` and `emailVerified`, whatever your user record grows. Declare `output:` on every procedure that returns a record.
 
-`inspectPasswordResetInput` (`{ token }`) and `resetInspectionOutput` (`{ user, expiresAt, secondFactorRequired }`, the user narrowed to `userOutput`) are for a reset page that checks its link on load with `auth.inspectPasswordReset`. The token is a secret: put the procedure on a mutation.
+`inspectPasswordResetInput` (`{ token }`) and `resetInspectionOutput` (`{ userId, email, expiresAt, secondFactorRequired }`) are for a reset page that checks its link on load with `auth.inspectPasswordReset`. The token is a secret: put the procedure on a mutation.
 
 `sessionListOutput` names each session by its public `handle`, never its store key, and strips a store key a procedure returns by mistake. `revokeSessionInput` takes that handle (`{ handle }`); see [Session handles](/auth/learn/sessions-and-expiry/#session-handles) for what revoke answers.
 
