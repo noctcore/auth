@@ -1003,6 +1003,25 @@ describe('invitations accept without a session', () => {
 });
 
 describe('invitations register', () => {
+  it('goes on unverified when the store refuses the verified mark', async () => {
+    const afterRegister = vi.fn((_context: { user: { emailVerified: boolean } }) => undefined);
+    const t = invitationApp({}, { hooks: { afterRegister } });
+    const inviter = await t.user({ canInvite: true });
+    const { token } = await t.invite(inviter, 'new@example.com');
+
+    // An app's write guard (the Prisma store's `writeWhere`, say) refuses the mark.
+    vi.spyOn(t.stores.users, 'markEmailVerified').mockResolvedValueOnce(false);
+
+    const result = await t.auth.invitations.register({ token, password: PASSWORD, meta: meta() });
+
+    expect(result.ok).toBe(true);
+    expect(afterRegister.mock.lastCall?.[0].user.emailVerified).toBe(false);
+
+    expect(await t.stores.users.findCredentialByEmail('new@example.com' as never)).toMatchObject({
+      emailVerified: false,
+    });
+  });
+
   it('creates the account verified, runs afterRegister and signs it in', async () => {
     const afterRegister = vi.fn((_context: { user: { id: string }; meta: unknown }) => undefined);
     const t = invitationApp({}, { hooks: { afterRegister } });
