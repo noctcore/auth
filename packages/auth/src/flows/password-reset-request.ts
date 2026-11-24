@@ -4,12 +4,15 @@
  * The request answers the same for every address and does none of the
  * per-account work on the response path: the lookup, the per-account mail
  * limit and the mail happen in `processPasswordReset`, on your queue or
- * detached in-process.
+ * detached in-process. The job carries the request's IP and user agent, so
+ * the audit rows and the mail it writes name the request that asked, wherever
+ * the job runs.
  */
 import { publicUser, PURPOSE, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import type { PasswordResetJob } from '../core/config';
 import { sha256Hex } from '../crypto/hash';
+import { mailMeta } from '../ports/mail';
 import type { AuthUser } from '../ports/stores';
 import { ok, type AuthResult } from '../shared/errors';
 import type { RequestMeta } from '../shared/meta';
@@ -42,6 +45,7 @@ export async function requestPasswordReset<U extends AuthUser, A>(
   const job: PasswordResetJob = {
     email,
     ip: meta.ip,
+    ...(meta.userAgent === undefined ? {} : { userAgent: meta.userAgent }),
     dedupeKey: sha256Hex(`password-reset:${email}:${bucket}`),
   };
 
@@ -71,7 +75,11 @@ export async function processPasswordReset<U extends AuthUser, A>(
   settings: FlowSettings,
   job: PasswordResetJob,
 ): Promise<void> {
-  const meta: RequestMeta = { ip: job.ip };
+  // The request's own meta, carried on the job: the job may run on a queue
+  // worker, long after and far from the request.
+  const meta: RequestMeta =
+    job.userAgent === undefined ? { ip: job.ip } : { ip: job.ip, userAgent: job.userAgent };
+
   const email = core.normalizeEmail(job.email);
   const credential = email ? await core.findCredentialByEmail(email) : null;
 
@@ -101,8 +109,8 @@ export async function processPasswordReset<U extends AuthUser, A>(
     return;
   }
 
-  if (settings.reset.kind === 'code') await mailResetCode(core, settings, user);
-  else await mailResetLink(core, settings, user);
+  if (settings.reset.kind === 'code') await mailResetCode(core, settings, user, meta);
+  else await mailResetLink(core, settings, user, meta);
 }
 
 /** The audit row for a reset request that sends nothing; the client was answered already. */
@@ -122,6 +130,7 @@ async function mailResetCode<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
   user: U,
+  meta: RequestMeta,
 ): Promise<void> {
   const { code, expiresAt } = await core.tokens.issueCode(
     PURPOSE.passwordReset,
@@ -136,6 +145,7 @@ async function mailResetCode<U extends AuthUser, A>(
     userId: user.id,
     code,
     expiresAt: new Date(expiresAt),
+    ...mailMeta(meta),
   });
 }
 
@@ -143,6 +153,7 @@ async function mailResetLink<U extends AuthUser, A>(
   core: AuthCore<U, A>,
   settings: FlowSettings,
   user: U,
+  meta: RequestMeta,
 ): Promise<void> {
   const url = settings.urls.resetPassword;
 
@@ -160,5 +171,7 @@ async function mailResetLink<U extends AuthUser, A>(
     userId: user.id,
     url: url(token),
     expiresAt: new Date(expiresAt),
+    ...mailMeta(meta),
   });
 }
+

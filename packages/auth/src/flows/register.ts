@@ -39,6 +39,7 @@ import type { AuthCore } from '../core/auth-core';
 import type { IssuedSession } from '../core/plugin-context';
 import type { AuthUser } from '../ports/stores';
 import { fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
+import { mailMeta } from '../ports/mail';
 import type { RequestMeta } from '../shared/meta';
 import { accountKey } from '../throttle/counter-keys';
 
@@ -112,7 +113,12 @@ export async function register<U extends AuthUser, A>(
         const existing = (await core.findCredentialByEmail(email)) ?? held;
 
         if (existing)
-          core.mail({ type: 'account-exists', to: existing.email, userId: existing.id });
+          core.mail({
+            type: 'account-exists',
+            to: existing.email,
+            userId: existing.id,
+            ...mailMeta(meta),
+          });
 
         await core.emit(
           { type: 'register.existing', ...(existing ? { userId: existing.id } : {}) },

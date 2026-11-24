@@ -20,6 +20,7 @@ import {
 } from './password-write';
 import { PURPOSE, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
+import { mailMeta } from '../ports/mail';
 import type { AuthUser } from '../ports/stores';
 import type { NormalizedEmail } from '../shared/email';
 import { fail, ok, type AuthErrorCode, type AuthFailure, type AuthResult } from '../shared/errors';
@@ -155,6 +156,7 @@ export async function resetPassword<U extends AuthUser, A>(
     to: user.email,
     userId: user.id,
     at: new Date(core.clock.now()),
+    ...mailMeta(meta),
   });
 
   return ok();

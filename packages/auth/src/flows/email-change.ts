@@ -43,6 +43,7 @@ import { PURPOSE, RESET_PURPOSES, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { firstRefusal } from '../core/hooks';
 import type { IssuedSession } from '../core/plugin-context';
+import { mailMeta } from '../ports/mail';
 import type { AuthUser, EmailChangeResult, StoredSession, UserStore } from '../ports/stores';
 import type { NormalizedEmail } from '../shared/email';
 import { AuthConfigError, fail, ok, type AuthFailure, type AuthResult } from '../shared/errors';
@@ -164,6 +165,7 @@ export async function requestEmailChange<U extends AuthUser, A>(
       userId: user.id,
       ...issued.secret,
       expiresAt: new Date(issued.expiresAt),
+      ...mailMeta(meta),
     });
   }
 
@@ -357,6 +359,7 @@ async function finishChange<U extends AuthUser, A>(
     at: new Date(core.clock.now()),
     revertUrl: revert.url,
     revertExpiresAt: new Date(revert.expiresAt),
+    ...mailMeta(meta),
   });
 
   // `live` is this user's: the code was looked up under its user, and a link
@@ -519,6 +522,7 @@ export async function revertEmailChange<U extends AuthUser, A>(
     to: restore,
     userId: user.id,
     at: new Date(core.clock.now()),
+    ...mailMeta(meta),
   });
 
   return ok();

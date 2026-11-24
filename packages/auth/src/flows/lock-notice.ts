@@ -14,6 +14,7 @@ import { endSessionsForPermanentLock } from './permanent-lock';
 import type { AuthCore } from '../core/auth-core';
 import type { AuthUser } from '../ports/stores';
 import { describeError } from '../shared/describe-error';
+import { mailMeta } from '../ports/mail';
 import type { RequestMeta } from '../shared/meta';
 import type { NewLock } from '../throttle/rules';
 
@@ -32,6 +33,7 @@ export async function sendLockNotice<U extends AuthUser, A>(
     userId: owner.id,
     until: new Date(lock.until),
     ...(permanent ? { permanent: true as const } : {}),
+    ...mailMeta(meta),
   } as const;
 
   const audited = permanent

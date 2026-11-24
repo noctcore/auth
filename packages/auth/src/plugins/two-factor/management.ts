@@ -17,6 +17,7 @@ import { issueRecoveryCodes } from './proofs';
 import { refused, type Runtime } from './runtime';
 import { requireStepUp } from './step-up';
 import type { TwoFactorStanding } from '../../core/hooks';
+import { mailMeta } from '../../ports/mail';
 import type { StoredSession } from '../../ports/stores';
 import { fail, ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
@@ -99,6 +100,7 @@ export async function disable<A>(
     to: user.email,
     userId: user.id,
     at: new Date(core.clock.now()),
+    ...mailMeta(meta),
   });
 
   return ok({ disabled: true });
