@@ -49,7 +49,7 @@ Timeouts and drops are counted on your `metrics` as `auth_background_task`, with
 | `email-changed` | an email change was confirmed; sent to the address it replaced | `newEmail`, `at`, `revertUrl`, `revertExpiresAt` |
 | `email-change-reverted` | a revert link restored the address; every session ended and the password must be reset | `at` |
 | `two-factor-enabled` | the two-factor plugin: a second factor was turned on | `at` |
-| `two-factor-disabled` | the two-factor plugin: the second factor was turned off | `at` |
+| `two-factor-disabled` | the two-factor plugin: the second factor was turned off, by the owner or by an admin's `twoFactor.reset` | `at`, `reset` (`true` when an admin reset it) |
 | `recovery-code-used` | the two-factor plugin: a recovery code was spent | `remaining` (null when the count could not be read), `at` |
 | `invitation` | the invitations plugin: an invitation to a scope; no `userId`, since the address may have no account | `scope`, `inviterId`, `url`, `expiresAt` |
 
