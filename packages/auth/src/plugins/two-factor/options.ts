@@ -80,6 +80,25 @@ export interface TwoFactorOptions {
    * Replaces `required`: pass one or the other. Default: off.
    */
   readonly enforcement?: TwoFactorEnforcement;
+  /**
+   * When `enforcement` decides a session's standing. `'live'` (default):
+   * on every validated request, as above. `'at-issue'`: also when the
+   * session is issued, and a session issued unrestricted (a confirmed
+   * factor, or no factor required) is stamped so (the `twoFactorStanding`
+   * session attribute) and validates without any read; every other session
+   * is read live, so enrolling or the policy lifting still frees it on the
+   * next request. Nothing the plugin cannot see can reach a stamped session,
+   * so after you require a factor of a user (or change their policy), call
+   * `twoFactor.refreshStanding({ userId })`: it ends the user's sessions,
+   * and their next sign-in is stamped from the new answer. For a change to
+   * many users at once, pass `{ mode: 'at-issue', version }` with a new
+   * `version`: sessions stamped under another version are read live again.
+   * With a session attribute schema, let `twoFactorStanding` through (a
+   * schema that drops it only costs the reads; one that refuses unknown keys
+   * refuses every sign-in). Needs `enforcement`.
+   */
+  readonly enforcementStanding?:
+    'live' | 'at-issue' | { readonly mode: 'at-issue'; readonly version: string };
   /** How long a second-factor proof counts for sensitive actions, per session. Default 10 min. */
   readonly stepUpWindow?: Duration;
   /**
@@ -137,6 +156,8 @@ export interface TwoFactorSettings {
   readonly required: (context: { readonly user: AuthUser }) => boolean | Promise<boolean>;
   /** The enforcement policy, or null when `enforcement` is not configured. */
   readonly enforcement: TwoFactorEnforcement | null;
+  /** The stamp of a session issued unrestricted under `'at-issue'`; null when the standing is read live. */
+  readonly standingStamp: string | null;
   readonly stepUpWindowMs: number;
   readonly enrollmentWindowMs: number;
   readonly trustedDevices: { readonly ttlMs: number; readonly maxPerUser: number } | null;
@@ -194,6 +215,7 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
     issuer: options.issuer,
     required: options.required ?? never,
     enforcement: options.enforcement ?? null,
+    standingStamp: resolveStandingStamp(options),
     stepUpWindowMs,
     enrollmentWindowMs,
     trustedDevices: resolveTrustedDevices(options.trustedDevices),
@@ -201,6 +223,35 @@ export function resolveSettings(options: TwoFactorOptions): TwoFactorSettings {
     perIp: resolveRule('perIp', options.perIp ?? { limit: 10, window: '1m' }),
     importedRecoveryCodes: resolveImported(options.importedRecoveryCodes),
   };
+}
+
+/** The default `version` of `'at-issue'`. */
+const FIRST_STANDING_VERSION = '1';
+
+function resolveStandingStamp(options: TwoFactorOptions): string | null {
+  const option = options.enforcementStanding;
+
+  if (!isSet(option) || option === 'live') return null;
+
+  let version: string;
+
+  if (option === 'at-issue') version = FIRST_STANDING_VERSION;
+  else if (
+    typeof option === 'object' &&
+    (option as { mode?: unknown }).mode === 'at-issue' &&
+    typeof option.version === 'string' &&
+    option.version.length > 0
+  )
+    version = option.version;
+  else
+    throw new AuthConfigError(
+      "twoFactor: enforcementStanding must be 'live', 'at-issue' or { mode: 'at-issue', version }",
+    );
+
+  if (!isSet(options.enforcement))
+    throw new AuthConfigError('twoFactor: enforcementStanding needs enforcement');
+
+  return `unrestricted:${version}`;
 }
 
 function resolveImported(

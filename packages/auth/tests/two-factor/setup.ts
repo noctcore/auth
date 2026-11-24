@@ -14,6 +14,7 @@ import {
   type ImportedRecoveryCodes,
   type SecretCipher,
   type TwoFactorOptions,
+  type TwoFactorPolicy,
 } from '../../src/plugins/two-factor';
 import { MemoryTwoFactorStore } from '../../src/testing';
 import { meta, PASSWORD, setup } from '../flows/setup';
@@ -223,4 +224,54 @@ export async function importLegacyCodes(
   const hashes = codes.map((code) => legacyHash(code) ?? '');
 
   await store.replaceRecoveryCodes(userId, importedRecoveryCodeHashes(hashes));
+}
+
+/**
+ * An app with `enforcement` whose policy is `policy.current` and the given
+ * `enforcementStanding`, counting every read the standing costs.
+ */
+export function standingApp(
+  standing: TwoFactorOptions['enforcementStanding'],
+  initial: TwoFactorPolicy = { required: false },
+) {
+  const policy = { current: initial };
+  const reads = { factor: 0, user: 0, policy: 0 };
+
+  const t = twoFactorApp({
+    enforcement: () => {
+      reads.policy++;
+
+      return policy.current;
+    },
+    ...(standing === undefined ? {} : { enforcementStanding: standing }),
+  });
+
+  const findFactor = t.store.findFactor.bind(t.store);
+  const findById = t.stores.users.findById.bind(t.stores.users);
+
+  t.store.findFactor = (userId) => (reads.factor++, findFactor(userId));
+  t.stores.users.findById = (id) => (reads.user++, findById(id));
+
+  /** Validates the token and returns its standing and the reads it cost. */
+  async function validate(token: string) {
+    reads.factor = reads.user = reads.policy = 0;
+
+    const result = await t.auth.validateRequest({ token, meta: meta() });
+
+    return {
+      ok: result.ok,
+      standing: result.ok ? (result.value.twoFactor ?? null) : null,
+      reads: { ...reads },
+    };
+  }
+
+  async function login() {
+    const result = await t.auth.login({ email: EMAIL, password: PASSWORD, meta: meta() });
+
+    if (!result.ok || result.value.kind !== 'session') throw new Error(JSON.stringify(result));
+
+    return result.value.session.token;
+  }
+
+  return { ...t, policy, validate, login };
 }
