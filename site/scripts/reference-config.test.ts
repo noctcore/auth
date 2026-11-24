@@ -177,6 +177,10 @@ const EXPECTED: Record<string, Record<string, string>> = {
     'session-maxperuser': lit(maxPerUser),
     'session-attributes': 'none',
     'session-freshauthage': str(freshAuthAge),
+    'session-requirefreshauth-revokesession': lit(setting('revokeSession \\?\\? (\\w+)')),
+    'session-requirefreshauth-revokeothersessions': lit(
+      setting('revokeOtherSessions \\?\\? (\\w+)'),
+    ),
   },
   sessionCookie: {
     'session-cookie-name': str(cookieName),

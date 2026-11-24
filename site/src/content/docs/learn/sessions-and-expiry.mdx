@@ -79,7 +79,7 @@ A "where you're signed in" page needs a name for each session, so the user can s
 
 So `auth.sessions.list(session)` names each session by a **handle** instead: an HMAC-SHA-256 of the store key under a key derived from the server secret, as 43 characters of unpadded base64url. A plain hash of the key would hide it too, but anyone holding a leaked store could compute it and match the two; the HMAC needs the secret as well. The handle never has the 64-character hex shape of a store key, so the two cannot be mixed up.
 
-**Revoking by handle.** `auth.sessions.revoke({ session, handle, meta })` looks the handle up among the caller's own live sessions only. A handle it does not find (garbage, a raw store key, a session already gone, or another user's session) answers `{ revoked: false }`, every time the same, so revoke cannot tell anyone whether a handle belongs to someone. Revoking another device still needs a fresh password proof, asked before any lookup.
+**Revoking by handle.** `auth.sessions.revoke({ session, handle, meta })` looks the handle up among the caller's own live sessions only. A handle it does not find (garbage, a raw store key, a session already gone, or another user's session) answers `{ revoked: false }`, every time the same, so revoke cannot tell anyone whether a handle belongs to someone. A session it ended answers `{ revoked: true, sessionId }`: the store key, the same id `onSessionsRevoked` reports, for closing that session's live connections on the server. It is server-side only, like every store key: answer the client `{ revoked }` (the tRPC adapter's `revokedOutput` strips it). Revoking another device still needs a fresh password proof by default, asked before any lookup.
 
 **The current session** is the entry with `current: true`. Signing it out is better done with `logout`, which also clears the cookie.
 
@@ -109,7 +109,7 @@ The defaults written out, and the two routes behind a "where you're signed in" p
 - **Token shape.** The guide recommends a session id plus a separate secret, so the session can be referenced without exposing a credential. The package keeps a single random token and uses its SHA-256 as the store key, which keeps sessions issued by the existing apps valid on adoption. That key never goes to a client: what an app lists and revokes is a separate handle, above.
 - **Refresh interval.** The guide suggests refreshing the expiry hourly or daily. The package refreshes last-active at most once a minute, because the default idle timeout is 30 minutes; the refresh never moves the absolute expiry.
 - **Sign-out on password change.** The guide leaves it to the user. The package always revokes every session and re-issues the current one.
-- **Revoking sessions.** As the guide asks, revoking another device's session, or every other session at once, needs a fresh credential proof (within 10 minutes), so a stolen session cannot sign the owner out. Signing out of the current device needs none.
+- **Revoking sessions.** As the guide asks, revoking another device's session, or every other session at once, needs a fresh credential proof (within 10 minutes), so a stolen session cannot sign the owner out. Signing out of the current device needs none. An app may turn either check off with `session.requireFreshAuth` (see [Fresh authentication](/auth/reference/configuration/#fresh-authentication)); the door then still needs a live session of the same user.
 
 ## Attack tests
 

@@ -225,7 +225,19 @@ export const session: readonly ConfigRow[] = [
     key: 'session.freshAuthAge',
     type: 'Duration',
     default: "`'10m'`",
-    does: 'How recent a credential proof must be to revoke another session or every other session.',
+    does: 'How recent a credential proof must be for the doors that ask for one: revoking another session or every other session, the email change, two-factor enrollment and management, step-up.',
+  },
+  {
+    key: 'session.requireFreshAuth.revokeSession',
+    type: 'boolean',
+    default: '`true`',
+    does: "Whether `sessions.revoke` asks for a proof inside `freshAuthAge` to end another device's session. `false` still needs a live session of the same user.",
+  },
+  {
+    key: 'session.requireFreshAuth.revokeOtherSessions',
+    type: 'boolean',
+    default: '`true`',
+    does: 'Whether `sessions.revokeOthers` asks for a proof inside `freshAuthAge`. `false` still needs a live session of the same user.',
   },
 ];
 
