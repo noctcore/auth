@@ -20,7 +20,7 @@
  * Guide: Learn, "Second factors".
  */
 import { checkProof, type SecondFactorProof } from './proofs';
-import { factorAccount, limitIp, refused, type Runtime } from './runtime';
+import { factorAccount, limitIp, refused, unguardedAccount, type Runtime } from './runtime';
 import type { StoredSession } from '../../ports/stores';
 import { fail, ok, type AuthResult } from '../../shared/errors';
 import type { RequestMeta } from '../../shared/meta';
@@ -82,8 +82,8 @@ export interface VerifyProofInput {
  * `ok({ proved: false })` when the user has no confirmed factor (nothing to
  * prove), `second_factor_required` when it has one. With a proof:
  * `ok({ proved: true })` when it is right, `invalid_second_factor` otherwise,
- * also for a user with no confirmed factor or no user at all. It never issues
- * or touches a session.
+ * also for a user with no confirmed factor or no user at all (whose codes
+ * lock nothing). It never issues or touches a session.
  */
 export async function verifyProof(
   runtime: Runtime,
@@ -111,9 +111,16 @@ export async function verifyProof(
 
   if (limited) return limited;
 
+  const factor = await store.findFactor(userId);
+  const guarded = factor?.confirmed === true;
+
+  // A user with no confirmed factor can never pass, so a guess for it is
+  // counted on a key of its own and names no account: junk codes neither
+  // lock the user's real factor key nor climb the permanent lockout tier.
+  // The check itself makes the same calls as a wrong code.
   const check = await checkProof(runtime, {
-    userId,
-    account: factorAccount(userId),
+    userId: guarded ? userId : null,
+    account: guarded ? factorAccount(userId) : unguardedAccount(userId),
     proof: input.proof,
     blocked: null,
     meta,
