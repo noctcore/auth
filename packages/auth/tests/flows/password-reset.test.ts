@@ -407,6 +407,23 @@ describe('inspecting a reset link', () => {
     expect(beforePasswordReset).not.toHaveBeenCalled();
   });
 
+  it('answers a refusal from a requirement hook, as the reset would', async () => {
+    const t = queued({
+      hooks: { passwordResetRequirements: () => refuse('account_closed', 'invalid_token') },
+    });
+
+    await t.signedInUser(EMAIL);
+
+    const inspected = await t.auth.inspectPasswordReset({ token: await linkFor(t), meta: meta() });
+
+    expect(inspected).toMatchObject({ ok: false, code: 'invalid_token' });
+
+    expect(t.audit.events.at(-1)).toMatchObject({
+      type: 'password.reset_inspect_failed',
+      reason: 'account_closed',
+    });
+  });
+
   it('says a second factor is required for an account with a confirmed factor', async () => {
     const t = twoFactorApp();
 

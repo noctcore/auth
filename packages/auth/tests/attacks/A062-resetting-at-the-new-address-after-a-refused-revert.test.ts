@@ -9,8 +9,8 @@
 //
 // Stopped by: flows/email-lockout.ts (a refused revert locks the account out:
 //   no session is issued for it, a reset request for it sends nothing and a
-//   reset link for it is refused, each with the ordinary answer and before
-//   any password is hashed; the lockout never lapses, and the owner's revert
+//   reset link for it is refused (a reset page's link check included), each
+//   with the ordinary answer and before any password is hashed; the lockout never lapses, and the owner's revert
 //   link lives as long), flows/email-change.ts (the
 //   revert sets the lockout right after the write that removed the password,
 //   and a finished revert ends it; a link refuses once the account no longer
@@ -81,6 +81,21 @@ describe('A062: resetting the password at the intruder address after a refused r
 
     expect(hash).not.toHaveBeenCalled();
     expect((await t.stores.users.findCredentialById(userId))?.passwordHash).toBeNull();
+  });
+
+  it('a reset page checking that link on load sees a dead link', async () => {
+    const { t, userId } = await refusedRevert();
+    const link = await t.auth.context.tokens.issueLink('password-reset', userId, 60_000);
+
+    expect(await t.auth.inspectPasswordReset({ token: link.token, meta: meta() })).toMatchObject({
+      ok: false,
+      code: 'invalid_token',
+    });
+
+    expect(t.audit.events.at(-1)).toMatchObject({
+      type: 'password.reset_inspect_failed',
+      reason: 'email_revert_lockout',
+    });
   });
 
   it('no session is issued for the account, even with a password set behind the library', async () => {
