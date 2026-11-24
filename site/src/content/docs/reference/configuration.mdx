@@ -560,17 +560,17 @@ const { users, tokens } = prismaStores({
 
 A closed row then refuses `setPasswordHash`, `markEmailVerified` and `changeEmail`, and the flows answer that like any refused write:
 
-- `resetPassword` answers `invalid_token`, and no reset link of the account is left live;
+- `resetPassword` answers `invalid_token`, and every other reset link, code and ticket of the account, and a pending email change, is voided with it;
 - `changePassword` answers `session_expired`;
 - an email change answers as stale;
 - email verification answers `invalid_token`;
 - a reset that would also mark the address verified leaves it unverified;
-- an invitation sign-up (the invitations plugin) still creates the account and signs it in, but unverified, since the store refused the mark;
+- an invitation sign-up (the invitations plugin) still creates the account, records the membership (`onAccept`) and signs it in, but unverified; the same happens when the mark throws (a misspelled column, an outage), which is logged as `Marking an invited address verified failed`;
 - a rehash after login keeps the old hash, and the login is not affected.
 
 The condition is combined with the store's own through `AND`, so it can narrow a write but never widen it.
 
-The store checks and copies `writeWhere` when it is built, and refuses (`AuthConfigError`) anything but a plain, non-empty object, and any `undefined` inside it: Prisma reads an `undefined` filter as no filter, so `{ orgId: process.env.ORG_ID }` with the variable unset would guard nothing. A column name Prisma does not know is not caught there. The first guarded write throws instead, and the store rethrows Prisma's error without its message, which prints the whole call and the new password hash with it. Try one reset in a test environment after you set it.
+The store checks and copies `writeWhere` when it is built, and refuses (`AuthConfigError`) anything but a plain object, and any guard that would match every row: an empty object anywhere in it (`{}`, `{ closedAt: {} }`), an `undefined` anywhere in it (Prisma reads it as no filter, so `{ orgId: process.env.ORG_ID }` with the variable unset would guard nothing), and an empty `AND` or `NOT` list (Prisma reads those as true). An empty `OR` matches no row, so it is allowed. A guard that matches every row in some other way (a condition every row meets) is not detected. The guard is copied and frozen, and each write gets a fresh copy, so neither the object you passed nor a Prisma extension that changes one call's `where` can change later writes. A column name Prisma does not know is not caught there. The first guarded write throws instead, and the store rethrows Prisma's error without its message, which prints the whole call and the new password hash with it (a failed sign-up insert is rethrown the same way). Try one reset in a test environment after you set it.
 
 What it leaves alone:
 
