@@ -11,8 +11,9 @@
  * a `where` at all and is refused too. Other guards that match every row (a
  * condition every row meets) are not detected.
  *
- * The guard is copied, so code that later changes the object it passed cannot
- * change what the store's writes require.
+ * The guard is copied and deep-frozen, and every write gets a fresh copy of
+ * it, so neither the object the app passed nor a Prisma extension that changes
+ * the `where` of one call can change what later writes require.
  */
 import { AuthConfigError } from '@noctcore/auth';
 
@@ -33,11 +34,12 @@ function refuse(path: string, why: string): never {
   throw new AuthConfigError(`${LABEL} has ${why} at ${path}, which would guard nothing`);
 }
 
-/** A deep copy of plain objects and arrays, refusing what would match every row. */
+/** A deep, frozen copy of plain objects and arrays, refusing what would match every row. */
 function checkedCopy(value: unknown, path: string): unknown {
   if (value === undefined) refuse(path, 'undefined (Prisma reads it as no filter)');
 
-  if (Array.isArray(value)) return value.map((item, i) => checkedCopy(item, `${path}[${i}]`));
+  if (Array.isArray(value))
+    return Object.freeze(value.map((item, i) => checkedCopy(item, `${path}[${i}]`)));
 
   if (value instanceof Date) return new Date(value.getTime());
 
@@ -51,12 +53,23 @@ function checkedCopy(value: unknown, path: string): unknown {
     if (MATCH_ALL_WHEN_EMPTY.has(key) && Array.isArray(inner) && inner.length === 0)
       refuse(`${path}.${key}`, 'an empty list (Prisma reads it as true)');
 
-  return Object.fromEntries(
-    entries.map(([key, inner]) => [key, checkedCopy(inner, `${path}.${key}`)]),
+  return Object.freeze(
+    Object.fromEntries(entries.map(([key, inner]) => [key, checkedCopy(inner, `${path}.${key}`)])),
   );
 }
 
-/** The guard, checked and copied, or undefined when there is none. */
+/** A fresh, unfrozen copy of a checked guard, for one write. */
+export function freshWhere(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(freshWhere);
+
+  if (value instanceof Date) return new Date(value.getTime());
+
+  if (!isPlainObject(value)) return value;
+
+  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, freshWhere(inner)]));
+}
+
+/** The guard, checked, copied and frozen, or undefined when there is none. */
 export function copyWriteWhere(writeWhere: unknown): Readonly<Record<string, unknown>> | undefined {
   if (writeWhere === undefined) return undefined;
 
