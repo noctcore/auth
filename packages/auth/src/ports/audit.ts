@@ -67,6 +67,8 @@ export type AuthEventType =
   | 'two_factor.recovery_codes_generated'
   | 'two_factor.trusted_device_added'
   | 'two_factor.trusted_devices_revoked'
+  /** An admin reset the user's factor (`userId`: the user; `data.actor`: the admin, when named). */
+  | 'two_factor.reset'
   /** The membership plugin's events. `userId` is the acting admin, `data.target` the member. */
   | 'membership.added'
   | 'membership.role_changed'
