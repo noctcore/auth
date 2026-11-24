@@ -1,0 +1,8 @@
+---
+'@noctcore/auth': patch
+---
+
+The two-factor plugin has two new options.
+
+- `enrollmentWindow` (default `'10m'`, positive, at most `'24h'`) sets how long a pending secret from `enroll` accepts its confirmation code; `Enrollment.expiresAt` follows it. Confirming still needs a fresh password proof, and an enrollment challenge still ends with the challenge (5 minutes). The window also dates when a factor counts as set up for an app's own re-issue of a session, so shrinking it while enrollments are pending lets a session created between the new and the old end pass; turn factors on with `revokeOtherSessions: true` if you shrink it.
+- `enforcementStanding: 'at-issue'` (with `enforcement`; default `'live'`, unchanged) also decides the standing when a session is issued. A session issued unrestricted (a confirmed factor, or no factor required) is stamped in the `twoFactorStanding` session attribute and validates without reading the factor, the user or the policy; every other session is read live as before. A stamp never outlives a change the plugin can see: the new `twoFactor.refreshStanding({ userId })` ends the user's sessions after you require a factor of them or change their policy (a no-op under `'live'`), `twoFactor.reset` ends them under `'at-issue'`, and `{ mode: 'at-issue', version }` with a new `version` sends every older stamp back to live reads after a change to many users. A change you neither refresh nor version does not reach a stamped session until it ends (`sweepUnenrolled` still backs this up). With a session attribute schema, let `twoFactorStanding` through: a schema that refuses unknown keys refuses every sign-in.
