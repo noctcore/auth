@@ -9,8 +9,8 @@
  *   (password change, re-authentication, sign out of other devices, email
  *   verified, email changed; the core refuses those labels unless the call passes that user's
  *   session as `inherit`). An app's own via passes only with a live
- *   `inherit` of the user (`reissueOf`) whose session descends from a proof
- *   of the factor (`provedFactor`). So no flow that issues a session, sign-up with
+ *   `inherit` of the user (`reissueOf`) that `provedFactor` accepts, a best
+ *   effort with known gaps (see there). So no flow that issues a session, sign-up with
  *   `autoLogin` included, gets past the factor. Before a login challenge
  *   (`beforeChallenge`) it refuses nothing: the challenge is the factor. Plugins are trusted code: one
  *   that issues with `via: 'second-factor'` claims to have checked the factor.
@@ -112,12 +112,17 @@ async function enforce(
 }
 
 /**
- * Whether the live session an app's own re-issue replaces descends from a
- * proof of this factor. A session the store created after the factor was
- * confirmed (its enrollment window had closed) passed this enforcement when
- * it was issued: through the challenge, or as a re-issue of a session that
- * had. One created earlier proved nothing, so it passes only with a step-up
- * of its own still open.
+ * Whether the live session an app's own re-issue replaces is let through:
+ * created after the factor's enrollment window closed, or holding a step-up
+ * of its own still open. Sessions carry no record of how they began, so this
+ * is NOT a proof that the session descends from a proof of the factor. Two
+ * known ways an unproved session passes:
+ * - a session from before the enrollment that one of the core's re-issues
+ *   (sign out of other devices, re-authentication, email verified) renewed
+ *   after the window gets a new `createdAt`;
+ * - a password login that read the factor as still pending, during the
+ *   enrollment, and minted its session after the window, without a challenge.
+ * Turning the factor on with `revokeOtherSessions: true` ends both.
  */
 async function provedFactor(
   runtime: Runtime,
