@@ -39,6 +39,8 @@ If the old address has an account again (an app path that skipped `isAddressHeld
 
 For support: find the account from the `email.change_revert_failed` row, free the old address (it belongs to whoever created the account on it), and send the owner back to their link. If the old address cannot be freed, move the account to an address the owner controls in your store, then clear the lockout and have the owner reset the password. Always clear once the account is settled: the clear is what kills the revert link, which was stretched to the lockout's expiry. A revert link also refuses (`invalid_token`, reason `email_revert_address_moved`) as soon as the account no longer names the address the change moved it to, so moving the account is safe even before the clear, but a stale link and hold should not be left in the store.
 
+**An address change your own code makes.** Moving an account to a new address outside these flows (a migration, an admin tool, support) skips the cleanup a confirm does. Call `auth.revokePasswordResets({ userId, meta })` with it, so a reset link mailed to the old address dies; see [Voiding resets from your own code](/auth/learn/password-reset/#voiding-resets-from-your-own-code).
+
 **What is not atomic.** Each flow is a series of store calls, not a transaction. Confirm writes the revert link and the hold before it moves the address, and revokes sessions after; a store error between leaves at worst an unmailed revert link for an address that did not move, which blocks nothing. Revert removes the password in the same write as the restore, sets the lockout if the restore was refused, and revokes sessions right after; a store error after the restore leaves the link unspent, and clicking it again runs every step again.
 
 ## Answers
