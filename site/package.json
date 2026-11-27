@@ -12,7 +12,7 @@
     "test:snippets": "node --test snippets/build/adapter/sqlite-counter-store.test.ts snippets/build/trpc/router.test.ts"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.42.8",
+    "@astrojs/starlight": "^0.43.1",
     "@fontsource-variable/manrope": "^5.3.0",
     "@fontsource/dm-mono": "^5.3.0",
     "astro": "^7.4.5",
