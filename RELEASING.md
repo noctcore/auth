@@ -10,7 +10,7 @@ release of all of them.
 ## The plan
 
 Each milestone ships a 0.x minor with a changelog, a git tag and a GitHub release. After the last
-milestone come release candidates during a soak, then 1.0.0. The first real release is 0.2.0.
+milestone come release candidates during a soak, then 1.0.0.
 
 ## The flow
 
