@@ -46,8 +46,8 @@ Argon2id with 19 MiB of memory, t=3, p=1: OWASP's memory floor with the auth gui
 
 ## Sessions and scope
 
-- Redis is the only session store in v1.
-- There is no OAuth in v1.
+- Redis is the only production session store the packages ship (`@noctcore/auth-redis`); the in-memory store under `@noctcore/auth/testing` is for tests only.
+- There is no OAuth or OIDC sign-in yet ([#30](https://github.com/noctcore/auth/issues/30)).
 
 ## How to report
 
