@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { refuse, type PasswordResetJob } from '../../src';
 import { meta, NEW_PASSWORD, settled, setup } from './setup';
+import { changed, requestCode } from './email-change-support';
 import { twoFactorApp } from '../two-factor/setup';
+import { PURPOSE, RESET_PURPOSES } from '../../src/flows/settings';
 
 const EMAIL = 'ada@example.com';
 const tokenOf = (url: string | undefined) => (url ?? '').split('#')[1] ?? '';
@@ -454,5 +456,244 @@ describe('inspecting a reset link', () => {
 
     expect(inspected.ok && inspected.value.secondFactorRequired).toBe(true);
     expect(plain.ok && plain.value.secondFactorRequired).toBe(false);
+  });
+});
+
+describe('revoking an account reset tokens', () => {
+  const revokedEvents = (t: ReturnType<typeof setup>) =>
+    t.audit.events.filter((e) => e.type === 'password.reset_revoked');
+
+  async function linkFor(t: Queued, email = EMAIL) {
+    await requestAndDrain(t, email);
+
+    return tokenOf(t.mailer.last('password-reset')?.url);
+  }
+
+  it('kills a link issued before it, at the inspection and at the reset', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+    const token = await linkFor(t);
+
+    expect(
+      await t.auth.revokePasswordResets({ userId: session.userId, meta: meta('198.51.100.4') }),
+    ).toEqual({ revoked: true });
+
+    const inspected = await t.auth.inspectPasswordReset({ token, meta: meta() });
+    const reset = await t.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() });
+
+    expect(!inspected.ok && inspected.code).toBe('invalid_token');
+    expect(!reset.ok && reset.code).toBe('invalid_token');
+
+    expect(revokedEvents(t)).toEqual([
+      {
+        type: 'password.reset_revoked',
+        userId: session.userId,
+        meta: { ip: '198.51.100.4', userAgent: 'vitest', origin: 'https://app.example' },
+      },
+    ]);
+
+    expect(t.mailer.sent.filter((m) => m.type === 'password-reset')).toHaveLength(1);
+  });
+
+  it('kills a code and a ticket issued before it in code mode', async () => {
+    const t = queued({ passwordReset: { kind: 'code' } });
+    const { session } = await t.signedInUser(EMAIL);
+
+    await requestAndDrain(t);
+
+    const exchanged = await t.auth.verifyPasswordResetCode({
+      email: EMAIL,
+      code: t.mailer.last('password-reset-code')?.code ?? '',
+      meta: meta(),
+    });
+
+    if (!exchanged.ok) throw new Error(exchanged.reason);
+
+    // A second code, so a code and a ticket are both outstanding.
+    await requestAndDrain(t);
+
+    const code = t.mailer.last('password-reset-code')?.code ?? '';
+    const { ticket } = exchanged.value;
+
+    expect(await t.auth.revokePasswordResets({ userId: session.userId })).toEqual({
+      revoked: true,
+    });
+
+    const verified = await t.auth.verifyPasswordResetCode({ email: EMAIL, code, meta: meta() });
+    const inspected = await t.auth.inspectPasswordReset({ token: ticket, meta: meta() });
+
+    const reset = await t.auth.resetPassword({
+      token: ticket,
+      password: NEW_PASSWORD,
+      meta: meta(),
+    });
+
+    expect(!verified.ok && verified.code).toBe('invalid_token');
+    expect(!inspected.ok && inspected.code).toBe('invalid_token');
+    expect(!reset.ok && reset.code).toBe('invalid_token');
+    expect(revokedEvents(t)).toMatchObject([{ userId: session.userId }]);
+  });
+
+  it('counts a ticket alone as something removed', async () => {
+    const t = queued({ passwordReset: { kind: 'code' } });
+    const { session } = await t.signedInUser(EMAIL);
+
+    await requestAndDrain(t);
+
+    const exchanged = await t.auth.verifyPasswordResetCode({
+      email: EMAIL,
+      code: t.mailer.last('password-reset-code')?.code ?? '',
+      meta: meta(),
+    });
+
+    if (!exchanged.ok) throw new Error(exchanged.reason);
+
+    expect(await t.auth.revokePasswordResets({ userId: session.userId })).toEqual({
+      revoked: true,
+    });
+
+    expect(revokedEvents(t)).toHaveLength(1);
+  });
+
+  it('leaves a link issued after it working', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+
+    await linkFor(t);
+    await t.auth.revokePasswordResets({ userId: session.userId, meta: meta() });
+
+    const token = await linkFor(t);
+
+    expect((await t.auth.inspectPasswordReset({ token, meta: meta() })).ok).toBe(true);
+
+    expect((await t.auth.resetPassword({ token, password: NEW_PASSWORD, meta: meta() })).ok).toBe(
+      true,
+    );
+  });
+
+  it('succeeds for an account with no reset token, emits nothing and mails nothing', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+    const mailed = t.mailer.sent.length;
+
+    expect(await t.auth.revokePasswordResets({ userId: session.userId, meta: meta() })).toEqual({
+      revoked: false,
+    });
+
+    expect(await t.auth.revokePasswordResets({ userId: 'no-such-user' })).toEqual({
+      revoked: false,
+    });
+
+    expect(revokedEvents(t)).toEqual([]);
+    expect(t.mailer.sent).toHaveLength(mailed);
+  });
+
+  it('is idempotent: a second call removes nothing and emits nothing', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+
+    await linkFor(t);
+    await t.auth.revokePasswordResets({ userId: session.userId, meta: meta() });
+
+    expect(await t.auth.revokePasswordResets({ userId: session.userId, meta: meta() })).toEqual({
+      revoked: false,
+    });
+
+    expect(revokedEvents(t)).toHaveLength(1);
+  });
+
+  it('does not count an expired link as something removed', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+
+    await linkFor(t);
+    t.clock.advance(24 * 60 * 60_000);
+
+    expect(await t.auth.revokePasswordResets({ userId: session.userId })).toEqual({
+      revoked: false,
+    });
+
+    expect(revokedEvents(t)).toEqual([]);
+  });
+
+  it('leaves the reset tokens of other accounts alone', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+
+    await t.signedInUser('grace@example.com');
+
+    const theirs = await linkFor(t, 'grace@example.com');
+
+    await linkFor(t);
+    await t.auth.revokePasswordResets({ userId: session.userId });
+
+    expect((await t.auth.inspectPasswordReset({ token: theirs, meta: meta() })).ok).toBe(true);
+  });
+
+  it('leaves a verification link of the account working', async () => {
+    const t = queued({ emailVerification: { kind: 'link' } });
+    const { session } = await t.signedInUser(EMAIL);
+    const mail = t.mailer.last('verify-email');
+    const token = tokenOf(mail?.type === 'verify-email' ? mail.url : undefined);
+
+    await linkFor(t);
+    await t.auth.revokePasswordResets({ userId: session.userId, meta: meta() });
+
+    expect((await t.auth.verifyEmailLink({ token, session, meta: meta() })).ok).toBe(true);
+  });
+
+  it('leaves a pending email change of the account working', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+    const code = await requestCode(t, session, 'grace@example.com');
+
+    await linkFor(t);
+    await t.auth.revokePasswordResets({ userId: session.userId, meta: meta() });
+
+    expect((await t.auth.confirmEmailChangeCode({ session, code, meta: meta() })).ok).toBe(true);
+  });
+
+  it('leaves a revert link of the account working', async () => {
+    const t = queued();
+    const { session } = await t.signedInUser(EMAIL);
+    const after = await changed(t, session, 'grace@example.com');
+
+    await linkFor(t, 'grace@example.com');
+
+    expect(await t.auth.revokePasswordResets({ userId: session.userId })).toEqual({
+      revoked: true,
+    });
+
+    expect((await t.auth.revertEmailChange({ token: after.revert, meta: meta() })).ok).toBe(true);
+  });
+
+  it('removes only the reset purposes from the token store', async () => {
+    const t = setup();
+    const userId = 'user-1';
+    const expiresAt = t.clock.now() + 60_000;
+    const purposes = Object.values(PURPOSE);
+
+    for (const purpose of purposes)
+      await t.stores.tokens.put({
+        purpose,
+        userId,
+        hash: purpose,
+        expiresAt,
+        attempts: 0,
+        data: {},
+      });
+
+    expect(await t.auth.revokePasswordResets({ userId })).toEqual({ revoked: true });
+
+    const left = await Promise.all(
+      purposes.map(async (purpose) => [
+        purpose,
+        (await t.stores.tokens.findByUser(purpose, userId)) !== null,
+      ]),
+    );
+
+    expect(Object.fromEntries(left)).toEqual(
+      Object.fromEntries(purposes.map((p) => [p, !RESET_PURPOSES.includes(p)])),
+    );
   });
 });
