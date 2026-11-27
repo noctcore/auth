@@ -40,6 +40,8 @@ export type AuthEventType =
   | 'password.reset_inspected'
   /** The link or ticket a reset page checked is unknown, expired or spent; nothing was spent. */
   | 'password.reset_inspect_failed'
+  /** `auth.revokePasswordResets` voided at least one live reset link, code or ticket of the account. */
+  | 'password.reset_revoked'
   | 'password.reset_code_verified'
   | 'password.reset_code_failed'
   | 'password.reset'

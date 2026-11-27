@@ -12,9 +12,15 @@
  * session, lifts the lockout (the mailbox was proved) and, by default, marks
  * the address verified; once the password is written, a failure to lift the
  * lock or mark the address is logged and the reset still answers ok.
+ *
+ * An app that changes the account in its own code in a way that must end a
+ * pending reset (an email change it runs itself, an admin moving the account
+ * to a new address, a support "secure this account" action) voids the links,
+ * codes and tickets with `revokePasswordResets`: a link mailed to an address
+ * the account no longer uses would let whoever reads that mailbox take it.
  */
 import { afterPasswordWrite, closeAfterWrite, writePasswordHash } from './password-write';
-import { PURPOSE, type FlowSettings } from './settings';
+import { PURPOSE, RESET_PURPOSES, type FlowSettings } from './settings';
 import type { AuthCore } from '../core/auth-core';
 import { mailMeta } from '../ports/mail';
 import type { AuthUser } from '../ports/stores';
@@ -151,6 +157,31 @@ export async function inspectPasswordReset<U extends AuthUser, A>(
     expiresAt: peek.expiresAt,
     secondFactorRequired,
   });
+}
+
+/**
+ * Voids every reset link, code and ticket the account has outstanding, and
+ * nothing else: a pending email change, a revert link and a verification link
+ * stay live. Never mails and never fails for an account with nothing to void,
+ * so it is safe to call on every change your own code makes. Answers whether
+ * a live reset token was removed, and writes `password.reset_revoked` only then.
+ */
+export async function revokePasswordResets<U extends AuthUser, A>(
+  core: AuthCore<U, A>,
+  input: { userId: string; meta?: RequestMeta },
+): Promise<{ revoked: boolean }> {
+  const live = await Promise.all(
+    RESET_PURPOSES.map((purpose) => core.tokens.findLive(purpose, input.userId)),
+  );
+
+  await core.tokens.revokeAll(input.userId, RESET_PURPOSES);
+
+  const revoked = live.some((token) => token !== null);
+
+  if (revoked)
+    await core.emit({ type: 'password.reset_revoked', userId: input.userId }, input.meta);
+
+  return { revoked };
 }
 
 export async function resetPassword<U extends AuthUser, A>(

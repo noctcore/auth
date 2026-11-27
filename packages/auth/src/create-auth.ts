@@ -25,6 +25,7 @@ import { changePassword, reauthenticate } from './flows/password-change';
 import {
   inspectPasswordReset,
   resetPassword,
+  revokePasswordResets,
   verifyPasswordResetCode,
 } from './flows/password-reset';
 import { processPasswordReset, requestPasswordReset } from './flows/password-reset-request';
@@ -352,6 +353,16 @@ export function createAuth<
       secondFactor?: string;
       meta: RequestMeta;
     }) => resetPassword(core, settings, input),
+    /**
+     * Voids the account's reset links, codes and tickets, and nothing else.
+     * For a change your own code makes that must end a pending reset: an
+     * email change you run yourself, an admin moving the account to a new
+     * address, a support "secure this account" action. Never mails, is safe
+     * to repeat, answers `{ revoked }` and writes `password.reset_revoked`
+     * only when it removed a live one.
+     */
+    revokePasswordResets: (input: { userId: string; meta?: RequestMeta }) =>
+      revokePasswordResets(core, input),
     changePassword: (input: {
       session: StoredSession<A>;
       currentPassword: string;
