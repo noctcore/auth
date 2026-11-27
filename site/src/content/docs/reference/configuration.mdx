@@ -33,8 +33,8 @@ import {
 } from '../../../components/reference/config-keys';
 import configTs from '../../../../snippets/reference/config.ts?raw';
 
-:::caution[Pre-release]
-Nothing is published to npm yet, and the API can change until 1.0.
+:::caution[Pre-1.0]
+The packages are on npm, but they are not ready for production yet, and the API may change until 1.0.
 :::
 
 `createAuth(config)` takes one object, typed [`AuthConfig`](/auth/reference/api/auth/noctcore/auth/interfaces/authconfig/) (`packages/auth/src/core/config.ts`). Only four keys are required. Everything else has a default chosen for safety first: where published guidance disagrees, the stricter value wins. The configuration is checked once, at startup, and anything unsafe throws an `AuthConfigError` before the app serves a request; [Startup checks](#startup-checks) lists every refusal.
