@@ -9,8 +9,8 @@ import authTs from '../../../../snippets/start/auth.ts?raw';
 import dbTs from '../../../../snippets/start/db.ts?raw';
 import serverTs from '../../../../snippets/start/server.ts?raw';
 
-:::caution[Pre-release]
-Nothing is published to npm yet, and the API can change until 1.0.
+:::caution[Pre-1.0]
+The packages are on npm, but they are not ready for production yet, and the API may change until 1.0.
 :::
 
 This page builds the smallest app that signs people in: users and one-time tokens in PostgreSQL through Prisma 7, sessions and rate-limit counters in Redis, passwords hashed with Argon2id. It needs Node 22 or newer, Redis 6.2 or newer and PostgreSQL. Every code sample on this page is compiled with the site, so it matches the current API.

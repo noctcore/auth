@@ -3,8 +3,8 @@ title: Security defaults
 description: The security choices the library makes by default, and how to report a problem.
 ---
 
-:::note[Pre-release]
-These are the defaults chosen for v1. The code that implements them is not published yet.
+:::note[Pre-1.0]
+These are the defaults the packages ship with today. They are on npm, but not ready for production yet, and a default may change until 1.0.
 :::
 
 ## Registration

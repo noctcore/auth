@@ -3,8 +3,8 @@ title: Reference
 description: Every config key with its default, and the API generated from each package's public entry points.
 ---
 
-:::caution[Pre-release]
-Nothing is published to npm yet, and the API can change until 1.0.
+:::caution[Pre-1.0]
+The packages are on npm, but they are not ready for production yet, and the API may change until 1.0.
 :::
 
 - [Configuration](/auth/reference/configuration/): every `createAuth` option, its default and the reason for it, plus the options of `argon2id`, `redisStores` and `prismaStores`.
